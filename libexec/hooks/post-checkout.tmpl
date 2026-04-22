@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Installed by: tmux-worktree shared enable
+# Symlinks files from <bare>/shared/ into each worktree on checkout.
+# Never overwrites existing non-symlink files in the worktree.
+
+set -e
+
+WORKTREE_ROOT="$(git rev-parse --show-toplevel)"
+BARE_REPO="$(git rev-parse --git-common-dir)"
+SHARED_DIR="$BARE_REPO/shared"
+
+[ -d "$SHARED_DIR" ] || exit 0
+
+mkdir -p "$BARE_REPO/info"
+EXCLUDE_FILE="$BARE_REPO/info/exclude"
+
+if [ ! -f "$EXCLUDE_FILE" ] || ! grep -q "# tmux-worktree shared" "$EXCLUDE_FILE" 2>/dev/null; then
+  echo "" >> "$EXCLUDE_FILE"
+  echo "# tmux-worktree shared files (auto-generated)" >> "$EXCLUDE_FILE"
+fi
+
+cd "$SHARED_DIR"
+find . -type f ! -path './.git/*' ! -name '.gitignore' ! -name 'README.md' | while read -r file; do
+  rel="${file#./}"
+  target="$WORKTREE_ROOT/$rel"
+  tdir="$(dirname "$target")"
+
+  [ -d "$tdir" ] || mkdir -p "$tdir"
+
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "Skipped (exists, not a symlink): $rel"
+    continue
+  fi
+
+  ln -sf "$SHARED_DIR/$rel" "$target"
+  echo "Linked: $rel"
+
+  escaped=$(echo "$rel" | sed 's/[[\.*^$()+?{|]/\\&/g')
+  if ! grep -q "^${escaped}$" "$EXCLUDE_FILE" 2>/dev/null; then
+    echo "$rel" >> "$EXCLUDE_FILE"
+  fi
+done
