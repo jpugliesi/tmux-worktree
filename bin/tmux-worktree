@@ -66,6 +66,7 @@ Commands:
   create <url> <name>   Create a git worktree from the repo url, start tmux session
   reset  [window]       Reset tmux panes in current window and fast-forward branch
   shared <subcommand>   Manage shared-files mechanism (see 'shared help')
+  update-self           Pull the latest version of tmux-worktree from origin
   help                  Show this help
 
 Current configuration:
@@ -76,12 +77,22 @@ Current configuration:
 EOF
 }
 
+cmd_update_self() {
+  if ! git -C "$PROJECT_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Error: $PROJECT_ROOT is not a git checkout — can't update" >&2
+    return 1
+  fi
+  echo "Updating tmux-worktree in $PROJECT_ROOT"
+  git -C "$PROJECT_ROOT" pull --ff-only
+}
+
 cmd="${1:-help}"
 shift || true
 case "$cmd" in
 create) cmd_create "$@" ;;
 reset) cmd_reset "$@" ;;
 shared) cmd_shared "$@" ;;
+update-self) cmd_update_self "$@" ;;
 help | -h | --help) usage ;;
 *)
   echo "Unknown command: $cmd" >&2
