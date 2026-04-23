@@ -4,6 +4,8 @@
 # Base directory where bare repos and worktrees live.
 # Bare repos are stored at: $TMUX_WORKTREE_DIR/.<repo>.git
 # Worktrees are created at: $TMUX_WORKTREE_DIR/<name>
+#
+# Default if unset: ${XDG_DATA_HOME:-$HOME/.local/share}/tmux-worktree
 TMUX_WORKTREE_DIR="$HOME/code"
 
 # Build the tmux session when `tmux-worktree create` is invoked.

@@ -6,7 +6,7 @@ cmd_reset() {
     cat <<EOF
 Usage: tmux-worktree reset [window]
 
-Reset all panes in the current (or given) tmux window, switch git to the branch
+Reset all tmux panes in the current (or given) tmux window, switch git to the branch
 matching the first window's name, and hard-reset it to origin's default branch.
 
 Arguments:

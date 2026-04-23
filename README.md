@@ -8,49 +8,53 @@ session, laid out however you want.
 
 ## Install
 
+### Manual
+
 ```sh
-git clone https://github.com/YOUR/tmux-worktree ~/.local/share/tmux-worktree
-ln -sf ~/.local/share/tmux-worktree/bin/tmux-worktree ~/.local/bin/tmux-worktree
+git clone https://github.com/jpugliesi/tmux-worktree ~/.tmux-worktree
+echo 'export PATH="$HOME/.tmux-worktree/bin:$PATH"' >> ~/.zshrc
 ```
 
-Make sure `~/.local/bin` is on your `PATH`.
+Update later with `git -C ~/.tmux-worktree pull`.
 
-## Configure
+## Quick start
 
-Create `~/.config/tmux-worktree/config.sh`. Start from the example:
+No config needed — works out of the box:
+
+```sh
+tmux-worktree create git@github.com:org/repo.git feature-xyz
+```
+
+This clones the repo (as a bare repo under `$TMUX_WORKTREE_DIR`), creates a
+worktree on a new `feature-xyz` branch, and opens a tmux session. By default
+the session has one window with one pane — customize via config (below).
+
+Other commands:
+
+```sh
+tmux-worktree reset               # reset panes + hard-reset branch to origin default
+tmux-worktree shared enable       # (run inside a bare repo) enable symlinked shared files
+```
+
+## Configure (optional)
+
+Only needed if you want a custom tmux layout or a different data directory.
 
 ```sh
 mkdir -p ~/.config/tmux-worktree
-cp ~/.local/share/tmux-worktree/share/config.example.sh \
-   ~/.config/tmux-worktree/config.sh
+curl -fsSL https://raw.githubusercontent.com/jpugliesi/tmux-worktree/main/share/config.example.sh \
+  > ~/.config/tmux-worktree/config.sh
 ```
 
-Minimum config:
+The example ships a 3-pane editor window plus a `deploy` window. Edit to taste.
 
-```sh
-TMUX_WORKTREE_DIR="$HOME/code"
+Available knobs:
 
-on_session_create() {
-  local session="$1" path="$2"
-  tmux new-session -d -s "$session" -c "$path"
-}
-```
-
-See [`share/config.example.sh`](share/config.example.sh) for a richer layout.
-
-## Usage
-
-```sh
-# Clone (if needed) + create worktree + start session
-tmux-worktree create git@github.com:org/repo.git feature-xyz
-
-# Reset current window's panes and hard-reset branch to origin's default
-tmux-worktree reset
-
-# Enable optional shared-files mechanism in a bare repo
-cd "$TMUX_WORKTREE_DIR/.repo.git"
-tmux-worktree shared enable
-```
+| Variable / hook | Purpose | Default |
+|---|---|---|
+| `TMUX_WORKTREE_DIR` | Where bare repos and worktrees live | `${XDG_DATA_HOME:-$HOME/.local/share}/tmux-worktree` |
+| `on_session_create session path` | Build the tmux layout | One window, one pane |
+| `on_worktree_create path` | Run after worktree is created | No-op |
 
 ## Shared files (optional)
 
@@ -76,17 +80,6 @@ Then drop files into `shared/`. Optionally `cd shared && git init` to version
 them in their own (separate) repo.
 
 Disable with `tmux-worktree shared disable`.
-
-## Hooks
-
-Two hooks, both optional:
-
-| Hook | Arguments | When |
-|---|---|---|
-| `on_session_create` | `session` `path` | After the worktree exists, to build the tmux session |
-| `on_worktree_create` | `path` | After a new worktree is created, before the session starts |
-
-Define them in `config.sh`. Inside the hooks you can run any tmux/shell command.
 
 ## License
 
