@@ -69,6 +69,15 @@ Commands:
   update-self           Pull the latest version of tmux-worktree from origin
   help                  Show this help
 
+Example — two worktrees on the same repo, sharing one bare clone:
+  tmux-worktree create git@github.com:org/repo.git feature-1
+  tmux-worktree create git@github.com:org/repo.git bugfix-42
+
+  Resulting tree under \$TMUX_WORKTREE_DIR:
+    .repo.git/           <- bare clone (shared, created once)
+    feature-1/           <- worktree on branch 'feature-1', tmux session 'feature-1'
+    bugfix-42/           <- worktree on branch 'bugfix-42', tmux session 'bugfix-42'
+
 Current configuration:
   TMUX_WORKTREE_DIR     $TMUX_WORKTREE_DIR  (from $_tw_dir_source)
   Config file           $CONFIG_FILE  ($config_status)
