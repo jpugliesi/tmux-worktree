@@ -22,7 +22,7 @@ Update later with `git -C ~/.tmux-worktree pull`.
 No config needed — works out of the box:
 
 ```sh
-tmux-worktree create git@github.com:org/repo.git feature-xyz
+twt create git@github.com:org/repo.git feature-xyz
 ```
 
 This clones the repo (as a bare repo under `$TMUX_WORKTREE_DIR`), creates a
@@ -32,8 +32,8 @@ the session has one window with one pane — customize via config (below).
 Other commands:
 
 ```sh
-tmux-worktree reset               # reset panes + hard-reset branch to origin default
-tmux-worktree shared enable       # (run inside a bare repo) enable symlinked shared files
+twt reset               # reset panes + hard-reset branch to origin default
+twt shared enable       # (run inside a bare repo) enable symlinked shared files
 ```
 
 ## Configure (optional)
@@ -73,13 +73,13 @@ Enable once per bare repo:
 
 ```sh
 cd "$TMUX_WORKTREE_DIR/.repo.git"
-tmux-worktree shared enable
+twt shared enable
 ```
 
 Then drop files into `shared/`. Optionally `cd shared && git init` to version
 them in their own (separate) repo.
 
-Disable with `tmux-worktree shared disable`.
+Disable with `twt shared disable`.
 
 ## License
 

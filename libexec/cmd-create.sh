@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# Sourced by bin/tmux-worktree — do not execute directly.
+# Sourced by bin/twt — do not execute directly.
 
 cmd_create() {
   if [ $# -lt 2 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<EOF
-Usage: tmux-worktree create <url> <name>
+Usage: twt create <url> <name>
 
 Clone a bare repo (if not already present), add a worktree, and start a tmux
 session. The session layout is defined by on_session_create() in your config.

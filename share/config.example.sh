@@ -8,7 +8,7 @@
 # Default if unset: ${XDG_DATA_HOME:-$HOME/.local/share}/tmux-worktree
 TMUX_WORKTREE_DIR="$HOME/code"
 
-# Build the tmux session when `tmux-worktree create` is invoked.
+# Build the tmux session when `twt create` is invoked.
 # Arguments: $1=session name, $2=worktree path.
 #
 # Default (if unset) is a single window with a single pane.

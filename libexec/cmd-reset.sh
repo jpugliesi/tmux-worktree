@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# Sourced by bin/tmux-worktree — do not execute directly.
+# Sourced by bin/twt — do not execute directly.
 
 cmd_reset() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<EOF
-Usage: tmux-worktree reset [window]
+Usage: twt reset [window]
 
 Reset all tmux panes in the current (or given) tmux window, switch git to the branch
 matching the first window's name, and hard-reset it to origin's default branch.

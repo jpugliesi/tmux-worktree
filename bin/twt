@@ -58,7 +58,7 @@ usage() {
   if $_tw_config_loaded; then config_status="loaded"; else config_status="not found"; fi
 
   cat <<EOF
-Usage: tmux-worktree <command> [args]
+Usage: twt <command> [args]
 
 Manage tmux sessions backed by git worktrees.
 
@@ -70,8 +70,8 @@ Commands:
   help                  Show this help
 
 Example — two worktrees on the same repo, sharing one bare clone:
-  tmux-worktree create git@github.com:org/repo.git feature-1
-  tmux-worktree create git@github.com:org/repo.git bugfix-42
+  twt create git@github.com:org/repo.git feature-1
+  twt create git@github.com:org/repo.git bugfix-42
 
   Resulting tree under \$TMUX_WORKTREE_DIR:
     .repo.git/           <- bare clone (shared, created once)

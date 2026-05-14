@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by bin/tmux-worktree — do not execute directly.
+# Sourced by bin/twt — do not execute directly.
 
 cmd_shared() {
   local sub="${1:-help}"
@@ -9,7 +9,7 @@ cmd_shared() {
     disable) _tw_shared_disable "$@" ;;
     help|-h|--help|"")
       cat <<EOF
-Usage: tmux-worktree shared <subcommand>
+Usage: twt shared <subcommand>
 
 Manage the optional shared-files mechanism: files placed under a bare repo's
 shared/ directory are symlinked into each worktree on checkout. Existing
