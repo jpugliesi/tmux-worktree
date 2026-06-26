@@ -32,7 +32,8 @@ the session has one window with one pane — customize via config (below).
 Other commands:
 
 ```sh
-twt reset               # reset panes + hard-reset branch to origin default
+twt reset               # reset panes + hard-reset branch to origin default (silent)
+twt reset -v            # same, but print per-step progress and git output
 twt shared enable       # (run inside a bare repo) enable symlinked shared files
 ```
 

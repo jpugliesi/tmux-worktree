@@ -64,7 +64,7 @@ Manage tmux sessions backed by git worktrees.
 
 Commands:
   create <url> <name>   Create a git worktree from the repo url, start tmux session
-  reset  [window]       Reset tmux panes in current window and fast-forward branch
+  reset  [-v] [window]  Reset tmux panes in current window and fast-forward branch (silent; -v for output)
   shared <subcommand>   Manage shared-files mechanism (see 'shared help')
   update-self           Pull the latest version of tmux-worktree from origin
   help                  Show this help

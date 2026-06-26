@@ -2,37 +2,54 @@
 # Sourced by bin/twt — do not execute directly.
 
 cmd_reset() {
-  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    cat <<EOF
-Usage: twt reset [window]
+  local verbose=false window=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        cat <<EOF
+Usage: twt reset [-v|--verbose] [window]
 
 Reset all tmux panes in the current (or given) tmux window, switch git to the branch
 matching the first window's name, and hard-reset it to origin's default branch.
 
-Arguments:
-  window   Optional window name or index (defaults to current window)
-EOF
-    return 0
-  fi
+Runs silently on success. Warnings and errors are always shown.
 
-  local window="${1:-}"
+Arguments:
+  window           Optional window name or index (defaults to current window)
+
+Options:
+  -v, --verbose    Print per-step progress and the underlying git output
+EOF
+        return 0
+        ;;
+      -v|--verbose) verbose=true ;;
+      --) shift; window="${1:-}"; break ;;
+      -*) echo "twt reset: unknown option: $1" >&2; return 1 ;;
+      *) window="$1" ;;
+    esac
+    shift
+  done
+
+  # say: print progress only in verbose mode (':' is a no-op that ignores its args)
+  local say=:
+  $verbose && say=echo
 
   local branch
   branch=$(tmux list-windows -F '#{window_index}:#{window_name}' | sort -n | head -1 | cut -d: -f2)
-  echo "Renaming session to $branch"
+  $say "Renaming session to $branch"
   tmux rename-session "$branch"
 
   local panes current
   panes=$(tmux list-panes ${window:+-t "$window"} -F '#{pane_index}' | sort -n)
   current=$(tmux display-message -p '#{pane_index}')
-  echo "Panes: $(echo $panes | tr '\n' ' ')(running in $current)"
+  $say "Panes: $(echo $panes | tr '\n' ' ')(running in $current)"
 
   for idx in $panes; do
     if [ "$idx" = "$current" ]; then
-      echo "  skip pane $idx (running this command)"
+      $say "  skip pane $idx (running this command)"
       continue
     fi
-    echo "  respawn pane $idx"
+    $say "  respawn pane $idx"
     if [ -z "$window" ]; then
       tmux respawn-pane -k -t ".$idx"
     else
@@ -41,7 +58,7 @@ EOF
   done
 
   if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
-    echo "Warning: branch '$branch' does not exist, skipping git reset"
+    echo "Warning: branch '$branch' does not exist, skipping git reset" >&2
     return 0
   fi
 
@@ -55,8 +72,16 @@ EOF
     return 1
   fi
 
-  echo "Switching to $branch, reset --hard to origin/$default"
-  git switch "$branch"
-  git fetch origin "$default"
-  git reset --hard "origin/$default"
+  $say "Switching to $branch, reset --hard to origin/$default"
+  if $verbose; then
+    git switch "$branch"
+    git fetch origin "$default"
+    git reset --hard "origin/$default"
+  else
+    # --quiet silences git's own messages; the >/dev/null drops the
+    # post-checkout hook's stdout (e.g. the shared-files "Linked:" lines).
+    git switch --quiet "$branch" >/dev/null
+    git fetch --quiet origin "$default"
+    git reset --hard --quiet "origin/$default"
+  fi
 }
