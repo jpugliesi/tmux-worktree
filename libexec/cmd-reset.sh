@@ -78,9 +78,15 @@ EOF
     git fetch origin "$default"
     git reset --hard "origin/$default"
   else
-    # --quiet silences git's own messages; the >/dev/null drops the
-    # post-checkout hook's stdout (e.g. the shared-files "Linked:" lines).
-    git switch --quiet "$branch" >/dev/null
+    # --quiet silences git's own messages, but git forwards the post-checkout
+    # hook's stdout to its stderr — so the shared-files "Linked:" lines survive
+    # a plain redirect. Capture the switch's output and only replay it (to
+    # stderr) if the switch actually fails, so real errors are never hidden.
+    local out
+    if ! out=$(git switch --quiet "$branch" 2>&1 1>/dev/null); then
+      [ -n "$out" ] && printf '%s\n' "$out" >&2
+      return 1
+    fi
     git fetch --quiet origin "$default"
     git reset --hard --quiet "origin/$default"
   fi
