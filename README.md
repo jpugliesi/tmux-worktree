@@ -37,7 +37,7 @@ twt reset -v            # same, but print per-step progress and git output
 twt shared enable       # (run inside a bare repo) enable symlinked shared files
 ```
 
-## How I use it with AI
+## Using tmux + twt with coding agents
 
 I start tmux, then create one worktree and session per agent:
 
@@ -58,8 +58,6 @@ for:
 1. Neovim
 2. A shell
 3. A coding agent TUI
-
-It also creates a separate `deploy` window for development servers.
 
 ![Neovim, shell, and coding agent TUI](docs/images/tmux-session.png)
 
@@ -88,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/jpugliesi/tmux-worktree/main/share/
   > ~/.config/tmux-worktree/config.sh
 ```
 
-The example ships a 3-pane editor window plus a `deploy` window. Edit to taste.
+The example ships a three-pane work window. Edit to taste.
 
 Available knobs:
 
