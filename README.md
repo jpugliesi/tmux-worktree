@@ -45,13 +45,13 @@ I start tmux, then create one worktree and session per agent:
 tmux
 twt create https://github.com/jpugliesi/my-repo my-repo-0
 twt create https://github.com/jpugliesi/my-repo my-repo-1
-twt create https://github.com/jpugliesi/my-repo my-repo-2
+twt create https://github.com/jpugliesi/another-repo another-repo-0
 ```
 
-The repo is cloned once. Each command creates a branch, worktree, and tmux
-session named `my-repo-N`, then switches to it. I run one agent and task per
-session while tmux keeps everything alive. My config gives each session a
-three-pane work window and a separate `deploy` window.
+Each repository is cloned once. Each command creates a branch, worktree, and
+tmux session with the supplied name, then switches to it. I run one agent and
+task per session while tmux keeps everything alive. My config gives each
+session a three-pane work window and a separate `deploy` window.
 
 ```text
 /Users/jpugliesi/code/firetiger/.core.git/shared/.lazy.lua
