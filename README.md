@@ -32,6 +32,7 @@ the session has one window with one pane — customize via config (below).
 Other commands:
 
 ```sh
+twt start ticket-123    # create a task branch + rename the current session
 twt reset               # reset panes + hard-reset branch to origin default (silent)
 twt reset -v            # same, but print per-step progress and git output
 twt shared enable       # (run inside a bare repo) enable symlinked shared files
@@ -53,16 +54,15 @@ tmux session with the supplied name, then switches to it. I run one agent and
 task per session while tmux keeps everything alive. `--with-shared` enables
 shared project files before the first worktree is checked out.
 
-Once I pick a ticket, I use my local
-`/Users/jpugliesi/.local/bin/gcb` helper to create its branch:
+Once I pick a ticket, I create its branch and rename the current session:
 
 ```sh
-gcb home-bug
+twt start home-bug
 ```
 
-It runs `git checkout -b` and renames the current session from its stable slot
-name, such as `core-4`, to `core-4-home-bug`. It remembers the base name so
-later branch changes do not stack session names.
+This runs `git switch -c` and renames the session from its stable slot name,
+such as `core-4`, to `core-4-home-bug`. `twt` remembers the slot name so later
+branch changes do not stack session names.
 
 ![tmux sessions named by repository slot and task](docs/images/tmux-sessions.png)
 
@@ -88,8 +88,9 @@ When the task is done and its work is pushed, I reset the current workspace:
 twt reset
 ```
 
-This respawns the other panes and hard-resets tracked files to the origin
-default branch. It does not remove untracked files.
+This restores the stable branch and session name, such as `core-4`, respawns
+the other panes, and hard-resets tracked files to the origin default branch.
+It does not remove untracked files.
 
 I use [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) to save
 and restore the sessions, windows, and pane layouts across tmux server

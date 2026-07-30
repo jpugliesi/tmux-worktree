@@ -16,7 +16,7 @@ export LIBEXEC SHARE
 
 CONFIG_FILE="${TMUX_WORKTREE_CONFIG:-$HOME/.config/tmux-worktree/config.sh}"
 _tw_dir_source=default
-[ -n "${TMUX_WORKTREE_DIR:-}" ] && _tw_dir_source=env
+[ -n "${TMUX_WORKTREE_DIR:-}" ] && _tw_dir_source="env"
 
 _tw_config_loaded=false
 if [ -f "$CONFIG_FILE" ]; then
@@ -44,8 +44,12 @@ if ! $_tw_user_on_session_create; then
 fi
 $_tw_user_on_worktree_create || on_worktree_create() { :; }
 
+# shellcheck source=libexec/session.sh
+source "$LIBEXEC/session.sh"
 # shellcheck source=libexec/cmd-create.sh
 source "$LIBEXEC/cmd-create.sh"
+# shellcheck source=libexec/cmd-start.sh
+source "$LIBEXEC/cmd-start.sh"
 # shellcheck source=libexec/cmd-reset.sh
 source "$LIBEXEC/cmd-reset.sh"
 # shellcheck source=libexec/cmd-shared.sh
@@ -65,6 +69,8 @@ Manage tmux sessions backed by git worktrees.
 Commands:
   create [--with-shared] <url> <name>
                           Create a git worktree and tmux session
+  start <branch> [start-point]
+                          Create a branch and name the session for it
   reset  [-v] [window]   Reset panes and branch to the origin default
   shared <subcommand>    Manage shared files (see 'shared help')
   update-self            Pull the latest tmux-worktree from origin
@@ -100,6 +106,7 @@ cmd="${1:-help}"
 shift || true
 case "$cmd" in
 create) cmd_create "$@" ;;
+start) cmd_start "$@" ;;
 reset) cmd_reset "$@" ;;
 shared) cmd_shared "$@" ;;
 update-self) cmd_update_self "$@" ;;

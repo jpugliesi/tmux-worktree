@@ -35,6 +35,8 @@ case "${1:-}" in
     ;;
   switch-client)
     ;;
+  set-environment)
+    ;;
   *)
     echo "Unexpected tmux command: ${1:-}" >&2
     exit 1

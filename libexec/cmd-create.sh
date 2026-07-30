@@ -89,6 +89,8 @@ cmd_create() {
     fi
   fi
 
+  tmux set-environment -t "$name" TWT_BASE_SESSION "$name"
+
   if [ -z "${TMUX:-}" ]; then
     exec tmux attach -t "$name"
   else

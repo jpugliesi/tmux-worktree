@@ -1,6 +1,6 @@
 ---
 name: twt
-description: Manage isolated Git worktrees with matching tmux sessions using twt. Use when asked to create or open parallel workspaces for a Git repository, share local project files across worktrees, or reset a twt workspace, especially when running separate AI coding agents.
+description: Manage isolated Git worktrees with matching tmux sessions using twt. Use when asked to create or open parallel workspaces, start task branches, share local project files across worktrees, or reset a twt workspace, especially when running separate AI coding agents.
 ---
 
 # twt
@@ -39,6 +39,19 @@ worktree`, or `tmux new-session` commands.
 7. Report the repository URL, worktree path, branch, and tmux session for each
    workspace.
 
+## Start a task
+
+From inside a twt workspace, create the task branch and rename the current
+session:
+
+```sh
+twt start <branch> [start-point]
+```
+
+Use the exact branch name requested by the user. `twt start` preserves the
+stable workspace name, so starting another branch renames `repo-0-old-task` to
+`repo-0-new-task` rather than stacking names.
+
 ## Shared project files
 
 If the user asks to share local configuration across a new worktree, use:
@@ -56,8 +69,9 @@ existing bare repo only when no new worktree is being created.
 
 Run `twt reset` only when the user explicitly asks to reuse the current
 workspace and confirms its work is safely pushed. It kills the other pane
-processes and hard-resets tracked files to the origin default branch. It does
-not remove untracked files.
+processes, restores the stable workspace branch and session name, and
+hard-resets tracked files to the origin default branch. It does not remove
+untracked files.
 
 ## Guardrails
 
