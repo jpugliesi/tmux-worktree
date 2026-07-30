@@ -53,6 +53,19 @@ tmux session with the supplied name, then switches to it. I run one agent and
 task per session while tmux keeps everything alive. `--with-shared` enables
 shared project files before the first worktree is checked out.
 
+Once I pick a ticket, I use my local
+`/Users/jpugliesi/.local/bin/gcb` helper to create its branch:
+
+```sh
+gcb home-bug
+```
+
+It runs `git checkout -b` and renames the current session from its stable slot
+name, such as `core-4`, to `core-4-home-bug`. It remembers the base name so
+later branch changes do not stack session names.
+
+![tmux sessions named by repository slot and task](docs/images/tmux-sessions.png)
+
 My `on_session_create` hook creates three panes in each session. I use them
 for:
 
@@ -77,6 +90,10 @@ twt reset
 
 This respawns the other panes and hard-resets tracked files to the origin
 default branch. It does not remove untracked files.
+
+I use [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) to save
+and restore the sessions, windows, and pane layouts across tmux server
+restarts.
 
 ## Agent skill
 
