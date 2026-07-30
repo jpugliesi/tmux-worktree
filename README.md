@@ -50,8 +50,18 @@ twt create https://github.com/jpugliesi/another-repo another-repo-0
 
 Each repository is cloned once. Each command creates a branch, worktree, and
 tmux session with the supplied name, then switches to it. I run one agent and
-task per session while tmux keeps everything alive. My config gives each
-session a three-pane work window and a separate `deploy` window.
+task per session while tmux keeps everything alive.
+
+My `on_session_create` hook creates three panes in each session. I use them
+for:
+
+1. Neovim
+2. A shell
+3. A coding agent TUI
+
+It also creates a separate `deploy` window for development servers.
+
+![Neovim, shell, and coding agent TUI](docs/images/tmux-session.png)
 
 ```text
 /Users/jpugliesi/code/firetiger/.core.git/shared/.lazy.lua
