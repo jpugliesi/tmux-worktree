@@ -63,11 +63,12 @@ Usage: twt <command> [args]
 Manage tmux sessions backed by git worktrees.
 
 Commands:
-  create <url> <name>   Create a git worktree from the repo url, start tmux session
-  reset  [-v] [window]  Reset tmux panes in current window and fast-forward branch (silent; -v for output)
-  shared <subcommand>   Manage shared-files mechanism (see 'shared help')
-  update-self           Pull the latest version of tmux-worktree from origin
-  help                  Show this help
+  create [--with-shared] <url> <name>
+                          Create a git worktree and tmux session
+  reset  [-v] [window]   Reset panes and branch to the origin default
+  shared <subcommand>    Manage shared files (see 'shared help')
+  update-self            Pull the latest tmux-worktree from origin
+  help                   Show this help
 
 Example — two worktrees on the same repo, sharing one bare clone:
   twt create git@github.com:org/repo.git feature-1

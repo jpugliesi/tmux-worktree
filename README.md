@@ -43,14 +43,15 @@ I start tmux, then create one worktree and session per agent:
 
 ```sh
 tmux
-twt create https://github.com/jpugliesi/my-repo my-repo-0
+twt create --with-shared https://github.com/jpugliesi/my-repo my-repo-0
 twt create https://github.com/jpugliesi/my-repo my-repo-1
-twt create https://github.com/jpugliesi/another-repo another-repo-0
+twt create --with-shared https://github.com/jpugliesi/another-repo another-repo-0
 ```
 
 Each repository is cloned once. Each command creates a branch, worktree, and
 tmux session with the supplied name, then switches to it. I run one agent and
-task per session while tmux keeps everything alive.
+task per session while tmux keeps everything alive. `--with-shared` enables
+shared project files before the first worktree is checked out.
 
 My `on_session_create` hook creates three panes in each session. I use them
 for:
@@ -67,6 +68,15 @@ for:
 
 That shared file customizes LazyVim for the Firetiger project and is symlinked
 into all of its worktrees. See [Shared files](#shared-files-optional).
+
+When the task is done and its work is pushed, I reset the current workspace:
+
+```sh
+twt reset
+```
+
+This respawns the other panes and hard-resets tracked files to the origin
+default branch. It does not remove untracked files.
 
 ## Agent skill
 
@@ -109,7 +119,13 @@ Useful for:
 - Editor project config (e.g. LazyVim `.lazy.lua`)
 - `.rgignore`, `.claude/settings.local.json`, etc.
 
-Enable once per bare repo:
+Enable while creating the first worktree for a repo:
+
+```sh
+twt create --with-shared git@github.com:org/repo.git repo-0
+```
+
+Or enable it later from the bare repo:
 
 ```sh
 cd "$TMUX_WORKTREE_DIR/.repo.git"

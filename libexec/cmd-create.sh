@@ -1,13 +1,15 @@
 # shellcheck shell=bash
 # Sourced by bin/twt — do not execute directly.
 
-cmd_create() {
-  if [ $# -lt 2 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    cat <<EOF
-Usage: twt create <url> <name>
+_tw_create_usage() {
+  cat <<EOF
+Usage: twt create [--with-shared] <url> <name>
 
 Clone a bare repo (if not already present), add a worktree, and start a tmux
 session. The session layout is defined by on_session_create() in your config.
+
+Options:
+  --with-shared  Enable shared files before the worktree is checked out
 
 Arguments:
   url    Git clone URL (e.g. git@github.com:org/repo.git)
@@ -17,6 +19,37 @@ Paths:
   bare repo:  \$TMUX_WORKTREE_DIR/.<repo>.git
   worktree:   \$TMUX_WORKTREE_DIR/<name>
 EOF
+}
+
+cmd_create() {
+  local with_shared=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --with-shared)
+        with_shared=true
+        shift
+        ;;
+      -h|--help)
+        _tw_create_usage
+        return 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        echo "twt create: unknown option: $1" >&2
+        _tw_create_usage >&2
+        return 1
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [ $# -lt 2 ]; then
+    _tw_create_usage
     return 0
   fi
 
@@ -34,6 +67,10 @@ EOF
     git clone --bare "$url" "$bare"
     git -C "$bare" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
     git -C "$bare" fetch origin
+  fi
+
+  if $with_shared; then
+    _tw_shared_install "$bare"
   fi
 
   if [ ! -d "$wt" ]; then

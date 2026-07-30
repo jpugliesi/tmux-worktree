@@ -27,11 +27,12 @@ worktree`, or `tmux new-session` commands.
 5. Create each workspace:
 
    ```sh
-   twt create https://github.com/example/repo repo-0
+   twt create --with-shared https://github.com/example/repo repo-0
    twt create https://github.com/example/repo repo-1
    ```
 
-   The first command creates the shared bare clone. Every command creates or
+   Add `--with-shared` when the user wants shared project files. It installs
+   the hook before the new worktree is checked out. Every command creates or
    opens a branch, worktree, and tmux session with the supplied name.
 6. Verify each result with `tmux has-session -t <name>` and `git -C
    <worktree-path> status --short --branch`.
@@ -40,17 +41,16 @@ worktree`, or `tmux new-session` commands.
 
 ## Shared project files
 
-If the user asks to share local configuration across the new worktrees, enable
-the mechanism from the bare repo:
+If the user asks to share local configuration across a new worktree, use:
 
 ```sh
-cd "$TMUX_WORKTREE_DIR/.repo.git"
-twt shared enable
+twt create --with-shared https://github.com/example/repo repo-0
 ```
 
 Place files at matching paths under `shared/`, such as
 `shared/.lazy.lua`. The checkout hook symlinks them into every worktree without
-overwriting existing non-symlink files.
+overwriting existing non-symlink files. Use `twt shared enable` from inside an
+existing bare repo only when no new worktree is being created.
 
 ## Reset a workspace
 

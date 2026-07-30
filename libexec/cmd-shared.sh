@@ -39,6 +39,11 @@ _tw_shared_bare() {
 _tw_shared_enable() {
   local bare
   bare="$(_tw_shared_bare)" || return 1
+  _tw_shared_install "$bare"
+}
+
+_tw_shared_install() {
+  local bare="$1"
   mkdir -p "$bare/shared" "$bare/hooks"
   cp "$LIBEXEC/hooks/post-checkout.tmpl" "$bare/hooks/post-checkout"
   chmod +x "$bare/hooks/post-checkout"
