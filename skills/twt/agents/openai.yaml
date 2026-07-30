@@ -1,0 +1,4 @@
+interface:
+  display_name: "twt"
+  short_description: "Manage tmux-backed Git worktrees"
+  default_prompt: "Use $twt to create two isolated workspaces for this Git repository."

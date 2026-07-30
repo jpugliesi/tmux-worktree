@@ -37,6 +37,37 @@ twt reset -v            # same, but print per-step progress and git output
 twt shared enable       # (run inside a bare repo) enable symlinked shared files
 ```
 
+## How I use it with AI
+
+I start tmux, then create one worktree and session per agent:
+
+```sh
+tmux
+twt create https://github.com/jpugliesi/my-repo my-repo-0
+twt create https://github.com/jpugliesi/my-repo my-repo-1
+twt create https://github.com/jpugliesi/my-repo my-repo-2
+```
+
+The repo is cloned once. Each command creates a branch, worktree, and tmux
+session named `my-repo-N`, then switches to it. I run one agent and task per
+session while tmux keeps everything alive. My config gives each session a
+three-pane work window and a separate `deploy` window.
+
+```text
+/Users/jpugliesi/code/firetiger/.core.git/shared/.lazy.lua
+```
+
+That shared file customizes LazyVim for the Firetiger project and is symlinked
+into all of its worktrees. See [Shared files](#shared-files-optional).
+
+## Agent skill
+
+Install the `twt` skill for Claude Code, Codex, and other compatible agents:
+
+```sh
+npx skills add jpugliesi/tmux-worktree --skill twt
+```
+
 ## Configure (optional)
 
 Only needed if you want a custom tmux layout or a different data directory.
