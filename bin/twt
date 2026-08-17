@@ -67,7 +67,7 @@ Usage: twt <command> [args]
 Manage tmux sessions backed by git worktrees.
 
 Commands:
-  create [--with-shared] <url> <name>
+  create [--with-shared] [--shallow] [--depth <n>] [--remote name=url]... <url> <name>
                           Create a git worktree and tmux session
   start <branch> [start-point]
                           Create a branch and name the session for it

@@ -29,11 +29,19 @@ worktree`, or `tmux new-session` commands.
    ```sh
    twt create --with-shared https://github.com/example/repo repo-0
    twt create https://github.com/example/repo repo-1
+   twt create --shallow https://github.com/example/huge-repo huge-0
+   twt create --shallow \
+     --remote github=https://github.com/example/repo.git \
+     https://git.example.com/example/repo.git repo-0
    ```
 
    Add `--with-shared` when the user wants shared project files. It installs
-   the hook before the new worktree is checked out. Every command creates or
-   opens a branch, worktree, and tmux session with the supplied name.
+   the hook before the new worktree is checked out. Add `--shallow` (or
+   `--depth <n>`) for a depth-limited bare clone of large repositories; it is
+   ignored if the bare repo already exists. Add `--remote name=url` for extra
+   remotes on the bare repo (the primary URL is always `origin`). Every
+   command creates or opens a branch, worktree, and tmux session with the
+   supplied name.
 6. Verify each result with `tmux has-session -t <name>` and `git -C
    <worktree-path> status --short --branch`.
 7. Report the repository URL, worktree path, branch, and tmux session for each

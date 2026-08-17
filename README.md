@@ -23,11 +23,19 @@ No config needed — works out of the box:
 
 ```sh
 twt create git@github.com:org/repo.git feature-xyz
+twt create --shallow https://github.com/org/huge-repo.git huge-0
+twt create --shallow \
+  --remote github=https://github.com/org/repo.git \
+  https://git.example.com/org/repo.git repo-0
 ```
 
 This clones the repo (as a bare repo under `$TMUX_WORKTREE_DIR`), creates a
 worktree on a new `feature-xyz` branch, and opens a tmux session. By default
 the session has one window with one pane — customize via config (below).
+`--shallow` (or `--depth <n>`) does a depth-limited bare clone, useful for
+large repositories; it only applies when the bare repo does not already exist.
+`--remote name=url` adds extra remotes on the bare repo (repeatable); the
+primary URL is always `origin`.
 
 Other commands:
 
