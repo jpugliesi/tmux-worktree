@@ -27,6 +27,10 @@ twt create --shallow https://github.com/org/huge-repo.git huge-0
 twt create --shallow \
   --remote github=https://github.com/org/repo.git \
   https://git.example.com/org/repo.git repo-0
+
+# From repo-0, ask to create repo-1 from the same shared repository
+cd "$TMUX_WORKTREE_DIR/repo-0"
+twt create
 ```
 
 This clones the repo (as a bare repo under `$TMUX_WORKTREE_DIR`), creates a
@@ -36,6 +40,12 @@ the session has one window with one pane — customize via config (below).
 large repositories; it only applies when the bare repo does not already exist.
 `--remote name=url` adds extra remotes on the bare repo (repeatable); the
 primary URL is always `origin`.
+
+When you run `twt create` without arguments in a numbered workspace, `twt`
+selects the next free number and asks for confirmation. It uses the same bare
+repository, remotes, fetch rules, shared-file hook, and session hook. It starts
+the new workspace from the repository's default branch. It does not copy the
+current branch, uncommitted files, or live tmux pane processes.
 
 Other commands:
 

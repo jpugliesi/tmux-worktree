@@ -13,8 +13,9 @@ set -euo pipefail
 
 case "${1:-}" in
   has-session)
+    target="${3#=}"
     [ -f "$TWT_TEST_TMUX_STATE" ] &&
-      grep -Fxq "${3:-}" "$TWT_TEST_TMUX_STATE"
+      grep -Fxq "$target" "$TWT_TEST_TMUX_STATE"
     ;;
   new-session)
     shift

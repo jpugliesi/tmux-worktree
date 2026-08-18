@@ -42,6 +42,11 @@ worktree`, or `tmux new-session` commands.
    remotes on the bare repo (the primary URL is always `origin`). Every
    command creates or opens a branch, worktree, and tmux session with the
    supplied name.
+   From an existing numbered workspace, run `twt create` without arguments to
+   create the next numbered workspace for the same shared repository. Confirm
+   the prompt. This mode keeps the existing remotes and fetch rules. It starts
+   from the default branch and does not copy uncommitted files or live pane
+   processes.
 6. Verify each result with `tmux has-session -t <name>` and `git -C
    <worktree-path> status --short --branch`.
 7. Report the repository URL, worktree path, branch, and tmux session for each

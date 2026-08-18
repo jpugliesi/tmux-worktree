@@ -3,10 +3,14 @@
 
 _tw_create_usage() {
   cat <<EOF
+Usage: twt create
 Usage: twt create [--with-shared] [--shallow] [--depth <n>] [--remote <name>=<url>]... <url> <name>
 
 Clone a bare repo (if not already present), add a worktree, and start a tmux
 session. The session layout is defined by on_session_create() in your config.
+
+With no arguments, create the next numbered workspace for the current twt
+repository. This uses the shared bare repo and starts from its default branch.
 
 Options:
   --with-shared         Enable shared files before the worktree is checked out
@@ -26,6 +30,11 @@ EOF
 }
 
 cmd_create() {
+  if [ $# -eq 0 ]; then
+    _tw_create_from_current
+    return
+  fi
+
   local with_shared=false shallow=false depth=""
   local -a extra_remotes=()
   local remote_spec remote_name remote_url existing_url
@@ -119,7 +128,6 @@ cmd_create() {
   local repo="${basename%.git}"
 
   local bare="$TMUX_WORKTREE_DIR/.${repo}.git"
-  local wt="$TMUX_WORKTREE_DIR/$name"
 
   mkdir -p "$TMUX_WORKTREE_DIR"
 
@@ -174,6 +182,93 @@ cmd_create() {
     fi
   done
 
+  _tw_create_worktree_and_session "$bare" "$name" "$with_shared"
+}
+
+_tw_create_from_current() {
+  local root common base current prefix index common_name
+
+  if ! root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    echo "twt create: run this command inside a numbered twt worktree" >&2
+    return 1
+  fi
+  root="$(cd "$root" && pwd -P)"
+
+  if ! base="$(cd "$TMUX_WORKTREE_DIR" 2>/dev/null && pwd -P)"; then
+    echo "twt create: worktree directory does not exist: $TMUX_WORKTREE_DIR" >&2
+    return 1
+  fi
+  if [ "$(dirname "$root")" != "$base" ]; then
+    echo "twt create: current repository is not a direct child of $base" >&2
+    return 1
+  fi
+
+  current="${root##*/}"
+  if [[ "$current" =~ ^(.+)-([0-9]+)$ ]]; then
+    prefix="${BASH_REMATCH[1]}"
+    index="${BASH_REMATCH[2]}"
+  else
+    echo "twt create: current worktree name must end with a number: $current" >&2
+    return 1
+  fi
+
+  if ! common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ||
+    [ ! -d "$common" ]; then
+    echo "twt create: cannot find the shared bare repository" >&2
+    return 1
+  fi
+  common="$(cd "$common" && pwd -P)"
+  common_name="${common##*/}"
+  if [ "$(dirname "$common")" != "$base" ] ||
+    ! [[ "$common_name" =~ ^\..+\.git$ ]] ||
+    [ "$(git -C "$common" rev-parse --is-bare-repository 2>/dev/null)" != true ]; then
+    echo "twt create: current repository does not use a twt shared bare repository" >&2
+    return 1
+  fi
+
+  local candidate candidate_index
+  candidate_index=$((10#$index + 1))
+  candidate="${prefix}-${candidate_index}"
+  while _tw_create_slot_exists "$common" "$candidate"; do
+    candidate_index=$((candidate_index + 1))
+    candidate="${prefix}-${candidate_index}"
+  done
+
+  printf "Create the next workspace from '%s' as '%s'? [y/N] " "$current" "$candidate"
+  local reply=""
+  IFS= read -r reply || true
+  case "$reply" in
+    y | Y) ;;
+    *)
+      echo "Canceled."
+      return 0
+      ;;
+  esac
+
+  if _tw_create_slot_exists "$common" "$candidate"; then
+    echo "twt create: workspace is no longer available: $candidate" >&2
+    return 1
+  fi
+
+  _tw_create_worktree_and_session "$common" "$candidate" false
+}
+
+_tw_create_slot_exists() {
+  local bare="$1" name="$2"
+  local base wt
+  base="$(cd "$TMUX_WORKTREE_DIR" && pwd -P)"
+  wt="$base/$name"
+
+  [ -e "$wt" ] || [ -L "$wt" ] ||
+    git -C "$bare" show-ref --verify --quiet "refs/heads/$name" ||
+    git -C "$bare" worktree list --porcelain | grep -Fxq "worktree $wt" ||
+    tmux has-session -t "=$name" 2>/dev/null
+}
+
+_tw_create_worktree_and_session() {
+  local bare="$1" name="$2" with_shared="$3"
+  local wt="$TMUX_WORKTREE_DIR/$name"
+
   if $with_shared; then
     _tw_shared_install "$bare"
   fi
@@ -183,12 +278,12 @@ cmd_create() {
     on_worktree_create "$wt"
   fi
 
-  if tmux has-session -t "$name" 2>/dev/null; then
+  if tmux has-session -t "=$name" 2>/dev/null; then
     echo "Session '$name' already exists — attaching"
   else
     echo "Creating tmux session '$name'"
     on_session_create "$name" "$wt"
-    if ! tmux has-session -t "$name" 2>/dev/null; then
+    if ! tmux has-session -t "=$name" 2>/dev/null; then
       echo "Error: on_session_create did not produce a session named '$name'" >&2
       return 1
     fi
