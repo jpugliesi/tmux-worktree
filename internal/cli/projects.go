@@ -187,7 +187,7 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				return fmt.Errorf("unsupported format %q", format)
 			}
 			for _, project := range projects {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", project.ID, project.Name, project.Status); err != nil {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status); err != nil {
 					return err
 				}
 			}

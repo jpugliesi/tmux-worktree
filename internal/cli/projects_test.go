@@ -12,7 +12,65 @@ import (
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
+
+func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	project := domain.Project{
+		Version:      domain.ProjectVersion,
+		ID:           "514a26ed287e429b888000aaa288333a",
+		Name:         "everysphere-0",
+		TemplateName: "everysphere",
+		Status:       domain.ProjectActive,
+		CreatedAt:    time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC),
+	}
+	if err := store.NewProjectStore(filepath.Join(root, "state")).Save(project); err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeWithOptions(t, cli.Options{
+		ConfigDir: filepath.Join(root, "config"),
+		StateDir:  filepath.Join(root, "state"),
+		DataDir:   filepath.Join(root, "data"),
+	}, nil, "projects", "list")
+
+	want := "everysphere-0\teverysphere\tactive\n"
+	if output != want {
+		t.Fatalf("projects list output = %q, want %q", output, want)
+	}
+	if strings.Contains(output, project.ID) {
+		t.Fatalf("projects list output contains opaque Project ID: %q", output)
+	}
+
+	jsonOutput := executeWithOptions(t, cli.Options{
+		ConfigDir: filepath.Join(root, "config"),
+		StateDir:  filepath.Join(root, "state"),
+		DataDir:   filepath.Join(root, "data"),
+	}, nil, "projects", "list", "--output", "json")
+	var result struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Projects      []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Template string `json:"template"`
+			Status   string `json:"status"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal([]byte(jsonOutput), &result); err != nil {
+		t.Fatalf("decode projects list JSON: %v", err)
+	}
+	if result.SchemaVersion != 1 || len(result.Projects) != 1 {
+		t.Fatalf("projects list JSON metadata = %#v", result)
+	}
+	got := result.Projects[0]
+	if got.ID != project.ID || got.Name != project.Name || got.Template != project.TemplateName || got.Status != string(project.Status) {
+		t.Fatalf("projects list JSON Project = %#v", got)
+	}
+}
 
 func TestProjectsCreateProvisionsCheckoutAndTmuxSession(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {

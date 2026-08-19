@@ -109,6 +109,15 @@ twt2 projects current
 twt2 projects open fix-auth
 ```
 
+The text list shows the Project name, Project Template, and status, in that
+order:
+
+```text
+fix-auth	everysphere	active
+```
+
+Use `--output json` when a program needs the immutable Project ID.
+
 `twt2` saves a snapshot of the Project Template before it changes Git or
 tmux. Each setup step has a saved status. If setup fails, fix the cause and
 retry the incomplete steps:
