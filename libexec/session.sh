@@ -19,7 +19,7 @@ _tw_session_base() {
   if [ -z "$base" ]; then
     candidate=$(tmux list-windows -t "$target" -F '#{window_index}:#{window_name}' 2>/dev/null |
       sort -n | head -1 | cut -d: -f2-)
-    if git show-ref --verify --quiet "refs/heads/$candidate"; then
+    if git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; then
       base="$candidate"
     fi
   fi

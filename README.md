@@ -2,6 +2,68 @@
 
 A small tool for managing git worktrees with dedicated tmux sessions.
 
+The repository also contains `twt2`, a Go preview that uses Projects, YAML
+Project Templates, multiple repositories, and Project Agent Sessions. See the
+[twt2 preview guide](docs/twt2.md).
+The preview also includes a tested [Neovim plug-in](nvim/twt2.nvim/README.md)
+for Project-scoped Agent selection and review feedback.
+
+## Try the change-focused twt2 workflow
+
+Build the preview CLI:
+
+```sh
+go build -o ./bin/twt2 ./cmd/twt2
+```
+
+Define a reusable Project Template. This example gives each change one web
+repository, one API repository, and one tmux window for each repository:
+
+```sh
+twt2 templates create product
+twt2 templates repos add product web git@github.com:acme/web.git
+twt2 templates repos add product api git@github.com:acme/api.git
+twt2 templates repos init set product web -- ./init.sh
+```
+
+Create a Project for one change:
+
+```sh
+twt2 projects create fix-auth --template product
+```
+
+`twt2` checks out both worktrees, runs first-use setup, and opens one tmux
+session with `web` and `api` windows. The Project keeps its identity even if
+you rename the tmux session.
+
+Register a coding-agent conversation and resume it in its own safe window:
+
+```sh
+twt2 agents register \
+  --project fix-auth \
+  --provider codex \
+  --label auth-review \
+  -- codex resume CODEX_SESSION_ID
+twt2 agents list --project fix-auth
+twt2 agents resume AGENT_ID
+```
+
+Install [twt2.nvim](nvim/twt2.nvim/README.md) to select that Agent Session
+with `<leader>arp`, add review notes with `<leader>an`, and send the note batch
+with `<leader>arr`. The plug-in resolves the Project from the current buffer,
+so one Neovim process can safely work across different Projects.
+
+Inspect disk use and preview cleanup before you remove data:
+
+```sh
+twt2 storage status
+twt2 projects remove fix-auth
+twt2 projects remove fix-auth --apply
+```
+
+See the [twt2 preview guide](docs/twt2.md) for YAML, JSON, retry, and safety
+details.
+
 Each worktree lives at `$TMUX_WORKTREE_DIR/<name>` and is backed by a shared
 bare repo at `$TMUX_WORKTREE_DIR/.<repo>.git`. Each worktree gets its own tmux
 session, laid out however you want.
@@ -16,6 +78,31 @@ echo 'export PATH="$HOME/.tmux-worktree/bin:$PATH"' >> ~/.zshrc
 ```
 
 Update later with `git -C ~/.tmux-worktree pull`.
+
+### twt2 preview
+
+The Go preview needs Go 1.23 or later. Build it in the same installation:
+
+```sh
+cd ~/.tmux-worktree
+go build -o ./bin/twt2 ./cmd/twt2
+exec zsh
+twt2 --help
+```
+
+With lazy.nvim, load the included Neovim plug-in from the same checkout:
+
+```lua
+{
+  dir = vim.fn.expand("~/.tmux-worktree/nvim/twt2.nvim"),
+  config = function()
+    require("twt2").setup()
+  end,
+}
+```
+
+After an update, run the `go build` command again. The preview does not yet
+include prebuilt release files.
 
 ## Quick start
 
@@ -51,6 +138,7 @@ Other commands:
 
 ```sh
 twt start ticket-123    # create a task branch + rename the current session
+twt rename review       # rename only the current tmux session
 twt reset               # reset panes + hard-reset branch to origin default (silent)
 twt reset -v            # same, but print per-step progress and git output
 twt shared enable       # (run inside a bare repo) enable symlinked shared files
@@ -81,6 +169,16 @@ twt start home-bug
 This runs `git switch -c` and renames the session from its stable slot name,
 such as `core-4`, to `core-4-home-bug`. `twt` remembers the slot name so later
 branch changes do not stack session names.
+
+To change only the current tmux session name, run:
+
+```sh
+twt rename review
+```
+
+This does not rename the Git branch or worktree. The stable workspace name is
+kept, so a later `twt start` or `twt reset` command can replace the manual
+session name.
 
 ![tmux sessions named by repository slot and task](docs/images/tmux-sessions.png)
 

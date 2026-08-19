@@ -1,6 +1,6 @@
 ---
 name: twt
-description: Manage isolated Git worktrees with matching tmux sessions using twt. Use when asked to create or open parallel workspaces, start task branches, share local project files across worktrees, or reset a twt workspace, especially when running separate AI coding agents.
+description: Manage isolated Git worktrees with matching tmux sessions using twt. Use when asked to create or open parallel workspaces, start task branches, rename tmux sessions, share local project files across worktrees, or reset a twt workspace, especially when running separate AI coding agents.
 ---
 
 # twt
@@ -64,6 +64,18 @@ twt start <branch> [start-point]
 Use the exact branch name requested by the user. `twt start` preserves the
 stable workspace name, so starting another branch renames `repo-0-old-task` to
 `repo-0-new-task` rather than stacking names.
+
+## Rename the current session
+
+Rename only the current tmux session:
+
+```sh
+twt rename <name>
+```
+
+This does not rename the Git branch or worktree. A later `twt start` or `twt
+reset` command can replace the manual session name. Use `twt rename -- -name`
+when the requested name starts with a hyphen.
 
 ## Shared project files
 

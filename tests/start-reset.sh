@@ -54,6 +54,36 @@ run_twt() {
   TMUX="test" "$project_root/bin/twt" "$@"
 }
 
+rename_help="$(TMUX='' "$project_root/bin/twt" rename --help)"
+case "$rename_help" in
+  *"Usage: twt rename [--] <name>"*) ;;
+  *)
+    echo "rename help did not show its usage" >&2
+    exit 1
+    ;;
+esac
+
+if TMUX='' "$project_root/bin/twt" rename >/dev/null 2>"$test_root/rename-missing.stderr"; then
+  echo "rename accepted a missing name" >&2
+  exit 1
+fi
+if ! grep -Fq "Usage: twt rename [--] <name>" "$test_root/rename-missing.stderr"; then
+  echo "rename did not show usage for a missing name" >&2
+  exit 1
+fi
+if TMUX='' "$project_root/bin/twt" rename one two >/dev/null 2>"$test_root/rename-extra.stderr"; then
+  echo "rename accepted extra arguments" >&2
+  exit 1
+fi
+if TMUX='' "$project_root/bin/twt" rename outside >/dev/null 2>"$test_root/rename-outside.stderr"; then
+  echo "rename ran outside tmux" >&2
+  exit 1
+fi
+if ! grep -Fq "must be run inside tmux" "$test_root/rename-outside.stderr"; then
+  echo "rename did not explain that tmux is required" >&2
+  exit 1
+fi
+
 run_in_session() {
   local session="$1" label="$2"
   shift 2
@@ -92,6 +122,41 @@ run_in_session() {
   fi
 }
 
+tmux_test new-session -d -s rename-empty
+TWT_EXPECT_STATUS=1 run_in_session rename-empty rename-empty rename ""
+
+tmux_test new-session -d -s rename-leading
+run_in_session rename-leading rename-leading rename -- -work
+tmux_test has-session -t "=-work"
+run_in_session -work rename-same rename -- -work
+tmux_test has-session -t "=-work"
+
+tmux_test new-session -d -s rename-without-base -c "$test_root"
+run_in_session rename-without-base rename-without-base rename renamed-with-base
+if [ "$(tmux_test show-environment -t renamed-with-base TWT_BASE_SESSION)" != "TWT_BASE_SESSION=rename-without-base" ]; then
+  echo "rename did not save the old stable session name" >&2
+  exit 1
+fi
+if [ -s "$test_root/rename-without-base.stderr" ]; then
+  cat "$test_root/rename-without-base.stderr" >&2
+  echo "rename printed an unrelated error outside Git" >&2
+  exit 1
+fi
+
+tmux_test new-session -d -s rename-option
+TWT_EXPECT_STATUS=1 run_in_session rename-option rename-option rename -option-name
+tmux_test has-session -t "=rename-option"
+
+tmux_test new-session -d -s rename-source
+tmux_test new-session -d -s rename-target
+TWT_EXPECT_STATUS=1 run_in_session rename-source rename-collision rename rename-target
+tmux_test has-session -t "=rename-source"
+tmux_test has-session -t "=rename-target"
+if ! grep -Fq "twt rename: duplicate session: rename-target" "$test_root/rename-collision.stderr"; then
+  echo "rename collision did not report a clear error" >&2
+  exit 1
+fi
+
 run_twt create "$test_root/source" core-4 >/dev/null
 
 if [ "$(tmux_test show-environment -t core-4 TWT_BASE_SESSION)" != "TWT_BASE_SESSION=core-4" ]; then
@@ -99,7 +164,19 @@ if [ "$(tmux_test show-environment -t core-4 TWT_BASE_SESSION)" != "TWT_BASE_SES
   exit 1
 fi
 
-run_in_session core-4 start-home-bug start home-bug "$initial_commit"
+run_in_session core-4 rename-manual rename manual-name
+
+if tmux_test has-session -t "=core-4" 2>/dev/null; then
+  echo "rename kept the old session name" >&2
+  exit 1
+fi
+tmux_test has-session -t "=manual-name"
+if [ "$(tmux_test show-environment -t manual-name TWT_BASE_SESSION)" != "TWT_BASE_SESSION=core-4" ]; then
+  echo "rename changed the stable session name" >&2
+  exit 1
+fi
+
+run_in_session manual-name start-home-bug start home-bug "$initial_commit"
 
 if [ "$(git -C "$TMUX_WORKTREE_DIR/core-4" branch --show-current)" != "home-bug" ]; then
   echo "start did not create and switch to the requested branch" >&2

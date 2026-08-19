@@ -50,6 +50,8 @@ source "$LIBEXEC/session.sh"
 source "$LIBEXEC/cmd-create.sh"
 # shellcheck source=libexec/cmd-start.sh
 source "$LIBEXEC/cmd-start.sh"
+# shellcheck source=libexec/cmd-rename.sh
+source "$LIBEXEC/cmd-rename.sh"
 # shellcheck source=libexec/cmd-reset.sh
 source "$LIBEXEC/cmd-reset.sh"
 # shellcheck source=libexec/cmd-shared.sh
@@ -72,6 +74,7 @@ Commands:
                           Create a git worktree and tmux session
   start <branch> [start-point]
                           Create a branch and name the session for it
+  rename <name>           Rename the current tmux session
   reset  [-v] [window]   Reset panes and branch to the origin default
   shared <subcommand>    Manage shared files (see 'shared help')
   update-self            Pull the latest tmux-worktree from origin
@@ -108,6 +111,7 @@ shift || true
 case "$cmd" in
 create) cmd_create "$@" ;;
 start) cmd_start "$@" ;;
+rename) cmd_rename "$@" ;;
 reset) cmd_reset "$@" ;;
 shared) cmd_shared "$@" ;;
 update-self) cmd_update_self "$@" ;;

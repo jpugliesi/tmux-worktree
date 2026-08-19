@@ -1,0 +1,39 @@
+# tmux-worktree
+
+tmux-worktree creates and restores task-focused development environments that
+combine Git repositories, tmux, and coding agents.
+
+## Language
+
+**Project Template**:
+A reusable declaration of the repositories and initialization that a new
+Project needs.
+_Avoid_: Workspace template, change template
+
+**Project**:
+One unit of work created from a snapshot of a Project Template. A Project owns
+its checkout leases, tmux session, and agent sessions.
+_Avoid_: Change, task workspace
+
+**Repository Specification**:
+The clone source, remotes, history depth, and initialization declared for one
+repository in a Project Template.
+_Avoid_: Clone command
+
+**Repository Cache**:
+Shared Git object data for one clone source. Multiple checkout leases can use
+one Repository Cache.
+_Avoid_: Project repository, worktree
+
+**Checkout Lease**:
+A Git worktree assigned to one Project for one repository.
+_Avoid_: Workspace, repository clone
+
+**Agent Session**:
+A resumable coding-agent conversation associated with one Project and,
+optionally, one checkout lease.
+_Avoid_: Agent process, tmux pane
+
+**Initialization**:
+A declared setup action that prepares a new checkout lease or Project for use.
+_Avoid_: Bootstrap magic, implicit setup

@@ -1,0 +1,121 @@
+package domain
+
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+const TemplateVersion = 1
+
+var templateResourceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+type Template struct {
+	Version      int              `yaml:"version" json:"version"`
+	Name         string           `yaml:"name" json:"name"`
+	Repositories []RepositorySpec `yaml:"repositories" json:"repositories"`
+	Initialize   *InitializeSpec  `yaml:"initialize,omitempty" json:"initialize,omitempty"`
+}
+
+type RepositorySpec struct {
+	Name          string            `yaml:"name" json:"name"`
+	Clone         CloneSpec         `yaml:"clone" json:"clone"`
+	Remotes       map[string]string `yaml:"remotes,omitempty" json:"remotes,omitempty"`
+	DefaultBranch string            `yaml:"default_branch,omitempty" json:"defaultBranch,omitempty"`
+	WindowName    string            `yaml:"window_name,omitempty" json:"windowName,omitempty"`
+	Initialize    *InitializeSpec   `yaml:"initialize,omitempty" json:"initialize,omitempty"`
+}
+
+type CloneSpec struct {
+	URL   string `yaml:"url" json:"url"`
+	Depth int    `yaml:"depth,omitempty" json:"depth,omitempty"`
+}
+
+type InitializeSpec struct {
+	Command          []string `yaml:"command" json:"command"`
+	WorkingDirectory string   `yaml:"working_directory,omitempty" json:"workingDirectory,omitempty"`
+}
+
+func NewTemplate(name string) Template {
+	return Template{
+		Version:      TemplateVersion,
+		Name:         name,
+		Repositories: []RepositorySpec{},
+	}
+}
+
+func (t Template) Validate() error {
+	if t.Version != TemplateVersion {
+		return fmt.Errorf("unsupported template version %d: expected %d", t.Version, TemplateVersion)
+	}
+	seen := make(map[string]struct{}, len(t.Repositories))
+	environmentNames := make(map[string]string, len(t.Repositories))
+	for _, repository := range t.Repositories {
+		if !templateResourceName.MatchString(repository.Name) || repository.Name == "." || repository.Name == ".." {
+			return fmt.Errorf("repository name %q is invalid", repository.Name)
+		}
+		if _, exists := seen[repository.Name]; exists {
+			return fmt.Errorf("repository %q is declared more than once", repository.Name)
+		}
+		seen[repository.Name] = struct{}{}
+		environmentName := normalizeEnvironmentName(repository.Name)
+		if earlier, exists := environmentNames[environmentName]; exists {
+			return fmt.Errorf("repository names %q and %q use the same initialization environment name", earlier, repository.Name)
+		}
+		environmentNames[environmentName] = repository.Name
+		if strings.TrimSpace(repository.Clone.URL) == "" {
+			return fmt.Errorf("repository %q has no clone URL", repository.Name)
+		}
+		if repository.Clone.Depth < 0 {
+			return fmt.Errorf("repository %q has a negative clone depth", repository.Name)
+		}
+		if _, exists := repository.Remotes["origin"]; exists {
+			return fmt.Errorf("repository %q cannot declare origin as an extra remote", repository.Name)
+		}
+		for name, url := range repository.Remotes {
+			if !templateResourceName.MatchString(name) || name == "." || name == ".." {
+				return fmt.Errorf("repository %q has invalid remote name %q", repository.Name, name)
+			}
+			if strings.TrimSpace(url) == "" {
+				return fmt.Errorf("repository %q has no URL for remote %q", repository.Name, name)
+			}
+		}
+		if repository.WindowName != "" && (!templateResourceName.MatchString(repository.WindowName) || repository.WindowName == "." || repository.WindowName == "..") {
+			return fmt.Errorf("repository %q has invalid window name %q", repository.Name, repository.WindowName)
+		}
+		if err := validateInitialize(repository.Initialize, false); err != nil {
+			return fmt.Errorf("repository %q initialization: %w", repository.Name, err)
+		}
+	}
+	if err := validateInitialize(t.Initialize, true); err != nil {
+		return fmt.Errorf("template initialization: %w", err)
+	}
+	return nil
+}
+
+func normalizeEnvironmentName(name string) string {
+	return strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(name))
+}
+
+func validateInitialize(initialize *InitializeSpec, requireWorkingDirectory bool) error {
+	if initialize == nil {
+		return nil
+	}
+	if len(initialize.Command) == 0 {
+		return fmt.Errorf("command must not be empty")
+	}
+	if strings.TrimSpace(initialize.Command[0]) == "" {
+		return fmt.Errorf("command must not be empty")
+	}
+	if requireWorkingDirectory && strings.TrimSpace(initialize.WorkingDirectory) == "" {
+		return fmt.Errorf("working_directory must be set")
+	}
+	if requireWorkingDirectory {
+		clean := filepath.Clean(initialize.WorkingDirectory)
+		if filepath.IsAbs(initialize.WorkingDirectory) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("working_directory must stay inside the Project root")
+		}
+	}
+	return nil
+}
