@@ -2,7 +2,7 @@
 
 The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 21. The first twt2 implementation
-scored 4/21. The agent-facing pass scored 12/21. This branch scores **14/21**,
+scored 4/21. The agent-facing pass scored 12/21. This branch scores **13/21**,
 which stays in the **Agent-ready** range.
 
 | Axis | First | Previous | Now | Current support |
@@ -60,7 +60,7 @@ posture line now exists in the preview guide, but the guarantees are not
 listed per command, so the score stays at 2.
 
 **Safety rails: 2.** Every mutation accepts `--dry-run`, including `apply`,
-`finish`, `templates edit`, and `templates remove`. Project removal is a plan
+`done`, `templates edit`, and `templates remove`. Project removal is a plan
 by default, and each refusal is a typed Removal Blocker with a stable code.
 The axis needs response sanitization for a 3. twt2 returns provider transcript
 text without any sanitization, so a prompt-injection string in an Agent
