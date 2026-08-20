@@ -93,7 +93,7 @@ func (e PreparedEnvironment) Validate() error {
 	if e.CreatedAt.IsZero() || e.UpdatedAt.IsZero() {
 		return fmt.Errorf("Prepared Environment %q has incomplete timestamps", e.ID)
 	}
-	// ReadyAt is optional. Records that twt2 wrote before this field exists do
+	// ReadyAt is optional. Records that twt wrote before this field exists do
 	// not have it.
 	if e.ReadyAt != nil && e.ReadyAt.IsZero() {
 		return fmt.Errorf("Prepared Environment %q has an empty ready time", e.ID)

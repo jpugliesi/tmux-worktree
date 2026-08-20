@@ -186,7 +186,7 @@ func (s *Service) StartDeclared(project domain.Project, session domain.AgentSess
 }
 
 // ValidateLabel checks that the display label is free inside the Project. An
-// empty label always passes, because twt2 makes a unique default label.
+// empty label always passes, because twt makes a unique default label.
 func (s *Service) ValidateLabel(projectID, label string) error {
 	if strings.TrimSpace(label) == "" {
 		return nil
@@ -234,14 +234,14 @@ func inferRegistration(provider, providerSessionID string, resumeCommand []strin
 	if provider == "" {
 		if len(resumeCommand) == 0 {
 			return "", "", clierr.WithHint(
-				clierr.New(clierr.InvalidUsage, "twt2 cannot infer the provider"),
+				clierr.New(clierr.InvalidUsage, "twt cannot infer the provider"),
 				"Set --provider PROVIDER, or give a resume command after --.",
 			)
 		}
 		provider = inferProvider(resumeCommand)
 		if provider == "" {
 			return "", "", clierr.WithHint(
-				clierr.New(clierr.InvalidUsage, "twt2 cannot infer the provider from the resume command %q", resumeCommand[0]),
+				clierr.New(clierr.InvalidUsage, "twt cannot infer the provider from the resume command %q", resumeCommand[0]),
 				"Set --provider PROVIDER.",
 			)
 		}
@@ -292,7 +292,7 @@ func projectNotActiveError(project domain.Project) error {
 	if project.Status == domain.ProjectArchived {
 		return clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "Project %q is archived", project.Name),
-			"Run 'twt2 projects open %s' to open it.", project.Name,
+			"Run 'twt projects open %s' to open it.", project.Name,
 		)
 	}
 	return clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete", project.Name)

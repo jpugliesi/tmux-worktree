@@ -1,4 +1,4 @@
-// Package clierr defines the stable error taxonomy for twt2. Every
+// Package clierr defines the stable error taxonomy for twt. Every
 // user-facing failure carries a Code so agents can branch on the JSON
 // error output and on the process exit code.
 package clierr
@@ -77,7 +77,7 @@ func HintOf(err error) string {
 	return ""
 }
 
-// ExitCode maps an error to the twt2 process exit code:
+// ExitCode maps an error to the twt process exit code:
 // 0 success, 1 internal, 2 invalid usage, 3 failed precondition.
 func ExitCode(err error) int {
 	if err == nil {

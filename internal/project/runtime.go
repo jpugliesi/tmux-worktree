@@ -88,8 +88,8 @@ func (s *Service) writeOwnershipMarker(p domain.Project) error {
 			return fmt.Errorf("Project root %q already exists without the matching ownership marker", p.Root)
 		}
 	}
-	marker := map[string]string{"owner": "twt2", "projectId": p.ID}
-	return writeJSON(filepath.Join(p.Root, ".twt2-owned.json"), marker, 0o600)
+	marker := map[string]string{"owner": "twt", "projectId": p.ID}
+	return writeJSON(filepath.Join(p.Root, ".twt-owned.json"), marker, 0o600)
 }
 
 func newStep(id string, kind domain.StepKind, repository string) domain.SetupStep {
@@ -106,13 +106,13 @@ func newID() (string, error) {
 
 func projectEnvironment(p domain.Project) []string {
 	environment := []string{
-		"TWT2_PROJECT_ID=" + p.ID,
-		"TWT2_PROJECT_NAME=" + p.Name,
-		"TWT2_PROJECT_ROOT=" + p.Root,
+		"TWT_PROJECT_ID=" + p.ID,
+		"TWT_PROJECT_NAME=" + p.Name,
+		"TWT_PROJECT_ROOT=" + p.Root,
 	}
 	for _, repository := range p.Repositories {
 		key := strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(repository.Name))
-		environment = append(environment, "TWT2_REPOSITORY_"+key+"="+repository.Path)
+		environment = append(environment, "TWT_REPOSITORY_"+key+"="+repository.Path)
 	}
 	return environment
 }
@@ -146,18 +146,18 @@ func writeJSON(path string, value any, mode os.FileMode) error {
 	return store.WriteFileAtomic(path, data, mode, "ownership marker")
 }
 
-// ValidateProjectMarker checks that root carries the twt2 ownership marker of
+// ValidateProjectMarker checks that root carries the twt ownership marker of
 // the Project with expectedProjectID.
 func ValidateProjectMarker(root, expectedProjectID string) error {
-	data, err := os.ReadFile(filepath.Join(root, ".twt2-owned.json"))
+	data, err := os.ReadFile(filepath.Join(root, ".twt-owned.json"))
 	if err != nil {
-		return clierr.New(clierr.UnsafeState, "Project root %q has no twt2 ownership marker", root)
+		return clierr.New(clierr.UnsafeState, "Project root %q has no twt ownership marker", root)
 	}
 	var marker struct {
 		Owner     string `json:"owner"`
 		ProjectID string `json:"projectId"`
 	}
-	if err := json.Unmarshal(data, &marker); err != nil || marker.Owner != "twt2" || marker.ProjectID != expectedProjectID {
+	if err := json.Unmarshal(data, &marker); err != nil || marker.Owner != "twt" || marker.ProjectID != expectedProjectID {
 		return clierr.New(clierr.UnsafeState, "Project root %q has a conflicting ownership marker", root)
 	}
 	return nil

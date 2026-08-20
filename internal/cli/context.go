@@ -21,11 +21,11 @@ func newContextCommand(options Options) *cobra.Command {
 	var directory string
 	command := &cobra.Command{
 		Use:   "context",
-		Short: "Show the current twt2 context",
+		Short: "Show the current twt context",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			lookupDirectory := directory
-			projectID := os.Getenv("TWT2_PROJECT_ID")
+			projectID := os.Getenv("TWT_PROJECT_ID")
 			tmuxPane := os.Getenv("TMUX_PANE")
 			if command.Flags().Changed("directory") {
 				projectID = ""

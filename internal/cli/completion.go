@@ -12,14 +12,14 @@ import (
 )
 
 // completionFunc has the signature of a cobra argument or flag completion
-// function. Every twt2 completion reads the stores and returns no value when
+// function. Every twt completion reads the stores and returns no value when
 // a read fails.
 type completionFunc func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective)
 
-// noFileCompletion stops the shell from adding file names to twt2 names.
+// noFileCompletion stops the shell from adding file names to twt names.
 const noFileCompletion = cobra.ShellCompDirectiveNoFileComp
 
-// agentProviderNames are the Agent Session provider values that twt2
+// agentProviderNames are the Agent Session provider values that twt
 // accepts for --provider and in the request schema.
 var agentProviderNames = []string{"codex", "claude", "cursor", "command"}
 

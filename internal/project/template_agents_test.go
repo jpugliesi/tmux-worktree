@@ -32,7 +32,7 @@ func TestTemplateAgentStepWithoutALiveTmuxSession(t *testing.T) {
 	service := NewService(Options{
 		StateDir:   stateDir,
 		DataDir:    t.TempDir(),
-		TmuxSocket: fmt.Sprintf("twt2-agent-step-test-%d", time.Now().UnixNano()),
+		TmuxSocket: fmt.Sprintf("twt-agent-step-test-%d", time.Now().UnixNano()),
 	})
 
 	if err := service.ensureTemplateAgent(project, "review"); err != nil {
@@ -91,7 +91,7 @@ func TestCreateStartsTheDeclaredAgentSessions(t *testing.T) {
 		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
 		Agents:       []domain.TemplateAgent{{Label: "review", Provider: "command", Start: []string{"sleep", "60"}}},
 	}
-	socket := fmt.Sprintf("twt2-agent-create-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-agent-create-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
 

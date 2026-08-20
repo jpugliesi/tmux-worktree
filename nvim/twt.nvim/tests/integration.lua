@@ -1,7 +1,7 @@
 local plugin = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 vim.opt.runtimepath:prepend(plugin)
 
-local binary = assert(vim.env.TWT2_TEST_BINARY, "TWT2_TEST_BINARY is required")
+local binary = assert(vim.env.TWT_TEST_BINARY, "TWT_TEST_BINARY is required")
 local root = vim.fn.tempname()
 local state = root .. "/state"
 local data = root .. "/data"
@@ -14,11 +14,11 @@ for _, directory in ipairs({ state .. "/projects", state .. "/agents", data, con
 end
 
 vim.env.HOME = home
-vim.env.TWT2_STATE_DIR = state
-vim.env.TWT2_DATA_DIR = data
-vim.env.TWT2_CONFIG_DIR = config
-local tmux_socket = "twt2-nvim-test-" .. tostring(vim.fn.getpid())
-vim.env.TWT2_TMUX_SOCKET = tmux_socket
+vim.env.TWT_STATE_DIR = state
+vim.env.TWT_DATA_DIR = data
+vim.env.TWT_CONFIG_DIR = config
+local tmux_socket = "twt-nvim-test-" .. tostring(vim.fn.getpid())
+vim.env.TWT_TMUX_SOCKET = tmux_socket
 
 local function tmux(arguments)
   local command = { "tmux", "-L", tmux_socket, "-f", "/dev/null" }
@@ -30,8 +30,8 @@ end
 
 local function start_agent_pane(project_id, session_name, agent_id)
   local pane = tmux({ "new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session_name, "--", "cat" })
-  tmux({ "set-option", "-t", session_name, "@twt2_project_id", project_id })
-  tmux({ "set-option", "-p", "-t", pane, "@twt2_agent_id", agent_id })
+  tmux({ "set-option", "-t", session_name, "@twt_project_id", project_id })
+  tmux({ "set-option", "-p", "-t", pane, "@twt_agent_id", agent_id })
   local process = vim.split(tmux({ "display-message", "-p", "-t", pane, "#{pane_current_command}\t#{pane_start_command}" }), "\t", { plain = true })
   assert(#process == 2)
   return pane, process[1], process[2]
@@ -100,7 +100,7 @@ make_transcript("session-one", repository_one, "Project one transcript")
 make_transcript("session-two", repository_two, "Project two transcript")
 
 local directory = repository_one
-require("twt2").setup({
+require("twt").setup({
   command = binary,
   default_keymaps = false,
   directory = function() return directory end,
@@ -110,7 +110,7 @@ require("twt2").setup({
 local function pick(expected_agent)
   local finished = false
   local result_error
-  require("twt2").agents.pick(function(err, result)
+  require("twt").agents.pick(function(err, result)
     result_error = err
     if not err then assert(result.agent.id == expected_agent) end
     finished = true
@@ -135,7 +135,7 @@ local function send_feedback(project_directory, text)
   directory = project_directory
   local finished = false
   local result_error
-  require("twt2").agents.send(text, function(err)
+  require("twt").agents.send(text, function(err)
     result_error = err
     finished = true
   end)
@@ -151,4 +151,4 @@ assert(tmux({ "capture-pane", "-p", "-t", pane_two }):find("Feedback for Project
 
 tmux({ "kill-server" })
 
-print("twt2.nvim two-Project integration: ok")
+print("twt.nvim two-Project integration: ok")

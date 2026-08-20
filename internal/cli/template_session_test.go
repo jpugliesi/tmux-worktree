@@ -13,7 +13,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-// The session command of a Project Template lays out the tmux session. twt2
+// The session command of a Project Template lays out the tmux session. twt
 // runs it each time it creates the session, and never against a live session.
 func TestProjectsCreateRunsTheTemplateSessionCommand(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
@@ -36,16 +36,16 @@ func TestProjectsCreateRunsTheTemplateSessionCommand(t *testing.T) {
 	script := `#!/bin/sh
 set -e
 call_tmux() {
-  if [ -n "$TWT2_TMUX_SOCKET" ]; then
-    tmux -L "$TWT2_TMUX_SOCKET" -f /dev/null "$@"
+  if [ -n "$TWT_TMUX_SOCKET" ]; then
+    tmux -L "$TWT_TMUX_SOCKET" -f /dev/null "$@"
   else
     tmux "$@"
   fi
 }
-test -n "$TWT2_PROJECT_ID"
-test -d "$TWT2_REPOSITORY_APP"
-call_tmux split-window -d -h -l 34% -t "$TWT2_TMUX_WINDOW_APP" -c "$TWT2_REPOSITORY_APP"
-call_tmux split-window -d -v -l 25% -t "$TWT2_TMUX_WINDOW_APP" -c "$TWT2_REPOSITORY_APP"
+test -n "$TWT_PROJECT_ID"
+test -d "$TWT_REPOSITORY_APP"
+call_tmux split-window -d -h -l 34% -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
+call_tmux split-window -d -v -l 25% -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
 `
 	if err := os.WriteFile(layout, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ session:
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"),
@@ -77,8 +77,8 @@ session:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.TmuxSession != "twt2-layout-me" {
-		t.Fatalf("Project tmux session = %q, want %q", project.TmuxSession, "twt2-layout-me")
+	if project.TmuxSession != "twt-layout-me" {
+		t.Fatalf("Project tmux session = %q, want %q", project.TmuxSession, "twt-layout-me")
 	}
 	if panes := paneCount(t, socket, project.TmuxSession, "app"); panes != 3 {
 		t.Fatalf("panes in the repository window after create = %d, want 3", panes)
@@ -94,7 +94,7 @@ session:
 	// Open makes the tmux session again, so the session command runs again.
 	t.Setenv("TMUX_PANE", "")
 	executeWithOptions(t, options, nil, "projects", "archive", project.ID)
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-layout-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-layout-me").Run(); err == nil {
 		t.Fatal("archive kept the Project tmux session")
 	}
 	executeWithOptions(t, options, nil, "projects", "open", project.ID, "--no-attach")
@@ -140,7 +140,7 @@ session:
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"),

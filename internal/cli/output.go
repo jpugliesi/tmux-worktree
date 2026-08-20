@@ -179,7 +179,7 @@ func WriteError(command *cobra.Command, writer io.Writer, err error) error {
 		helpCommand = usage.helpCommand
 	}
 	if !WantsJSON(command) {
-		text := fmt.Sprintf("twt2: %v\n", err)
+		text := fmt.Sprintf("twt: %v\n", err)
 		if hint != "" {
 			text += hint + "\n"
 		}

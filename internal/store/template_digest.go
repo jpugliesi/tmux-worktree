@@ -38,7 +38,7 @@ func Digests(template domain.Template) (DigestSet, error) {
 }
 
 // TemplateStatus describes one current Project Template. Unreadable marks a
-// Project Template that twt2 cannot load or digest.
+// Project Template that twt cannot load or digest.
 type TemplateStatus struct {
 	Digests    DigestSet
 	Unreadable bool
@@ -53,7 +53,7 @@ type TemplateDisposition int
 const (
 	// TemplateCurrent: the digest matches the current Project Template.
 	TemplateCurrent TemplateDisposition = iota
-	// TemplateKeep: twt2 cannot read the Project Template, so it cannot know
+	// TemplateKeep: twt cannot read the Project Template, so it cannot know
 	// if the digest is obsolete. Keep the Prepared Environment.
 	TemplateKeep
 	// TemplateObsolete: the Project Template no longer exists, or the digest
@@ -79,7 +79,7 @@ func (c TemplateCatalog) Disposition(templateName, digest string) TemplateDispos
 
 // LoadTemplateCatalog reads each Project Template and returns its digests.
 // The second return value holds one warning for each Project Template that
-// twt2 cannot load; the catalog marks those entries as Unreadable.
+// twt cannot load; the catalog marks those entries as Unreadable.
 func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
 	templates := NewTemplateStore(configDir)
 	names, err := templates.List()
@@ -96,7 +96,7 @@ func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
 		}
 		if err != nil {
 			catalog[name] = TemplateStatus{Unreadable: true}
-			warnings = append(warnings, fmt.Sprintf("Project Template %q is not valid. twt2 kept its Prepared Environments.", name))
+			warnings = append(warnings, fmt.Sprintf("Project Template %q is not valid. twt kept its Prepared Environments.", name))
 			continue
 		}
 		catalog[name] = TemplateStatus{Digests: digests}
@@ -160,7 +160,7 @@ func EnvironmentDigest(template domain.Template) (string, error) {
 }
 
 // LegacyTemplateDigest identifies one exact Project Template and preparation
-// format. Installations that twt2 prepared before the digest split use it.
+// format. Installations that twt prepared before the digest split use it.
 func LegacyTemplateDigest(template domain.Template) (string, error) {
 	payload := struct {
 		FormatVersion int             `json:"formatVersion"`

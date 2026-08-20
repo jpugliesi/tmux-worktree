@@ -216,7 +216,7 @@ func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 				}
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Project Templates exist. Run 'twt2 templates create NAME'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Project Templates exist. Run 'twt templates create NAME'.")
 				return err
 			}
 			return nil
@@ -332,7 +332,7 @@ func newTemplatesEditCommand(templateStore store.TemplateStore, options Options)
 					}
 					if _, err := templateStore.Load(args[0]); err != nil {
 						return "", "", clierr.WithHint(clierr.Wrap(clierr.UnsafeState, err),
-							"Fix the file or run 'twt2 templates validate %s'.", args[0])
+							"Fix the file or run 'twt templates validate %s'.", args[0])
 					}
 					return "", args[0], nil
 				},
@@ -404,7 +404,7 @@ func checkTemplateIsUnused(options Options, name string) error {
 	}
 	return clierr.WithHint(
 		clierr.New(clierr.PreconditionFailed, "Project Template %q is used by %d Projects: %s", name, len(users), strings.Join(users, ", ")),
-		"Remove these Projects first with 'twt2 projects remove PROJECT --apply'.")
+		"Remove these Projects first with 'twt projects remove PROJECT --apply'.")
 }
 
 func newTemplateRepositoriesCommand(options Options, templateStore store.TemplateStore) *cobra.Command {

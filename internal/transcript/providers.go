@@ -8,14 +8,14 @@ import (
 
 // providerDescriptor keeps the knowledge about one provider in one place:
 // where the provider stores its transcript files, how a session starts
-// again, how twt2 reads one linked transcript, and how twt2 discovers the
+// again, how twt reads one linked transcript, and how twt discovers the
 // sessions of a Project.
 type providerDescriptor struct {
 	root          func(s *Service) string
 	resumeCommand func(sessionID string) []string
 	read          func(s *Service, sessionID string, project domain.Project) (Transcript, error)
 	// discover reads the session ID and the repository name of one provider
-	// file. A file that twt2 cannot verify against the Project returns ok
+	// file. A file that twt cannot verify against the Project returns ok
 	// false.
 	discover func(path string, lines []map[string]any, project domain.Project) (sessionID, repositoryName string, ok bool)
 }

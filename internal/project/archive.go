@@ -133,7 +133,7 @@ func (s *Service) requireOutsideOwnedSessions(projectName, action, currentPane s
 }
 
 func (s *Service) ownedSessions(projectID string) ([]string, error) {
-	rows, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", "#{session_id}\t#{@twt2_project_id}")...)
+	rows, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", "#{session_id}\t#{@twt_project_id}")...)
 	if err != nil {
 		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "no sessions") || strings.Contains(err.Error(), "error connecting to") {
 			return []string{}, nil

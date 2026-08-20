@@ -26,7 +26,7 @@ func (c Client) PaneBelongsToProject(pane, projectID string) bool {
 	if err != nil {
 		return false
 	}
-	owner, err := c.output(nil, "show-options", "-t", sessionID, "-v", "@twt2_project_id")
+	owner, err := c.output(nil, "show-options", "-t", sessionID, "-v", "@twt_project_id")
 	return err == nil && owner == projectID
 }
 
@@ -45,7 +45,7 @@ func (c Client) PaneProcess(pane, projectID string) (string, string, error) {
 }
 
 // paneState reads the dead flag, the current command, and the start command
-// of one pane in one tmux call. A pane state that twt2 cannot parse counts as
+// of one pane in one tmux call. A pane state that twt cannot parse counts as
 // dead.
 func (c Client) paneState(pane string) (dead bool, current, start string, err error) {
 	value, err := c.output(nil, "display-message", "-p", "-t", pane, "#{pane_dead}\t#{pane_current_command}\t#{pane_start_command}")
@@ -63,11 +63,11 @@ func (c Client) ClaimAgentPane(pane, projectID, agentID string) error {
 	if !c.PaneBelongsToProject(pane, projectID) {
 		return fmt.Errorf("the pane is not owned by this Project")
 	}
-	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt2_agent_id")
+	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
 	if err == nil && owner != "" && owner != agentID {
 		return fmt.Errorf("the pane is already owned by Agent Session %q", owner)
 	}
-	if _, err := c.output(nil, "set-option", "-p", "-t", pane, "@twt2_agent_id", agentID); err != nil {
+	if _, err := c.output(nil, "set-option", "-p", "-t", pane, "@twt_agent_id", agentID); err != nil {
 		return fmt.Errorf("mark Agent Session pane: %w", err)
 	}
 	return nil
@@ -75,7 +75,7 @@ func (c Client) ClaimAgentPane(pane, projectID, agentID string) error {
 
 // PaneCheck is the result of one Agent Session pane predicate. An advisory
 // check does not change liveness. The current command of a pane changes when
-// the Agent starts a pager or an editor, so twt2 shows it but does not use it.
+// the Agent starts a pager or an editor, so twt shows it but does not use it.
 type PaneCheck struct {
 	Name     string
 	OK       bool
@@ -88,7 +88,7 @@ func (c Client) ExplainPane(pane, projectID, agentID, paneCommand, paneStart str
 	projectPane := pane != "" && c.PaneBelongsToProject(pane, projectID)
 	owned := false
 	if pane != "" && agentID != "" {
-		owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt2_agent_id")
+		owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
 		owned = err == nil && owner == agentID
 	}
 	dead, current, start := true, "", ""
@@ -154,7 +154,7 @@ func (c Client) Focus(pane, projectID, agentID, paneCommand, paneStart string) e
 func NotLiveError(agentID string) error {
 	return clierr.WithHint(
 		clierr.New(clierr.PreconditionFailed, "the Agent Session process is not live in its owned pane"),
-		"Run 'twt2 agents resume %s' to start the Agent Session again.", agentID,
+		"Run 'twt agents resume %s' to start the Agent Session again.", agentID,
 	)
 }
 
@@ -162,7 +162,7 @@ func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text stri
 	if !c.PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart) {
 		return NotLiveError(agentID)
 	}
-	buffer := "twt2-feedback-" + strings.TrimPrefix(pane, "%")
+	buffer := "twt-feedback-" + strings.TrimPrefix(pane, "%")
 	if _, err := c.output(strings.NewReader(text), "load-buffer", "-b", buffer, "-"); err != nil {
 		return fmt.Errorf("load Agent Session feedback: %w", err)
 	}
@@ -176,7 +176,7 @@ func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text stri
 }
 
 func (c Client) projectSession(project domain.Project) (string, error) {
-	rows, err := c.output(nil, "list-sessions", "-F", "#{session_id}\t#{@twt2_project_id}")
+	rows, err := c.output(nil, "list-sessions", "-F", "#{session_id}\t#{@twt_project_id}")
 	if err != nil {
 		return "", fmt.Errorf("list tmux sessions: %w", err)
 	}

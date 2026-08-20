@@ -73,7 +73,7 @@ func TestCreateReplacesAFailedInFlightPreparation(t *testing.T) {
 			Clone: domain.CloneSpec{URL: source},
 		}},
 	}
-	socket := fmt.Sprintf("twt2-project-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-project-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 
 	var mu sync.Mutex
@@ -134,7 +134,7 @@ func TestCreateReplacesAFailedInFlightPreparation(t *testing.T) {
 	if project.Status != domain.ProjectActive {
 		t.Fatalf("Project status = %q, want %q", project.Status, domain.ProjectActive)
 	}
-	if !messageAppeared("failed. twt2 prepares a replacement.") {
+	if !messageAppeared("failed. twt prepares a replacement.") {
 		t.Fatalf("progress does not report the replacement: %v", messages)
 	}
 	environments, err := store.NewEnvironmentStore(stateDir).List()
@@ -167,7 +167,7 @@ func initCreateTestRepository(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	for _, argv := range [][]string{
-		{"git", "config", "user.name", "twt2 test"},
+		{"git", "config", "user.name", "twt test"},
 		{"git", "config", "user.email", "test@example.com"},
 		{"git", "add", "README.md"},
 		{"git", "commit", "-qm", "initial commit"},

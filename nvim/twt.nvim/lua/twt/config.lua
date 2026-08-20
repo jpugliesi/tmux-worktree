@@ -1,8 +1,8 @@
-local buffers = require("twt2.buffers")
+local buffers = require("twt.buffers")
 local M = {}
 
 local defaults = {
-  command = "twt2",
+  command = "twt",
   default_keymaps = true,
   max_agents = 40,
   clear_after_send = true,

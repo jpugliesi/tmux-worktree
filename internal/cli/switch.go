@@ -75,7 +75,7 @@ func pickSwitchProject(command *cobra.Command, options Options, service *project
 		return domain.Project{}, err
 	}
 	if len(projects) == 0 {
-		return domain.Project{}, clierr.New(clierr.NotFound, "no Projects exist; run 'twt2 new NAME' first")
+		return domain.Project{}, clierr.New(clierr.NotFound, "no Projects exist; run 'twt new NAME' first")
 	}
 	sortProjectsForDisplay(projects)
 	now := time.Now().UTC()
@@ -126,7 +126,7 @@ func fzfPick(lines []string) (int, error) {
 // from standard input.
 func numberedPick(command *cobra.Command, lines []string) (int, error) {
 	if !interactiveInput(command.InOrStdin()) {
-		return 0, invalidUsage(command, "missing PROJECT; use 'twt2 switch PROJECT' in a script")
+		return 0, invalidUsage(command, "missing PROJECT; use 'twt switch PROJECT' in a script")
 	}
 	errOut := command.ErrOrStderr()
 	for index, line := range lines {

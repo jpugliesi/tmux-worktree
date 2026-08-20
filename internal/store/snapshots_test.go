@@ -19,7 +19,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "wrong Project marker",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt2-snapshot.json", `{"version":1,"owner":"twt2","projectId":"project-two"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-two"}`)
 			},
 			want: "conflicting ownership marker",
 		},
@@ -27,10 +27,10 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 			name: "marker symlink",
 			setup: func(t *testing.T, directory string) {
 				outside := filepath.Join(t.TempDir(), "marker.json")
-				if err := os.WriteFile(outside, []byte(`{"version":1,"owner":"twt2","projectId":"project-one"}`), 0o600); err != nil {
+				if err := os.WriteFile(outside, []byte(`{"version":1,"owner":"twt","projectId":"project-one"}`), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(outside, filepath.Join(directory, ".twt2-snapshot.json")); err != nil {
+				if err := os.Symlink(outside, filepath.Join(directory, ".twt-snapshot.json")); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -39,7 +39,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "unexpected file",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt2-snapshot.json", `{"version":1,"owner":"twt2","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
 				writeSnapshotFixture(t, directory, "keep.txt", "keep")
 			},
 			want: "unexpected item",
@@ -47,7 +47,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "non-regular marker",
 			setup: func(t *testing.T, directory string) {
-				if err := os.Mkdir(filepath.Join(directory, ".twt2-snapshot.json"), 0o700); err != nil {
+				if err := os.Mkdir(filepath.Join(directory, ".twt-snapshot.json"), 0o700); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -56,7 +56,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "unexpected Agent Session item",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt2-snapshot.json", `{"version":1,"owner":"twt2","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
 				agents := makeSnapshotAgentsDir(t, directory)
 				writeSnapshotFixture(t, agents, "evil.txt", "evil")
 			},
@@ -65,7 +65,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "Agent Session snapshot symlink",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt2-snapshot.json", `{"version":1,"owner":"twt2","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
 				agents := makeSnapshotAgentsDir(t, directory)
 				outside := filepath.Join(t.TempDir(), "outside.md")
 				if err := os.WriteFile(outside, []byte("outside\n"), 0o600); err != nil {
@@ -80,7 +80,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "Agent Session directory is a file",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt2-snapshot.json", `{"version":1,"owner":"twt2","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
 				writeSnapshotFixture(t, directory, "agents", "not a directory")
 			},
 			want: "not a safe directory",

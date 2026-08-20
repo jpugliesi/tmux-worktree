@@ -1,60 +1,60 @@
-# twt2 preview
+# twt preview
 
-`twt2` is the Go preview of the next tmux-worktree user experience. It uses a
+`twt` is the Go preview of the next tmux-worktree user experience. It uses a
 Project as the unit of work. A Project can contain one or more Git worktrees,
 one tmux session, one window for each repository, and a set of Agent Sessions.
 
-The existing `twt` command continues to work. `twt2` uses separate config,
+The existing `twt` command continues to work. `twt` uses separate config,
 state, and data directories.
 
 ## Build
 
 ```sh
-go build -o ./bin/twt2 ./cmd/twt2
+go build -o ./bin/twt ./cmd/twt
 ```
 
 To stamp the build with a version, set the version variable with `-ldflags`.
-The `twt2 --version` and `twt2 schema` commands show this value:
+The `twt --version` and `twt schema` commands show this value:
 
 ```sh
-go build -ldflags "-X github.com/jpugliesi/tmux-worktree/internal/version.Version=$(git describe --always)" -o ./bin/twt2 ./cmd/twt2
+go build -ldflags "-X github.com/jpugliesi/tmux-worktree/internal/version.Version=$(git describe --always)" -o ./bin/twt ./cmd/twt
 ```
 
-By default, `twt2` uses these directories:
+By default, `twt` uses these directories:
 
-- Config: `${XDG_CONFIG_HOME:-$HOME/.config}/twt2`
-- State: `${XDG_STATE_HOME:-$HOME/.local/state}/twt2`
-- Data: `${XDG_DATA_HOME:-$HOME/.local/share}/twt2`
+- Config: `${XDG_CONFIG_HOME:-$HOME/.config}/twt`
+- State: `${XDG_STATE_HOME:-$HOME/.local/state}/twt`
+- Data: `${XDG_DATA_HOME:-$HOME/.local/share}/twt`
 
-You can set `TWT2_CONFIG_DIR`, `TWT2_STATE_DIR`, and `TWT2_DATA_DIR` to use
-other directories. Tests can set `TWT2_TMUX_SOCKET` to use a separate tmux
+You can set `TWT_CONFIG_DIR`, `TWT_STATE_DIR`, and `TWT_DATA_DIR` to use
+other directories. Tests can set `TWT_TMUX_SOCKET` to use a separate tmux
 server.
 
 ## Install shell completion
 
-`twt2` completes command names, Project Template names, Project names, Agent
+`twt` completes command names, Project Template names, Project names, Agent
 Session IDs, Prepared Environment IDs, and the values of `--template`,
 `--project`, `--provider`, and `--output`:
 
 ```sh
-twt2 completion zsh > "${fpath[1]}/_twt2"
+twt completion zsh > "${fpath[1]}/_twt"
 ```
 
-Use `twt2 completion bash`, `twt2 completion fish`, or
-`twt2 completion powershell` for the other shells.
+Use `twt completion bash`, `twt completion fish`, or
+`twt completion powershell` for the other shells.
 
 ## Create the Everysphere Project Template
 
 Create an empty YAML file:
 
 ```sh
-twt2 templates create everysphere
+twt templates create everysphere
 ```
 
 Add the repository clone policy:
 
 ```sh
-twt2 templates repos add everysphere everysphere \
+twt templates repos add everysphere everysphere \
   https://origin.cursor.com/anysphere/everysphere.git \
   --depth 1 \
   --remote github=https://github.com/anysphere/everysphere.git \
@@ -62,21 +62,21 @@ twt2 templates repos add everysphere everysphere \
   --window-name everysphere
 ```
 
-Set the repository initialization command. `twt2` runs this command in the
+Set the repository initialization command. `twt` runs this command in the
 new worktree:
 
 ```sh
-twt2 templates init set everysphere --repo everysphere -- ./init.sh
+twt templates init set everysphere --repo everysphere -- ./init.sh
 ```
 
 To remove one repository specification, run:
 
 ```sh
-twt2 templates repos remove everysphere everysphere
+twt templates repos remove everysphere everysphere
 ```
 
 You can also edit
-`~/.config/twt2/templates/everysphere.yaml` directly:
+`~/.config/twt/templates/everysphere.yaml` directly:
 
 ```yaml
 version: 1
@@ -96,22 +96,22 @@ repositories:
         - ./init.sh
 ```
 
-`pool_depth` is the number of ready Prepared Environments that `twt2` keeps
+`pool_depth` is the number of ready Prepared Environments that `twt` keeps
 for this Project Template. The default depth is 1.
 
 Work with the YAML file through these commands:
 
 ```sh
-twt2 templates path everysphere
-twt2 templates edit everysphere
-twt2 templates validate everysphere
-twt2 templates list
-twt2 templates show everysphere --output json
+twt templates path everysphere
+twt templates edit everysphere
+twt templates validate everysphere
+twt templates list
+twt templates show everysphere --output json
 ```
 
 `templates path` prints one bare path. `templates edit` starts `$VISUAL` or
 `$EDITOR` on the file, then validates the result. An invalid file stays on
-disk, and `twt2` returns the `unsafe_state` error with the validation cause.
+disk, and `twt` returns the `unsafe_state` error with the validation cause.
 
 `templates validate` also reports warnings. A warning does not make the
 command fail. A Project Template with no repositories gives one warning.
@@ -121,33 +121,33 @@ NAME argument stays required: it sets the template name, and a different
 `name` field in the document is an error.
 
 ```sh
-twt2 templates create everysphere --from-file ./everysphere.yaml
-cat ./everysphere.yaml | twt2 templates create everysphere --from-stdin
+twt templates create everysphere --from-file ./everysphere.yaml
+cat ./everysphere.yaml | twt templates create everysphere --from-stdin
 ```
 
 Delete a Project Template with:
 
 ```sh
-twt2 templates remove everysphere
+twt templates remove everysphere
 ```
 
-Removal deletes only the YAML file. `twt2` refuses the removal while a
+Removal deletes only the YAML file. `twt` refuses the removal while a
 Project record still uses the Project Template. Remove those Projects first.
 
 Prepare the next environment before you need it:
 
 ```sh
-twt2 templates prepare everysphere
+twt templates prepare everysphere
 ```
 
 This command creates one worktree for each repository and runs repository
 initialization once on each new physical worktree. A Project later claims the
-complete Prepared Environment. After each claim, twt2 prepares one replacement
+complete Prepared Environment. After each claim, twt prepares one replacement
 in the background, up to the pool depth.
 
 Repository initialization runs before a Project name exists. It receives
-`TWT2_ENVIRONMENT_ID`, `TWT2_ENVIRONMENT_ROOT`, `TWT2_TEMPLATE_NAME`,
-`TWT2_REPOSITORY_NAME`, and `TWT2_REPOSITORY_PATH`. Use Project initialization
+`TWT_ENVIRONMENT_ID`, `TWT_ENVIRONMENT_ROOT`, `TWT_TEMPLATE_NAME`,
+`TWT_REPOSITORY_NAME`, and `TWT_REPOSITORY_PATH`. Use Project initialization
 when setup needs a Project ID or name.
 
 To run one command after all repository worktrees exist, set a Project
@@ -155,7 +155,7 @@ initialization command. You must set its working directory relative to the
 Project root:
 
 ```sh
-twt2 templates init set everysphere \
+twt templates init set everysphere \
   --cwd everysphere \
   -- ./scripts/init-project.sh
 ```
@@ -166,19 +166,19 @@ sets Project initialization, and `--cwd PATH` is required.
 
 Project initialization receives these environment variables:
 
-- `TWT2_PROJECT_ID`
-- `TWT2_PROJECT_NAME`
-- `TWT2_PROJECT_ROOT`
-- `TWT2_REPOSITORY_<NAME>` for each repository
+- `TWT_PROJECT_ID`
+- `TWT_PROJECT_NAME`
+- `TWT_PROJECT_ROOT`
+- `TWT_REPOSITORY_<NAME>` for each repository
 
 ## Lay out the tmux session
 
-A Project Template can declare one session command. `twt2` runs it each time it
+A Project Template can declare one session command. `twt` runs it each time it
 creates the tmux session of a Project: at Project creation, and again when
-`twt2 projects open` makes the session for an archived Project. The command
-runs after `twt2` makes the session and one window for each repository.
+`twt projects open` makes the session for an archived Project. The command
+runs after `twt` makes the session and one window for each repository.
 
-`twt2` never runs the command against a session that is already live. A setup
+`twt` never runs the command against a session that is already live. A setup
 retry on a live session skips it, so the command cannot disturb panes that you
 arranged.
 
@@ -194,14 +194,14 @@ and relative to the Project root; the default working directory is the Project
 root.
 
 The session command receives the Project initialization variables
-(`TWT2_PROJECT_ID`, `TWT2_PROJECT_NAME`, `TWT2_PROJECT_ROOT`, and
-`TWT2_REPOSITORY_<NAME>`) and these tmux targets:
+(`TWT_PROJECT_ID`, `TWT_PROJECT_NAME`, `TWT_PROJECT_ROOT`, and
+`TWT_REPOSITORY_<NAME>`) and these tmux targets:
 
-- `TWT2_TMUX_SESSION` is the tmux session ID, for example `$5`.
-- `TWT2_TMUX_WINDOW_<NAME>` is the tmux window ID of the window of each
+- `TWT_TMUX_SESSION` is the tmux session ID, for example `$5`.
+- `TWT_TMUX_WINDOW_<NAME>` is the tmux window ID of the window of each
   repository, for example `@7`. The name part follows the repository name in
   upper case, with `-` and `.` changed to `_`.
-- `TWT2_TMUX_SOCKET` is the tmux socket name when `twt2` uses a socket that is
+- `TWT_TMUX_SOCKET` is the tmux socket name when `twt` uses a socket that is
   not the default one. It is empty for the default tmux server.
 
 Use the IDs to make your own tmux targets. A pane target is
@@ -213,9 +213,9 @@ width, then one pane under the first pane that takes 25% of its height.
 ```sh
 #!/bin/sh
 set -e
-window="$TWT2_TMUX_WINDOW_EVERYSPHERE"
-tmux split-window -d -h -l 34% -t "$window" -c "$TWT2_REPOSITORY_EVERYSPHERE"
-tmux split-window -d -v -l 25% -t "$window.1" -c "$TWT2_REPOSITORY_EVERYSPHERE"
+window="$TWT_TMUX_WINDOW_EVERYSPHERE"
+tmux split-window -d -h -l 34% -t "$window" -c "$TWT_REPOSITORY_EVERYSPHERE"
+tmux split-window -d -v -l 25% -t "$window.1" -c "$TWT_REPOSITORY_EVERYSPHERE"
 ```
 
 The example uses `-l 34%`, the modern size flag. The old `-p 34` flag is
@@ -223,17 +223,17 @@ deprecated. `-d` keeps the new pane out of the focus. The example targets pane
 `1` with `pane-base-index 1`; use `$window.0` with the tmux default.
 
 A session command that fails makes the tmux setup step fail. The Project keeps
-its record, and `twt2 projects setup retry PROJECT` runs the step again.
+its record, and `twt projects setup retry PROJECT` runs the step again.
 
 ## Work with Projects
 
 Create and open a Project:
 
 ```sh
-twt2 projects create fix-auth --template everysphere
+twt projects create fix-auth --template everysphere
 ```
 
-Without `--template`, `twt2` selects the only Project Template, or the
+Without `--template`, `twt` selects the only Project Template, or the
 Project Template of the last successful creation. If neither rule applies, the
 command lists the available names and stops.
 
@@ -243,29 +243,29 @@ Two flags control the Git start point:
 - `--no-fetch` uses the base commit of the Prepared Environment and does not
   refresh the default branch first.
 
-`twt2` opens or attaches the tmux session only when standard output is a
+`twt` opens or attaches the tmux session only when standard output is a
 terminal. Use `--no-open` to never open it. `--output json` no longer implies
 no-open: a program that pipes the output gets no tmux change.
 
-`twt2` names the new tmux session `twt2-<project name>`, for example
-`twt2-fix-auth`. The prefix makes the sessions of `twt2` clear in the tmux
+`twt` names the new tmux session `twt-<project name>`, for example
+`twt-fix-auth`. The prefix makes the sessions of `twt` clear in the tmux
 session picker. If a session with that name already exists and belongs to
-something else, `twt2` adds the first 8 characters of the Project ID to the
-name. The name is presentation only: `twt2` finds each session through the
-tmux session ID and the `@twt2_project_id` option, so you can rename a session
+something else, `twt` adds the first 8 characters of the Project ID to the
+name. The name is presentation only: `twt` finds each session through the
+tmux session ID and the `@twt_project_id` option, so you can rename a session
 and every command still works.
 
 From the Project tmux session, create the next Project and archive the current
 Project:
 
 ```sh
-twt2 new fix-logout
+twt new fix-logout
 ```
 
 For an interactive prompt, omit the name:
 
 ```sh
-twt2 new
+twt new
 Project name: fix-logout
 ```
 
@@ -274,35 +274,35 @@ claims a matching Prepared Environment, switches the calling tmux client to
 the new Project, and archives `fix-auth`. Other tmux clients do not switch.
 Preparation of the replacement environment continues in the background.
 
-`twt2 new` finds the current Project from the current directory, the
-`TWT2_PROJECT_ID` value, or the current tmux pane. The tmux client switch
-needs `TMUX_PANE`. From a plain shell inside a worktree, `twt2 new` uses
+`twt new` finds the current Project from the current directory, the
+`TWT_PROJECT_ID` value, or the current tmux pane. The tmux client switch
+needs `TMUX_PANE`. From a plain shell inside a worktree, `twt new` uses
 the Project Template of the current Project, creates the new Project, attaches
 its session, and keeps the current Project active.
 
-If creation or setup fails, the current Project stays active. `twt2` keeps a
+If creation or setup fails, the current Project stays active. `twt` keeps a
 Project that has a setup failure. You can inspect it and run
-`twt2 projects setup retry PROJECT`. If the tmux switch fails, `twt2` archives
+`twt projects setup retry PROJECT`. If the tmux switch fails, `twt` archives
 the new Project and keeps the current Project active.
 
 Switch the tmux client to a different Project:
 
 ```sh
-twt2 switch fix-auth
-twt2 switch
+twt switch fix-auth
+twt switch
 ```
 
-`twt2 switch` moves your tmux client to the session of the Project. An
-archived Project opens first. Without PROJECT, `twt2` shows an interactive
+`twt switch` moves your tmux client to the session of the Project. An
+archived Project opens first. Without PROJECT, `twt` shows an interactive
 picker: it uses `fzf` when `fzf` is installed, or a numbered list. Inside
-tmux the client switches; outside tmux `twt2` attaches. The command is
+tmux the client switches; outside tmux `twt` attaches. The command is
 interactive and refuses `--output json`.
 
 The short commands are for a person in tmux. For a script or coding agent, use
 the explicit JSON commands:
 
 ```sh
-twt2 projects create fix-logout \
+twt projects create fix-logout \
   --template everysphere \
   --no-open \
   --dry-run \
@@ -310,16 +310,16 @@ twt2 projects create fix-logout \
 ```
 
 ```sh
-twt2 projects list
-twt2 projects show fix-auth
-twt2 projects current
-twt2 projects path fix-auth everysphere
-twt2 projects open fix-auth
+twt projects list
+twt projects show fix-auth
+twt projects current
+twt projects path fix-auth everysphere
+twt projects open fix-auth
 ```
 
 The text list shows an aligned table with the Project name, Project Template,
 status, and age, in that order. The list does not read disk sizes, so it stays
-fast; use `twt2 storage show` for disk space:
+fast; use `twt storage show` for disk space:
 
 ```text
 NAME      TEMPLATE     STATUS  AGE
@@ -329,27 +329,27 @@ fix-auth  everysphere  active  2h
 Use `--output json` when a program needs the immutable Project ID.
 
 Each command that takes a PROJECT argument also accepts the literal value
-`current`. `twt2` then uses the current directory, the `TWT2_PROJECT_ID`
+`current`. `twt` then uses the current directory, the `TWT_PROJECT_ID`
 value, or the current tmux pane:
 
 ```sh
-twt2 projects show current --output json
-twt2 projects archive current
-twt2 projects setup retry current
-twt2 done current
+twt projects show current --output json
+twt projects archive current
+twt projects setup retry current
+twt done current
 ```
 
-`twt2` saves a snapshot of the Project Template before it changes Git or
+`twt` saves a snapshot of the Project Template before it changes Git or
 tmux. Each setup step has a saved status. If setup fails, fix the cause and
 retry the incomplete steps:
 
 ```sh
-twt2 projects setup retry fix-auth
+twt projects setup retry fix-auth
 ```
 
 The retry uses the saved snapshot. It does not use a later edit to the
 Project Template. A process stop can occur after an init command starts but
-before `twt2` saves its result. For this reason, init commands must be safe to
+before `twt` saves its result. For this reason, init commands must be safe to
 run more than one time.
 
 ## Agent Sessions
@@ -357,7 +357,7 @@ run more than one time.
 Register a resumable Codex Agent Session:
 
 ```sh
-twt2 agents register \
+twt agents register \
   --project current \
   --provider codex \
   --label auth-review \
@@ -368,22 +368,22 @@ twt2 agents register \
 For safe feedback delivery, a live pane must have started the Agent directly.
 A pane that started as a normal shell is not a valid feedback target, even if
 an Agent now runs as a child process. The safe common flow is to register a
-resume command without `--pane`, then run `agents resume`. twt2 starts that
+resume command without `--pane`, then run `agents resume`. twt starts that
 Agent in its own window and records its direct process identity.
 
 List, inspect, focus, resume, or send feedback:
 
 ```sh
-twt2 agents list --project current
-twt2 agents show AGENT_ID --project current
-twt2 agents focus AGENT_ID
-twt2 agents resume AGENT_ID
+twt agents list --project current
+twt agents show AGENT_ID --project current
+twt agents focus AGENT_ID
+twt agents resume AGENT_ID
 printf '%s\n' 'Please fix the selected review note.' | \
-  twt2 agents send AGENT_ID --project current --stdin
+  twt agents send AGENT_ID --project current --stdin
 ```
 
 `agents show` gives each liveness check with its result. A failed check tells
-you why `twt2` does not send feedback. The current command of the pane is an
+you why `twt` does not send feedback. The current command of the pane is an
 advisory check only.
 
 `send` works only when the Agent Session has a live tmux pane that belongs to
@@ -395,8 +395,8 @@ Find the provider sessions that ran inside a repository of the Project and
 that no Agent Session uses:
 
 ```sh
-twt2 agents discover --project current
-twt2 agents discover --project current --adopt --limit 3
+twt agents discover --project current
+twt agents discover --project current --adopt --limit 3
 ```
 
 The newest session comes first. `--adopt` registers each discovered session
@@ -405,26 +405,26 @@ with a generated resume command. Discovery supports Codex and Claude.
 Delete an Agent Session record with:
 
 ```sh
-twt2 agents rm AGENT_ID --project current
+twt agents rm AGENT_ID --project current
 ```
 
 Removal keeps the provider transcript and does not stop a live Agent process.
 
 ## Neovim integration
 
-The repository includes the [`twt2.nvim`](../nvim/twt2.nvim/README.md)
-preview plug-in. It uses the versioned JSON commands. It does not read `twt2`
+The repository includes the [`twt.nvim`](../nvim/twt.nvim/README.md)
+preview plug-in. It uses the versioned JSON commands. It does not read `twt`
 state files or store tmux target values.
 
 ```sh
-twt2 context --output json
-twt2 context --directory /path/to/current/buffer --output json
-twt2 agents list --project current --output json
-twt2 agents resume AGENT_ID --output json
+twt context --output json
+twt context --directory /path/to/current/buffer --output json
+twt agents list --project current --output json
+twt agents resume AGENT_ID --output json
 printf '%s' "$REVIEW_TEXT" | \
-  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --output json
-twt2 agents transcript show AGENT_ID --project PROJECT_ID --output json
-twt2 agents transcript snapshot AGENT_ID --project PROJECT_ID --output json
+  twt agents send AGENT_ID --project PROJECT_ID --stdin --output json
+twt agents transcript show AGENT_ID --project PROJECT_ID --output json
+twt agents transcript snapshot AGENT_ID --project PROJECT_ID --output json
 ```
 
 An explicit context directory takes priority over tmux and environment
@@ -433,26 +433,26 @@ The JSON context also identifies the current repository in a multi-repository
 Project.
 
 The plug-in owns the picker, mappings, selected review text, and messages.
-`twt2` owns the Project-owned Transcript Snapshots, Project lookup, Agent
+`twt` owns the Project-owned Transcript Snapshots, Project lookup, Agent
 Session records, provider transcript reading, resume behavior, and safe
 feedback transport. Provider transcript paths and tmux targets do not enter
 the JSON interface.
 
-Linked transcript reading supports Codex and Claude. twt2 does not read Cursor
+Linked transcript reading supports Codex and Claude. twt does not read Cursor
 transcripts because the local Cursor records do not give an exact Project
-directory that twt2 can verify.
+directory that twt can verify.
 
-`<leader>arp` selects a linked Agent Session. twt2 writes the transcript of
+`<leader>arp` selects a linked Agent Session. twt writes the transcript of
 that Agent Session to
-`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/agents/AGENT_ID.md`, and writes
+`$TWT_STATE_DIR/snapshots/projects/PROJECT_ID/agents/AGENT_ID.md`, and writes
 `latest.md` in the Project directory as a copy of the most recent snapshot. If
-`TWT2_STATE_DIR` is not set, twt2 uses the normal XDG state directory.
+`TWT_STATE_DIR` is not set, twt uses the normal XDG state directory.
 Different Projects use different private files. Archive keeps these files.
-`twt2 projects remove PROJECT --apply` deletes the matching owned snapshots.
+`twt projects remove PROJECT --apply` deletes the matching owned snapshots.
 For an older Agent Session, add the provider link:
 
 ```sh
-twt2 agents transcript link AGENT_ID \
+twt agents transcript link AGENT_ID \
   --project current \
   --session SESSION_ID
 ```
@@ -462,14 +462,14 @@ twt2 agents transcript link AGENT_ID \
 Archive the current Project with the short command:
 
 ```sh
-twt2 archive
+twt archive
 ```
 
 You can also name a Project:
 
 ```sh
-twt2 archive fix-auth
-twt2 projects archive fix-auth
+twt archive fix-auth
+twt projects archive fix-auth
 ```
 
 Archive stops the owned tmux session and live Agent processes. It keeps the
@@ -480,10 +480,10 @@ has a saved resume command.
 To archive a Project and remove its data in one step, use `done`:
 
 ```sh
-twt2 done
-twt2 done fix-auth
-twt2 done fix-auth --keep
-twt2 done fix-auth --dry-run --output json
+twt done
+twt done fix-auth
+twt done fix-auth --keep
+twt done fix-auth --dry-run --output json
 ```
 
 `done` archives the Project, then applies the removal plan. `--keep` stops
@@ -499,8 +499,8 @@ removal plan and changes nothing.
 Open an archived Project to make it active and create its tmux session again:
 
 ```sh
-twt2 projects open fix-auth
-twt2 projects open fix-auth --no-attach
+twt projects open fix-auth
+twt projects open fix-auth --no-attach
 ```
 
 From inside the Project tmux session, `archive` behaves like `done --keep`:
@@ -513,8 +513,8 @@ uses text output; for JSON output, run `archive` from a different session.
 Inspect disk use:
 
 ```sh
-twt2 storage show
-twt2 storage show --output json
+twt storage show
+twt storage show --output json
 ```
 
 `storage show` reports the total size, the shared repository caches, active
@@ -529,22 +529,22 @@ valid, `storage clean` gives a warning and keeps its Prepared Environments.
 Preview the cleanup, then apply it:
 
 ```sh
-twt2 storage clean
-twt2 storage clean --apply
+twt storage clean
+twt storage clean --apply
 ```
 
 Project removal shows a plan by default. Archive the Project before you apply
 the plan. Removal does not remove data until you use `--apply`:
 
 ```sh
-twt2 projects archive fix-auth
-twt2 projects remove fix-auth
-twt2 projects remove fix-auth --apply
+twt projects archive fix-auth
+twt projects remove fix-auth
+twt projects remove fix-auth --apply
 ```
 
 Removal stops only a tmux session that has the matching Project ID. It uses
 `git worktree remove`. It removes only a Project root that has the matching
-twt2 ownership marker.
+twt ownership marker.
 
 A plan that is not safe carries one or more Removal Blockers. Each Removal
 Blocker has a stable code, a message, the related paths, and sometimes a hint.
@@ -557,11 +557,11 @@ Removal applies no action while one Removal Blocker stays. These codes exist:
 | `unsafe_sessions` | Another tmux session claims the Project ID. |
 | `uncommitted_changes` | A worktree has changes that are not committed. |
 | `unpublished_branch` | The Project branch has commits that are not on another known ref. |
-| `unpublished_unknown` | twt2 cannot prove that the branch is published. |
+| `unpublished_unknown` | twt cannot prove that the branch is published. |
 | `protected_branch` | The record names the default branch, or no branch. |
-| `invalid_state` | The Project record does not match the layout that twt2 owns. |
-| `unsafe_snapshot` | The Transcript Snapshot directory is not twt2-owned. |
-| `unexpected_item` | The Project root contains an item that twt2 does not own. |
+| `invalid_state` | The Project record does not match the layout that twt owns. |
+| `unsafe_snapshot` | The Transcript Snapshot directory is not twt-owned. |
+| `unexpected_item` | The Project root contains an item that twt does not own. |
 
 `--allow-unpublished` accepts the `unpublished_branch` cause. Correct the
 other causes, then run the command again.
@@ -570,16 +570,16 @@ A Project that stops in the middle of removal keeps the `removing` status. To
 return it to the archived status, run:
 
 ```sh
-twt2 projects remove fix-auth --cancel
+twt projects remove fix-auth --cancel
 ```
 
 To clean many archived Projects, use bulk removal. Apply skips each blocked
 Project and reports the count:
 
 ```sh
-twt2 projects remove --all-archived
-twt2 projects remove --all-archived --older-than 14d
-twt2 projects remove --all-archived --older-than 14d --apply
+twt projects remove --all-archived
+twt projects remove --all-archived --older-than 14d
+twt projects remove --all-archived --older-than 14d --apply
 ```
 
 Project removal keeps the shared repository cache. This makes later Project
@@ -589,9 +589,9 @@ is not in this preview.
 Inspect the Prepared Environment pool:
 
 ```sh
-twt2 environments list
-twt2 environments list --limit 10 --output json
-twt2 environments show ENVIRONMENT_ID --output json
+twt environments list
+twt environments list --limit 10 --output json
+twt environments show ENVIRONMENT_ID --output json
 ```
 
 The text list groups the Prepared Environments by Project Template. Each line
@@ -609,49 +609,49 @@ keeps a prepared set usable.
 Check tools, YAML files, Project records, and ownership markers:
 
 ```sh
-twt2 doctor
-twt2 doctor --output json
+twt doctor
+twt doctor --output json
 ```
 
 ## Track work with tickets
 
-`twt2 tickets` is a personal Markdown ticket tracker. Ticket files are the
+`twt tickets` is a personal Markdown ticket tracker. Ticket files are the
 store, and the CLI owns every mutation; do not edit ticket files by hand.
 This tracker is not Linear, GitHub Issues, or Origin issues.
 
 ### Configure Tickets home
 
 Set the root directory of ticket Markdown files in
-`$TWT2_CONFIG_DIR/config.yaml` (default `~/.config/twt2/config.yaml`):
+`$TWT_CONFIG_DIR/config.yaml` (default `~/.config/twt/config.yaml`):
 
 ```yaml
 ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
 ```
 
-`TWT2_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
+`TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
 and more than one document, the same as Project Template loading.
-`twt2 doctor` reports whether Tickets home is set, exists, and is writable.
+`twt doctor` reports whether Tickets home is set, exists, and is writable.
 
 ### Commands
 
 ```sh
-twt2 tickets init
-twt2 tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
-twt2 tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
-twt2 tickets show TICKET
-twt2 tickets edit TICKET [--stdin]
-twt2 tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
-twt2 tickets claim TICKET [--as NAME]
-twt2 tickets unclaim TICKET [--as NAME]
-twt2 tickets comment TICKET --stdin
-twt2 tickets boards create NAME
-twt2 tickets boards list [--limit N]
-twt2 tickets boards show NAME
+twt tickets init
+twt tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
+twt tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
+twt tickets show TICKET
+twt tickets edit TICKET [--stdin]
+twt tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
+twt tickets claim TICKET [--as NAME]
+twt tickets unclaim TICKET [--as NAME]
+twt tickets comment TICKET --stdin
+twt tickets boards create NAME
+twt tickets boards list [--limit N]
+twt tickets boards show NAME
 ```
 
-`twt2 tickets init` creates Tickets home if it is missing, and writes
+`twt tickets init` creates Tickets home if it is missing, and writes
 `index.md` and `templates/ticket.md` only when those files are missing. It
-never overwrites an existing note. `twt2 tickets boards create NAME` creates
+never overwrites an existing note. `twt tickets boards create NAME` creates
 the Board directory and writes `index.md` only when that file is missing.
 
 ### Create a ticket
@@ -667,9 +667,9 @@ The default status is `needs-triage`. `--dry-run` prints the file that would
 be written and writes nothing.
 
 ```sh
-twt2 tickets create "fix the vfs tools" --board change-monitor --dry-run --output json
-twt2 tickets create "fix the vfs tools" --board change-monitor --output json
-printf '%s' "$BODY" | twt2 tickets create --stdin --title "Fix the vfs tools" --output json
+twt tickets create "fix the vfs tools" --board change-monitor --dry-run --output json
+twt tickets create "fix the vfs tools" --board change-monitor --output json
+printf '%s' "$BODY" | twt tickets create --stdin --title "Fix the vfs tools" --output json
 ```
 
 ### List and filter
@@ -686,8 +686,8 @@ slug. Passing both `--ready` and `--status` exits 2 with a hint to use only
 one.
 
 ```sh
-twt2 tickets list --ready --output json --limit 20
-twt2 tickets list --board change-monitor --status needs-triage --output json
+twt tickets list --ready --output json --limit 20
+twt tickets list --board change-monitor --status needs-triage --output json
 ```
 
 `list` results omit the body. `show` returns the metadata and the body.
@@ -700,10 +700,10 @@ twt2 tickets list --board change-monitor --status needs-triage --output json
 - The same claimant succeeds again with no change.
 - A different claimant gets `locked`, with the current claimant in the hint.
 
-`claimed_by` resolves in this order: `--as NAME`, then `TWT2_CLAIMANT`, then
+`claimed_by` resolves in this order: `--as NAME`, then `TWT_CLAIMANT`, then
 the OS username. A terminal claim may fall back to the OS username. A
 non-terminal claim, and every `apply` claim or unclaim, must set `--as` or
-`TWT2_CLAIMANT`, or the command exits 2 with a hint to pass `--as NAME`. This
+`TWT_CLAIMANT`, or the command exits 2 with a hint to pass `--as NAME`. This
 stops two agents from both succeeding as the same OS user. Agents should
 pass a unique `--as` value per session, such as `codex-fix-auth` or the
 Agent Session ID.
@@ -711,19 +711,19 @@ Agent Session ID.
 `unclaim` uses the same claimant resolution. It succeeds only when
 `claimed_by` is empty or equals the resolved claimant, and it then clears
 `claimed_by` and `claimed_at`. Resolve shipped work with
-`twt2 tickets set TICKET --status done`, then `unclaim`:
+`twt tickets set TICKET --status done`, then `unclaim`:
 
 ```sh
-twt2 tickets claim TICKET --as codex-fix-auth --output json
-twt2 tickets set TICKET --status done --output json
-twt2 tickets unclaim TICKET --as codex-fix-auth --output json
+twt tickets claim TICKET --as codex-fix-auth --output json
+twt tickets set TICKET --status done --output json
+twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 
 `comment` requires `--stdin`. It appends the text under the `## Comments`
 heading, creating that heading if it is missing, and sets `updated`:
 
 ```sh
-printf '%s' "$NOTE" | twt2 tickets comment TICKET --stdin --output json
+printf '%s' "$NOTE" | twt tickets comment TICKET --stdin --output json
 ```
 
 ### Boards
@@ -733,9 +733,9 @@ groups tickets and outlives any single Project checkout. Use `board:` in
 ticket frontmatter, not `project:`.
 
 ```sh
-twt2 tickets boards create change-monitor --output json
-twt2 tickets boards list --output json
-twt2 tickets boards show change-monitor --output json
+twt tickets boards create change-monitor --output json
+twt tickets boards list --output json
+twt tickets boards show change-monitor --output json
 ```
 
 ### Resolve a TICKET argument
@@ -753,21 +753,21 @@ An ambiguous prefix returns `invalid_usage`, with the candidate slugs in
 `hint`.
 
 Existing legacy ticket files, such as `tkt-cm-001.md`, stay valid: the
-resolver accepts any Markdown stem, not only a kebab slug. When `twt2
+resolver accepts any Markdown stem, not only a kebab slug. When `twt
 tickets` mutates a file, it keeps frontmatter fields it does not recognize,
 so hand edits to a ticket are not lost on the next CLI write.
 
 ### Install the skill in three trees
 
 Keep one canonical skill file in this repository at
-[`skills/twt2/SKILL.md`](../skills/twt2/SKILL.md). Symlink it into each user
+[`skills/twt/SKILL.md`](../skills/twt/SKILL.md). Symlink it into each user
 skill tree so Cursor, Claude Code, and Codex all see the same rules:
 
 ```sh
-mkdir -p ~/.cursor/skills/twt2 ~/.claude/skills/twt2 ~/.agents/skills/twt2
-ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.cursor/skills/twt2/SKILL.md
-ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.claude/skills/twt2/SKILL.md
-ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.agents/skills/twt2/SKILL.md
+mkdir -p ~/.cursor/skills/twt ~/.claude/skills/twt ~/.agents/skills/twt
+ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.cursor/skills/twt/SKILL.md
+ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.claude/skills/twt/SKILL.md
+ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.agents/skills/twt/SKILL.md
 ```
 
 ## JSON contract
@@ -821,7 +821,7 @@ The process exit code groups the error codes:
 Inspect the installed command and request schema at runtime:
 
 ```sh
-twt2 schema
+twt schema
 ```
 
 The schema gives the build version, each command with its positional
@@ -833,7 +833,7 @@ Validate a mutation without a state, Git, or tmux change. Every mutation
 accepts `--dry-run`:
 
 ```sh
-twt2 projects create fix-auth \
+twt projects create fix-auth \
   --template everysphere \
   --no-open \
   --dry-run \
@@ -845,10 +845,10 @@ more than one JSON value cause an error.
 
 ```sh
 printf '%s' '{"operation":"projects.create","project":{"name":"fix-auth","template":"everysphere"}}' | \
-  twt2 apply --stdin --dry-run --output json
+  twt apply --stdin --dry-run --output json
 ```
 
-`apply` supports these operations. Run `twt2 schema` for the field list of
+`apply` supports these operations. Run `twt schema` for the field list of
 each one:
 
 | Operation | Payload | Required fields |
@@ -865,14 +865,14 @@ data:
 
 ```sh
 printf '%s' '{"operation":"projects.remove","project":{"reference":"fix-auth","apply":true}}' | \
-  twt2 apply --stdin --output json
+  twt apply --stdin --output json
 ```
 
-`twt2` treats its caller as an untrusted operator. It validates every resource
+`twt` treats its caller as an untrusted operator. It validates every resource
 name, rejects unknown YAML and JSON fields, keeps initialization paths inside
-the Project root, and changes only paths that carry a twt2 ownership marker.
+the Project root, and changes only paths that carry a twt ownership marker.
 
-The repository includes a discoverable [`twt2` agent
-skill](../skills/twt2/SKILL.md). It tells agents to inspect the schema, limit
+The repository includes a discoverable [`twt` agent
+skill](../skills/twt/SKILL.md). It tells agents to inspect the schema, limit
 read results, run a dry-run first, and use IDs instead of tmux display names.
 See the [Agent DX score](agent-dx.md) for the detailed before-and-after score.

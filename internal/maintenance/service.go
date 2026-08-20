@@ -32,7 +32,7 @@ type StorageStatus struct {
 	PreparingEnvironmentCount int   `json:"preparingEnvironmentCount"`
 	FailedEnvironmentCount    int   `json:"failedEnvironmentCount"`
 	PreparedWorktreeCount     int   `json:"preparedWorktreeCount"`
-	// Warnings holds one message for each directory that twt2 could not
+	// Warnings holds one message for each directory that twt could not
 	// measure. Its size counts as zero.
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -52,7 +52,7 @@ type EnvironmentInfo struct {
 	LogPath      string
 	Steps        []domain.SetupStep
 	Project      *EnvironmentProject
-	// SizeWarning tells why twt2 could not measure the Prepared Environment
+	// SizeWarning tells why twt could not measure the Prepared Environment
 	// root. Bytes is zero in that case.
 	SizeWarning string
 }
@@ -167,8 +167,8 @@ func bestEffortDirectoryBytes(root string) (int64, string) {
 
 // EnvironmentReport describes each Prepared Environment record. It joins the
 // Prepared Environment store, the Project Template digests, and the Project
-// store. A Project Template that twt2 cannot load keeps the record status,
-// because twt2 cannot know if its Prepared Environments are obsolete.
+// store. A Project Template that twt cannot load keeps the record status,
+// because twt cannot know if its Prepared Environments are obsolete.
 func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	environments, err := store.NewEnvironmentStore(s.stateDir).List()
 	if err != nil {
@@ -216,7 +216,7 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	return report, nil
 }
 
-// prepareLogPath returns the twt2-owned preparation log of one Prepared
+// prepareLogPath returns the twt-owned preparation log of one Prepared
 // Environment, or an empty value when the log does not exist.
 func (s *Service) prepareLogPath(environmentID string) string {
 	path := filepath.Join(s.stateDir, "logs", "prepare-"+environmentID+".log")
@@ -277,9 +277,9 @@ func (s *Service) Doctor() DoctorReport {
 			if environment.Status == domain.EnvironmentQueued {
 				continue
 			}
-			markerName := ".twt2-environment.json"
+			markerName := ".twt-environment.json"
 			if environment.Status == domain.EnvironmentClaiming || environment.Status == domain.EnvironmentClaimed {
-				markerName = ".twt2-owned.json"
+				markerName = ".twt-owned.json"
 			}
 			if _, err := os.Stat(filepath.Join(environment.Root, markerName)); err != nil {
 				if (environment.Status == domain.EnvironmentPreparing || environment.Status == domain.EnvironmentFailed) && os.IsNotExist(err) {
@@ -308,12 +308,12 @@ func (s *Service) Doctor() DoctorReport {
 // installation stays healthy.
 func (s *Service) checkTicketsHome(report *DoctorReport) {
 	if strings.TrimSpace(s.ticketsHome) == "" {
-		report.addWarning("tickets-home", "No Tickets home is set. Set ticketsHome in config.yaml or TWT2_TICKETS_HOME.")
+		report.addWarning("tickets-home", "No Tickets home is set. Set ticketsHome in config.yaml or TWT_TICKETS_HOME.")
 		return
 	}
 	info, err := os.Stat(s.ticketsHome)
 	if err != nil || !info.IsDir() {
-		report.addWarning("tickets-home", fmt.Sprintf("Tickets home %q does not exist. Run 'twt2 tickets init'.", s.ticketsHome))
+		report.addWarning("tickets-home", fmt.Sprintf("Tickets home %q does not exist. Run 'twt tickets init'.", s.ticketsHome))
 		return
 	}
 	// Check write access without a probe file, so doctor never writes into a
@@ -331,13 +331,13 @@ func (s *Service) checkTicketsHome(report *DoctorReport) {
 func (s *Service) failedEnvironmentMessage(environment domain.PreparedEnvironment) string {
 	failure := environment.Failure
 	if failure == "" {
-		failure = "twt2 did not record a reason"
+		failure = "twt did not record a reason"
 	}
 	message := fmt.Sprintf("Prepared Environment failed: %s.", failure)
 	if log := s.prepareLogPath(environment.ID); log != "" {
 		message += fmt.Sprintf(" See %s.", log)
 	}
-	return message + " Run 'twt2 storage clean --apply' to remove it."
+	return message + " Run 'twt storage clean --apply' to remove it."
 }
 
 func (r *DoctorReport) addCommand(name string) {
@@ -359,7 +359,7 @@ func (r *DoctorReport) addFailure(name, message string) {
 }
 
 // addWarning reports a problem that a person can repair later. It keeps the
-// report healthy, so twt2 doctor still ends with success.
+// report healthy, so twt doctor still ends with success.
 func (r *DoctorReport) addWarning(name, message string) {
 	r.Checks = append(r.Checks, Check{Name: name, Status: "warn", Message: message})
 }

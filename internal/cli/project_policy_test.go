@@ -42,7 +42,7 @@ func TestProjectsCreateUsesDeclaredDefaultBranch(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 	command := cli.New(options)
@@ -91,7 +91,7 @@ func TestProjectsCreateRefusesConflictingSharedCacheRemote(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(template(firstMirror)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "first", "--template", "policy", "--no-open")
@@ -139,13 +139,13 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "unpublished", "--template", "policy", "--no-open")
 	entries, _ := os.ReadDir(filepath.Join(root, "data", "projects"))
 	checkout := filepath.Join(root, "data", "projects", entries[0].Name(), "app")
-	runCommand(t, checkout, "git", "config", "user.name", "twt2 test")
+	runCommand(t, checkout, "git", "config", "user.name", "twt test")
 	runCommand(t, checkout, "git", "config", "user.email", "test@example.com")
 	if err := os.WriteFile(filepath.Join(checkout, "new-work.txt"), []byte("important\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestProjectsRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "offline", "--template", "policy", "--no-open")
@@ -229,7 +229,7 @@ func TestProjectsRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkout := project.Repositories[0].Path
-	runCommand(t, checkout, "git", "config", "user.name", "twt2 test")
+	runCommand(t, checkout, "git", "config", "user.name", "twt test")
 	runCommand(t, checkout, "git", "config", "user.email", "test@example.com")
 	if err := os.WriteFile(filepath.Join(checkout, "new-work.txt"), []byte("important\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -279,7 +279,7 @@ func TestProjectsRemoveAllowUnpublishedRemovesUnpublishedWork(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "escape", "--template", "policy", "--no-open")
@@ -288,7 +288,7 @@ func TestProjectsRemoveAllowUnpublishedRemovesUnpublishedWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkout := project.Repositories[0].Path
-	runCommand(t, checkout, "git", "config", "user.name", "twt2 test")
+	runCommand(t, checkout, "git", "config", "user.name", "twt test")
 	runCommand(t, checkout, "git", "config", "user.email", "test@example.com")
 	if err := os.WriteFile(filepath.Join(checkout, "throwaway.txt"), []byte("temporary\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -330,7 +330,7 @@ func TestProjectsArchiveAndRemoveWorkFromSetupFailed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 
@@ -398,7 +398,7 @@ func TestProjectsRemoveProtectsTheDefaultBranchPin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	stateDir := filepath.Join(root, "state")
 	options := cli.Options{ConfigDir: configDir, StateDir: stateDir, DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
@@ -453,7 +453,7 @@ func TestProjectsCreateRefreshesReusedRepositoryCache(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "first", "--template", "policy", "--no-open")
@@ -491,11 +491,11 @@ func TestRenamedProjectSessionRemainsTheImmutableTmuxTarget(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "stable", "--template", "policy", "--no-open")
-	runCommand(t, "", "tmux", "-L", socket, "rename-session", "-t", "twt2-stable", "display-name")
+	runCommand(t, "", "tmux", "-L", socket, "rename-session", "-t", "twt-stable", "display-name")
 	openOutput := executeWithOptions(t, options, nil, "projects", "open", "stable", "--output", "json")
 	if !strings.Contains(openOutput, `"status":"applied"`) {
 		t.Fatalf("JSON open output = %q", openOutput)
@@ -536,7 +536,7 @@ func TestProjectsRemoveRejectsChangedStatePaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	stateDir := filepath.Join(root, "state")
 	options := cli.Options{ConfigDir: configDir, StateDir: stateDir, DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
@@ -595,7 +595,7 @@ func TestProjectsRemoveRetriesAfterPartialDataRemoval(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	stateDir := filepath.Join(root, "state")
 	options := cli.Options{ConfigDir: configDir, StateDir: stateDir, DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
@@ -610,7 +610,7 @@ func TestProjectsRemoveRetriesAfterPartialDataRemoval(t *testing.T) {
 	repository := project.Repositories[0]
 	runCommand(t, "", "git", "-C", repository.CachePath, "worktree", "remove", repository.Path)
 	runCommand(t, "", "git", "-C", repository.CachePath, "branch", "-D", repository.Branch)
-	if err := os.Remove(filepath.Join(project.Root, ".twt2-owned.json")); err != nil {
+	if err := os.Remove(filepath.Join(project.Root, ".twt-owned.json")); err != nil {
 		t.Fatal(err)
 	}
 	project.Status = domain.ProjectRemoving

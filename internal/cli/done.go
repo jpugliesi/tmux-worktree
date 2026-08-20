@@ -9,11 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const doneWorkerArgument = "__twt2_done_worker"
+const doneWorkerArgument = "__twt_done_worker"
 
 // doneTransientSession hosts the done worker when no other active Project
 // exists. The worker kills this session after a successful completion.
-const doneTransientSession = "twt2-done"
+const doneTransientSession = "twt-done"
 
 // noTransientSession marks a worker that runs in another Project session.
 const noTransientSession = "-"
@@ -129,7 +129,7 @@ func doneSynchronously(command *cobra.Command, service *projectservice.Service, 
 			if err := printRemovalBlockers(out, plan.Blockers, ""); err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(out, "The removal is blocked. Project %q stays archived. Correct the causes above, then run 'twt2 done %s' again.\n", plan.ProjectName, plan.ProjectID); err != nil {
+			if _, err := fmt.Fprintf(out, "The removal is blocked. Project %q stays archived. Correct the causes above, then run 'twt done %s' again.\n", plan.ProjectName, plan.ProjectID); err != nil {
 				return err
 			}
 		}
@@ -168,7 +168,7 @@ func relocateAndComplete(command *cobra.Command, options Options, service *proje
 		if _, err := fmt.Fprintf(out, "%s Project %q; switching the client to Project %q\n", verb, project.Name, destination.Name); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintln(out, "No other active Project exists. twt2 detaches the client."); err != nil {
+	} else if _, err := fmt.Fprintln(out, "No other active Project exists. twt detaches the client."); err != nil {
 		return err
 	}
 	return options.DoneRelocate(RelocationRequest{
@@ -188,9 +188,9 @@ func relocateAndComplete(command *cobra.Command, options Options, service *proje
 func realDoneRelocate(options Options) func(RelocationRequest) error {
 	return func(request RelocationRequest) error {
 		service := options.projectService()
-		retry := "twt2 done " + request.ProjectID
+		retry := "twt done " + request.ProjectID
 		if request.Keep {
-			retry = "twt2 archive " + request.ProjectID
+			retry = "twt archive " + request.ProjectID
 		}
 		clientName, err := callingTmuxClient(options, request.CurrentPane)
 		if err != nil {
@@ -236,7 +236,7 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 	}
 }
 
-// RunDoneWorker runs the private __twt2_done_worker argv mode. It waits for
+// RunDoneWorker runs the private __twt_done_worker argv mode. It waits for
 // the relocation signal, archives the Project, and removes it unless the
 // keep flag is set. On failure it keeps its remain-on-exit window visible.
 func RunDoneWorker(options Options, args []string) error {
@@ -252,9 +252,9 @@ func RunDoneWorker(options Options, args []string) error {
 	if err != nil {
 		return err
 	}
-	retry := "twt2 done " + projectID
+	retry := "twt done " + projectID
 	if keep {
-		retry = "twt2 archive " + projectID
+		retry = "twt archive " + projectID
 	}
 	err = runRelocationWorker(options, doneWorker, projectID, channel, clientName, retry,
 		func(service *projectservice.Service, result projectservice.ArchiveResult) (string, error) {
@@ -263,7 +263,7 @@ func RunDoneWorker(options Options, args []string) error {
 			}
 			plan, removeErr := service.Remove(projectID, os.Getenv("TMUX_PANE"), projectservice.RemovalOptions{AllowUnpublished: allowUnpublished})
 			if removeErr != nil {
-				return "", fmt.Errorf("%w; Project %q stays archived; run 'twt2 done %s' to retry", removeErr, result.Project.Name, projectID)
+				return "", fmt.Errorf("%w; Project %q stays archived; run 'twt done %s' to retry", removeErr, result.Project.Name, projectID)
 			}
 			return fmt.Sprintf("Finished Project %s; reclaimed %s", plan.ProjectName, formatBytes(plan.Bytes)), nil
 		})

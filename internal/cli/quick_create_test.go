@@ -37,7 +37,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
@@ -45,10 +45,10 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
-	t.Setenv("TWT2_PROJECT_ID", "stale-project-id")
-	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", oldPane, "@twt2_project_id", oldProject.Name)
+	t.Setenv("TWT_PROJECT_ID", "stale-project-id")
+	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", oldPane, "@twt_project_id", oldProject.Name)
 	var invalidIDOutput, invalidIDError bytes.Buffer
 	invalidIDOptions := options
 	invalidIDOptions.Stdout, invalidIDOptions.Stderr = &invalidIDOutput, &invalidIDError
@@ -61,7 +61,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if _, err := store.NewProjectStore(options.StateDir).Find("invalid-id-project"); err == nil {
 		t.Fatal("quick create accepted a Project name as tmux identity")
 	}
-	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", oldPane, "@twt2_project_id", oldProject.ID)
+	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", oldPane, "@twt_project_id", oldProject.ID)
 
 	latestTemplate := strings.Replace(template, "  - name: app\n", "  - name: app\n    window_name: latest-app\n", 1)
 	if err := os.WriteFile(templatePath, []byte(latestTemplate), 0o644); err != nil {
@@ -84,7 +84,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		jsonCommand := cli.New(jsonOptions)
 		jsonCommand.SetArgs(jsonArgs)
 		err = jsonCommand.Execute()
-		if err == nil || !strings.Contains(err.Error(), "use 'twt2 projects create' for JSON automation") {
+		if err == nil || !strings.Contains(err.Error(), "use 'twt projects create' for JSON automation") {
 			t.Fatalf("quick create JSON error for %v = %v", jsonArgs, err)
 		}
 		if _, err := store.NewProjectStore(options.StateDir).Find("json-project"); err == nil {
@@ -112,7 +112,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		_, err := service.Archive(projectID, "")
 		return err
 	}
-	attachControlClient(t, socket, "twt2-old-project")
+	attachControlClient(t, socket, "twt-old-project")
 
 	var promptOutput, promptError bytes.Buffer
 	promptOptions := options
@@ -149,9 +149,9 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		t.Fatalf("new Project does not use the latest Project Template: %+v", newProject)
 	}
 
-	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-new-project", "-F", "#{pane_id}")
+	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-new-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", newPane)
-	attachControlClient(t, socket, "twt2-new-project")
+	attachControlClient(t, socket, "twt-new-project")
 	archiveCalled := false
 	options.QuickCreateSwitch = func(string, string) error { return fmt.Errorf("test switch failure") }
 	options.QuickCreateArchive = func(string, string, string) error {
@@ -165,7 +165,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test switch failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
-		!strings.Contains(err.Error(), "twt2 projects open failed-switch") {
+		!strings.Contains(err.Error(), "twt projects open failed-switch") {
 		t.Fatalf("quick create switch failure = %v", err)
 	}
 	if archiveCalled {
@@ -278,15 +278,15 @@ func TestQuickCreateChecksTheTmuxClientBeforeProjectSetup(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
 	initLog := filepath.Join(root, "init.log")
-	t.Setenv("TWT2_TEST_INIT_LOG", initLog)
-	slowTemplate := template + "    initialize:\n      command: [\"sh\", \"-c\", \"sleep 1.2; printf initialized > \\\"$TWT2_TEST_INIT_LOG\\\"\"]\n"
+	t.Setenv("TWT_TEST_INIT_LOG", initLog)
+	slowTemplate := template + "    initialize:\n      command: [\"sh\", \"-c\", \"sleep 1.2; printf initialized > \\\"$TWT_TEST_INIT_LOG\\\"\"]\n"
 	if err := os.WriteFile(templatePath, []byte(slowTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
@@ -341,12 +341,12 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	helperPane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-new-project", "-n", "archive-helper", "--", "sleep", "60")
+	helperPane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt-new-project", "-n", "archive-helper", "--", "sleep", "60")
 	t.Setenv("TMUX_PANE", helperPane)
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
-	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldProject.ID, newProject.ID, "twt2-create-worker-timeout", "no-client"})
-	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt2 archive "+oldProject.ID) {
+	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldProject.ID, newProject.ID, "twt-create-worker-timeout", "no-client"})
+	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt archive "+oldProject.ID) {
 		t.Fatalf("quick create worker timeout = %v", err)
 	}
 	oldProject, err = store.NewProjectStore(options.StateDir).Find(oldProject.ID)
@@ -358,7 +358,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 		t.Fatalf("worker timeout window = %q", windowName)
 	}
 	runCommand(t, "", "tmux", "-L", socket, "rename-window", "-t", helperPane, "archive-helper")
-	channel := "twt2-create-worker-test"
+	channel := "twt-create-worker-test"
 	signalResult := make(chan error, 1)
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -378,7 +378,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	if err != nil || newProject.Status != domain.ProjectActive {
 		t.Fatalf("new Project after worker: status=%q error=%v", newProject.Status, err)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-old-project").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-old-project").Run(); err == nil {
 		t.Fatal("quick create worker kept the old tmux session")
 	}
 }
@@ -395,8 +395,8 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	binary := filepath.Join(root, "twt2")
-	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt2")
+	binary := filepath.Join(root, "twt")
+	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
 	source := filepath.Join(root, "source")
 	initGitRepository(t, source)
 	configDir := filepath.Join(root, "config")
@@ -407,7 +407,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir:             configDir,
@@ -421,11 +421,11 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-old-project", "-F", "#{pane_id}")
 	otherPane := runCommand(t, "", "tmux", "-L", socket, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", oldPane)
 	runCommand(t, "", "tmux", "-L", socket, "select-pane", "-t", otherPane)
 
-	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "twt2-old-project")
+	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "twt-old-project")
 	clientInput, err := client.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -448,7 +448,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	}, "control client did not attach to the other pane in the old Project")
 
 	t.Setenv("TMUX_PANE", oldPane)
-	t.Setenv("TWT2_PROJECT_ID", "stale-project-id")
+	t.Setenv("TWT_PROJECT_ID", "stale-project-id")
 	failingOutputOptions := options
 	failingOutputOptions.Stdout = errorWriter{}
 	failingOutputCommand := cli.New(failingOutputOptions)
@@ -456,7 +456,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	err = failingOutputCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test output failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
-		!strings.Contains(err.Error(), "twt2 projects open output-fails") {
+		!strings.Contains(err.Error(), "twt projects open output-fails") {
 		t.Fatalf("quick create output failure = %v", err)
 	}
 	failedOutputProject, findErr := store.NewProjectStore(options.StateDir).Find("output-fails")
@@ -512,7 +512,7 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
@@ -520,9 +520,9 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
-	attachControlClient(t, socket, "twt2-old-project")
+	attachControlClient(t, socket, "twt-old-project")
 
 	var events []string
 	options.QuickCreateSwitch = func(_ string, session string) error {

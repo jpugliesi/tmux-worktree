@@ -53,19 +53,19 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundQuickCreate := false
 	foundArchive := false
 	for _, command := range schema.Commands {
-		if command.Path == "twt2 new" {
+		if command.Path == "twt new" {
 			foundQuickCreate = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
 				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
 			}
 		}
-		if command.Path == "twt2 archive" {
+		if command.Path == "twt archive" {
 			foundArchive = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "project" || command.Arguments[0].Required {
 				t.Fatalf("archive schema arguments = %+v", command.Arguments)
 			}
 		}
-		if command.Path != "twt2 projects create" {
+		if command.Path != "twt projects create" {
 			continue
 		}
 		foundCreate = true
@@ -93,13 +93,13 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		}
 	}
 	if !foundCreate {
-		t.Fatal("schema does not contain twt2 projects create")
+		t.Fatal("schema does not contain twt projects create")
 	}
 	if !foundQuickCreate {
-		t.Fatal("schema does not contain twt2 new")
+		t.Fatal("schema does not contain twt new")
 	}
 	if !foundArchive {
-		t.Fatal("schema does not contain twt2 archive")
+		t.Fatal("schema does not contain twt archive")
 	}
 	foundArchiveOperation := false
 	for _, operation := range schema.ApplyOperations {
@@ -290,14 +290,14 @@ func TestLockedMutationsReportTheLockedCode(t *testing.T) {
 func TestWriteErrorShowsHintsInTextAndJSON(t *testing.T) {
 	hinted := clierr.WithHint(
 		clierr.New(clierr.PreconditionFailed, "Project %q is archived", "fix-auth"),
-		"Run 'twt2 projects open %s' to open the Project.", "fix-auth")
+		"Run 'twt projects open %s' to open the Project.", "fix-auth")
 
 	textCommand := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
 	var text bytes.Buffer
 	if err := cli.WriteError(textCommand, &text, hinted); err != nil {
 		t.Fatal(err)
 	}
-	want := "twt2: Project \"fix-auth\" is archived\nRun 'twt2 projects open fix-auth' to open the Project.\n"
+	want := "twt: Project \"fix-auth\" is archived\nRun 'twt projects open fix-auth' to open the Project.\n"
 	if text.String() != want {
 		t.Fatalf("text error:\n%s\nwant:\n%s", text.String(), want)
 	}
@@ -319,7 +319,7 @@ func TestWriteErrorShowsHintsInTextAndJSON(t *testing.T) {
 	if err := json.Unmarshal(encoded.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON error: %v\n%s", err, encoded.String())
 	}
-	if result.Error.Code != "precondition_failed" || result.Error.Hint != "Run 'twt2 projects open fix-auth' to open the Project." {
+	if result.Error.Code != "precondition_failed" || result.Error.Hint != "Run 'twt projects open fix-auth' to open the Project." {
 		t.Fatalf("JSON error = %+v", result.Error)
 	}
 }

@@ -19,7 +19,7 @@ func TestMutationLockRefusesConcurrentWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AcquireMutationLock(stateDir); err == nil || !strings.Contains(err.Error(), "another twt2 change") {
+	if _, err := AcquireMutationLock(stateDir); err == nil || !strings.Contains(err.Error(), "another twt change") {
 		t.Fatalf("second lock error = %v", err)
 	}
 	if _, err := AcquireMutationLock(stateDir); !errors.Is(err, ErrLockHeld) {
@@ -235,7 +235,7 @@ func TestActivityLockExposesAnInheritableFileAndDetectsHeldState(t *testing.T) {
 }
 
 func TestActivityLockCanPassToAChildProcess(t *testing.T) {
-	if os.Getenv("TWT2_ACTIVITY_LOCK_CHILD") == "1" {
+	if os.Getenv("TWT_ACTIVITY_LOCK_CHILD") == "1" {
 		inherited := os.NewFile(3, "inherited-activity-lock")
 		if inherited == nil {
 			os.Exit(2)
@@ -252,7 +252,7 @@ func TestActivityLockCanPassToAChildProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := exec.Command(os.Args[0], "-test.run=^TestActivityLockCanPassToAChildProcess$")
-	command.Env = append(os.Environ(), "TWT2_ACTIVITY_LOCK_CHILD=1")
+	command.Env = append(os.Environ(), "TWT_ACTIVITY_LOCK_CHILD=1")
 	command.ExtraFiles = []*os.File{activity.File()}
 	stdin, err := command.StdinPipe()
 	if err != nil {

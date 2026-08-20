@@ -13,7 +13,7 @@ import (
 // syncs the file and its directory. label names the content in error
 // messages.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode, label string) error {
-	return writeFileAtomicIn(filepath.Dir(path), ".twt2-write-*", path, data, perm, label)
+	return writeFileAtomicIn(filepath.Dir(path), ".twt-write-*", path, data, perm, label)
 }
 
 // writeFileAtomicIn is the core of WriteFileAtomic. The Transcript Snapshot

@@ -12,7 +12,7 @@ import (
 const currentProjectReference = "current"
 
 // resolveProject finds one Project by name or immutable ID. The literal
-// value "current" uses the current directory, the TWT2_PROJECT_ID value, and
+// value "current" uses the current directory, the TWT_PROJECT_ID value, and
 // the current tmux pane, in that order.
 func resolveProject(projects *projectservice.Service, reference string) (domain.Project, error) {
 	if reference != currentProjectReference {
@@ -22,7 +22,7 @@ func resolveProject(projects *projectservice.Service, reference string) (domain.
 	if err != nil {
 		return domain.Project{}, err
 	}
-	return projects.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
+	return projects.Current(directory, os.Getenv("TWT_PROJECT_ID"), os.Getenv("TMUX_PANE"))
 }
 
 // resolveProjectReference maps a PROJECT argument to a stable reference. For

@@ -1,4 +1,4 @@
-local config = require("twt2.config")
+local config = require("twt.config")
 local M = {}
 
 local function message(result)
@@ -11,7 +11,7 @@ local function message(result)
       return vim.trim(value)
     end
   end
-  return "twt2 returned no error details"
+  return "twt returned no error details"
 end
 
 function M.request(args, opts, done)
@@ -26,16 +26,16 @@ function M.request(args, opts, done)
       return
     end
     if not result.stdout or result.stdout == "" then
-      done("twt2 returned empty JSON output")
+      done("twt returned empty JSON output")
       return
     end
     local ok, value = pcall(vim.json.decode, result.stdout)
     if not ok or type(value) ~= "table" then
-      done("twt2 returned invalid JSON")
+      done("twt returned invalid JSON")
       return
     end
     if value.schemaVersion ~= 1 then
-      done("twt2 JSON schema version is not supported")
+      done("twt JSON schema version is not supported")
       return
     end
     done(nil, value)
@@ -45,7 +45,7 @@ function M.request(args, opts, done)
     return
   end
   if not vim.system then
-    done("twt2.nvim needs Neovim 0.10 or later")
+    done("twt.nvim needs Neovim 0.10 or later")
     return
   end
   vim.system(argv, { cwd = opts.cwd, stdin = opts.stdin, text = true }, vim.schedule_wrap(finish))

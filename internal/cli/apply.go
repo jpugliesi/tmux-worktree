@@ -108,7 +108,7 @@ type applyOperation struct {
 	Run func(command *cobra.Command, options Options, request applyRequest) error
 }
 
-// applyOperations describes every operation that 'twt2 apply' accepts.
+// applyOperations describes every operation that 'twt apply' accepts.
 func applyOperations() []applyOperation {
 	return []applyOperation{
 		{applyOperationSchema{Operation: "templates.create", Payload: "template", Fields: []requestFieldSchema{

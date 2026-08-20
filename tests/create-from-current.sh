@@ -57,7 +57,7 @@ run_twt() {
     TMUX="test" \
     TMUX_WORKTREE_DIR="$test_root/worktrees" \
     TWT_TEST_TMUX_STATE="$test_root/tmux-sessions" \
-    "$project_root/bin/twt" "$@"
+    "$project_root/bin/twt-legacy" "$@"
 }
 
 help_output="$(run_twt create --help)"

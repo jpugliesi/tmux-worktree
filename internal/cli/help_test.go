@@ -28,7 +28,7 @@ func TestMissingTemplateNameGivesActionableHelp(t *testing.T) {
 	if writeErr := cli.WriteError(executed, &stderr, err); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	want := "twt2: missing required argument NAME\nRun 'twt2 templates create --help' for usage and examples.\n"
+	want := "twt: missing required argument NAME\nRun 'twt templates create --help' for usage and examples.\n"
 	if stderr.String() != want {
 		t.Fatalf("stderr:\n%s\nwant:\n%s", stderr.String(), want)
 	}
@@ -55,7 +55,7 @@ func TestJSONUsageErrorHasAStableCodeAndHelpCommand(t *testing.T) {
 	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON error: %v\n%s", err, stderr.String())
 	}
-	if result.Error.Code != "invalid_usage" || result.Error.Message != "missing required argument NAME" || result.Error.HelpCommand != "twt2 templates create --help" {
+	if result.Error.Code != "invalid_usage" || result.Error.Message != "missing required argument NAME" || result.Error.HelpCommand != "twt templates create --help" {
 		t.Fatalf("JSON usage error = %+v", result.Error)
 	}
 }
@@ -120,7 +120,7 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 		if decodeErr := json.Unmarshal(jsonStderr.Bytes(), &result); decodeErr != nil {
 			t.Fatalf("decode JSON error for %v: %v\n%s", jsonArgs, decodeErr, jsonStderr.String())
 		}
-		wantHelp := "twt2 " + strings.Join(group, " ") + " --help"
+		wantHelp := "twt " + strings.Join(group, " ") + " --help"
 		if result.Error.Code != "invalid_usage" || result.Error.HelpCommand != wantHelp {
 			t.Fatalf("JSON error for %v = %+v, want code invalid_usage and helpCommand %q", jsonArgs, result.Error, wantHelp)
 		}
@@ -154,7 +154,7 @@ func TestRootHelpGroupsCommandsAndShowsAWorkingExample(t *testing.T) {
 		"Workflows:",
 		"Inspect and maintain:",
 		"Automation:",
-		"twt2 projects create fix-auth --template everysphere",
+		"twt projects create fix-auth --template everysphere",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("root help does not contain %q:\n%s", want, output)
@@ -169,8 +169,8 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 	}
 	for _, want := range []string{
 		"NAME is the reusable template name",
-		"twt2 templates create everysphere",
-		"twt2 templates repos add everysphere",
+		"twt templates create everysphere",
+		"twt templates repos add everysphere",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("templates create help does not contain %q:\n%s", want, output)
@@ -187,8 +187,8 @@ func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
 		"latest saved version of the current Project Template",
 		"switches the calling client",
 		"archives the old Project",
-		"twt2 new fix-auth",
-		"twt2 projects create",
+		"twt new fix-auth",
+		"twt projects create",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("quick create help does not contain %q:\n%s", want, output)

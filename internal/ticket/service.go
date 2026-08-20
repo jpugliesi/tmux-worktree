@@ -46,7 +46,7 @@ func (s *Service) home() (string, error) {
 	if strings.TrimSpace(s.options.Home) == "" {
 		return "", clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "the Tickets home is not set"),
-			"Set ticketsHome in the twt2 config file, or set TWT2_TICKETS_HOME.")
+			"Set ticketsHome in the twt config file, or set TWT_TICKETS_HOME.")
 	}
 	return filepath.Clean(s.options.Home), nil
 }
@@ -663,7 +663,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 	if !allowUnknownStatus && !domain.ValidTicketStatus(ticket.Status) {
 		return domain.Ticket{}, clierr.WithHint(
 			clierr.New(clierr.UnsafeState, "ticket %q has unrecognized status %q", slug, ticket.Status),
-			"Set one of %s with 'twt2 tickets set %s --status STATUS'.",
+			"Set one of %s with 'twt tickets set %s --status STATUS'.",
 			strings.Join(domain.TicketStatuses(), ", "), slug)
 	}
 	m := &mutation{file: file, mapping: file.ensureMapping(), ticket: ticket, destPath: path}
@@ -758,14 +758,14 @@ func healBoard(mapping *yaml.Node, home, path string) {
 	setMapNull(mapping, "board")
 }
 
-// validClaimant checks the claimant name against the twt2 resource-name
+// validClaimant checks the claimant name against the twt resource-name
 // rules.
 func validClaimant(claimant string) (string, error) {
 	claimant = strings.TrimSpace(claimant)
 	if claimant == "" {
 		return "", clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "the claimant name is empty"),
-			"Pass --as NAME or set TWT2_CLAIMANT.")
+			"Pass --as NAME or set TWT_CLAIMANT.")
 	}
 	if err := store.ValidateResourceName(claimant); err != nil {
 		return "", clierr.Wrap(clierr.InvalidUsage, err)
@@ -776,19 +776,19 @@ func validClaimant(claimant string) (string, error) {
 func claimedByOther(slug, current string) error {
 	return clierr.WithHint(
 		clierr.New(clierr.Locked, "ticket %q is claimed by %q", slug, current),
-		"Select a ticket from 'twt2 tickets list --ready'.")
+		"Select a ticket from 'twt tickets list --ready'.")
 }
 
 func boardMissing(name string) error {
 	return clierr.WithHint(
 		clierr.New(clierr.NotFound, "Board %q does not exist", name),
-		"Run 'twt2 tickets boards create %s'.", name)
+		"Run 'twt tickets boards create %s'.", name)
 }
 
 func homeMissing(home string) error {
 	return clierr.WithHint(
 		clierr.New(clierr.NotFound, "Tickets home %q does not exist", home),
-		"Run 'twt2 tickets init'.")
+		"Run 'twt tickets init'.")
 }
 
 func fileExists(path string) bool {

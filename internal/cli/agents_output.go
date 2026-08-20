@@ -10,7 +10,7 @@ import (
 
 type agentOutput struct {
 	ID string `json:"id"`
-	// ProviderSessionID is the raw provider session ID. twt2 never returns
+	// ProviderSessionID is the raw provider session ID. twt never returns
 	// the provider file path.
 	ProviderSessionID string            `json:"providerSessionId,omitempty"`
 	ProjectID         string            `json:"projectId"`
@@ -77,7 +77,7 @@ type agentSendOutput struct {
 	Status        string `json:"status"`
 }
 
-// toAgentOutput describes one Agent Session. With probeLive false, twt2 does
+// toAgentOutput describes one Agent Session. With probeLive false, twt does
 // not ask tmux for the state of the pane: the status is "unknown" and the
 // capabilities that need a live pane are false.
 func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, projectActive, probeLive bool) agentOutput {

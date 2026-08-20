@@ -16,7 +16,7 @@ type Template struct {
 	Name         string           `yaml:"name" json:"name"`
 	Repositories []RepositorySpec `yaml:"repositories" json:"repositories"`
 	Initialize   *InitializeSpec  `yaml:"initialize,omitempty" json:"initialize,omitempty"`
-	// Session is the command that twt2 runs each time it creates the tmux
+	// Session is the command that twt runs each time it creates the tmux
 	// session of a Project. Use it to lay out the windows and the panes.
 	Session *SessionSpec `yaml:"session,omitempty" json:"session,omitempty"`
 	// PoolDepth is the number of ready Prepared Environments to keep for this
@@ -26,12 +26,12 @@ type Template struct {
 	Agents []TemplateAgent `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
-// TemplateAgent declares one Agent Session that twt2 registers and starts
+// TemplateAgent declares one Agent Session that twt registers and starts
 // during Project setup.
 type TemplateAgent struct {
 	Label    string `yaml:"label" json:"label"`
 	Provider string `yaml:"provider" json:"provider"`
-	// Start is the command that twt2 runs in a new Project window. It is also
+	// Start is the command that twt runs in a new Project window. It is also
 	// the resume command of the Agent Session.
 	Start []string `yaml:"start" json:"start"`
 }
@@ -80,9 +80,9 @@ type CloneSpec struct {
 	Depth int    `yaml:"depth,omitempty" json:"depth,omitempty"`
 }
 
-// SessionSpec declares one command that twt2 runs each time it creates the
-// tmux session of a Project. twt2 runs the command after it makes the session
-// and one window for each repository. twt2 never runs it against a session
+// SessionSpec declares one command that twt runs each time it creates the
+// tmux session of a Project. twt runs the command after it makes the session
+// and one window for each repository. twt never runs it against a session
 // that is already live, so the command cannot disturb panes that the user
 // arranged.
 type SessionSpec struct {

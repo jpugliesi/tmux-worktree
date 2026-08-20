@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	snapshotMarkerName      = ".twt2-snapshot.json"
-	snapshotTemporaryPrefix = ".twt2-snapshot-"
+	snapshotMarkerName      = ".twt-snapshot.json"
+	snapshotTemporaryPrefix = ".twt-snapshot-"
 	snapshotLatestName      = "latest.md"
 	snapshotAgentsDirName   = "agents"
 )
 
-// snapshotAgentID matches the hexadecimal Agent Session ID that twt2 makes.
+// snapshotAgentID matches the hexadecimal Agent Session ID that twt makes.
 // One Agent Session snapshot file uses this name and the ".md" suffix.
 var snapshotAgentID = regexp.MustCompile(`^[0-9a-f]{4,64}$`)
 
@@ -117,7 +117,7 @@ func (s SnapshotStore) Save(projectID, agentID, markdown string) (SnapshotPaths,
 		}
 	}
 	if initialize {
-		marker, err := json.Marshal(snapshotMarker{Version: 1, Owner: "twt2", ProjectID: projectID})
+		marker, err := json.Marshal(snapshotMarker{Version: 1, Owner: "twt", ProjectID: projectID})
 		if err != nil {
 			return SnapshotPaths{}, fmt.Errorf("encode Transcript Snapshot ownership marker: %w", err)
 		}
@@ -217,7 +217,7 @@ func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool,
 		return false, fmt.Errorf("read Transcript Snapshot ownership marker: %w", err)
 	}
 	var marker snapshotMarker
-	if json.Unmarshal(data, &marker) != nil || marker.Version != 1 || marker.Owner != "twt2" || marker.ProjectID != projectID {
+	if json.Unmarshal(data, &marker) != nil || marker.Version != 1 || marker.Owner != "twt" || marker.ProjectID != projectID {
 		return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q has a conflicting ownership marker", directory)
 	}
 	return true, nil

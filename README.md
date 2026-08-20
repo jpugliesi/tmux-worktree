@@ -2,70 +2,70 @@
 
 A small tool for managing git worktrees with dedicated tmux sessions.
 
-The repository also contains `twt2`, a Go preview that uses Projects, YAML
-Project Templates, multiple repositories, and Project Agent Sessions. See the
-[twt2 preview guide](docs/twt2.md).
-The preview also includes a tested [Neovim plug-in](nvim/twt2.nvim/README.md)
+`twt` is a Go CLI that uses Projects, YAML Project Templates, multiple
+repositories, and Project Agent Sessions. See the
+[twt preview guide](docs/twt.md).
+It also includes a tested [Neovim plug-in](nvim/twt.nvim/README.md)
 for Project-scoped Agent selection and review feedback, and a personal
-Markdown ticket tracker (`twt2 tickets`) for a coding-agent backlog. See the
-[twt2 preview guide](docs/twt2.md) for setup and commands.
+Markdown ticket tracker (`twt tickets`) for a coding-agent backlog. See the
+[twt preview guide](docs/twt.md) for setup and commands.
 
-## Try the change-focused twt2 workflow
+## Try the change-focused twt workflow
 
 Build the preview CLI:
 
 ```sh
-go build -o ./bin/twt2 ./cmd/twt2
+go build -o ./bin/twt ./cmd/twt
 ```
 
 Define a reusable Project Template. This example gives each change one web
 repository, one API repository, and one tmux window for each repository:
 
 ```sh
-twt2 templates create product
-twt2 templates repos add product web git@github.com:acme/web.git
-twt2 templates repos add product api git@github.com:acme/api.git
-twt2 templates init set product --repo web -- ./init.sh
-twt2 templates prepare product
+twt templates create product
+twt templates repos add product web git@github.com:acme/web.git
+twt templates repos add product api git@github.com:acme/api.git
+twt templates init set product --repo web -- ./init.sh
+twt templates prepare product
 ```
 
 Create a Project for one change:
 
 ```sh
-twt2 projects create fix-auth --template product
+twt projects create fix-auth --template product
 ```
 
 `templates prepare` creates both worktrees and runs repository initialization
 once. Project creation claims that ready environment and opens one tmux session
-with `web` and `api` windows. twt2 prepares the next environment in the
+with `web` and `api` windows. twt prepares the next environment in the
 background.
 
 From that Project tmux session, create the next Project with one short
 command:
 
 ```sh
-twt2 new fix-logout
-# Or run `twt2 new` and enter the name at the prompt.
+twt new fix-logout
+# Or run `twt new` and enter the name at the prompt.
 ```
 
-`twt2` uses the latest saved `product` template. It completes setup, switches
+`twt` uses the latest saved `product` template. It completes setup, switches
 your tmux client to `fix-logout`, and archives `fix-auth`. If creation or setup
 fails, `fix-auth` stays active.
 
 Register a coding-agent conversation and resume it in its own safe window:
 
 ```sh
-twt2 agents register \
+twt agents register \
   --project fix-auth \
   --provider codex \
   --label auth-review \
   --session CODEX_SESSION_ID \
   -- codex resume CODEX_SESSION_ID
-twt2 agents list --project fix-auth
-twt2 agents resume AGENT_ID
+twt agents list --project fix-auth
+twt agents resume AGENT_ID
 ```
 
-Install [twt2.nvim](nvim/twt2.nvim/README.md) to select that Agent Session
+Install [twt.nvim](nvim/twt.nvim/README.md) to select that Agent Session
 with `<leader>arp`. The plug-in opens that transcript in a private
 Project-specific `latest.md`. Add review notes with `<leader>an`, and send the
 note batch with `<leader>arr`. One Neovim process can safely work across
@@ -76,34 +76,34 @@ Archive the current Project when you stop its work. This keeps its worktrees,
 branches, and Agent Session records:
 
 ```sh
-twt2 archive
-twt2 projects open fix-auth
+twt archive
+twt projects open fix-auth
 ```
 
-When the work is complete and pushed, `twt2 done` archives the Project and
+When the work is complete and pushed, `twt done` archives the Project and
 removes its data in one step. From inside the Project session, it moves your
-tmux client to another active Project first. `twt2 switch` moves your tmux
+tmux client to another active Project first. `twt switch` moves your tmux
 client to any Project session, with an interactive picker when you give no
 name:
 
 ```sh
-twt2 done
-twt2 done fix-auth --keep
-twt2 switch fix-auth
+twt done
+twt done fix-auth --keep
+twt switch fix-auth
 ```
 
 Inspect disk use and preview cleanup before you remove archived data:
 
 ```sh
-twt2 storage show
-twt2 environments list
-twt2 storage clean
-twt2 storage clean --apply
-twt2 projects remove fix-auth
-twt2 projects remove fix-auth --apply
+twt storage show
+twt environments list
+twt storage clean
+twt storage clean --apply
+twt projects remove fix-auth
+twt projects remove fix-auth --apply
 ```
 
-See the [twt2 preview guide](docs/twt2.md) for YAML, JSON, retry, and safety
+See the [twt preview guide](docs/twt.md) for YAML, JSON, retry, and safety
 details.
 
 Each worktree lives at `$TMUX_WORKTREE_DIR/<name>` and is backed by a shared
@@ -121,34 +121,48 @@ echo 'export PATH="$HOME/.tmux-worktree/bin:$PATH"' >> ~/.zshrc
 
 Update later with `git -C ~/.tmux-worktree pull`.
 
-### twt2 preview
+### twt preview
 
 The Go preview needs Go 1.23 or later. Build it in the same installation:
 
 ```sh
 cd ~/.tmux-worktree
-go build -o ./bin/twt2 ./cmd/twt2
+go build -o ./bin/twt ./cmd/twt
 exec zsh
-twt2 --help
+twt --help
 ```
 
 Install shell completion for command names, Project Template names, Project
-names, and Agent Session IDs with `twt2 completion zsh > "${fpath[1]}/_twt2"`.
+names, and Agent Session IDs with `twt completion zsh > "${fpath[1]}/_twt"`.
 Use `bash`, `fish`, or `powershell` for the other shells.
 
 With lazy.nvim, load the included Neovim plug-in from the same checkout:
 
 ```lua
 {
-  dir = vim.fn.expand("~/.tmux-worktree/nvim/twt2.nvim"),
+  dir = vim.fn.expand("~/.tmux-worktree/nvim/twt.nvim"),
   config = function()
-    require("twt2").setup()
+    require("twt").setup()
   end,
 }
 ```
 
 After an update, run the `go build` command again. The preview does not yet
 include prebuilt release files.
+
+## Deprecation
+
+The original bash CLI is retired. It is installed as `bin/twt-legacy`, and the
+name `twt` now belongs to the Go CLI above. Its configuration file stays at
+`~/.config/tmux-worktree/config.sh`, and its data directory stays at
+`$TMUX_WORKTREE_DIR`. `tests/start-reset.sh` exercises the legacy CLI.
+
+The Go `twt` supersedes it. Use Projects and Project Templates for new work.
+
+The "Quick start", "Using tmux + twt with coding agents", "Configure", and
+"Shared files" sections below describe the retired CLI. Run each of those
+commands as `twt-legacy`, for example
+`twt-legacy create git@github.com:org/repo.git feature-xyz`.
 
 ## Quick start
 

@@ -12,7 +12,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-const environmentMarkerName = ".twt2-environment.json"
+const environmentMarkerName = ".twt-environment.json"
 
 func (s *Service) newPreparedEnvironment(templateName, digest string, template domain.Template) (domain.PreparedEnvironment, error) {
 	id, err := newID()
@@ -139,7 +139,7 @@ func (s *Service) failEnvironment(environment *domain.PreparedEnvironment, cause
 // must fail.
 func (s *Service) runEnvironmentStep(environment *domain.PreparedEnvironment, step domain.SetupStep) error {
 	if step.Kind == domain.StepRepositoryInit && step.Status == domain.StepRunning {
-		return fmt.Errorf("repository initialization was interrupted; twt2 removes this environment and prepares a new one on the next create")
+		return fmt.Errorf("repository initialization was interrupted; twt removes this environment and prepares a new one on the next create")
 	}
 	switch step.Kind {
 	case domain.StepProjectRoot:
@@ -214,11 +214,11 @@ func (s *Service) runPreparedInitialize(environment domain.PreparedEnvironment, 
 	}
 	defer activityLock.Release()
 	env := append(os.Environ(),
-		"TWT2_ENVIRONMENT_ID="+environment.ID,
-		"TWT2_ENVIRONMENT_ROOT="+environment.Root,
-		"TWT2_TEMPLATE_NAME="+environment.TemplateName,
-		"TWT2_REPOSITORY_NAME="+repository.Name,
-		"TWT2_REPOSITORY_PATH="+repository.Path,
+		"TWT_ENVIRONMENT_ID="+environment.ID,
+		"TWT_ENVIRONMENT_ROOT="+environment.Root,
+		"TWT_TEMPLATE_NAME="+environment.TemplateName,
+		"TWT_REPOSITORY_NAME="+repository.Name,
+		"TWT_REPOSITORY_PATH="+repository.Path,
 	)
 	return runInitializationProcess(repository.Path, spec.Initialize.Command, env, activityLock.File())
 }
@@ -228,7 +228,7 @@ func writeEnvironmentMarker(environment domain.PreparedEnvironment) error {
 		return fmt.Errorf("create Prepared Environment root: %w", err)
 	}
 	marker := map[string]any{
-		"owner": "twt2", "environmentId": environment.ID,
+		"owner": "twt", "environmentId": environment.ID,
 		"templateDigest": environment.TemplateDigest, "formatVersion": environment.FormatVersion,
 	}
 	return writeJSON(filepath.Join(environment.Root, environmentMarkerName), marker, 0o600)
@@ -245,7 +245,7 @@ func validateEnvironmentMarker(environment domain.PreparedEnvironment) error {
 		TemplateDigest string `json:"templateDigest"`
 		FormatVersion  int    `json:"formatVersion"`
 	}
-	if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt2" || marker.EnvironmentID != environment.ID || marker.TemplateDigest != environment.TemplateDigest || marker.FormatVersion != environment.FormatVersion {
+	if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt" || marker.EnvironmentID != environment.ID || marker.TemplateDigest != environment.TemplateDigest || marker.FormatVersion != environment.FormatVersion {
 		return fmt.Errorf("Prepared Environment %q has an invalid ownership marker", environment.ID)
 	}
 	return nil

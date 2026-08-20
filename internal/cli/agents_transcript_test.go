@@ -140,7 +140,7 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if !strings.Contains(text, "Snapshot: "+agentSnapshotPath) {
 		t.Fatalf("transcript snapshot text = %q", text)
 	}
-	marker, err := os.ReadFile(filepath.Join(snapshotDirectory, ".twt2-snapshot.json"))
+	marker, err := os.ReadFile(filepath.Join(snapshotDirectory, ".twt-snapshot.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

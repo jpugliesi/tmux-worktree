@@ -21,10 +21,10 @@ import (
 // RelocationRequest describes one archive or removal that must move the
 // calling tmux client out of the Project session first.
 type RelocationRequest struct {
-	// ProjectID is the Project that twt2 archives or removes.
+	// ProjectID is the Project that twt archives or removes.
 	ProjectID string
 	// DestinationProjectID is the Project that receives the tmux client. It
-	// is empty when no other active Project exists; twt2 then detaches the
+	// is empty when no other active Project exists; twt then detaches the
 	// client.
 	DestinationProjectID string
 	// Keep stops the operation after the archive.
@@ -41,7 +41,7 @@ type Options struct {
 	DataDir    string
 	TmuxSocket string
 	// TicketsHome is the root directory of the Markdown ticket files. When it
-	// is empty, twt2 resolves TWT2_TICKETS_HOME and then the ticketsHome value
+	// is empty, twt resolves TWT_TICKETS_HOME and then the ticketsHome value
 	// of config.yaml at command time.
 	TicketsHome string
 	Stdout      io.Writer
@@ -96,13 +96,13 @@ func (o Options) maintenanceService() *maintenance.Service {
 }
 
 // resolveTicketsHome resolves the Tickets home: the injected Options value,
-// then TWT2_TICKETS_HOME, then the ticketsHome value of config.yaml. The
+// then TWT_TICKETS_HOME, then the ticketsHome value of config.yaml. The
 // result is empty when no source sets a home.
 func (o Options) resolveTicketsHome() (string, error) {
 	if o.TicketsHome != "" {
 		return o.TicketsHome, nil
 	}
-	if value := os.Getenv("TWT2_TICKETS_HOME"); value != "" {
+	if value := os.Getenv("TWT_TICKETS_HOME"); value != "" {
 		return value, nil
 	}
 	config, err := store.LoadConfig(o.ConfigDir)
@@ -123,7 +123,7 @@ func (o Options) ticketService() (*ticketservice.Service, error) {
 	if home == "" {
 		return nil, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
-			"Set ticketsHome in ~/.config/twt2/config.yaml or TWT2_TICKETS_HOME.")
+			"Set ticketsHome in ~/.config/twt/config.yaml or TWT_TICKETS_HOME.")
 	}
 	return ticketservice.NewService(ticketservice.Options{Home: home, StateDir: o.StateDir}), nil
 }
@@ -143,10 +143,10 @@ func DefaultOptions() Options {
 		dataHome = filepath.Join(home, ".local", "share")
 	}
 	return Options{
-		ConfigDir:  envOr("TWT2_CONFIG_DIR", filepath.Join(configHome, "twt2")),
-		StateDir:   envOr("TWT2_STATE_DIR", filepath.Join(stateHome, "twt2")),
-		DataDir:    envOr("TWT2_DATA_DIR", filepath.Join(dataHome, "twt2")),
-		TmuxSocket: os.Getenv("TWT2_TMUX_SOCKET"),
+		ConfigDir:  envOr("TWT_CONFIG_DIR", filepath.Join(configHome, "twt")),
+		StateDir:   envOr("TWT_STATE_DIR", filepath.Join(stateHome, "twt")),
+		DataDir:    envOr("TWT_DATA_DIR", filepath.Join(dataHome, "twt")),
+		TmuxSocket: os.Getenv("TWT_TMUX_SOCKET"),
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 	}
@@ -174,7 +174,7 @@ func withRealWorkflows(options Options) Options {
 }
 
 // realOpenEditor starts the VISUAL or EDITOR command on one file and waits
-// for it. The editor value splits on spaces; twt2 never starts a shell.
+// for it. The editor value splits on spaces; twt never starts a shell.
 func realOpenEditor(options Options) func(path string) error {
 	return func(path string) error {
 		editor := os.Getenv("VISUAL")
@@ -182,7 +182,7 @@ func realOpenEditor(options Options) func(path string) error {
 			editor = os.Getenv("EDITOR")
 		}
 		if strings.TrimSpace(editor) == "" {
-			return clierr.New(clierr.InvalidUsage, "set VISUAL or EDITOR to the editor command that twt2 must start")
+			return clierr.New(clierr.InvalidUsage, "set VISUAL or EDITOR to the editor command that twt must start")
 		}
 		parts := strings.Fields(editor)
 		process := exec.Command(parts[0], append(parts[1:], path)...)
@@ -205,17 +205,17 @@ func realOpenEditor(options Options) func(path string) error {
 func New(options Options) *cobra.Command {
 	options = withRealWorkflows(options)
 	root := &cobra.Command{
-		Use:     "twt2",
+		Use:     "twt",
 		Version: version.Version,
 		Short:   "Manage task-focused Projects with Git worktrees and tmux",
 		Long: `Create task-focused Projects from reusable YAML templates.
 
 Each Project can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
-		Example: `  twt2 templates list
-  twt2 projects create fix-auth --template everysphere
-  twt2 new fix-logout
-  twt2 agents list --project current`,
+		Example: `  twt templates list
+  twt projects create fix-auth --template everysphere
+  twt new fix-logout
+  twt agents list --project current`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(command *cobra.Command, _ []string) error {

@@ -15,7 +15,7 @@ func gitTestRepository(t *testing.T) string {
 	}
 	directory := t.TempDir()
 	testGit(t, directory, "init", "-q", "-b", "main")
-	testGit(t, directory, "config", "user.name", "twt2 test")
+	testGit(t, directory, "config", "user.name", "twt test")
 	testGit(t, directory, "config", "user.email", "test@example.com")
 	testGit(t, directory, "commit", "-q", "--allow-empty", "-m", "first")
 	return directory

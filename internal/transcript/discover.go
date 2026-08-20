@@ -9,12 +9,12 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
-// maxDiscoverFiles limits the provider files that twt2 reads for one
-// discovery. twt2 reads the newest files first.
+// maxDiscoverFiles limits the provider files that twt reads for one
+// discovery. twt reads the newest files first.
 const maxDiscoverFiles = 256
 
 // DiscoveredSession is one provider session that belongs to a Project. Path
-// stays inside twt2. The JSON interface never shows a provider file path.
+// stays inside twt. The JSON interface never shows a provider file path.
 type DiscoveredSession struct {
 	Provider       string
 	SessionID      string
@@ -86,7 +86,7 @@ func (s *Service) discoverProvider(provider string, project domain.Project) ([]D
 	return sessions, nil
 }
 
-// readDiscovered reads one provider file. A file that twt2 cannot verify
+// readDiscovered reads one provider file. A file that twt cannot verify
 // against the Project is not an error: discovery drops it.
 func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, project domain.Project) (DiscoveredSession, bool) {
 	lines, info, err := readJSONLines(file.path)

@@ -14,11 +14,11 @@ import (
 )
 
 // writeEditorScript writes a fake editor that replaces the file content with
-// the value of TWT2_TEST_EDIT_CONTENT.
+// the value of TWT_TEST_EDIT_CONTENT.
 func writeEditorScript(t *testing.T, directory string) string {
 	t.Helper()
 	path := filepath.Join(directory, "fake-editor.sh")
-	script := "#!/bin/sh\nprintf '%s' \"$TWT2_TEST_EDIT_CONTENT\" > \"$1\"\n"
+	script := "#!/bin/sh\nprintf '%s' \"$TWT_TEST_EDIT_CONTENT\" > \"$1\"\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -100,12 +100,12 @@ func TestTemplatesEditValidatesTheResult(t *testing.T) {
 
 	editor := writeEditorScript(t, root)
 	t.Setenv("EDITOR", editor)
-	t.Setenv("TWT2_TEST_EDIT_CONTENT", "version: 1\nname: example\nrepositories: []\ntypo: true\n")
+	t.Setenv("TWT_TEST_EDIT_CONTENT", "version: 1\nname: example\nrepositories: []\ntypo: true\n")
 	_, err := execute(t, root, "templates", "edit", "example")
 	if err == nil || clierr.CodeOf(err) != clierr.UnsafeState {
 		t.Fatalf("templates edit with an invalid result = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt2 templates validate example") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt templates validate example") {
 		t.Fatalf("templates edit hint = %q", hint)
 	}
 	data, readErr := os.ReadFile(path)
@@ -113,7 +113,7 @@ func TestTemplatesEditValidatesTheResult(t *testing.T) {
 		t.Fatalf("templates edit did not keep the invalid file: %s, error = %v", data, readErr)
 	}
 
-	t.Setenv("TWT2_TEST_EDIT_CONTENT", "version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: https://example.com/app.git\n")
+	t.Setenv("TWT_TEST_EDIT_CONTENT", "version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: https://example.com/app.git\n")
 	output, err := execute(t, root, "templates", "edit", "example")
 	if err != nil || !strings.Contains(output, "is valid") {
 		t.Fatalf("templates edit with a valid result = %q, error = %v", output, err)
@@ -244,7 +244,7 @@ func TestTemplatesInitSetHandlesBothModes(t *testing.T) {
 		t.Fatalf("--repo with an unknown repository = %v (code %q)", err, clierr.CodeOf(err))
 	}
 	if group := findCommand(cli.New(cli.Options{ConfigDir: root, StateDir: root, DataDir: root}), "templates", "repos", "init"); group != nil {
-		t.Fatal("twt2 templates repos init still exists")
+		t.Fatal("twt templates repos init still exists")
 	}
 }
 
@@ -280,14 +280,14 @@ func TestEmptyListsGiveAStderrHintInTextMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stdout != "" || !strings.Contains(stderr, "twt2 templates create NAME") {
+	if stdout != "" || !strings.Contains(stderr, "twt templates create NAME") {
 		t.Fatalf("empty templates list stdout = %q, stderr = %q", stdout, stderr)
 	}
 	stdout, stderr, err = executeCollectingOutput(t, options, "projects", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stdout != "" || !strings.Contains(stderr, "twt2 projects create NAME") {
+	if stdout != "" || !strings.Contains(stderr, "twt projects create NAME") {
 		t.Fatalf("empty projects list stdout = %q, stderr = %q", stdout, stderr)
 	}
 	stdout, stderr, err = executeCollectingOutput(t, options, "templates", "list", "--output", "json")

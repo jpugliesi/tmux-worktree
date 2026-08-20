@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by bin/twt — do not execute directly.
+# Sourced by bin/twt-legacy — do not execute directly.
 
 _tw_session_environment_value() {
   local target="$1" name="$2" value

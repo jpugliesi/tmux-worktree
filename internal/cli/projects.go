@@ -51,7 +51,7 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				return writeJSONOutput(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: values, TotalCount: total, Truncated: truncated})
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Projects exist. Run 'twt2 projects create NAME'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Projects exist. Run 'twt projects create NAME'.")
 				return err
 			}
 			now := time.Now().UTC()

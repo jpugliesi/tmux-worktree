@@ -26,7 +26,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 		Args:  optionalArg("NAME"),
 		PreRunE: func(command *cobra.Command, _ []string) error {
 			if WantsJSON(command) {
-				return invalidUsage(command, "quick create uses interactive text output; use 'twt2 projects create' for JSON automation")
+				return invalidUsage(command, "quick create uses interactive text output; use 'twt projects create' for JSON automation")
 			}
 			return nil
 		},
@@ -36,7 +36,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, err := service.CurrentForQuickCreate(directory, os.Getenv("TWT2_PROJECT_ID"), currentPane)
+			current, err := service.CurrentForQuickCreate(directory, os.Getenv("TWT_PROJECT_ID"), currentPane)
 			known := err == nil
 			if err != nil && !errors.Is(err, projectservice.ErrNotInProject) {
 				return err
@@ -118,7 +118,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				return nil
 			}
 			if err := options.QuickCreateArchive(clientName, current.ID, created.ID); err != nil {
-				return fmt.Errorf("new Project %q is active, but old Project %q was not archived: %w; run 'twt2 archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
+				return fmt.Errorf("new Project %q is active, but old Project %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
 			}
 			return nil
 		},
@@ -135,7 +135,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 // quickCreateSwitchFailure keeps the new Project active after a failed tmux
 // switch and tells the user how to open it.
 func quickCreateSwitchFailure(created domain.Project, cause error) error {
-	return fmt.Errorf("twt2 could not switch to the new Project: %w. The new Project %q is active. Run 'twt2 projects open %s'.", cause, created.Name, created.Name)
+	return fmt.Errorf("twt could not switch to the new Project: %w. The new Project %q is active. Run 'twt projects open %s'.", cause, created.Name, created.Name)
 }
 
 func quickCreateName(command *cobra.Command, args []string) (string, error) {
@@ -143,7 +143,7 @@ func quickCreateName(command *cobra.Command, args []string) (string, error) {
 		return args[0], nil
 	}
 	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Project name; use 'twt2 new NAME' in a script")
+		return "", invalidUsage(command, "missing Project name; use 'twt new NAME' in a script")
 	}
 	if _, err := fmt.Fprint(command.ErrOrStderr(), "Project name: "); err != nil {
 		return "", err

@@ -10,13 +10,13 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
-// sessionNamePrefix marks each tmux session that twt2 owns. The prefix makes
-// twt2 sessions clear in the native tmux session picker. The name is
-// presentation only: twt2 finds its sessions through the session ID and the
-// @twt2_project_id option.
-const sessionNamePrefix = "twt2-"
+// sessionNamePrefix marks each tmux session that twt owns. The prefix makes
+// twt sessions clear in the native tmux session picker. The name is
+// presentation only: twt finds its sessions through the session ID and the
+// @twt_project_id option.
+const sessionNamePrefix = "twt-"
 
-// sessionName returns the tmux session name that twt2 uses for a new Project.
+// sessionName returns the tmux session name that twt uses for a new Project.
 func sessionName(projectName string) string {
 	if strings.HasPrefix(projectName, sessionNamePrefix) {
 		return projectName
@@ -63,7 +63,7 @@ func (s *Service) ensureTmux(p *domain.Project) error {
 		}
 		sessionID = parts[0]
 		windowID := parts[1]
-		if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "@twt2_project_id", p.ID)...); err != nil {
+		if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "@twt_project_id", p.ID)...); err != nil {
 			return fmt.Errorf("mark tmux session: %w", err)
 		}
 		if err := s.markWindow(windowID, first); err != nil {
@@ -111,15 +111,15 @@ func (s *Service) runSessionCommand(p domain.Project, sessionID string, windowID
 	command.Dir = directory
 	environment := append(os.Environ(), projectEnvironment(p)...)
 	environment = append(environment,
-		"TWT2_TMUX_SESSION="+sessionID,
-		"TWT2_TMUX_SOCKET="+s.options.TmuxSocket,
+		"TWT_TMUX_SESSION="+sessionID,
+		"TWT_TMUX_SOCKET="+s.options.TmuxSocket,
 	)
 	for _, repository := range p.Repositories {
 		windowID, found := windowIDs[repository.Name]
 		if !found {
 			continue
 		}
-		environment = append(environment, "TWT2_TMUX_WINDOW_"+repositoryEnvironmentKey(repository.Name)+"="+windowID)
+		environment = append(environment, "TWT_TMUX_WINDOW_"+repositoryEnvironmentKey(repository.Name)+"="+windowID)
 	}
 	command.Env = environment
 	commandOutput, err := command.CombinedOutput()
@@ -130,13 +130,13 @@ func (s *Service) runSessionCommand(p domain.Project, sessionID string, windowID
 }
 
 // repositoryEnvironmentKey makes the environment variable suffix of one
-// repository name. It matches the suffix of TWT2_REPOSITORY_<NAME>.
+// repository name. It matches the suffix of TWT_REPOSITORY_<NAME>.
 func repositoryEnvironmentKey(name string) string {
 	return strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(name))
 }
 
 func (s *Service) findSession(projectID, name string) (sessionID, ownerID string, exists bool, err error) {
-	rows, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", "#{session_id}\t#{session_name}\t#{@twt2_project_id}")...)
+	rows, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", "#{session_id}\t#{session_name}\t#{@twt_project_id}")...)
 	if err != nil {
 		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "no sessions") || strings.Contains(err.Error(), "error connecting to") {
 			return "", "", false, nil
@@ -165,10 +165,10 @@ func (s *Service) findSession(projectID, name string) (sessionID, ownerID string
 	return "", "", false, nil
 }
 
-// managedWindowID returns the ID of the window that twt2 marked for the
+// managedWindowID returns the ID of the window that twt marked for the
 // repository in this session.
 func (s *Service) managedWindowID(sessionID, repositoryName string) (string, bool, error) {
-	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{@twt2_repository_name}\t#{window_id}")...)
+	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{@twt_repository_name}\t#{window_id}")...)
 	if err != nil {
 		return "", false, fmt.Errorf("list tmux windows: %w", err)
 	}
@@ -182,7 +182,7 @@ func (s *Service) managedWindowID(sessionID, repositoryName string) (string, boo
 }
 
 func (s *Service) markWindow(windowID string, repository domain.ProjectRepository) error {
-	if err := run("", "tmux", s.tmuxArgs("set-option", "-w", "-t", windowID, "@twt2_repository_name", repository.Name)...); err != nil {
+	if err := run("", "tmux", s.tmuxArgs("set-option", "-w", "-t", windowID, "@twt_repository_name", repository.Name)...); err != nil {
 		return fmt.Errorf("mark tmux window for repository %q: %w", repository.Name, err)
 	}
 	return nil

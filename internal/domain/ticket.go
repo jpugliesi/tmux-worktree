@@ -47,7 +47,7 @@ var ticketSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 const TicketSlugMaxLength = 60
 
 // Ticket is one Markdown ticket file. The yaml tags name the frontmatter
-// keys. The json tags follow the twt2 JSON envelope.
+// keys. The json tags follow the twt JSON envelope.
 type Ticket struct {
 	Slug      string       `yaml:"-" json:"slug"`
 	Title     string       `yaml:"title" json:"title"`

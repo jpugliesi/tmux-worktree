@@ -163,7 +163,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir:  configDir,
@@ -227,7 +227,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	if !strings.Contains(agentList, `"status":"stopped"`) || !strings.Contains(agentList, `"canResume":false`) {
 		t.Fatalf("archived Agent Session capabilities = %s", agentList)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-archive-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-archive-me").Run(); err == nil {
 		t.Fatal("archive kept the Project tmux session")
 	}
 
@@ -248,7 +248,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	if reopened.Status != domain.ProjectActive || reopened.ArchivedAt != nil {
 		t.Fatalf("Project after open has status %q and archive time %v", reopened.Status, reopened.ArchivedAt)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-archive-me").Run(); err != nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-archive-me").Run(); err != nil {
 		t.Fatalf("open did not restore the Project tmux session: %v", err)
 	}
 	agentList = executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--output", "json")
@@ -257,7 +257,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	}
 
 	// The short command resolves the current Project without an argument.
-	t.Setenv("TWT2_PROJECT_ID", project.ID)
+	t.Setenv("TWT_PROJECT_ID", project.ID)
 	if output := executeWithOptions(t, options, nil, "archive"); output != "Archived Project \"archive-me\"\n" {
 		t.Fatalf("root archive output = %q", output)
 	}
@@ -273,7 +273,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	}
 
 	executeWithOptions(t, options, nil, "projects", "open", project.ID, "--no-attach")
-	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-archive-me", "-F", "#{pane_id}")
+	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-archive-me", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", pane)
 	command = cli.New(options)
 	command.SetArgs([]string{"projects", "archive", project.ID})
@@ -307,7 +307,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot remove") || !strings.Contains(err.Error(), "inside its tmux session") {
 		t.Fatalf("self-removal error = %v", err)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-archive-me").Run(); err != nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-archive-me").Run(); err != nil {
 		t.Fatal("self-removal stopped the Project tmux session")
 	}
 }
@@ -318,7 +318,7 @@ func TestProjectsArchiveFailsWhenTmuxOwnershipIsNotSafe(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	project := domain.Project{Version: domain.ProjectVersion, ID: "safe-archive-id", Name: "safe-archive", Status: domain.ProjectActive}
@@ -326,7 +326,7 @@ func TestProjectsArchiveFailsWhenTmuxOwnershipIsNotSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	runCommand(t, "", "tmux", "-L", socket, "-f", "/dev/null", "new-session", "-d", "-s", "safe-archive", "sleep", "60")
-	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", "safe-archive", "@twt2_project_id", project.ID)
+	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", "safe-archive", "@twt_project_id", project.ID)
 
 	t.Setenv("TMUX_PANE", "%not-a-real-pane")
 	command := cli.New(options)
@@ -342,7 +342,7 @@ func TestProjectsArchiveFailsWhenTmuxOwnershipIsNotSafe(t *testing.T) {
 
 	t.Setenv("TMUX_PANE", "")
 	runCommand(t, "", "tmux", "-L", socket, "new-session", "-d", "-s", "duplicate-owner", "sleep", "60")
-	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", "duplicate-owner", "@twt2_project_id", project.ID)
+	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", "duplicate-owner", "@twt_project_id", project.ID)
 	command = cli.New(options)
 	command.SetArgs([]string{"projects", "archive", project.ID})
 	err = command.Execute()
@@ -385,7 +385,7 @@ repositories:
 		t.Fatal(err)
 	}
 
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() {
 		exec.Command("tmux", "-L", socket, "kill-server").Run()
 	})
@@ -425,7 +425,7 @@ repositories:
 		t.Fatalf("branch %q does not identify the Project", branch)
 	}
 
-	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", "=twt2-auth-refresh", "-F", "#{window_name}")
+	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", "=twt-auth-refresh", "-F", "#{window_name}")
 	if windows != "app" {
 		t.Fatalf("tmux windows = %q, want app", windows)
 	}
@@ -449,13 +449,13 @@ func TestProjectsCreateUsesSafeTmuxNameWhenAnUnownedNameExists(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
-	runCommand(t, "", "tmux", "-L", socket, "new-session", "-d", "-s", "twt2-collision")
+	runCommand(t, "", "tmux", "-L", socket, "new-session", "-d", "-s", "twt-collision")
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "collision", "--template", "example", "--no-open")
-	sessions := strings.Split(runCommand(t, "", "tmux", "-L", socket, "list-sessions", "-F", "#{session_name}|#{@twt2_project_id}"), "\n")
-	if len(sessions) != 2 || sessions[0] != "twt2-collision|" || !strings.HasPrefix(sessions[1], "twt2-collision-") || strings.HasSuffix(sessions[1], "|") {
+	sessions := strings.Split(runCommand(t, "", "tmux", "-L", socket, "list-sessions", "-F", "#{session_name}|#{@twt_project_id}"), "\n")
+	if len(sessions) != 2 || sessions[0] != "twt-collision|" || !strings.HasPrefix(sessions[1], "twt-collision-") || strings.HasSuffix(sessions[1], "|") {
 		t.Fatalf("tmux collision sessions = %q", sessions)
 	}
 }
@@ -492,7 +492,7 @@ repositories:
 		t.Fatal(err)
 	}
 
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	command := cli.New(cli.Options{
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"),
@@ -503,7 +503,7 @@ repositories:
 		t.Fatalf("projects create returned an error: %v", err)
 	}
 
-	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", "=twt2-docs-refresh", "-F", "#{window_name}")
+	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", "=twt-docs-refresh", "-F", "#{window_name}")
 	if windows != "app\nguides" {
 		t.Fatalf("tmux windows = %q, want app and guides", windows)
 	}
@@ -546,7 +546,7 @@ func TestProjectsSetupRetryUsesSavedTemplateSnapshot(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"),
@@ -602,11 +602,11 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	baseOptions := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, baseOptions, nil, "projects", "create", "agent-test", "--template", "example", "--no-open")
-	shellPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-agent-test", "-F", "#{pane_id}")
+	shellPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-agent-test", "-F", "#{pane_id}")
 	var rejectedOut, rejectedErr bytes.Buffer
 	rejectedOptions := baseOptions
 	rejectedOptions.Stdout, rejectedOptions.Stderr = &rejectedOut, &rejectedErr
@@ -615,7 +615,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	if err := rejected.Execute(); err == nil || !strings.Contains(err.Error(), "live direct process") {
 		t.Fatalf("normal shell registration error = %v", err)
 	}
-	pane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-agent-test", "-n", "agent", "--", "cat")
+	pane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt-agent-test", "-n", "agent", "--", "cat")
 
 	registration := executeWithOptions(t, baseOptions, nil, "agents", "register", "--project", "agent-test", "--provider", "command", "--label", "review", "--pane", pane, "--", "cat")
 	fields := strings.Fields(registration)
@@ -739,7 +739,7 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "remove-me", "--template", "example", "--no-open")
@@ -756,8 +756,8 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if err := os.MkdirAll(snapshotRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	marker := fmt.Sprintf("{\"version\":1,\"owner\":\"twt2\",\"projectId\":%q}\n", project.ID)
-	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(marker), 0o600); err != nil {
+	marker := fmt.Sprintf("{\"version\":1,\"owner\":\"twt\",\"projectId\":%q}\n", project.ID)
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt-snapshot.json"), []byte(marker), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(snapshotRoot, "latest.md"), []byte("Project transcript\n"), 0o600); err != nil {
@@ -767,8 +767,8 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(snapshotRoot, "latest.md")); err != nil {
 		t.Fatalf("archive removed the Transcript Snapshot: %v", err)
 	}
-	wrongMarker := "{\"version\":1,\"owner\":\"twt2\",\"projectId\":\"another-project\"}\n"
-	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(wrongMarker), 0o600); err != nil {
+	wrongMarker := "{\"version\":1,\"owner\":\"twt\",\"projectId\":\"another-project\"}\n"
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt-snapshot.json"), []byte(wrongMarker), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var rejectedOut, rejectedErr bytes.Buffer
@@ -782,7 +782,7 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if _, err := os.Stat(projectRoot); err != nil {
 		t.Fatalf("rejected removal changed Project data: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(marker), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt-snapshot.json"), []byte(marker), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -846,7 +846,7 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if _, err := os.Stat(snapshotRoot); !os.IsNotExist(err) {
 		t.Fatalf("Transcript Snapshot still exists after removal: %v", err)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-remove-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-remove-me").Run(); err == nil {
 		t.Fatal("Project tmux session still exists after removal")
 	}
 }
@@ -871,7 +871,7 @@ func TestProjectsRemoveRefusesDirtyWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "keep-me", "--template", "example", "--no-open")
@@ -931,7 +931,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	createOutput := executeWithOptions(t, options, nil, "projects", "create", "json-test", "--template", "example", "--output", "json")
@@ -949,8 +949,8 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(list), &projects); err != nil || projects.SchemaVersion != 1 || len(projects.Projects) != 1 {
 		t.Fatalf("projects JSON = %s; decode error = %v", list, err)
 	}
-	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-json-test", "-F", "#{pane_id}")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-json-test", "-F", "#{pane_id}")
+	t.Setenv("TWT_PROJECT_ID", "")
 	t.Setenv("TMUX_PANE", pane)
 	contextOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
 	if !strings.Contains(contextOutput, `"name":"json-test"`) || strings.Contains(contextOutput, "tmuxSession") {
@@ -1006,7 +1006,7 @@ func TestStorageCleanPlansAndRemovesOnlyOrphanTranscriptSnapshots(t *testing.T) 
 	if _, err := snapshots.Save("orphan-project", "bb22", "orphan\n"); err != nil {
 		t.Fatal(err)
 	}
-	temporarySnapshot := filepath.Join(stateDir, "snapshots", "projects", ".twt2-snapshot-interrupted")
+	temporarySnapshot := filepath.Join(stateDir, "snapshots", "projects", ".twt-snapshot-interrupted")
 	if err := os.WriteFile(temporarySnapshot, []byte("incomplete\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1101,7 +1101,7 @@ func TestProjectsRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 
@@ -1247,11 +1247,11 @@ func TestProjectsArchiveStopsAndReportsLiveAgentSessions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "agent-archive", "--template", "example", "--no-open")
-	pane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-agent-archive", "-n", "agent", "--", "cat")
+	pane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt-agent-archive", "-n", "agent", "--", "cat")
 	registration := executeWithOptions(t, options, nil, "agents", "register", "--project", "agent-archive", "--provider", "command", "--label", "review", "--pane", pane, "--", "cat")
 	fields := strings.Fields(registration)
 	if len(fields) < 4 {
@@ -1270,7 +1270,7 @@ func TestProjectsArchiveStopsAndReportsLiveAgentSessions(t *testing.T) {
 	if !strings.Contains(output, "Archived Project \"agent-archive\"") {
 		t.Fatalf("archive output = %q", output)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-agent-archive").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-agent-archive").Run(); err == nil {
 		t.Fatal("archive kept the Project tmux session")
 	}
 	agents, err := store.NewAgentStore(options.StateDir).List(project.ID)
@@ -1294,7 +1294,7 @@ func executeWithOptions(t *testing.T, options cli.Options, stdin *strings.Reader
 	}
 	command.SetArgs(args)
 	if err := command.Execute(); err != nil {
-		t.Fatalf("twt2 %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr.String())
+		t.Fatalf("twt %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String()
 }
@@ -1305,7 +1305,7 @@ func initGitRepository(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	runCommand(t, "", "git", "init", "-q", "-b", "main", path)
-	runCommand(t, path, "git", "config", "user.name", "twt2 test")
+	runCommand(t, path, "git", "config", "user.name", "twt test")
 	runCommand(t, path, "git", "config", "user.email", "test@example.com")
 	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("test repository\n"), 0o644); err != nil {
 		t.Fatal(err)

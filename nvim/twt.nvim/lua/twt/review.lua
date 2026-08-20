@@ -1,14 +1,14 @@
-local agents = require("twt2.agents")
-local client = require("twt2.client")
-local config = require("twt2.config")
-local input = require("twt2.input")
+local agents = require("twt.agents")
+local client = require("twt.client")
+local config = require("twt.config")
+local input = require("twt.input")
 local M = {}
 
 -- Every callback in this module is error-first: `done(err)` on a failure, or
 -- `done(nil, result)` on success. This module never notifies the user. The
 -- caller decides what to show.
 
-local namespace = vim.api.nvim_create_namespace("twt2_review")
+local namespace = vim.api.nvim_create_namespace("twt_review")
 local notes = {}
 local next_id = 1
 
@@ -89,7 +89,7 @@ function M.add(comment, start_line, end_line, done)
       return
     end
     if not context.repositoryName or context.repositoryName == "" then
-      done("the file is not in a twt2 Project repository")
+      done("the file is not in a twt Project repository")
       return
     end
     local mark = vim.api.nvim_buf_set_extmark(buffer, namespace, start_line - 1, 0, {
@@ -231,7 +231,7 @@ function M.prompt_notes(done)
       return
     end
     config.get().select(project_notes, {
-      prompt = "Select a twt2 review note",
+      prompt = "Select a twt review note",
       format_item = label,
     }, function(note)
       if not note then done(nil); return end

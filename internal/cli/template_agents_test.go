@@ -43,7 +43,7 @@ agents:
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"),

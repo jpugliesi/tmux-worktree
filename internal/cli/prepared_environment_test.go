@@ -25,12 +25,12 @@ func TestPreparedEnvironmentRunsRepositoryInitializationBeforeProjectClaim(t *te
 	}
 
 	root := t.TempDir()
-	binary := filepath.Join(root, "twt2")
-	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt2")
+	binary := filepath.Join(root, "twt")
+	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
 	source := filepath.Join(root, "source")
 	initGitRepository(t, source)
 	initLog := filepath.Join(root, "repository-init.log")
-	t.Setenv("TWT2_TEST_INIT_LOG", initLog)
+	t.Setenv("TWT_TEST_INIT_LOG", initLog)
 	configDir := filepath.Join(root, "config")
 	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
 		t.Fatal(err)
@@ -42,13 +42,13 @@ repositories:
     clone:
       url: %s
     initialize:
-      command: ["sh", "-c", "sleep 1.2; printf 'initialized\\n' >> \"$TWT2_TEST_INIT_LOG\""]
+      command: ["sh", "-c", "sleep 1.2; printf 'initialized\\n' >> \"$TWT_TEST_INIT_LOG\""]
 `, source)
 	templatePath := filepath.Join(configDir, "templates", "example.yaml")
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir:             configDir,
@@ -156,12 +156,12 @@ func TestPreparedEnvironmentClaimSurvivesAWindowNameEdit(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	binary := filepath.Join(root, "twt2")
-	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt2")
+	binary := filepath.Join(root, "twt")
+	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
 	source := filepath.Join(root, "source")
 	initGitRepository(t, source)
 	initLog := filepath.Join(root, "repository-init.log")
-	t.Setenv("TWT2_TEST_INIT_LOG", initLog)
+	t.Setenv("TWT_TEST_INIT_LOG", initLog)
 	configDir := filepath.Join(root, "config")
 	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
 		t.Fatal(err)
@@ -173,13 +173,13 @@ repositories:
     clone:
       url: %s
     initialize:
-      command: ["sh", "-c", "sleep 1.2; printf 'initialized\\n' >> \"$TWT2_TEST_INIT_LOG\""]
+      command: ["sh", "-c", "sleep 1.2; printf 'initialized\\n' >> \"$TWT_TEST_INIT_LOG\""]
 `, source)
 	templatePath := filepath.Join(configDir, "templates", "example.yaml")
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir:             configDir,
@@ -250,7 +250,7 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 
@@ -327,7 +327,7 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(third.Repositories[0].Branch, "twt2/third-") {
+	if !strings.HasPrefix(third.Repositories[0].Branch, "twt/third-") {
 		t.Fatalf("collision fallback branch = %q", third.Repositories[0].Branch)
 	}
 
@@ -345,8 +345,8 @@ func TestPreparedEnvironmentPoolDepthTopUp(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	binary := filepath.Join(root, "twt2")
-	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt2")
+	binary := filepath.Join(root, "twt")
+	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
 	source := filepath.Join(root, "source")
 	initGitRepository(t, source)
 	configDir := filepath.Join(root, "config")
@@ -357,7 +357,7 @@ func TestPreparedEnvironmentPoolDepthTopUp(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
 		ConfigDir:             configDir,
@@ -406,7 +406,7 @@ func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(failingTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 
@@ -418,7 +418,7 @@ func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	if !strings.Contains(stderr, "Template: example (only template)") {
 		t.Fatalf("inference message = %q", stderr)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt2 projects setup retry broken") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt projects setup retry broken") {
 		t.Fatalf("create failure hint = %q from error %v", hint, err)
 	}
 	broken, findErr := store.NewProjectStore(options.StateDir).Find("broken")

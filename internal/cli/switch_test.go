@@ -55,7 +55,7 @@ func TestSwitchRefusesJSONOutput(t *testing.T) {
 func TestSwitchDryRunReportsThePlanWithoutAChange(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 
 	output := executeWithOptions(t, options, nil, "switch", "new-active", "--dry-run")
 	if !strings.Contains(output, `switch the client to session "new-active"`) {
@@ -79,7 +79,7 @@ func TestSwitchDryRunReportsThePlanWithoutAChange(t *testing.T) {
 func TestSwitchPickerSortsActiveProjectsFirst(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	var pickedLines []string
 	options.SwitchPick = func(_ *cobra.Command, lines []string) (int, error) {
 		pickedLines = append([]string(nil), lines...)
@@ -103,7 +103,7 @@ func TestSwitchPickerSortsActiveProjectsFirst(t *testing.T) {
 func TestSwitchNumberedPickerReadsTheProjectNumber(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	// An empty PATH hides fzf, so the real picker uses the numbered list.
 	t.Setenv("PATH", "")
 	var stdout, stderr bytes.Buffer

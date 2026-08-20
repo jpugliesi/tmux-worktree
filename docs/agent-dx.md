@@ -1,7 +1,7 @@
-# twt2 Agent DX score
+# twt Agent DX score
 
 The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
-21. The first twt2 implementation
+21. The first twt implementation
 scored 4/21. The agent-facing pass scored 12/21. This branch scores **13/21**,
 which stays in the **Agent-ready** range.
 
@@ -9,18 +9,18 @@ which stays in the **Agent-ready** range.
 |---|---:|---:|---:|---|
 | Machine-readable output | 1 | 2 | 2 | `--output json` for every command, named read envelopes, and JSON errors with a stable code, a hint, and a help command |
 | Raw payload input | 0 | 1 | 1 | Strict JSON for six mutations through `apply --stdin`, plus strict YAML through `templates create --from-file` and `--from-stdin` |
-| Schema introspection | 0 | 2 | 3 | `twt2 schema` walks the live command tree and gives the build version, per-command arguments, flags with enums, `apply` request fields, error codes, and exit codes |
+| Schema introspection | 0 | 2 | 3 | `twt schema` walks the live command tree and gives the build version, per-command arguments, flags with enums, `apply` request fields, error codes, and exit codes |
 | Context window discipline | 0 | 1 | 1 | `--limit` on every list command, with `totalCount` and `truncated` in the response |
-| Input hardening | 1 | 2 | 2 | Strict resource IDs, strict YAML and JSON fields, relative init paths, and twt2 ownership markers before each destructive action |
+| Input hardening | 1 | 2 | 2 | Strict resource IDs, strict YAML and JSON fields, relative init paths, and twt ownership markers before each destructive action |
 | Safety rails | 1 | 2 | 2 | `--dry-run` for every mutation; Project removal is a plan with typed Removal Blockers |
-| Agent knowledge packaging | 1 | 2 | 2 | One discoverable `twt2` skill with agent guardrails, error-code handling, and the current sentinel |
+| Agent knowledge packaging | 1 | 2 | 2 | One discoverable `twt` skill with agent guardrails, error-code handling, and the current sentinel |
 
 ## Why each axis has this score
 
 **Machine-readable output: 2.** Every command group takes `--output json`, and
 `--output` is the only format flag. Errors carry `code`, `message`, `hint`, and
 `helpCommand`. The axis needs NDJSON for paginated results and structured
-output as the default in a non-TTY context for a 3. twt2 has neither: a piped
+output as the default in a non-TTY context for a 3. twt has neither: a piped
 call still needs `--output json`.
 
 **Raw payload input: 1.** `apply --stdin` now covers `templates.create`,
@@ -46,7 +46,7 @@ not.
 `projects list`, `agents list`, `agents discover`, and `environments list`.
 Each response reports `totalCount` and `truncated`, so an agent knows what the
 limit removed. The axis needs field masks on all read commands and pagination
-for a 2. twt2 has no field mask and no cursor, and a large `agents transcript
+for a 2. twt has no field mask and no cursor, and a large `agents transcript
 show` result can still fill a context window.
 
 **Input hardening: 2.** Resource names use a strict pattern that rejects path
@@ -54,7 +54,7 @@ separators, `..`, percent signs, query characters, and control characters. YAML
 decoding rejects unknown fields and more than one document. JSON decoding
 rejects unknown fields, more than one value, and input over 1 MiB. Project
 initialization paths must stay inside the Project root. Removal changes only a
-root that carries the matching twt2 ownership marker. The axis needs an
+root that carries the matching twt ownership marker. The axis needs an
 explicit written security posture and output-path sandboxing for a 3. The
 posture line now exists in the preview guide, but the guarantees are not
 listed per command, so the score stays at 2.
@@ -62,14 +62,14 @@ listed per command, so the score stays at 2.
 **Safety rails: 2.** Every mutation accepts `--dry-run`, including `apply`,
 `done`, `templates edit`, and `templates remove`. Project removal is a plan
 by default, and each refusal is a typed Removal Blocker with a stable code.
-The axis needs response sanitization for a 3. twt2 returns provider transcript
+The axis needs response sanitization for a 3. twt returns provider transcript
 text without any sanitization, so a prompt-injection string in an Agent
 Transcript reaches the caller unchanged. This is the largest open risk.
 
-**Agent knowledge packaging: 2.** The `twt2` skill has YAML frontmatter and
+**Agent knowledge packaging: 2.** The `twt` skill has YAML frontmatter and
 covers the schema-first, limit, dry-run, current-sentinel, error-code, and
 finish workflows. The axis needs a versioned, standard-conformant skill
-library for a 3. twt2 ships one skill file with no version field.
+library for a 3. twt ships one skill file with no version field.
 
 ## Next useful work
 
@@ -82,6 +82,6 @@ Multi-surface status:
 
 - MCP: not implemented
 - Neovim: supported through the versioned JSON CLI contract
-- Shell completion: `twt2 completion zsh|bash|fish|powershell`, with values
-  from the twt2 stores
-- Headless auth: not applicable; twt2 uses local Git and tmux
+- Shell completion: `twt completion zsh|bash|fish|powershell`, with values
+  from the twt stores
+- Headless auth: not applicable; twt uses local Git and tmux

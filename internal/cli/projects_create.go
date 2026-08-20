@@ -106,7 +106,7 @@ func createFailureError(project domain.Project, cause error) error {
 		return cause
 	}
 	wrapped := clierr.Wrap(clierr.CodeOf(cause), fmt.Errorf("new Project %q (%s) is incomplete: %w", project.Name, project.ID, cause))
-	return clierr.WithHint(wrapped, "Run 'twt2 projects setup retry %s'.", project.Name)
+	return clierr.WithHint(wrapped, "Run 'twt projects setup retry %s'.", project.Name)
 }
 
 // inferTemplateName selects a Project Template when --template is absent. It
@@ -131,7 +131,7 @@ func inferTemplateName(command *cobra.Command, options Options, templateStore st
 		}
 	}
 	if len(names) == 0 {
-		return "", "", invalidUsage(command, "no Project Templates exist; run 'twt2 templates create NAME' first")
+		return "", "", invalidUsage(command, "no Project Templates exist; run 'twt templates create NAME' first")
 	}
 	return "", "", invalidUsage(command, "select a Project Template with --template TEMPLATE; available templates: %s", strings.Join(names, ", "))
 }

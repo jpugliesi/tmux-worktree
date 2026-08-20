@@ -39,7 +39,7 @@ func findCommand(root *cobra.Command, path ...string) *cobra.Command {
 	return current
 }
 
-// executeCollectingInput runs twt2 with one standard input value and returns
+// executeCollectingInput runs twt with one standard input value and returns
 // standard output, standard error, and the command error.
 func executeCollectingInput(t *testing.T, options cli.Options, stdin io.Reader, args ...string) (string, string, error) {
 	t.Helper()
@@ -79,7 +79,7 @@ func TestEveryCommandWithPlaceholdersDeclaresItsArguments(t *testing.T) {
 					hasPlaceholder = true
 				}
 			}
-			if hasPlaceholder && command.Annotations["twt2.arguments"] == "" {
+			if hasPlaceholder && command.Annotations["twt.arguments"] == "" {
 				missing = append(missing, command.CommandPath())
 			}
 		}
@@ -121,30 +121,30 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		arguments[command.Path] = names
 	}
 	want := map[string][]string{
-		"twt2 templates prepare":      {"template"},
-		"twt2 templates repos add":    {"template", "repo", "url"},
-		"twt2 templates init set":     {"template", "command"},
-		"twt2 templates remove":       {"name"},
-		"twt2 templates path":         {"name"},
-		"twt2 templates edit":         {"name"},
-		"twt2 templates repos remove": {"template", "repo"},
-		"twt2 tickets create":         {"description"},
-		"twt2 tickets show":           {"ticket"},
-		"twt2 tickets edit":           {"ticket"},
-		"twt2 tickets set":            {"ticket"},
-		"twt2 tickets claim":          {"ticket"},
-		"twt2 tickets unclaim":        {"ticket"},
-		"twt2 tickets comment":        {"ticket"},
-		"twt2 tickets boards create":  {"name"},
-		"twt2 tickets boards show":    {"name"},
+		"twt templates prepare":      {"template"},
+		"twt templates repos add":    {"template", "repo", "url"},
+		"twt templates init set":     {"template", "command"},
+		"twt templates remove":       {"name"},
+		"twt templates path":         {"name"},
+		"twt templates edit":         {"name"},
+		"twt templates repos remove": {"template", "repo"},
+		"twt tickets create":         {"description"},
+		"twt tickets show":           {"ticket"},
+		"twt tickets edit":           {"ticket"},
+		"twt tickets set":            {"ticket"},
+		"twt tickets claim":          {"ticket"},
+		"twt tickets unclaim":        {"ticket"},
+		"twt tickets comment":        {"ticket"},
+		"twt tickets boards create":  {"name"},
+		"twt tickets boards show":    {"name"},
 	}
 	for path, names := range want {
 		if strings.Join(arguments[path], ",") != strings.Join(names, ",") {
 			t.Fatalf("%s arguments = %v, want %v", path, arguments[path], names)
 		}
 	}
-	if _, found := arguments["twt2 templates repos init set"]; found {
-		t.Fatal("schema still contains twt2 templates repos init set")
+	if _, found := arguments["twt templates repos init set"]; found {
+		t.Fatal("schema still contains twt templates repos init set")
 	}
 }
 
@@ -208,7 +208,7 @@ func TestCurrentSentinelWorksForProjectArguments(t *testing.T) {
 	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TWT2_PROJECT_ID", project.ID)
+	t.Setenv("TWT_PROJECT_ID", project.ID)
 	t.Setenv("TMUX_PANE", "")
 
 	show := executeWithOptions(t, options, nil, "projects", "show", "current", "--output", "json")
@@ -250,8 +250,8 @@ func TestApplySupportsRepositoryAddAndProjectRemoval(t *testing.T) {
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	marker := fmt.Sprintf(`{"owner":"twt2","projectId":%q}`, projectID)
-	if err := os.WriteFile(filepath.Join(projectRoot, ".twt2-owned.json"), []byte(marker), 0o600); err != nil {
+	marker := fmt.Sprintf(`{"owner":"twt","projectId":%q}`, projectID)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".twt-owned.json"), []byte(marker), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	project := domain.Project{
@@ -324,11 +324,11 @@ func TestJSONOutputNoLongerImpliesNoOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 
-	// Text output to a buffer is not a terminal, so twt2 does not attach.
+	// Text output to a buffer is not a terminal, so twt does not attach.
 	stdout, _, err := executeCollectingOutput(t, options, "projects", "create", "buffered", "--template", "example")
 	if err != nil {
 		t.Fatalf("projects create without --no-open: %v", err)
@@ -377,7 +377,7 @@ func TestCompletionFunctionsListStoredNames(t *testing.T) {
 
 	templateShow := findCommand(command, "templates", "show")
 	if templateShow == nil || templateShow.ValidArgsFunction == nil {
-		t.Fatal("twt2 templates show has no argument completion")
+		t.Fatal("twt templates show has no argument completion")
 	}
 	names, _ := templateShow.ValidArgsFunction(templateShow, nil, "")
 	if strings.Join(names, ",") != "alpha,zebra" {

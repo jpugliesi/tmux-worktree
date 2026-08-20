@@ -1,8 +1,8 @@
-local buffers = require("twt2.buffers")
-local client = require("twt2.client")
-local config = require("twt2.config")
-local input = require("twt2.input")
-local snapshot = require("twt2.snapshot")
+local buffers = require("twt.buffers")
+local client = require("twt.client")
+local config = require("twt.config")
+local input = require("twt.input")
+local snapshot = require("twt.snapshot")
 local M = {}
 
 -- Every callback in this module is error-first: `done(err)` on a failure, or
@@ -32,7 +32,7 @@ local function can(agent, capability)
 end
 
 local function notify_refresh()
-  vim.api.nvim_exec_autocmds("User", { pattern = "Twt2Refresh" })
+  vim.api.nvim_exec_autocmds("User", { pattern = "TwtRefresh" })
 end
 
 -- Keeps the label and the liveness of the last listing, for the statusline.
@@ -68,7 +68,7 @@ local function list_for(context, directory, done)
       return
     end
     if result.projectId ~= context.project.id then
-      done("twt2 returned Agent Sessions for a different Project")
+      done("twt returned Agent Sessions for a different Project")
       return
     end
     local agents = result.agents or {}
@@ -107,7 +107,7 @@ local function take_snapshot(agent, project_id, directory, done)
       return
     end
     if transcript.projectId ~= project_id or transcript.agentId ~= agent.id then
-      done("twt2 returned a transcript for a different Project or Agent Session")
+      done("twt returned a transcript for a different Project or Agent Session")
       return
     end
     local path, path_err = snapshot.resolve(transcript, project_id)
@@ -141,7 +141,7 @@ function M.pick(done)
       return
     end
     config.get().select(agents, {
-      prompt = "Select a twt2 Agent Session",
+      prompt = "Select a twt Agent Session",
       format_item = function(agent)
         return string.format("%s · %s · %s", agent.label, agent.provider, agent.status)
       end,

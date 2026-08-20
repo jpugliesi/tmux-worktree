@@ -256,7 +256,7 @@ func TestTicketsCreateInEditor(t *testing.T) {
 }
 
 func TestTicketsClaimIsACompareAndSet(t *testing.T) {
-	t.Setenv("TWT2_CLAIMANT", "")
+	t.Setenv("TWT_CLAIMANT", "")
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestTicketsClaimIsACompareAndSet(t *testing.T) {
 }
 
 func TestTicketsClaimWithoutAsNeedsATerminal(t *testing.T) {
-	t.Setenv("TWT2_CLAIMANT", "")
+	t.Setenv("TWT_CLAIMANT", "")
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
@@ -306,21 +306,21 @@ func TestTicketsClaimWithoutAsNeedsATerminal(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || clierr.ExitCode(err) != 2 {
 		t.Fatalf("non-terminal claim without --as = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if hint := clierr.HintOf(err); hint != "Pass --as NAME when twt2 runs without a terminal." {
+	if hint := clierr.HintOf(err); hint != "Pass --as NAME when twt runs without a terminal." {
 		t.Fatalf("claim hint = %q", hint)
 	}
 
-	t.Setenv("TWT2_CLAIMANT", "env-agent")
+	t.Setenv("TWT_CLAIMANT", "env-agent")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "claim", "agent-work"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readTicketFile(t, filepath.Join(home, "agent-work.md")), "claimed_by: env-agent") {
-		t.Fatal("TWT2_CLAIMANT did not set the claimant")
+		t.Fatal("TWT_CLAIMANT did not set the claimant")
 	}
 }
 
 func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
-	t.Setenv("TWT2_CLAIMANT", "")
+	t.Setenv("TWT_CLAIMANT", "")
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
@@ -554,7 +554,7 @@ func TestTicketsEditAndComment(t *testing.T) {
 }
 
 func TestTicketsNeedAConfiguredHome(t *testing.T) {
-	t.Setenv("TWT2_TICKETS_HOME", "")
+	t.Setenv("TWT_TICKETS_HOME", "")
 	root := t.TempDir()
 	options := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),
@@ -565,7 +565,7 @@ func TestTicketsNeedAConfiguredHome(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("tickets without a home = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "TWT2_TICKETS_HOME") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "TWT_TICKETS_HOME") {
 		t.Fatalf("tickets home hint = %q", hint)
 	}
 
@@ -610,7 +610,7 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	command := cli.New(options)
 	show := findCommand(command, "tickets", "show")
 	if show == nil || show.ValidArgsFunction == nil {
-		t.Fatal("twt2 tickets show has no argument completion")
+		t.Fatal("twt tickets show has no argument completion")
 	}
 	names, _ := show.ValidArgsFunction(show, nil, "")
 	if strings.Join(names, ",") != "fix-the-vfs-tools" {
@@ -632,7 +632,7 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	}
 
 	// Completions are silent when no Tickets home is set.
-	t.Setenv("TWT2_TICKETS_HOME", "")
+	t.Setenv("TWT_TICKETS_HOME", "")
 	unset := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
 	unsetShow := findCommand(unset, "tickets", "show")
 	if names, _ = unsetShow.ValidArgsFunction(unsetShow, nil, ""); len(names) != 0 {
@@ -693,9 +693,9 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, command := range []string{
-		`"twt2 tickets init"`, `"twt2 tickets create"`, `"twt2 tickets list"`, `"twt2 tickets show"`,
-		`"twt2 tickets edit"`, `"twt2 tickets set"`, `"twt2 tickets claim"`, `"twt2 tickets unclaim"`,
-		`"twt2 tickets comment"`, `"twt2 tickets boards create"`, `"twt2 tickets boards list"`, `"twt2 tickets boards show"`,
+		`"twt tickets init"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
+		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
+		`"twt tickets comment"`, `"twt tickets boards create"`, `"twt tickets boards list"`, `"twt tickets boards show"`,
 	} {
 		if !strings.Contains(output, command) {
 			t.Fatalf("schema misses %s", command)
@@ -777,7 +777,7 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 }
 
 func TestDoctorReportsTheTicketsHome(t *testing.T) {
-	t.Setenv("TWT2_TICKETS_HOME", "")
+	t.Setenv("TWT_TICKETS_HOME", "")
 	root := t.TempDir()
 	unset := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),

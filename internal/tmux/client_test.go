@@ -19,7 +19,7 @@ func TestSendPastesFeedbackBracketed(t *testing.T) {
 			}
 			return "0\tclaude\tclaude --resume abc", nil
 		case "show-options":
-			if args[len(args)-1] == "@twt2_project_id" {
+			if args[len(args)-1] == "@twt_project_id" {
 				return "project-1", nil
 			}
 			return "agent-1", nil
@@ -73,7 +73,7 @@ func TestPaneLivenessIgnoresTheCurrentCommandOfThePane(t *testing.T) {
 				}
 				return paneDead + "\t" + current + "\t" + start, nil
 			case "show-options":
-				if args[len(args)-1] == "@twt2_project_id" {
+				if args[len(args)-1] == "@twt_project_id" {
 					return "project-1", nil
 				}
 				return agentOwner, nil
@@ -113,7 +113,7 @@ func TestNotLiveErrorTellsTheUserToResume(t *testing.T) {
 	if !strings.Contains(err.Error(), "not live in its owned pane") {
 		t.Fatalf("NotLiveError() = %v", err)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt2 agents resume agent-1") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt agents resume agent-1") {
 		t.Fatalf("NotLiveError() hint = %q", hint)
 	}
 }

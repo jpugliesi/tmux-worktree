@@ -121,7 +121,7 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 			Root:          "/projects/fix-auth",
 			TmuxSession:   "fix-auth-project-id",
 			Repositories: []domain.ProjectRepository{{
-				Name: "app", CachePath: "/cache/app", Path: "/projects/fix-auth/app", Branch: "twt2/fix-auth-project-id", WindowName: "app",
+				Name: "app", CachePath: "/cache/app", Path: "/projects/fix-auth/app", Branch: "twt/fix-auth-project-id", WindowName: "app",
 			}},
 		},
 		ReservedAt: time.Now().UTC(),

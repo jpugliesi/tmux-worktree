@@ -20,7 +20,7 @@ var ErrLockHeld = errors.New("lock is held")
 // lockRetryInterval is the wait between attempts of a bounded blocking acquire.
 const lockRetryInterval = 100 * time.Millisecond
 
-// lockHolder describes the process that holds a lock file. twt2 writes this
+// lockHolder describes the process that holds a lock file. twt writes this
 // value into the lock file for better messages. Correctness comes from flock.
 type lockHolder struct {
 	PID        int    `json:"pid"`
@@ -141,9 +141,9 @@ func acquireMutationLock(stateDir string, blocking bool, timeout time.Duration) 
 
 func mutationLockHeldError(path string) error {
 	if holder := lockHolderDescription(path); holder != "" {
-		return clierr.Wrap(clierr.Locked, fmt.Errorf("%w: another twt2 change is in progress (%s)", ErrLockHeld, holder))
+		return clierr.Wrap(clierr.Locked, fmt.Errorf("%w: another twt change is in progress (%s)", ErrLockHeld, holder))
 	}
-	return clierr.Wrap(clierr.Locked, fmt.Errorf("%w: another twt2 change is in progress", ErrLockHeld))
+	return clierr.Wrap(clierr.Locked, fmt.Errorf("%w: another twt change is in progress", ErrLockHeld))
 }
 
 func (l *MutationLock) Release() error {

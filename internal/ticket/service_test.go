@@ -219,7 +219,7 @@ func TestClaimCompareAndSet(t *testing.T) {
 	if !strings.Contains(err.Error(), `claimed by "agent-a"`) {
 		t.Fatalf("locked message %q does not name the claimant", err)
 	}
-	if !strings.Contains(clierr.HintOf(err), "twt2 tickets list --ready") {
+	if !strings.Contains(clierr.HintOf(err), "twt tickets list --ready") {
 		t.Fatalf("locked hint %q does not point at the ready list", clierr.HintOf(err))
 	}
 	if readFile(t, path) != bytesBefore {
@@ -441,7 +441,7 @@ func TestSetValidation(t *testing.T) {
 	if clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("missing board = %v, want not_found", err)
 	}
-	if !strings.Contains(clierr.HintOf(err), "twt2 tickets boards create") {
+	if !strings.Contains(clierr.HintOf(err), "twt tickets boards create") {
 		t.Fatalf("hint %q does not point at boards create", clierr.HintOf(err))
 	}
 }

@@ -115,7 +115,7 @@ func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "has no linked provider session ID") {
 		t.Fatalf("ReadLinked() without candidates error = %v", err)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt2 agents discover --project "+project.ID) {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt agents discover --project "+project.ID) {
 		t.Fatalf("ReadLinked() hint = %q", hint)
 	}
 

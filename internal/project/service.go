@@ -82,9 +82,9 @@ func (s *Service) List() ([]domain.Project, error) { return s.store.List() }
 
 func (s *Service) Find(reference string) (domain.Project, error) { return s.store.Find(reference) }
 
-// ErrNotInProject marks a tmux context that is not inside a twt2 Project
+// ErrNotInProject marks a tmux context that is not inside a twt Project
 // session. Callers can branch on it with errors.Is.
-var ErrNotInProject = errors.New("the tmux pane is not in a twt2 Project session")
+var ErrNotInProject = errors.New("the tmux pane is not in a twt Project session")
 
 type notInProjectError struct{ message string }
 
@@ -106,7 +106,7 @@ func (s *Service) CurrentForQuickCreate(directory, projectID, tmuxPane string) (
 	if sessionID == "" {
 		p, err = s.Current(directory, projectID, "")
 		if err != nil {
-			return domain.Project{}, notInProjectError{message: "run this command inside a twt2 Project worktree or tmux session"}
+			return domain.Project{}, notInProjectError{message: "run this command inside a twt Project worktree or tmux session"}
 		}
 	}
 	if p.Status != domain.ProjectActive {
@@ -136,7 +136,7 @@ func (s *Service) projectForPane(tmuxPane string) (domain.Project, string, error
 	if err != nil || sessionID == "" {
 		return domain.Project{}, "", nil
 	}
-	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
+	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt_project_id")...)
 	if err != nil || projectID == "" {
 		return domain.Project{}, "", nil
 	}
@@ -157,7 +157,7 @@ func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project
 	if tmuxPane != "" {
 		sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
 		if err == nil {
-			id, optionErr := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
+			id, optionErr := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt_project_id")...)
 			if optionErr == nil && id != "" {
 				return s.store.Find(id)
 			}
@@ -177,7 +177,7 @@ func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project
 			return p, nil
 		}
 	}
-	return domain.Project{}, fmt.Errorf("the current directory or tmux pane is not in a twt2 Project")
+	return domain.Project{}, fmt.Errorf("the current directory or tmux pane is not in a twt Project")
 }
 
 func (s *Service) Retry(reference string) (domain.Project, error) {
@@ -276,10 +276,10 @@ func (s *Service) validateRetry(reference string) (domain.Project, error) {
 		return p, err
 	}
 	if p.Status == domain.ProjectRemoving {
-		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress; run twt2 projects remove %s --apply", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress; run twt projects remove %s --apply", p.Name, p.ID)
 	}
 	if p.Status == domain.ProjectArchived {
-		return p, clierr.New(clierr.PreconditionFailed, "Project %q is archived; run twt2 projects open %s", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q is archived; run twt projects open %s", p.Name, p.ID)
 	}
 	return p, nil
 }
@@ -331,9 +331,9 @@ func (s *Service) validateOpen(reference string) (domain.Project, error) {
 	case domain.ProjectActive, domain.ProjectArchived:
 		return p, nil
 	case domain.ProjectRemoving:
-		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress. Run 'twt2 projects remove %s --apply' or 'twt2 projects remove %s --cancel'.", p.Name, p.ID, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress. Run 'twt projects remove %s --apply' or 'twt projects remove %s --cancel'.", p.Name, p.ID, p.ID)
 	default:
-		return p, clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete; run twt2 projects setup retry %s", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete; run twt projects setup retry %s", p.Name, p.ID)
 	}
 }
 
@@ -417,7 +417,7 @@ func agentSteps(template domain.Template) []domain.SetupStep {
 //
 // A Project without a live owned tmux session gets a record with no pane and
 // with the declared start command as its resume command. The Agent Session
-// can then start later with 'twt2 agents resume'.
+// can then start later with 'twt agents resume'.
 func (s *Service) ensureTemplateAgent(p domain.Project, label string) error {
 	var declared *domain.TemplateAgent
 	for index := range p.TemplateSnapshot.Agents {

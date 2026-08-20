@@ -10,7 +10,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
-// legacyFixture mirrors the shape of a real pre-twt2 vault ticket: legacy
+// legacyFixture mirrors the shape of a real pre-twt vault ticket: legacy
 // keys (id, type, category, project, parent), a quoted title, two-space alias
 // indent, a flow-style empty blocked_by, and empty claim fields.
 const legacyFixture = `---

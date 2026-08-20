@@ -51,10 +51,10 @@ tmux_test() {
 }
 
 run_twt() {
-  TMUX="test" "$project_root/bin/twt" "$@"
+  TMUX="test" "$project_root/bin/twt-legacy" "$@"
 }
 
-rename_help="$(TMUX='' "$project_root/bin/twt" rename --help)"
+rename_help="$(TMUX='' "$project_root/bin/twt-legacy" rename --help)"
 case "$rename_help" in
   *"Usage: twt rename [--] <name>"*) ;;
   *)
@@ -63,7 +63,7 @@ case "$rename_help" in
     ;;
 esac
 
-if TMUX='' "$project_root/bin/twt" rename >/dev/null 2>"$test_root/rename-missing.stderr"; then
+if TMUX='' "$project_root/bin/twt-legacy" rename >/dev/null 2>"$test_root/rename-missing.stderr"; then
   echo "rename accepted a missing name" >&2
   exit 1
 fi
@@ -71,11 +71,11 @@ if ! grep -Fq "Usage: twt rename [--] <name>" "$test_root/rename-missing.stderr"
   echo "rename did not show usage for a missing name" >&2
   exit 1
 fi
-if TMUX='' "$project_root/bin/twt" rename one two >/dev/null 2>"$test_root/rename-extra.stderr"; then
+if TMUX='' "$project_root/bin/twt-legacy" rename one two >/dev/null 2>"$test_root/rename-extra.stderr"; then
   echo "rename accepted extra arguments" >&2
   exit 1
 fi
-if TMUX='' "$project_root/bin/twt" rename outside >/dev/null 2>"$test_root/rename-outside.stderr"; then
+if TMUX='' "$project_root/bin/twt-legacy" rename outside >/dev/null 2>"$test_root/rename-outside.stderr"; then
   echo "rename ran outside tmux" >&2
   exit 1
 fi
@@ -94,7 +94,7 @@ run_in_session() {
   local stderr_file="$test_root/$label.stderr"
   local command=""
 
-  printf -v command '%q ' "$project_root/bin/twt" "$@"
+  printf -v command '%q ' "$project_root/bin/twt-legacy" "$@"
   # Expand these variables inside the tmux pane, not while building the command.
   # shellcheck disable=SC2016
   printf -v command '%s> %q 2> %q; twt_exit_code=$?; printf "%%s\\n" "$twt_exit_code" > %q' \

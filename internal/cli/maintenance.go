@@ -21,7 +21,7 @@ type doctorOutput struct {
 
 func newStorageCommand(options Options) *cobra.Command {
 	service := options.maintenanceService()
-	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt2 storage"})
+	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt storage"})
 	show := &cobra.Command{
 		Use:   "show",
 		Short: "Show Project and repository storage use",
@@ -64,7 +64,7 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 	var apply bool
 	command := &cobra.Command{
 		Use:   "clean",
-		Short: "Remove unused twt2-owned data",
+		Short: "Remove unused twt-owned data",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			templates, err := currentTemplateDigests(command, options.ConfigDir)
@@ -122,7 +122,7 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 }
 
 // currentTemplateDigests reads the digests of the current Project Templates. A
-// Project Template that twt2 cannot load gives a warning, and twt2 keeps its
+// Project Template that twt cannot load gives a warning, and twt keeps its
 // Prepared Environments.
 func currentTemplateDigests(command *cobra.Command, configDir string) (projectservice.TemplateDigests, error) {
 	catalog, warnings, err := store.LoadTemplateCatalog(configDir)
@@ -141,7 +141,7 @@ func newDoctorCommand(options Options) *cobra.Command {
 	service := options.maintenanceService()
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check twt2 tools and state",
+		Short: "Check twt tools and state",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			report := service.Doctor()

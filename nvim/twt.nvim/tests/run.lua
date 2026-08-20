@@ -3,7 +3,7 @@ vim.opt.runtimepath:prepend(plugin)
 
 local failures = {}
 local initial_state = vim.fn.tempname()
-vim.env.TWT2_STATE_DIR = initial_state
+vim.env.TWT_STATE_DIR = initial_state
 local function test(name, body)
   local ok, err = pcall(body)
   if not ok then
@@ -14,7 +14,7 @@ end
 -- Sets the config fields of `overrides` for `body` only, then puts the old
 -- values back. It also puts them back when `body` fails.
 local function with_config(overrides, body)
-  local config = require("twt2.config").get()
+  local config = require("twt.config").get()
   local saved = {}
   for key in pairs(overrides) do saved[key] = config[key] end
   for key, value in pairs(overrides) do config[key] = value end
@@ -81,9 +81,9 @@ local transcript_by_agent = {
   ["agent-2"] = "# Project two transcript\n",
 }
 
--- Mirrors twt2's real layout: $STATE/snapshots/projects/<projectID>/agents/<agentID>.md
+-- Mirrors twt's real layout: $STATE/snapshots/projects/<projectID>/agents/<agentID>.md
 local function agent_snapshot_path(project_id, agent_id)
-  return vim.env.TWT2_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/agents/" .. agent_id .. ".md"
+  return vim.env.TWT_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/agents/" .. agent_id .. ".md"
 end
 
 local function save_snapshot(project_id, agent_id, markdown)
@@ -118,8 +118,8 @@ local function runner(argv, opts, done)
   done({ code = 0, stdout = vim.json.encode(value), stderr = "" })
 end
 
-require("twt2").setup({
-  command = "/test/twt2",
+require("twt").setup({
+  command = "/test/twt",
   default_keymaps = false,
   runner = runner,
   directory = function()
@@ -132,24 +132,24 @@ require("twt2").setup({
 
 test("lists and selects Agents through exact Project context", function()
   local selected
-  require("twt2").agents.pick(function(err, result)
+  require("twt").agents.pick(function(err, result)
     assert(err == nil, err)
     selected = result.agent
   end)
   assert(selected.id == "agent-1")
-  assert(table.concat(calls[1].argv, " ") == "/test/twt2 context --directory /work/app --output json")
-  assert(table.concat(calls[2].argv, " ") == "/test/twt2 agents list --project project-1 --limit 40 --output json")
+  assert(table.concat(calls[1].argv, " ") == "/test/twt context --directory /work/app --output json")
+  assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --project project-1 --limit 40 --output json")
 end)
 
 test("revalidates the selected Agent and sends feedback on standard input", function()
   local ok
-  require("twt2").agents.send("review text", function(err)
+  require("twt").agents.send("review text", function(err)
     assert(err == nil)
     ok = true
   end)
   assert(ok)
   local sent = calls[#calls]
-  assert(table.concat(sent.argv, " ") == "/test/twt2 agents send agent-1 --project project-1 --stdin --output json")
+  assert(table.concat(sent.argv, " ") == "/test/twt agents send agent-1 --project project-1 --stdin --output json")
   assert(sent.stdin == "review text")
 end)
 
@@ -163,17 +163,17 @@ test("uses extmarks and repository names for current review lines", function()
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
   vim.api.nvim_set_current_buf(buffer)
   context.repositoryName = "app"
-  require("twt2.config").get().directory = function()
+  require("twt.config").get().directory = function()
     return root .. "/src"
   end
   local added
-  require("twt2").review.add("change this", 2, 2, function(err)
+  require("twt").review.add("change this", 2, 2, function(err)
     assert(err == nil)
     added = true
   end)
   assert(added)
   vim.api.nvim_buf_set_lines(buffer, 0, 0, false, { "inserted" })
-  local format_err, batch = require("twt2").review.format("project-1")
+  local format_err, batch = require("twt").review.format("project-1")
   assert(format_err == nil, format_err)
   assert(#batch.note_ids == 1)
   assert(batch.text:find("app:src/file.go#L3\n", 1, true))
@@ -184,8 +184,8 @@ end)
 
 test("keeps a review send in its captured Project when the current buffer changes", function()
   local directory = "/work/other"
-  require("twt2.config").get().directory = function() return directory end
-  require("twt2").agents.pick(function(err, result)
+  require("twt.config").get().directory = function() return directory end
+  require("twt").agents.pick(function(err, result)
     assert(err == nil, err)
     assert(result.agent.id == "agent-2")
   end)
@@ -198,7 +198,7 @@ test("keeps a review send in its captured Project when the current buffer change
     end
   end
   local sent
-  require("twt2").review.send(function(err)
+  require("twt").review.send(function(err)
     assert(err == nil, err)
     sent = calls[#calls]
   end)
@@ -212,18 +212,18 @@ test("writes and reopens a private latest transcript for each Project", function
   local state_root = vim.fn.tempname()
   local snapshot_root = state_root .. "/snapshots/projects"
   local directory = "/work/app"
-  vim.env.TWT2_STATE_DIR = state_root
-  require("twt2.config").get().directory = function() return directory end
+  vim.env.TWT_STATE_DIR = state_root
+  require("twt.config").get().directory = function() return directory end
 
   local first_path
-  require("twt2").agents.pick(function(err, result)
+  require("twt").agents.pick(function(err, result)
     assert(err == nil, err)
     assert(result.agent.id == "agent-1")
     first_path = result.path
   end)
   directory = "/work/other"
   local second_path
-  require("twt2").agents.pick(function(err, result)
+  require("twt").agents.pick(function(err, result)
     assert(err == nil, err)
     assert(result.agent.id == "agent-2")
     second_path = result.path
@@ -239,13 +239,13 @@ test("writes and reopens a private latest transcript for each Project", function
 
   transcript_by_agent["agent-1"] = "# Project one transcript, refreshed\n"
   directory = "/work/app"
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
   assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Project one transcript, refreshed")
   assert(table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n") == "# Project one transcript, refreshed")
   assert(vim.bo.modifiable == false)
   assert(vim.bo.readonly == true)
 
-  require("twt2.snapshot").open(first_path, "project-1")
+  require("twt.snapshot").open(first_path, "project-1")
   assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(first_path))
 end)
 
@@ -265,13 +265,13 @@ test("serializes transcript snapshots for one Project", function()
     end,
   }, function()
     local first_done = false
-    require("twt2").agents.pick(function(err)
+    require("twt").agents.pick(function(err)
       assert(err == nil, err)
       first_done = true
     end)
     choice = 2
     local blocked_error
-    require("twt2").agents.pick(function(err) blocked_error = err end)
+    require("twt").agents.pick(function(err) blocked_error = err end)
     assert(blocked_error and blocked_error:find("already in progress", 1, true))
     assert(#pending == 1)
     local agent2_path = save_snapshot("project-2", "agent-2", "# First selection\n")
@@ -287,7 +287,7 @@ test("serializes transcript snapshots for one Project", function()
     assert(first_done)
 
     local second_done = false
-    require("twt2").agents.pick(function(err, result)
+    require("twt").agents.pick(function(err, result)
       assert(err == nil, err)
       assert(result.agent.id == "agent-3")
       second_done = true
@@ -314,7 +314,7 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
   added.id = "agent-open-fails"
   added.label = "open-fails"
   agents_response.agents[#agents_response.agents + 1] = added
-  local snapshot = require("twt2.snapshot")
+  local snapshot = require("twt.snapshot")
   local old_open = snapshot.open
 
   with_config({
@@ -339,7 +339,7 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
   }, function()
     snapshot.open = function() return nil, "injected open failure" end
     local pick_error
-    require("twt2").agents.pick(function(err) pick_error = err end)
+    require("twt").agents.pick(function(err) pick_error = err end)
     snapshot.open = old_open
     assert(pick_error == "injected open failure")
   end)
@@ -357,12 +357,12 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
       end
     end,
   }, function()
-    require("twt2").agents.send("review", function(err) assert(err == nil, err) end)
+    require("twt").agents.send("review", function(err) assert(err == nil, err) end)
   end)
   assert(send_argv and send_argv:find("agents send agent%-1"), send_argv)
 
   with_config({ directory = fixed_directory("/work/app") }, function()
-    require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+    require("twt").agents.pick(function(err) assert(err == nil, err) end)
   end)
   table.remove(agents_response.agents)
 end)
@@ -381,19 +381,19 @@ test("allows one feedback send per Project at the same time", function()
     end,
   }, function()
     local first_done = false
-    require("twt2").agents.send("first", function(err)
+    require("twt").agents.send("first", function(err)
       assert(err == nil, err)
       first_done = true
     end)
     assert(#pending == 1)
     local duplicate_error
-    require("twt2").agents.send("duplicate", function(err) duplicate_error = err end)
+    require("twt").agents.send("duplicate", function(err) duplicate_error = err end)
     assert(duplicate_error and duplicate_error:find("already in progress", 1, true))
     assert(#pending == 1)
 
     directory = "/work/other"
     local second_done = false
-    require("twt2").agents.send("second", function(err)
+    require("twt").agents.send("second", function(err)
       assert(err == nil, err)
       second_done = true
     end)
@@ -405,7 +405,7 @@ test("allows one feedback send per Project at the same time", function()
 end)
 
 test("rejects an unsupported JSON schema", function()
-  local client = require("twt2.client")
+  local client = require("twt.client")
   local old = context.schemaVersion
   context.schemaVersion = 2
   local received
@@ -417,20 +417,20 @@ test("rejects an unsupported JSON schema", function()
 end)
 
 test("falls back to the shared latest.md when a snapshot response has no path", function()
-  -- An empty response is a response with no `path`: an older twt2 binary.
+  -- An empty response is a response with no `path`: an older twt binary.
   local function legacy_path()
-    return require("twt2.snapshot").resolve({}, "project-1")
+    return require("twt.snapshot").resolve({}, "project-1")
   end
-  local old_state = vim.env.TWT2_STATE_DIR
+  local old_state = vim.env.TWT_STATE_DIR
   local old_xdg = vim.env.XDG_STATE_HOME
-  vim.env.TWT2_STATE_DIR = "/explicit/state/twt2"
-  assert(legacy_path() == "/explicit/state/twt2/snapshots/projects/project-1/latest.md")
-  vim.env.TWT2_STATE_DIR = nil
+  vim.env.TWT_STATE_DIR = "/explicit/state/twt"
+  assert(legacy_path() == "/explicit/state/twt/snapshots/projects/project-1/latest.md")
+  vim.env.TWT_STATE_DIR = nil
   vim.env.XDG_STATE_HOME = "/xdg/state"
-  assert(legacy_path() == "/xdg/state/twt2/snapshots/projects/project-1/latest.md")
-  vim.env.TWT2_STATE_DIR = old_state
+  assert(legacy_path() == "/xdg/state/twt/snapshots/projects/project-1/latest.md")
+  vim.env.TWT_STATE_DIR = old_state
   vim.env.XDG_STATE_HOME = old_xdg
-  assert(require("twt2.snapshot").resolve({ path = "/reported/path.md" }, "project-1") == "/reported/path.md")
+  assert(require("twt.snapshot").resolve({ path = "/reported/path.md" }, "project-1") == "/reported/path.md")
 
   local fallback_opened
   with_config({
@@ -448,14 +448,14 @@ test("falls back to the shared latest.md when a snapshot response has no path", 
           repositoryName = "app",
           updatedAt = "2026-08-20T00:00:00Z",
           status = "applied",
-          -- no `path`: simulates an older twt2 binary
+          -- no `path`: simulates an older twt binary
         }), stderr = "" })
       else
         runner(argv, opts, done)
       end
     end,
   }, function()
-    require("twt2").agents.pick(function(err, result)
+    require("twt").agents.pick(function(err, result)
       assert(err == nil, err)
       fallback_opened = result.path
     end)
@@ -467,8 +467,8 @@ end)
 test("registers one command for each action, without the default mappings", function()
   local commands = vim.api.nvim_get_commands({})
   local names = {
-    "Twt2Agents", "Twt2Note", "Twt2Review", "Twt2Send",
-    "Twt2Notes", "Twt2Resume", "Twt2Focus", "Twt2Refresh", "Twt2Clear",
+    "TwtAgents", "TwtNote", "TwtReview", "TwtSend",
+    "TwtNotes", "TwtResume", "TwtFocus", "TwtRefresh", "TwtClear",
   }
   for _, name in ipairs(names) do
     assert(commands[name], name .. " is missing")
@@ -490,7 +490,7 @@ end
 
 test("answers the input window one time only", function()
   local answers = {}
-  local buffer = require("twt2.input").open({ title = "note" }, function(text)
+  local buffer = require("twt.input").open({ title = "note" }, function(text)
     answers[#answers + 1] = text
   end)
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one line" })
@@ -501,10 +501,10 @@ test("answers the input window one time only", function()
 end)
 
 test("sends free text from the message window", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+  require("twt.config").get().directory = function() return "/work/app" end
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
   local sent_error = "not called"
-  require("twt2").agents.prompt_send(function(err) sent_error = err end)
+  require("twt").agents.prompt_send(function(err) sent_error = err end)
   local buffer = vim.api.nvim_get_current_buf()
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "please add a test" })
   local save = save_keymap(buffer)
@@ -518,9 +518,9 @@ test("sends free text from the message window", function()
 end)
 
 test("cancels the message window one time and sends nothing", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt.config").get().directory = function() return "/work/app" end
   local answers = 0
-  require("twt2").agents.prompt_send(function(err)
+  require("twt").agents.prompt_send(function(err)
     answers = answers + 1
     assert(err == nil, err)
   end)
@@ -542,8 +542,8 @@ test("lists a review note and deletes it", function()
   vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
   vim.api.nvim_set_current_buf(buffer)
-  require("twt2.config").get().directory = function() return root .. "/src" end
-  local review = require("twt2").review
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
   review.clear("project-1")
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
@@ -582,8 +582,8 @@ test("lists a review note and deletes it", function()
 end)
 
 test("writes a new snapshot without the picker", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+  require("twt.config").get().directory = function() return "/work/app" end
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
   transcript_by_agent["agent-1"] = "# Project one transcript, again\n"
   local picks = 0
   local refreshed
@@ -593,7 +593,7 @@ test("writes a new snapshot without the picker", function()
       done(items[1])
     end,
   }, function()
-    require("twt2").agents.refresh(function(err, result)
+    require("twt").agents.refresh(function(err, result)
       assert(err == nil, err)
       assert(result.agent.id == "agent-1")
       refreshed = result.path
@@ -610,9 +610,9 @@ test("reuses the visible window for the same snapshot instead of splitting again
     snapshot_split = "split",
     directory = fixed_directory("/work/app"),
   }, function()
-    require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+    require("twt").agents.pick(function(err) assert(err == nil, err) end)
     local windows_after_first = #vim.api.nvim_tabpage_list_wins(0)
-    require("twt2").agents.refresh(function(err) assert(err == nil, err) end)
+    require("twt").agents.refresh(function(err) assert(err == nil, err) end)
     local windows_after_second = #vim.api.nvim_tabpage_list_wins(0)
     assert(
       windows_after_second == windows_after_first,
@@ -622,25 +622,25 @@ test("reuses the visible window for the same snapshot instead of splitting again
   vim.cmd("only")
 end)
 
-test("emits Twt2Refresh after a pick, a send, and a refresh", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
+test("emits TwtRefresh after a pick, a send, and a refresh", function()
+  require("twt.config").get().directory = function() return "/work/app" end
   local fired = 0
   local autocmd = vim.api.nvim_create_autocmd("User", {
-    pattern = "Twt2Refresh",
+    pattern = "TwtRefresh",
     callback = function() fired = fired + 1 end,
   })
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
   assert(fired == 1)
-  require("twt2").agents.send("more feedback", function(err) assert(err == nil, err) end)
+  require("twt").agents.send("more feedback", function(err) assert(err == nil, err) end)
   assert(fired == 2)
-  require("twt2").agents.refresh(function(err) assert(err == nil, err) end)
+  require("twt").agents.refresh(function(err) assert(err == nil, err) end)
   assert(fired == 3)
   vim.api.nvim_del_autocmd(autocmd)
 end)
 
 test("offers to resume a stopped Agent Session before a send", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
+  require("twt.config").get().directory = function() return "/work/app" end
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
   local agent = agents_response.agents[1]
   local live = false
   local questions = {}
@@ -662,13 +662,13 @@ test("offers to resume a stopped Agent Session before a send", function()
     end,
   }, function()
     local refused
-    require("twt2").agents.send("feedback", function(err) refused = err end)
+    require("twt").agents.send("feedback", function(err) refused = err end)
     assert(refused and refused:find("cannot receive feedback", 1, true))
     assert(#questions == 1 and questions[1]:find("Resume and send?", 1, true))
 
     answer = true
     local sent
-    require("twt2").agents.send("feedback after resume", function(err)
+    require("twt").agents.send("feedback after resume", function(err)
       assert(err == nil, err)
       sent = calls[#calls]
     end)
@@ -681,9 +681,9 @@ test("offers to resume a stopped Agent Session before a send", function()
 end)
 
 test("reports the selected Agent Session for a statusline", function()
-  require("twt2.config").get().directory = function() return "/work/app" end
-  require("twt2").agents.pick(function(err) assert(err == nil, err) end)
-  local status = require("twt2").agents.status()
+  require("twt.config").get().directory = function() return "/work/app" end
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
+  local status = require("twt").agents.status()
   assert(status and status.label == "review", vim.inspect(status))
   assert(status.live == true)
 end)
@@ -691,4 +691,4 @@ end)
 if #failures > 0 then
   error(table.concat(failures, "\n"))
 end
-print("twt2.nvim tests: ok")
+print("twt.nvim tests: ok")

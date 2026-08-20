@@ -58,7 +58,7 @@ func (s *Service) ReadLinked(agent domain.AgentSession, project domain.Project) 
 }
 
 // LinkedAgent returns the Agent Session with a provider session ID. When the
-// record has no link, twt2 discovers the provider sessions of the Project. It
+// record has no link, twt discovers the provider sessions of the Project. It
 // saves the link when exactly one new provider session matches.
 func (s *Service) LinkedAgent(agent domain.AgentSession, project domain.Project) (domain.AgentSession, error) {
 	if agent.ProjectID != project.ID {
@@ -86,14 +86,14 @@ func (s *Service) LinkedAgent(agent domain.AgentSession, project domain.Project)
 	default:
 		return domain.AgentSession{}, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "Agent Session %q matches %d provider sessions: %s", agent.ID, len(found), strings.Join(sessionIDs(found), ", ")),
-			"Run 'twt2 agents transcript link %s --project %s --session SESSION_ID' to select one.", agent.ID, project.ID,
+			"Run 'twt agents transcript link %s --project %s --session SESSION_ID' to select one.", agent.ID, project.ID,
 		)
 	}
 }
 
 // saveLink writes the discovered provider session ID. It reads the record
-// again inside the mutation lock, because another twt2 process can change or
-// delete the record while twt2 reads the provider files.
+// again inside the mutation lock, because another twt process can change or
+// delete the record while twt reads the provider files.
 func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, providerSessionID string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLockBlocking(s.stateDir)
 	if err != nil {
@@ -109,7 +109,7 @@ func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, pr
 		return domain.AgentSession{}, err
 	}
 	if current.ProjectID != agent.ProjectID || current.Provider != agent.Provider {
-		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt2 read its provider sessions", agent.ID)
+		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt read its provider sessions", agent.ID)
 	}
 	if current.ProviderSessionID != "" {
 		return current, nil
@@ -134,7 +134,7 @@ func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, pr
 func notLinkedError(agent domain.AgentSession, project domain.Project) error {
 	return clierr.WithHint(
 		clierr.New(clierr.PreconditionFailed, "Agent Session %q has no linked provider session ID", agent.ID),
-		"Run 'twt2 agents discover --project %s' to find sessions.", project.ID,
+		"Run 'twt agents discover --project %s' to find sessions.", project.ID,
 	)
 }
 
@@ -147,9 +147,9 @@ func sessionIDs(sessions []DiscoveredSession) []string {
 }
 
 // SnapshotResult gives the transcript, its Agent Session, and the files that
-// twt2 wrote. Path is the private file of the Agent Session. LatestPath is a
+// twt wrote. Path is the private file of the Agent Session. LatestPath is a
 // plain copy of this most recent Project snapshot. Both paths are empty when
-// twt2 does not save.
+// twt does not save.
 type SnapshotResult struct {
 	Transcript Transcript
 	Agent      domain.AgentSession
@@ -190,7 +190,7 @@ func (s *Service) Snapshot(agentReference, projectID string, save bool) (Snapsho
 		return SnapshotResult{}, err
 	}
 	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
-		return SnapshotResult{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt2 read its transcript", agent.ID)
+		return SnapshotResult{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt read its transcript", agent.ID)
 	}
 	paths, err := store.NewSnapshotStore(s.stateDir).Save(project.ID, agent.ID, value.Markdown)
 	if err != nil {

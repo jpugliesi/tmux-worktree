@@ -12,7 +12,7 @@ import (
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 )
 
-const prepareWorkerArgument = "__twt2_prepare_worker"
+const prepareWorkerArgument = "__twt_prepare_worker"
 
 func startPreparationRefill(options Options, templateName string, template domain.Template) error {
 	executable := options.PreparationExecutable
@@ -20,7 +20,7 @@ func startPreparationRefill(options Options, templateName string, template domai
 	if executable == "" {
 		executable, err = os.Executable()
 		if err != nil {
-			return fmt.Errorf("find twt2 executable for environment preparation: %w", err)
+			return fmt.Errorf("find twt executable for environment preparation: %w", err)
 		}
 		if strings.HasSuffix(executable, ".test") {
 			return nil
@@ -52,10 +52,10 @@ func startPrepareWorker(options Options, service *projectservice.Service, execut
 	}
 	command := exec.Command(executable, prepareWorkerArgument, environment.ID, environment.QueueToken)
 	command.Env = append(os.Environ(),
-		"TWT2_CONFIG_DIR="+options.ConfigDir,
-		"TWT2_STATE_DIR="+options.StateDir,
-		"TWT2_DATA_DIR="+options.DataDir,
-		"TWT2_TMUX_SOCKET="+options.TmuxSocket,
+		"TWT_CONFIG_DIR="+options.ConfigDir,
+		"TWT_STATE_DIR="+options.StateDir,
+		"TWT_DATA_DIR="+options.DataDir,
+		"TWT_TMUX_SOCKET="+options.TmuxSocket,
 	)
 	command.Stdout = logFile
 	command.Stderr = logFile

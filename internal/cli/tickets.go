@@ -231,7 +231,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 			default:
 				if !interactiveTicketSession(command) {
 					return invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or --stdin.",
-						"twt2 tickets create has no input and no terminal")
+						"twt tickets create has no input and no terminal")
 				}
 				editorRequest, err := createTicketInEditor(command, options)
 				if err != nil {
@@ -272,7 +272,7 @@ func createTicketInEditor(command *cobra.Command, options Options) (ticketservic
 	if err != nil {
 		seed = []byte(defaultTicketTemplate)
 	}
-	temp, err := os.CreateTemp("", "twt2-ticket-*.md")
+	temp, err := os.CreateTemp("", "twt-ticket-*.md")
 	if err != nil {
 		return request, fmt.Errorf("create the ticket draft file: %w", err)
 	}
@@ -357,7 +357,7 @@ func splitLeadingTitle(body string) (string, string) {
 }
 
 // createTicket writes one Ticket. Both the tickets create command and apply
-// use it. A text dry run prints the file that twt2 would write.
+// use it. A text dry run prints the file that twt would write.
 func createTicket(command *cobra.Command, service *ticketservice.Service, request ticketservice.CreateRequest) error {
 	if isDryRun(command) {
 		result, err := service.Create(request, true)
@@ -411,7 +411,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				return writeJSONOutput(command, ticketsListOutput{SchemaVersion: jsonSchemaVersion, Tickets: tickets, TotalCount: total, Truncated: truncated})
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No tickets match. Run 'twt2 tickets create DESCRIPTION'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No tickets match. Run 'twt tickets create DESCRIPTION'.")
 				return err
 			}
 			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)
@@ -515,8 +515,8 @@ func newTicketsEditCommand(options Options) *cobra.Command {
 				return editTicket(command, service, args[0], body)
 			}
 			if !interactiveTicketSession(command) {
-				return invalidUsageWithHint(command, "Pass --stdin when twt2 runs without a terminal.",
-					"twt2 tickets edit has no terminal")
+				return invalidUsageWithHint(command, "Pass --stdin when twt runs without a terminal.",
+					"twt tickets edit has no terminal")
 			}
 			resolved, err := service.Resolve(args[0])
 			if err != nil {
@@ -532,7 +532,7 @@ func newTicketsEditCommand(options Options) *cobra.Command {
 					}
 					if _, err := service.Show(resolved.Slug); err != nil {
 						return "", "", clierr.WithHint(clierr.Wrap(clierr.UnsafeState, err),
-							"Fix the file %q, then run 'twt2 tickets show %s'.", resolved.Path, resolved.Slug)
+							"Fix the file %q, then run 'twt tickets show %s'.", resolved.Path, resolved.Slug)
 					}
 					return resolved.Slug, resolved.Title, nil
 				},
@@ -667,20 +667,20 @@ func newTicketsUnclaimCommand(options Options) *cobra.Command {
 	return command
 }
 
-// resolveClaimant resolves the claimant name: --as, then TWT2_CLAIMANT, then
+// resolveClaimant resolves the claimant name: --as, then TWT_CLAIMANT, then
 // the OS username. The OS username applies only in an interactive terminal,
 // so two agents can never both succeed as the same default name.
 func resolveClaimant(command *cobra.Command, as string) (string, error) {
 	if value := strings.TrimSpace(as); value != "" {
 		return value, nil
 	}
-	if value := os.Getenv("TWT2_CLAIMANT"); value != "" {
+	if value := os.Getenv("TWT_CLAIMANT"); value != "" {
 		return value, nil
 	}
 	if !interactiveTicketSession(command) {
 		return "", clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "no claimant is set"),
-			"Pass --as NAME when twt2 runs without a terminal.")
+			"Pass --as NAME when twt runs without a terminal.")
 	}
 	if current, err := user.Current(); err == nil && current.Username != "" {
 		return current.Username, nil
@@ -690,7 +690,7 @@ func resolveClaimant(command *cobra.Command, as string) (string, error) {
 	}
 	return "", clierr.WithHint(
 		clierr.New(clierr.InvalidUsage, "no claimant is set"),
-		"Pass --as NAME or set TWT2_CLAIMANT.")
+		"Pass --as NAME or set TWT_CLAIMANT.")
 }
 
 // claimTicket claims one Ticket. Both the tickets claim command and apply use
@@ -844,7 +844,7 @@ func newTicketsBoardsListCommand(options Options) *cobra.Command {
 				return writeJSONOutput(command, boardsListOutput{SchemaVersion: jsonSchemaVersion, Boards: boards, TotalCount: total, Truncated: truncated})
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Boards exist. Run 'twt2 tickets boards create NAME'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Boards exist. Run 'twt tickets boards create NAME'.")
 				return err
 			}
 			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)

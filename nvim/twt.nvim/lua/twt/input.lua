@@ -10,7 +10,7 @@ function M.open(opts, done)
   local window = vim.api.nvim_open_win(buffer, true, {
     relative = "editor", width = width, height = height,
     row = math.floor((vim.o.lines - height) / 2), col = math.floor((vim.o.columns - width) / 2),
-    border = "single", title = " " .. (opts.title or "twt2") .. " ", title_pos = "center",
+    border = "single", title = " " .. (opts.title or "twt") .. " ", title_pos = "center",
   })
   vim.bo[buffer].filetype = opts.filetype or "markdown"
   vim.bo[buffer].bufhidden = "wipe"

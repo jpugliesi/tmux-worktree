@@ -37,7 +37,7 @@ func doneFixture(t *testing.T) cli.Options {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	return cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 }
@@ -45,7 +45,7 @@ func doneFixture(t *testing.T) cli.Options {
 func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	executeWithOptions(t, options, nil, "projects", "create", "finish-me", "--template", "example", "--no-open")
 	project, err := store.NewProjectStore(options.StateDir).Find("finish-me")
 	if err != nil {
@@ -91,7 +91,7 @@ func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 	if _, err := store.NewProjectStore(options.StateDir).Find(project.ID); err == nil {
 		t.Fatal("Project record still exists after done")
 	}
-	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt2-finish-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt-finish-me").Run(); err == nil {
 		t.Fatal("Project tmux session still exists after done")
 	}
 }
@@ -99,7 +99,7 @@ func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	executeWithOptions(t, options, nil, "projects", "create", "block-me", "--template", "example", "--no-open")
 	project, err := store.NewProjectStore(options.StateDir).Find("block-me")
 	if err != nil {
@@ -122,7 +122,7 @@ func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
 	if !strings.Contains(output, "Archived Project \"block-me\"") || !strings.Contains(output, "Blocked:") || !strings.Contains(output, "stays archived") {
 		t.Fatalf("blocked done output = %q", output)
 	}
-	if !strings.Contains(output, "twt2 done "+project.ID) {
+	if !strings.Contains(output, "twt done "+project.ID) {
 		t.Fatalf("blocked done output has no retry command: %q", output)
 	}
 	archived, findErr := store.NewProjectStore(options.StateDir).Find(project.ID)
@@ -137,7 +137,7 @@ func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
 func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		executeWithOptions(t, options, nil, "projects", "create", name, "--template", "example", "--no-open")
 	}
@@ -155,7 +155,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gammaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-gamma", "-F", "#{pane_id}")
+	gammaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt-gamma", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", gammaPane)
 
 	// JSON output cannot relocate the tmux client.
@@ -212,7 +212,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 
 	// Archive relocates too, keeps the Project data, and behaves like done
 	// --keep.
-	betaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-beta", "-F", "#{pane_id}")
+	betaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt-beta", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", betaPane)
 	archiveOutput := executeWithOptions(t, options, nil, "archive")
 	if !strings.Contains(archiveOutput, "Archiving Project \"beta\"; switching the client to Project \"alpha\"") {
@@ -227,7 +227,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	}
 
 	// Without another active Project, done reports an empty destination.
-	alphaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-alpha", "-F", "#{pane_id}")
+	alphaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt-alpha", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", alphaPane)
 	lastOutput := executeWithOptions(t, options, nil, "done")
 	if !strings.Contains(lastOutput, "No other active Project exists.") {
@@ -253,20 +253,20 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 
 func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	options := doneFixture(t)
-	t.Setenv("TWT2_PROJECT_ID", "")
+	t.Setenv("TWT_PROJECT_ID", "")
 	executeWithOptions(t, options, nil, "projects", "create", "worker-src", "--template", "example", "--no-open")
 	executeWithOptions(t, options, nil, "projects", "create", "worker-dest", "--template", "example", "--no-open")
 	source, err := store.NewProjectStore(options.StateDir).Find("worker-src")
 	if err != nil {
 		t.Fatal(err)
 	}
-	helperPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-worker-dest", "-n", "done-helper", "--", "sleep", "60")
+	helperPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt-worker-dest", "-n", "done-helper", "--", "sleep", "60")
 	t.Setenv("TMUX_PANE", helperPane)
 
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
-	err = cli.RunDoneWorker(timeoutOptions, []string{source.ID, "keep=false", "allow-unpublished=false", "-", "twt2-done-timeout", "no-client"})
-	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt2 done "+source.ID) {
+	err = cli.RunDoneWorker(timeoutOptions, []string{source.ID, "keep=false", "allow-unpublished=false", "-", "twt-done-timeout", "no-client"})
+	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt done "+source.ID) {
 		t.Fatalf("done worker timeout = %v", err)
 	}
 	unchanged, err := store.NewProjectStore(options.StateDir).Find(source.ID)
@@ -279,7 +279,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	}
 	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "rename-window", "-t", helperPane, "done-helper")
 
-	channel := "twt2-done-worker-test"
+	channel := "twt-done-worker-test"
 	signalResult := make(chan error, 1)
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -297,7 +297,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if _, err := os.Stat(source.Root); !os.IsNotExist(err) {
 		t.Fatalf("done worker kept the Project root: %v", err)
 	}
-	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt2-worker-src").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt-worker-src").Run(); err == nil {
 		t.Fatal("done worker kept the source tmux session")
 	}
 }

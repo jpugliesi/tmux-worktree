@@ -31,7 +31,7 @@ _Avoid_: Workspace, repository clone
 
 **Prepared Environment**:
 A lifecycle record for a set of Git worktrees for one exact Project Template
-revision. twt2 prepares the set, and one Project can claim the complete set as
+revision. twt prepares the set, and one Project can claim the complete set as
 its checkout leases.
 _Avoid_: Warm Project, spare worktree, checkout pool item
 

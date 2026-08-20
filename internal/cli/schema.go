@@ -60,11 +60,11 @@ type requestFieldSchema struct {
 
 // argumentsAnnotation holds the JSON positional argument schema of one
 // command. Each command declares its own arguments next to its Use value.
-const argumentsAnnotation = "twt2.arguments"
+const argumentsAnnotation = "twt.arguments"
 
 // enumAnnotation stores the closed value set of one flag. setFlagEnum records
 // it next to the flag definition, and the schema command reads it back.
-const enumAnnotation = "twt2.enum"
+const enumAnnotation = "twt.enum"
 
 // setFlagEnum declares the closed value set of one flag. The schema command
 // reports the values, and shell completion offers them.
@@ -131,7 +131,7 @@ func setAgentIDArgument(command *cobra.Command) {
 }
 
 // skipSchemaCommand reports whether a command is a generated help or
-// completion command. These commands are not part of the twt2 contract.
+// completion command. These commands are not part of the twt contract.
 func skipSchemaCommand(command *cobra.Command) bool {
 	switch command.Name() {
 	case "help", "completion", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:

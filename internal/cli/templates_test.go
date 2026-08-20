@@ -39,10 +39,10 @@ func TestTemplateMutationsUseTheGlobalMutationLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Release()
-	if _, err := execute(t, root, "templates", "create", "blocked"); err == nil || !strings.Contains(err.Error(), "another twt2 change") {
+	if _, err := execute(t, root, "templates", "create", "blocked"); err == nil || !strings.Contains(err.Error(), "another twt change") {
 		t.Fatalf("concurrent create error = %v", err)
 	}
-	if _, err := execute(t, root, "templates", "repos", "add", "existing", "app", "https://example.com/app.git"); err == nil || !strings.Contains(err.Error(), "another twt2 change") {
+	if _, err := execute(t, root, "templates", "repos", "add", "existing", "app", "https://example.com/app.git"); err == nil || !strings.Contains(err.Error(), "another twt change") {
 		t.Fatalf("concurrent update error = %v", err)
 	}
 }

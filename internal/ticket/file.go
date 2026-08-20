@@ -1,4 +1,4 @@
-// Package ticket implements the twt2 Markdown ticket tracker. The ticket
+// Package ticket implements the twt Markdown ticket tracker. The ticket
 // files are the store. Every mutation parses the YAML frontmatter into a
 // yaml.Node tree, changes only the touched keys, and writes the file back, so
 // unknown legacy keys, comments, and scalar styles survive every write.

@@ -35,9 +35,9 @@ func groupCommand(command *cobra.Command) *cobra.Command {
 			return command.Help()
 		}
 		if suggestions := command.SuggestionsFor(args[0]); len(suggestions) > 0 {
-			return invalidUsage(command, "twt2 does not know the command %q; did you mean %q?", args[0], suggestions[0])
+			return invalidUsage(command, "twt does not know the command %q; did you mean %q?", args[0], suggestions[0])
 		}
-		return invalidUsage(command, "twt2 does not know the command %q", args[0])
+		return invalidUsage(command, "twt does not know the command %q", args[0])
 	}
 	return command
 }

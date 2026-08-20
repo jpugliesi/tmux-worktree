@@ -85,7 +85,7 @@ func TestResolveNotFound(t *testing.T) {
 		if clierr.CodeOf(err) != clierr.NotFound {
 			t.Fatalf("Resolve(%q) = %v, want not_found", ref, err)
 		}
-		if !strings.Contains(clierr.HintOf(err), "twt2 tickets list") {
+		if !strings.Contains(clierr.HintOf(err), "twt tickets list") {
 			t.Fatalf("hint %q does not point at the list command", clierr.HintOf(err))
 		}
 	}

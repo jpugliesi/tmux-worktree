@@ -42,7 +42,7 @@ func (e *EnvironmentFailedError) Is(target error) bool { return target == ErrEnv
 func (s *Service) failedEnvironmentError(environment domain.PreparedEnvironment) error {
 	failure := environment.Failure
 	if failure == "" {
-		failure = "twt2 did not save a failure cause"
+		failure = "twt did not save a failure cause"
 	}
 	return clierr.Wrap(clierr.Internal, &EnvironmentFailedError{
 		EnvironmentID: environment.ID,
@@ -54,7 +54,7 @@ func (s *Service) failedEnvironmentError(environment domain.PreparedEnvironment)
 // CreateOptions changes how Create claims a Prepared Environment.
 type CreateOptions struct {
 	// Branch is an optional custom Project branch name. An empty value uses
-	// the default twt2/<name>-<id> branch name.
+	// the default twt/<name>-<id> branch name.
 	Branch string
 	// NoFetch turns the default-branch refresh before the claim off.
 	NoFetch bool
@@ -80,7 +80,7 @@ func (s *Service) CreateWithOptions(name, templateName string, template domain.T
 			races++
 		case !healed && errors.As(err, &failed):
 			healed = true
-			s.report("Prepared Environment %s failed. twt2 prepares a replacement.", failed.EnvironmentID)
+			s.report("Prepared Environment %s failed. twt prepares a replacement.", failed.EnvironmentID)
 			s.cleanFailedEnvironments(templateName, template)
 		default:
 			return project, err
@@ -170,9 +170,9 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 
 // resolveProjectBranch selects the Project branch name before the claim
 // reservation is saved. A custom branch must not be a repository default
-// branch. On a name collision twt2 falls back to the default branch name.
+// branch. On a name collision twt falls back to the default branch name.
 func (s *Service) resolveProjectBranch(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
-	defaultName := "twt2/" + name + "-" + projectID[:8]
+	defaultName := "twt/" + name + "-" + projectID[:8]
 	candidate := strings.TrimSpace(opts.Branch)
 	if candidate == "" {
 		return defaultName, nil
@@ -198,7 +198,7 @@ func (s *Service) resolveProjectBranch(name, projectID string, template domain.T
 			return "", err
 		}
 		if exists {
-			s.report("Branch %q exists. twt2 uses %q.", candidate, defaultName)
+			s.report("Branch %q exists. twt uses %q.", candidate, defaultName)
 			return defaultName, nil
 		}
 	}
@@ -305,8 +305,8 @@ func (s *Service) completeEnvironmentClaim(environmentID, projectID string, opts
 		}
 		markProjectStepSucceeded(&project, "checkout:"+repository.Name, s.now())
 	}
-	marker := map[string]string{"owner": "twt2", "projectId": project.ID, "environmentId": environment.ID}
-	if err := writeJSON(filepath.Join(project.Root, ".twt2-owned.json"), marker, 0o600); err != nil {
+	marker := map[string]string{"owner": "twt", "projectId": project.ID, "environmentId": environment.ID}
+	if err := writeJSON(filepath.Join(project.Root, ".twt-owned.json"), marker, 0o600); err != nil {
 		return project, err
 	}
 	if err := os.Remove(filepath.Join(project.Root, environmentMarkerName)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -406,7 +406,7 @@ func (s *Service) refreshStaleBase(repository domain.PreparedRepository, spec do
 	fetchedAt := readyAt
 	if readyAt == nil || s.now().Sub(*readyAt) > claimFreshnessWindow {
 		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, branch); err != nil {
-			s.report("Warning: twt2 could not fetch origin for repository %q: %v. twt2 uses the saved base commit.", repository.Name, err)
+			s.report("Warning: twt could not fetch origin for repository %q: %v. twt uses the saved base commit.", repository.Name, err)
 		} else {
 			now := s.now()
 			fetchedAt = &now
@@ -421,7 +421,7 @@ func (s *Service) refreshStaleBase(repository domain.PreparedRepository, spec do
 		return "", nil, err
 	}
 	if !ancestor {
-		s.report("Warning: origin/%s does not contain the saved base commit for repository %q. twt2 keeps the saved base commit.", branch, repository.Name)
+		s.report("Warning: origin/%s does not contain the saved base commit for repository %q. twt keeps the saved base commit.", branch, repository.Name)
 		return base, fetchedAt, nil
 	}
 	if err := run(repository.Path, "git", "reset", "--hard", tip); err != nil {
@@ -434,7 +434,7 @@ func validateEnvironmentClaimMarker(environment domain.PreparedEnvironment, proj
 	if err := validateEnvironmentMarker(environment); err == nil {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(project.Root, ".twt2-owned.json"))
+	data, err := os.ReadFile(filepath.Join(project.Root, ".twt-owned.json"))
 	if err != nil {
 		return fmt.Errorf("Prepared Environment %q has no valid claim ownership marker", environment.ID)
 	}
@@ -443,7 +443,7 @@ func validateEnvironmentClaimMarker(environment domain.PreparedEnvironment, proj
 		ProjectID     string `json:"projectId"`
 		EnvironmentID string `json:"environmentId"`
 	}
-	if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt2" || marker.ProjectID != project.ID || marker.EnvironmentID != environment.ID {
+	if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt" || marker.ProjectID != project.ID || marker.EnvironmentID != environment.ID {
 		return fmt.Errorf("Prepared Environment %q has an invalid claim ownership marker", environment.ID)
 	}
 	return nil

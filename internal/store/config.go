@@ -10,13 +10,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Config is the twt2 config.yaml document.
+// Config is the twt config.yaml document.
 type Config struct {
 	// TicketsHome is the root directory of the Markdown ticket files.
 	TicketsHome string `yaml:"ticketsHome"`
 }
 
-// LoadConfig reads one strict twt2 config document from
+// LoadConfig reads one strict twt config document from
 // configDir/config.yaml. It rejects unknown fields and more than one
 // document, the same as Project Template loading. A missing file returns the
 // zero Config without an error.
@@ -28,7 +28,7 @@ func LoadConfig(configDir string) (Config, error) {
 		return config, nil
 	}
 	if err != nil {
-		return config, fmt.Errorf("open twt2 config %q: %w", path, err)
+		return config, fmt.Errorf("open twt config %q: %w", path, err)
 	}
 	defer file.Close()
 	decoder := yaml.NewDecoder(file)
@@ -38,14 +38,14 @@ func LoadConfig(configDir string) (Config, error) {
 			// An empty config file is the zero Config.
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("decode twt2 config %q: %w", path, err)
+		return Config{}, fmt.Errorf("decode twt config %q: %w", path, err)
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err != nil {
-			return Config{}, fmt.Errorf("decode twt2 config %q: %w", path, err)
+			return Config{}, fmt.Errorf("decode twt config %q: %w", path, err)
 		}
-		return Config{}, fmt.Errorf("decode twt2 config %q: multiple YAML documents are not supported", path)
+		return Config{}, fmt.Errorf("decode twt config %q: multiple YAML documents are not supported", path)
 	}
 	return config, nil
 }

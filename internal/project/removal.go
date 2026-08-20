@@ -101,7 +101,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		)
 	}
 	actions = append(actions,
-		RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt2-owned.json")},
+		RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt-owned.json")},
 		RemovalAction{Kind: "remove_project_root", Target: p.Root},
 	)
 
@@ -109,7 +109,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		plan.Blockers = append(plan.Blockers, RemovalBlocker{
 			Code:    BlockerNotArchived,
 			Message: fmt.Sprintf("Project %q is not archived", p.Name),
-			Hint:    fmt.Sprintf("Run 'twt2 projects archive %s' before removal.", p.ID),
+			Hint:    fmt.Sprintf("Run 'twt projects archive %s' before removal.", p.ID),
 		})
 	}
 
@@ -221,15 +221,15 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 				origin, _ := output(repository.CachePath, "git", "remote", "get-url", "origin")
 				repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
 					Code:    BlockerUnpublishedUnknown,
-					Message: fmt.Sprintf("twt2 could not read the remote \"origin\" (%s) to make sure branch %q is published", origin, repository.Branch),
-					Hint:    fmt.Sprintf("Connect to the remote and run the command again, or run 'twt2 projects remove %s --allow-unpublished --apply'.", reference),
+					Message: fmt.Sprintf("twt could not read the remote \"origin\" (%s) to make sure branch %q is published", origin, repository.Branch),
+					Hint:    fmt.Sprintf("Connect to the remote and run the command again, or run 'twt projects remove %s --allow-unpublished --apply'.", reference),
 				})
 				return nil
 			}
 			repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
 				Code:    BlockerUnpublishedBranch,
 				Message: fmt.Sprintf("branch %q has commits that are not on the remote \"origin\" and not on another declared ref", repository.Branch),
-				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt2 projects remove %s --allow-unpublished --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
+				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt projects remove %s --allow-unpublished --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
 			})
 			return nil
 		}); err != nil {
@@ -295,7 +295,7 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 			return plan, err
 		}
 	}
-	if err := os.Remove(filepath.Join(p.Root, ".twt2-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(filepath.Join(p.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return plan, fmt.Errorf("remove Project ownership marker: %w", err)
 	}
 	if err := os.Remove(p.Root); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -400,7 +400,7 @@ func removalRefusal(projectName string, blockers []RemovalBlocker) error {
 }
 
 // validateRemovalState checks the recorded Project state against the layout
-// twt2 owns. Policy refusals return as blockers; the error return is only
+// twt owns. Policy refusals return as blockers; the error return is only
 // for infrastructure failures.
 func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, error) {
 	blocked := func(code BlockerCode, format string, values ...any) []RemovalBlocker {
@@ -425,7 +425,7 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 	if filepath.Clean(p.Root) != filepath.Clean(expectedRoot) {
 		return blocked(BlockerInvalidState, "Project %q has an invalid root path", p.Name), nil
 	}
-	expectedEntries := map[string]bool{".twt2-owned.json": true}
+	expectedEntries := map[string]bool{".twt-owned.json": true}
 	for _, repository := range p.Repositories {
 		spec, _, err := repositoryFor(p, repository.Name)
 		if err != nil {
@@ -477,7 +477,7 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 				Paths:   []string{entry.Name()},
 			}}, nil
 		}
-		if entry.Name() == ".twt2-owned.json" {
+		if entry.Name() == ".twt-owned.json" {
 			markerPresent = true
 		}
 	}
@@ -488,7 +488,7 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 		return nil, nil
 	}
 	if !tolerantStatus || len(entries) != 0 {
-		return blocked(BlockerUnsafeState, "Project root %q has no twt2 ownership marker", p.Root), nil
+		return blocked(BlockerUnsafeState, "Project root %q has no twt ownership marker", p.Root), nil
 	}
 	return nil, nil
 }

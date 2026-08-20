@@ -13,7 +13,7 @@ import (
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 )
 
-const quickCreateWorkerArgument = "__twt2_quick_create_worker"
+const quickCreateWorkerArgument = "__twt_quick_create_worker"
 
 // workerSpec identifies one private relocation worker argv mode together
 // with its signal channel prefix and its tmux window names.
@@ -30,15 +30,15 @@ type workerSpec struct {
 
 var quickCreateWorker = workerSpec{
 	argument:      quickCreateWorkerArgument,
-	channelPrefix: "twt2-create-",
-	windowName:    "twt2-archive",
+	channelPrefix: "twt-create-",
+	windowName:    "twt-archive",
 	failedWindow:  "archive-failed",
 }
 
 var doneWorker = workerSpec{
 	argument:      doneWorkerArgument,
-	channelPrefix: "twt2-done-",
-	windowName:    "twt2-done",
+	channelPrefix: "twt-done-",
+	windowName:    "twt-done",
 	failedWindow:  "done-failed",
 }
 
@@ -118,14 +118,14 @@ func startRelocationHelper(options Options, spec workerSpec, hostSessionID, clie
 		var err error
 		executable, err = os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("find twt2 executable: %w", err)
+			return nil, fmt.Errorf("find twt executable: %w", err)
 		}
 	}
 	args := tmuxCommandArgs(options,
 		"new-window", "-d", "-P", "-F", "#{window_id}", "-t", hostSessionID,
-		"-n", spec.windowName, "-e", "TWT2_CONFIG_DIR="+options.ConfigDir,
-		"-e", "TWT2_STATE_DIR="+options.StateDir, "-e", "TWT2_DATA_DIR="+options.DataDir,
-		"-e", "TWT2_TMUX_SOCKET="+options.TmuxSocket, "--", executable, spec.argument,
+		"-n", spec.windowName, "-e", "TWT_CONFIG_DIR="+options.ConfigDir,
+		"-e", "TWT_STATE_DIR="+options.StateDir, "-e", "TWT_DATA_DIR="+options.DataDir,
+		"-e", "TWT_TMUX_SOCKET="+options.TmuxSocket, "--", executable, spec.argument,
 	)
 	args = append(args, workerArgs...)
 	args = append(args, channel, clientName)
@@ -179,14 +179,14 @@ func runRelocationWorker(options Options, spec workerSpec, projectID, channel, c
 	return nil
 }
 
-// RunQuickCreateWorker runs the private __twt2_quick_create_worker argv
+// RunQuickCreateWorker runs the private __twt_quick_create_worker argv
 // mode. It waits for the relocation signal and archives the old Project.
 func RunQuickCreateWorker(options Options, args []string) error {
 	if len(args) != 4 {
 		return fmt.Errorf("invalid quick create worker request")
 	}
 	oldProjectID, newProjectID, channel, clientName := args[0], args[1], args[2], args[3]
-	retry := "twt2 archive " + oldProjectID
+	retry := "twt archive " + oldProjectID
 	err := runRelocationWorker(options, quickCreateWorker, oldProjectID, channel, clientName, retry,
 		func(service *projectservice.Service, result projectservice.ArchiveResult) (string, error) {
 			newProject, _ := service.Find(newProjectID)

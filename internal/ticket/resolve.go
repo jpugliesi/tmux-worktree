@@ -156,7 +156,7 @@ func (x *index) resolve(home, ref string) (string, error) {
 	}
 	return "", clierr.WithHint(
 		clierr.New(clierr.NotFound, "no ticket matches %q", ref),
-		"Run 'twt2 tickets list' to see the tickets.")
+		"Run 'twt tickets list' to see the tickets.")
 }
 
 // resolveName runs the slug, prefix, title, and alias steps.

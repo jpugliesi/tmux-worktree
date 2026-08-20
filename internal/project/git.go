@@ -46,7 +46,7 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("create cache directory: %w", err)
 	}
-	temporary, err := os.MkdirTemp(filepath.Dir(cachePath), ".twt2-cache-*")
+	temporary, err := os.MkdirTemp(filepath.Dir(cachePath), ".twt-cache-*")
 	if err != nil {
 		return fmt.Errorf("create temporary cache path: %w", err)
 	}
@@ -62,8 +62,8 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 	if err := run("", "git", args...); err != nil {
 		return fmt.Errorf("clone repository %q: %w", spec.Name, err)
 	}
-	marker := map[string]string{"owner": "twt2", "url": spec.Clone.URL}
-	if err := writeJSON(filepath.Join(temporary, "twt2-ownership.json"), marker, 0o600); err != nil {
+	marker := map[string]string{"owner": "twt", "url": spec.Clone.URL}
+	if err := writeJSON(filepath.Join(temporary, "twt-ownership.json"), marker, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, cachePath); err != nil {
@@ -276,16 +276,16 @@ func repositoryFor(p domain.Project, name string) (domain.RepositorySpec, domain
 }
 
 func validateCacheMarker(cachePath, expectedURL string) error {
-	data, err := os.ReadFile(filepath.Join(cachePath, "twt2-ownership.json"))
+	data, err := os.ReadFile(filepath.Join(cachePath, "twt-ownership.json"))
 	if err != nil {
-		return fmt.Errorf("cache %q has no valid twt2 ownership marker", cachePath)
+		return fmt.Errorf("cache %q has no valid twt ownership marker", cachePath)
 	}
 	var marker struct {
 		Owner string `json:"owner"`
 		URL   string `json:"url"`
 	}
-	if err := json.Unmarshal(data, &marker); err != nil || marker.Owner != "twt2" || marker.URL != expectedURL {
-		return fmt.Errorf("cache %q has a conflicting twt2 ownership marker", cachePath)
+	if err := json.Unmarshal(data, &marker); err != nil || marker.Owner != "twt" || marker.URL != expectedURL {
+		return fmt.Errorf("cache %q has a conflicting twt ownership marker", cachePath)
 	}
 	return nil
 }
@@ -305,7 +305,7 @@ var remoteGitOutput = func(directory string, args ...string) (string, error) {
 	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	data, err := command.CombinedOutput()
 	if ctx.Err() != nil {
-		return "", fmt.Errorf("git %s: twt2 could not reach the remote in %s", strings.Join(args, " "), remoteProbeTimeout)
+		return "", fmt.Errorf("git %s: twt could not reach the remote in %s", strings.Join(args, " "), remoteProbeTimeout)
 	}
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(data)))
@@ -314,7 +314,7 @@ var remoteGitOutput = func(directory string, args ...string) (string, error) {
 }
 
 // branchPublished reports whether the branch commits are safe on the remote
-// or on another declared ref. It returns unknown=true when twt2 could not
+// or on another declared ref. It returns unknown=true when twt could not
 // read the remote, so the caller can refuse instead of a silent pass. The
 // check reads the local cache first and uses at most one remote round trip:
 // one ls-remote probe answers both whether the branch is on the remote and
@@ -388,7 +388,7 @@ func branchOnLocalRefs(cachePath, branch string) (bool, error) {
 		return false, fmt.Errorf("list refs for branch %q: %w", branch, err)
 	}
 	for _, ref := range strings.Split(refs, "\n") {
-		if ref == "" || ref == branchRef || strings.HasPrefix(ref, "refs/heads/twt2/") {
+		if ref == "" || ref == branchRef || strings.HasPrefix(ref, "refs/heads/twt/") {
 			continue
 		}
 		contained, err := isAncestor(cachePath, branchRef, ref)

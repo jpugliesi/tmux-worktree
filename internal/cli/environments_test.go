@@ -16,7 +16,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-// maintenanceOptions returns options for a new empty twt2 installation.
+// maintenanceOptions returns options for a new empty twt installation.
 func maintenanceOptions(t *testing.T) cli.Options {
 	t.Helper()
 	root := t.TempDir()
@@ -28,7 +28,7 @@ func maintenanceOptions(t *testing.T) cli.Options {
 }
 
 // runCLI returns the standard output, the standard error, and the error of one
-// twt2 command.
+// twt command.
 func runCLI(t *testing.T, options cli.Options, args ...string) (string, string, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
@@ -340,7 +340,7 @@ func TestEnvironmentsListMarksObsoleteOnlyWhenTheTemplateLoads(t *testing.T) {
 		t.Fatalf("environments list does not mark the obsolete environment:\n%s", text)
 	}
 
-	// twt2 cannot compare an invalid Project Template, so the status stays.
+	// twt cannot compare an invalid Project Template, so the status stays.
 	writeConfigFile(t, options.ConfigDir, "example", "version: 1\nname: example\nrepositories: [\n")
 	text, _, err = runCLI(t, options, "environments", "list")
 	if err != nil {
@@ -423,7 +423,7 @@ func TestDoctorWarnsAboutAFailedEnvironmentAndStaysHealthy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doctor with a failed Prepared Environment returned an error: %v", err)
 	}
-	want := "warn\tenvironment:" + failed.ID + "\tPrepared Environment failed: clone failed. See " + log + ". Run 'twt2 storage clean --apply' to remove it."
+	want := "warn\tenvironment:" + failed.ID + "\tPrepared Environment failed: clone failed. See " + log + ". Run 'twt storage clean --apply' to remove it."
 	if !strings.Contains(text, want) {
 		t.Fatalf("doctor text does not contain %q:\n%s", want, text)
 	}
@@ -468,7 +468,7 @@ func TestStorageCleanKeepsEnvironmentsOfAnInvalidProjectTemplate(t *testing.T) {
 	if text != "Nothing to clean.\n" {
 		t.Fatalf("storage clean removed the environments of an invalid Project Template: %q", text)
 	}
-	if warnings != "Warning: Project Template \"example\" is not valid. twt2 kept its Prepared Environments.\n" {
+	if warnings != "Warning: Project Template \"example\" is not valid. twt kept its Prepared Environments.\n" {
 		t.Fatalf("storage clean warning = %q", warnings)
 	}
 	if _, err := store.NewEnvironmentStore(options.StateDir).Find(environment.ID); err != nil {
