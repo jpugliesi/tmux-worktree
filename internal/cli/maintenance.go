@@ -20,7 +20,7 @@ type doctorOutput struct {
 }
 
 func newStorageCommand(options Options) *cobra.Command {
-	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
+	service := options.maintenanceService()
 	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt2 storage"})
 	show := &cobra.Command{
 		Use:   "show",
@@ -71,7 +71,7 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+			service := options.projectService()
 			plan, err := service.StorageCleanupPlan(templates)
 			if err != nil {
 				return err
@@ -138,7 +138,7 @@ func currentTemplateDigests(command *cobra.Command, configDir string) (projectse
 }
 
 func newDoctorCommand(options Options) *cobra.Command {
-	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
+	service := options.maintenanceService()
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Check twt2 tools and state",
@@ -162,22 +162,4 @@ func newDoctorCommand(options Options) *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func formatBytes(value int64) string {
-	const unit = int64(1024)
-	if value < unit {
-		return fmt.Sprintf("%d B", value)
-	}
-	divisor := unit
-	units := []string{"KiB", "MiB", "GiB", "TiB"}
-	unitName := units[0]
-	for _, candidate := range units[1:] {
-		if value < divisor*unit {
-			break
-		}
-		divisor *= unit
-		unitName = candidate
-	}
-	return fmt.Sprintf("%.1f %s", float64(value)/float64(divisor), unitName)
 }

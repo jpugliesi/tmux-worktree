@@ -11,18 +11,17 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
-	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
 
 func newQuickCreateCommand(options Options) *cobra.Command {
-	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	service := options.projectService()
 	var templateName string
 	var keepCurrent bool
 	var noFetch bool
 	var branch string
 	command := &cobra.Command{
-		Use:   "create [NAME]",
+		Use:   "new [NAME]",
 		Short: "Create a new Project and archive the current Project",
 		Args:  optionalArg("NAME"),
 		PreRunE: func(command *cobra.Command, _ []string) error {
@@ -39,20 +38,14 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			}
 			current, err := service.CurrentForQuickCreate(directory, os.Getenv("TWT2_PROJECT_ID"), currentPane)
 			known := err == nil
-			if err != nil {
-				if !errors.Is(err, projectservice.ErrNotInProject) {
-					return err
-				}
+			if err != nil && !errors.Is(err, projectservice.ErrNotInProject) {
+				return err
 			}
 			// The tmux client switch and the archive of the current Project
 			// need the calling pane. Without a pane, quick create uses the
 			// outside-session flow and keeps the current Project active.
 			outside := !known || currentPane == ""
-			testHooks := options.QuickCreateSwitch != nil || options.QuickCreateArchive != nil
-			if testHooks && (options.QuickCreateSwitch == nil || options.QuickCreateArchive == nil) {
-				return fmt.Errorf("quick create test hooks are incomplete")
-			}
-			templateStore := store.NewTemplateStore(options.ConfigDir)
+			templateStore := options.templateStore()
 			selected := strings.TrimSpace(templateName)
 			if selected == "" {
 				if known {
@@ -67,7 +60,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				}
 			}
 			clientName := ""
-			if !outside && !testHooks && !isDryRun(command) {
+			if !outside && !isDryRun(command) {
 				clientName, err = callingTmuxClient(options, currentPane)
 				if err != nil {
 					return err
@@ -85,79 +78,47 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				if err := service.ValidateCreate(name, selected, template); err != nil {
 					return err
 				}
-				return writeMutation(command, "projects.quick_create", "valid", "", name)
+				return writeMutation(command, "projects.quick_create", statusValid, "", name)
 			}
 
-			createService := newCreateService(command, options, selected, template)
-			created, err := createService.CreateWithOptions(name, selected, template, projectservice.CreateOptions{Branch: branch, NoFetch: noFetch})
+			created, err := createProject(command, options, name, selected, template, projectservice.CreateOptions{Branch: branch, NoFetch: noFetch})
 			if err != nil {
-				return createFailureError(created, err)
-			}
-			_ = store.SaveLastTemplate(options.StateDir, selected)
-
-			if outside {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Created Project %q (%s)\n", created.Name, created.ID); err != nil {
-					return err
-				}
-				if testHooks {
-					if err := options.QuickCreateSwitch(created.TmuxSession); err != nil {
-						return quickCreateSwitchFailure(created, err)
-					}
-					return nil
-				}
-				return openTmux(options, created.TmuxSession)
-			}
-
-			if !keepCurrent {
-				if liveAgents, liveErr := agentservice.NewService(options.StateDir, options.TmuxSocket).Live(current.ID); liveErr == nil {
-					if err := printStoppedAgents(command.OutOrStdout(), liveAgents); err != nil {
-						return err
-					}
-				}
-			}
-			if testHooks {
-				if err := options.QuickCreateSwitch(created.TmuxSession); err != nil {
-					return quickCreateSwitchFailure(created, err)
-				}
-				if keepCurrent {
-					_, err = fmt.Fprintf(command.OutOrStdout(), "Created Project %q; Project %q stays active\n", created.Name, current.Name)
-					return err
-				}
-				if err := options.QuickCreateArchive(current.ID); err != nil {
-					return fmt.Errorf("new Project %q is active, but old Project %q could not be archived: %w", created.Name, current.Name, err)
-				}
-				_, err = fmt.Fprintf(command.OutOrStdout(), "Created Project %q and archived Project %q\n", created.Name, current.Name)
 				return err
 			}
+			out := command.OutOrStdout()
 
-			if keepCurrent {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Created Project %q; switching to it; Project %q stays active\n", created.Name, current.Name); err != nil {
+			if outside {
+				if _, err := fmt.Fprintf(out, "Created Project %q (%s)\n", created.Name, created.ID); err != nil {
 					return err
 				}
-				newSessionID, err := service.OwnedSessionID(created.ID)
-				if err != nil {
-					return quickCreateSwitchFailure(created, err)
-				}
-				if err := switchTmuxClient(options, clientName, newSessionID); err != nil {
+				if err := options.QuickCreateSwitch("", created.TmuxSession); err != nil {
 					return quickCreateSwitchFailure(created, err)
 				}
 				return nil
 			}
 
-			helper, err := startQuickCreateHelper(options, service, current.ID, created.ID, clientName)
-			if err != nil {
-				return quickCreateSwitchFailure(created, fmt.Errorf("prepare old Project archive: %w", err))
+			if !keepCurrent {
+				if liveAgents, liveErr := agentservice.NewService(options.StateDir, options.TmuxSocket).Live(current.ID); liveErr == nil {
+					if err := printStoppedAgents(out, liveAgents); err != nil {
+						return err
+					}
+				}
 			}
-			if _, err := fmt.Fprintf(command.OutOrStdout(), "Created Project %q; switching to it and archiving Project %q\n", created.Name, current.Name); err != nil {
-				helper.cancel()
+			message := fmt.Sprintf("Created Project %q; switching to it and archiving Project %q\n", created.Name, current.Name)
+			if keepCurrent {
+				message = fmt.Sprintf("Created Project %q; switching to it; Project %q stays active\n", created.Name, current.Name)
+			}
+			if _, err := fmt.Fprint(out, message); err != nil {
 				return quickCreateSwitchFailure(created, fmt.Errorf("write quick create result: %w", err))
 			}
-			if err := switchTmuxClient(options, clientName, helper.newSessionID); err != nil {
-				helper.cancel()
+			if err := options.QuickCreateSwitch(clientName, created.TmuxSession); err != nil {
 				return quickCreateSwitchFailure(created, err)
 			}
-			if err := helper.commit(); err != nil {
-				return fmt.Errorf("new Project %q is active, but old Project %q archive signal failed: %w; use 'twt2 archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
+			if keepCurrent {
+				return nil
+			}
+			if err := options.QuickCreateArchive(clientName, current.ID, created.ID); err != nil {
+				return fmt.Errorf("new Project %q is active, but old Project %q was not archived: %w; run 'twt2 archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
 			}
 			return nil
 		},
@@ -167,7 +128,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
 	setArguments(command, optionalArgument("name", "the interactive prompt asks for it when absent"))
-	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(store.NewTemplateStore(options.ConfigDir)))
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
 
@@ -182,7 +143,7 @@ func quickCreateName(command *cobra.Command, args []string) (string, error) {
 		return args[0], nil
 	}
 	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Project name; use 'twt2 create NAME' in a script")
+		return "", invalidUsage(command, "missing Project name; use 'twt2 new NAME' in a script")
 	}
 	if _, err := fmt.Fprint(command.ErrOrStderr(), "Project name: "); err != nil {
 		return "", err
@@ -196,12 +157,4 @@ func quickCreateName(command *cobra.Command, args []string) (string, error) {
 		return "", invalidUsage(command, "Project creation was canceled; no Project name was given")
 	}
 	return name, nil
-}
-
-func interactiveInput(input io.Reader) bool {
-	if input != os.Stdin {
-		return true
-	}
-	info, err := os.Stdin.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }

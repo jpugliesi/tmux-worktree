@@ -53,7 +53,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	invalidIDOptions := options
 	invalidIDOptions.Stdout, invalidIDOptions.Stderr = &invalidIDOutput, &invalidIDError
 	invalidIDCommand := cli.New(invalidIDOptions)
-	invalidIDCommand.SetArgs([]string{"create", "invalid-id-project"})
+	invalidIDCommand.SetArgs([]string{"new", "invalid-id-project"})
 	err = invalidIDCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "does not contain an immutable Project ID") {
 		t.Fatalf("quick create with a Project name in tmux metadata = %v", err)
@@ -67,7 +67,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(latestTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dryRun := executeWithOptions(t, options, nil, "create", "dry-project", "--dry-run")
+	dryRun := executeWithOptions(t, options, nil, "new", "dry-project", "--dry-run")
 	if !strings.Contains(dryRun, "projects.quick_create: valid") {
 		t.Fatalf("quick create dry-run output = %s", dryRun)
 	}
@@ -75,8 +75,8 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		t.Fatal("quick create dry-run created a Project")
 	}
 	for _, jsonArgs := range [][]string{
-		{"create", "json-project", "--output", "json"},
-		{"create", "json-project", "--dry-run", "--output", "json"},
+		{"new", "json-project", "--output", "json"},
+		{"new", "json-project", "--dry-run", "--output", "json"},
 	} {
 		var jsonOutput, jsonError bytes.Buffer
 		jsonOptions := options
@@ -96,29 +96,30 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	missingNameOptions.Stdout, missingNameOptions.Stderr = &missingNameOutput, &missingNameError
 	missingName := cli.New(missingNameOptions)
 	missingName.SetIn(strings.NewReader(""))
-	missingName.SetArgs([]string{"create", "--dry-run"})
+	missingName.SetArgs([]string{"new", "--dry-run"})
 	err = missingName.Execute()
 	if err == nil || !strings.Contains(err.Error(), "no Project name was given") {
 		t.Fatalf("quick create without a Project name = %v", err)
 	}
 	var events []string
-	options.QuickCreateSwitch = func(session string) error {
+	options.QuickCreateSwitch = func(_ string, session string) error {
 		events = append(events, "switch:"+session)
 		return nil
 	}
-	options.QuickCreateArchive = func(projectID string) error {
+	options.QuickCreateArchive = func(_ string, projectID string, _ string) error {
 		events = append(events, "archive:"+projectID)
 		service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: socket})
 		_, err := service.Archive(projectID, "")
 		return err
 	}
+	attachControlClient(t, socket, "old-project")
 
 	var promptOutput, promptError bytes.Buffer
 	promptOptions := options
 	promptOptions.Stdout, promptOptions.Stderr = &promptOutput, &promptError
 	promptCommand := cli.New(promptOptions)
 	promptCommand.SetIn(strings.NewReader("new-project\n"))
-	promptCommand.SetArgs([]string{"create"})
+	promptCommand.SetArgs([]string{"new"})
 	if err := promptCommand.Execute(); err != nil {
 		t.Fatalf("quick create with prompt: %v", err)
 	}
@@ -150,16 +151,17 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 
 	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=new-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", newPane)
+	attachControlClient(t, socket, "new-project")
 	archiveCalled := false
-	options.QuickCreateSwitch = func(string) error { return fmt.Errorf("test switch failure") }
-	options.QuickCreateArchive = func(string) error {
+	options.QuickCreateSwitch = func(string, string) error { return fmt.Errorf("test switch failure") }
+	options.QuickCreateArchive = func(string, string, string) error {
 		archiveCalled = true
 		return nil
 	}
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"create", "failed-switch"})
+	command.SetArgs([]string{"new", "failed-switch"})
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test switch failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
@@ -185,7 +187,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = cli.New(options)
-	command.SetArgs([]string{"create", "setup-fails"})
+	command.SetArgs([]string{"new", "setup-fails"})
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "initialization") {
 		t.Fatalf("quick create setup failure = %v", err)
@@ -224,7 +226,7 @@ func TestQuickCreateOutsideASessionNeedsATemplate(t *testing.T) {
 		Stderr:    &stderr,
 	}
 	command := cli.New(options)
-	command.SetArgs([]string{"create", "new-project"})
+	command.SetArgs([]string{"new", "new-project"})
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "no Project Templates exist") {
 		t.Fatalf("quick create outside tmux error = %v", err)
@@ -248,7 +250,7 @@ func TestQuickCreateOutsideASessionNeedsATemplate(t *testing.T) {
 		}
 	}
 	command = cli.New(options)
-	command.SetArgs([]string{"create", "new-project"})
+	command.SetArgs([]string{"new", "new-project"})
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--template TEMPLATE") ||
 		!strings.Contains(err.Error(), "alpha") || !strings.Contains(err.Error(), "beta") {
@@ -290,7 +292,7 @@ func TestQuickCreateChecksTheTmuxClientBeforeProjectSetup(t *testing.T) {
 	}
 
 	command := cli.New(options)
-	command.SetArgs([]string{"create", "must-not-exist"})
+	command.SetArgs([]string{"new", "must-not-exist"})
 	started := time.Now()
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "clients are attached to its Project session") {
@@ -344,7 +346,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
 	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldProject.ID, newProject.ID, "twt2-create-worker-timeout", "no-client"})
-	if err == nil || !strings.Contains(err.Error(), "archive signal timed out") || !strings.Contains(err.Error(), "retry with 'twt2 archive") {
+	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt2 archive "+oldProject.ID) {
 		t.Fatalf("quick create worker timeout = %v", err)
 	}
 	oldProject, err = store.NewProjectStore(options.StateDir).Find(oldProject.ID)
@@ -450,7 +452,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	failingOutputOptions := options
 	failingOutputOptions.Stdout = errorWriter{}
 	failingOutputCommand := cli.New(failingOutputOptions)
-	failingOutputCommand.SetArgs([]string{"create", "output-fails"})
+	failingOutputCommand.SetArgs([]string{"new", "output-fails"})
 	err = failingOutputCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test output failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
@@ -469,7 +471,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if clientSessionBeforeSuccess != oldProject.TmuxSession {
 		t.Fatalf("calling client after output failure = %q, want %q", clientSessionBeforeSuccess, oldProject.TmuxSession)
 	}
-	output := executeWithOptions(t, options, nil, "create", "new-project")
+	output := executeWithOptions(t, options, nil, "new", "new-project")
 	if !strings.Contains(output, "archiving Project \"old-project\"") {
 		t.Fatalf("real quick create output = %q", output)
 	}
@@ -520,19 +522,20 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	}
 	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
+	attachControlClient(t, socket, "old-project")
 
 	var events []string
-	options.QuickCreateSwitch = func(session string) error {
+	options.QuickCreateSwitch = func(_ string, session string) error {
 		events = append(events, "switch:"+session)
 		return nil
 	}
-	options.QuickCreateArchive = func(projectID string) error {
+	options.QuickCreateArchive = func(_ string, projectID string, _ string) error {
 		events = append(events, "archive:"+projectID)
 		return nil
 	}
 
 	// --keep-current switches without an archive.
-	keepOutput := executeWithOptions(t, options, nil, "create", "second", "--keep-current")
+	keepOutput := executeWithOptions(t, options, nil, "new", "second", "--keep-current")
 	if !strings.Contains(keepOutput, "stays active") {
 		t.Fatalf("quick create --keep-current output = %q", keepOutput)
 	}
@@ -559,7 +562,7 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	outsideOptions := options
 	outsideOptions.Stdout, outsideOptions.Stderr = &stdout, &stderr
 	outsideCommand := cli.New(outsideOptions)
-	outsideCommand.SetArgs([]string{"create", "outsider"})
+	outsideCommand.SetArgs([]string{"new", "outsider"})
 	if err := outsideCommand.Execute(); err != nil {
 		t.Fatalf("quick create outside a Project session: %v\n%s", err, stderr.String())
 	}
@@ -585,6 +588,33 @@ type errorWriter struct{}
 
 func (errorWriter) Write([]byte) (int, error) {
 	return 0, fmt.Errorf("test output failure")
+}
+
+// attachControlClient attaches a tmux control-mode client to a session so
+// that the quick create client preflight can find a calling client.
+func attachControlClient(t *testing.T, socket, session string) {
+	t.Helper()
+	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "="+session)
+	clientInput, err := client.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Stdout = io.Discard
+	client.Stderr = io.Discard
+	if err := client.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		clientInput.Close()
+		if client.Process != nil {
+			client.Process.Kill()
+		}
+		client.Wait()
+	})
+	waitFor(t, 2*time.Second, func() bool {
+		data, err := exec.Command("tmux", "-L", socket, "list-clients", "-F", "#{session_name}").CombinedOutput()
+		return err == nil && strings.Contains(string(data), session)
+	}, "control client did not attach to session "+session)
 }
 
 func waitFor(t *testing.T, timeout time.Duration, condition func() bool, message string) {

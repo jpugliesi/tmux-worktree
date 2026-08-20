@@ -197,13 +197,13 @@ From the Project tmux session, create the next Project and archive the current
 Project:
 
 ```sh
-twt2 create fix-logout
+twt2 new fix-logout
 ```
 
 For an interactive prompt, omit the name:
 
 ```sh
-twt2 create
+twt2 new
 Project name: fix-logout
 ```
 
@@ -212,9 +212,9 @@ claims a matching Prepared Environment, switches the calling tmux client to
 the new Project, and archives `fix-auth`. Other tmux clients do not switch.
 Preparation of the replacement environment continues in the background.
 
-`twt2 create` finds the current Project from the current directory, the
+`twt2 new` finds the current Project from the current directory, the
 `TWT2_PROJECT_ID` value, or the current tmux pane. The tmux client switch
-needs `TMUX_PANE`. From a plain shell inside a worktree, `twt2 create` uses
+needs `TMUX_PANE`. From a plain shell inside a worktree, `twt2 new` uses
 the Project Template of the current Project, creates the new Project, attaches
 its session, and keeps the current Project active.
 
@@ -223,7 +223,20 @@ Project that has a setup failure. You can inspect it and run
 `twt2 projects setup retry PROJECT`. If the tmux switch fails, `twt2` archives
 the new Project and keeps the current Project active.
 
-The short command is for a person in tmux. For a script or coding agent, use
+Switch the tmux client to a different Project:
+
+```sh
+twt2 switch fix-auth
+twt2 switch
+```
+
+`twt2 switch` moves your tmux client to the session of the Project. An
+archived Project opens first. Without PROJECT, `twt2` shows an interactive
+picker: it uses `fzf` when `fzf` is installed, or a numbered list. Inside
+tmux the client switches; outside tmux `twt2` attaches. The command is
+interactive and refuses `--output json`.
+
+The short commands are for a person in tmux. For a script or coding agent, use
 the explicit JSON commands:
 
 ```sh
@@ -242,11 +255,12 @@ twt2 projects path fix-auth everysphere
 twt2 projects open fix-auth
 ```
 
-The text list shows the Project name, Project Template, status, age, and size,
-in that order:
+The text list shows the Project name, Project Template, status, and age, in
+that order. The list does not read disk sizes, so it stays fast; use
+`twt2 storage show` for disk space:
 
 ```text
-fix-auth	everysphere	active	2h	1.2 GiB
+fix-auth	everysphere	active	2h
 ```
 
 Use `--output json` when a program needs the immutable Project ID.
@@ -259,7 +273,7 @@ value, or the current tmux pane:
 twt2 projects show current --output json
 twt2 projects archive current
 twt2 projects setup retry current
-twt2 finish current
+twt2 done current
 ```
 
 `twt2` saves a snapshot of the Project Template before it changes Git or
@@ -380,7 +394,7 @@ twt2 agents transcript link AGENT_ID \
   --session SESSION_ID
 ```
 
-## Archive, finish, and reopen a Project
+## Archive, complete, and reopen a Project
 
 Archive the current Project with the short command:
 
@@ -400,22 +414,22 @@ Project record, worktrees, branches, Project Template snapshot, repository
 caches, and Agent Session records. An Agent Session can start again only if it
 has a saved resume command.
 
-To archive a Project and remove its data in one step, use `finish`:
+To archive a Project and remove its data in one step, use `done`:
 
 ```sh
-twt2 finish
-twt2 finish fix-auth
-twt2 finish fix-auth --keep
-twt2 finish fix-auth --dry-run --output json
+twt2 done
+twt2 done fix-auth
+twt2 done fix-auth --keep
+twt2 done fix-auth --dry-run --output json
 ```
 
-`finish` archives the Project, then applies the removal plan. `--keep` stops
+`done` archives the Project, then applies the removal plan. `--keep` stops
 after the archive. `--allow-unpublished` removes a branch that has commits
 which are not on another known ref.
 
-From inside the Project tmux session, `finish` moves your tmux client to the
+From inside the Project tmux session, `done` moves your tmux client to the
 most recent other active Project, or detaches the client, and a worker window
-completes the work. This flow uses text output. For JSON output, run `finish`
+completes the work. This flow uses text output. For JSON output, run `done`
 from a different session. A dry run reports the archive and the complete
 removal plan and changes nothing.
 
@@ -426,8 +440,10 @@ twt2 projects open fix-auth
 twt2 projects open fix-auth --no-attach
 ```
 
-You cannot archive a Project from inside its own tmux session with
-`projects archive`. Switch to a different session first, or use `finish`.
+From inside the Project tmux session, `archive` behaves like `done --keep`:
+it moves your tmux client to the most recent other active Project, or
+detaches the client, and a worker window completes the archive. This flow
+uses text output; for JSON output, run `archive` from a different session.
 
 ## Storage and safe removal
 

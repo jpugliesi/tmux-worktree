@@ -14,101 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type agentOutput struct {
-	ID string `json:"id"`
-	// ProviderSessionID is the raw provider session ID. twt2 never returns
-	// the provider file path.
-	ProviderSessionID string            `json:"providerSessionId,omitempty"`
-	ProjectID         string            `json:"projectId"`
-	Provider          string            `json:"provider"`
-	Label             string            `json:"label"`
-	Status            string            `json:"status"`
-	CreatedAt         string            `json:"createdAt"`
-	UpdatedAt         string            `json:"updatedAt"`
-	Capabilities      agentCapabilities `json:"capabilities"`
-}
-
-type agentCapabilities struct {
-	CanResume         bool `json:"canResume"`
-	CanSend           bool `json:"canSend"`
-	CanFocus          bool `json:"canFocus"`
-	CanReadTranscript bool `json:"canReadTranscript"`
-}
-
-type agentsListOutput struct {
-	SchemaVersion int           `json:"schemaVersion"`
-	ProjectID     string        `json:"projectId"`
-	Agents        []agentOutput `json:"agents"`
-	TotalCount    int           `json:"totalCount"`
-	Truncated     bool          `json:"truncated,omitempty"`
-}
-
-type agentShowOutput struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	Agent         agentOutput  `json:"agent"`
-	Liveness      []agentCheck `json:"liveness"`
-}
-
-type agentCheck struct {
-	Name     string `json:"name"`
-	OK       bool   `json:"ok"`
-	Advisory bool   `json:"advisory,omitempty"`
-}
-
-type agentsDiscoverOutput struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	ProjectID     string             `json:"projectId"`
-	Sessions      []discoveredOutput `json:"sessions"`
-	TotalCount    int                `json:"totalCount"`
-	Truncated     bool               `json:"truncated,omitempty"`
-	Adopted       []string           `json:"adopted,omitempty"`
-	Status        string             `json:"status,omitempty"`
-}
-
-type discoveredOutput struct {
-	Provider     string `json:"provider"`
-	SessionID    string `json:"sessionId"`
-	Repository   string `json:"repository"`
-	LastActivity string `json:"lastActivity"`
-}
-
-type agentActionOutput struct {
-	SchemaVersion int         `json:"schemaVersion"`
-	Agent         agentOutput `json:"agent"`
-}
-
-type agentSendOutput struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	AgentID       string `json:"agentId"`
-	Status        string `json:"status"`
-}
-
-type agentTranscriptOutput struct {
-	SchemaVersion  int    `json:"schemaVersion"`
-	ProjectID      string `json:"projectId"`
-	AgentID        string `json:"agentId"`
-	Provider       string `json:"provider"`
-	RepositoryName string `json:"repositoryName"`
-	UpdatedAt      string `json:"updatedAt"`
-	Markdown       string `json:"markdown"`
-}
-
-type agentSnapshotOutput struct {
-	SchemaVersion  int    `json:"schemaVersion"`
-	ProjectID      string `json:"projectId"`
-	AgentID        string `json:"agentId"`
-	Provider       string `json:"provider"`
-	RepositoryName string `json:"repositoryName"`
-	UpdatedAt      string `json:"updatedAt"`
-	Status         string `json:"status"`
-	// Path is the private Project-owned file of the Agent Session snapshot.
-	// It is empty for a dry run, because a dry run writes no file.
-	Path string `json:"path,omitempty"`
-}
-
 func newAgentsCommand(options Options) *cobra.Command {
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
-	projects := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	projects := options.projectService()
 	command := groupCommand(&cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Projects"})
 	command.AddCommand(newAgentsRegisterCommand(agents, projects))
 	command.AddCommand(newAgentsListCommand(agents, projects))
@@ -148,27 +56,7 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 			if err != nil {
 				return err
 			}
-			if pane == "current" {
-				pane = os.Getenv("TMUX_PANE")
-			}
-			if isDryRun(command) {
-				if err := agents.ValidateRegistration(project, provider, pane, providerSessionID, args); err != nil {
-					return err
-				}
-				if err := agents.ValidateLabel(project.ID, label); err != nil {
-					return err
-				}
-				return writeMutation(command, "agents.register", "valid", "", label)
-			}
-			agent, err := agents.Register(project, provider, label, pane, providerSessionID, args)
-			if err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeMutation(command, "agents.register", "applied", agent.ID, agent.Label)
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Registered Agent Session %s (%s)\n", agent.ID, agent.Label)
-			return err
+			return registerAgent(command, agents, project, provider, label, pane, providerSessionID, args)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -178,8 +66,31 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading. twt2 infers it from the resume command")
 	setArguments(command, variadicArgument("resume_command", false, "required when --pane is empty"))
 	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
-	_ = command.RegisterFlagCompletionFunc("provider", fixedCompletion(agentProviderNames...))
+	setFlagEnum(command, "provider", agentProviderNames...)
 	return command
+}
+
+// registerAgent registers one Agent Session with a Project. Both the agents
+// register command and apply use it.
+func registerAgent(command *cobra.Command, agents *agentservice.Service, project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string) error {
+	if pane == "current" {
+		pane = os.Getenv("TMUX_PANE")
+	}
+	return runMutation(command, "agents.register",
+		func() (string, string, error) {
+			if err := agents.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
+				return "", "", err
+			}
+			return "", label, agents.ValidateLabel(project.ID, label)
+		},
+		func() (string, string, error) {
+			agent, err := agents.Register(project, provider, label, pane, providerSessionID, resumeCommand)
+			return agent.ID, agent.Label, err
+		},
+		func(out io.Writer, id, name string) error {
+			_, err := fmt.Fprintf(out, "Registered Agent Session %s (%s)\n", id, name)
+			return err
+		})
 }
 
 // requireAgentInProject checks that the Agent Session belongs to the Project.
@@ -198,141 +109,6 @@ func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Serv
 	if command.Flags().Lookup("project") != nil {
 		_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	}
-}
-
-func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	command := groupCommand(&cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"})
-	command.AddCommand(newAgentTranscriptShowCommand(agents, projects, stateDir))
-	command.AddCommand(newAgentTranscriptSnapshotCommand(agents, projects, stateDir))
-	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
-	return command
-}
-
-func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
-	command := &cobra.Command{
-		Use:   "snapshot AGENT_ID",
-		Short: "Save a Project-owned Agent Session transcript snapshot",
-		Args:  exactArgs("AGENT_ID"),
-		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
-			if err != nil {
-				return err
-			}
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("find home directory: %w", err)
-			}
-			result, err := transcriptservice.New(home, stateDir).Snapshot(args[0], project.ID, !isDryRun(command))
-			if err != nil {
-				return err
-			}
-			value, agent := result.Transcript, result.Agent
-			status := "applied"
-			if isDryRun(command) {
-				status = "valid"
-			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, agentSnapshotOutput{
-					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, AgentID: agent.ID,
-					Provider: value.Provider, RepositoryName: value.RepositoryName,
-					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Status: status, Path: result.Path,
-				})
-			}
-			if _, err := fmt.Fprintf(command.OutOrStdout(), "Transcript Snapshot %s for Agent Session %s\n", status, agent.ID); err != nil {
-				return err
-			}
-			if result.Path == "" {
-				return nil
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Snapshot: %s\n", result.Path)
-			return err
-		},
-	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	setAgentCommandCompletion(command, agents, projects)
-	return command
-}
-
-func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
-	var projectReference string
-	var providerSessionID string
-	command := &cobra.Command{
-		Use:   "link AGENT_ID",
-		Short: "Link an Agent Session to its provider transcript",
-		Args:  exactArgs("AGENT_ID"),
-		PreRunE: func(command *cobra.Command, _ []string) error {
-			if providerSessionID == "" {
-				return invalidUsage(command, "missing required flag --session SESSION_ID")
-			}
-			return nil
-		},
-		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
-			if err != nil {
-				return err
-			}
-			if isDryRun(command) {
-				if err := agents.ValidateTranscriptLink(args[0], project.ID, providerSessionID); err != nil {
-					return err
-				}
-				return writeMutation(command, "agents.transcript.link", "valid", args[0], providerSessionID)
-			}
-			agent, err := agents.LinkTranscript(args[0], project.ID, providerSessionID)
-			if err != nil {
-				return err
-			}
-			return writeMutation(command, "agents.transcript.link", "applied", agent.ID, agent.Label)
-		},
-	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	command.Flags().StringVar(&providerSessionID, "session", "", "Set the provider session ID")
-	_ = command.MarkFlagRequired("session")
-	setAgentCommandCompletion(command, agents, projects)
-	return command
-}
-
-func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
-	command := &cobra.Command{
-		Use:   "show AGENT_ID",
-		Short: "Read a linked Agent Session transcript",
-		Args:  exactArgs("AGENT_ID"),
-		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
-			if err != nil {
-				return err
-			}
-			agent, err := agents.Find(args[0])
-			if err != nil {
-				return err
-			}
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("find home directory: %w", err)
-			}
-			value, err := transcriptservice.New(home, stateDir).ReadLinked(agent, project)
-			if err != nil {
-				return err
-			}
-			return writeAgentTranscript(command, project.ID, agent.ID, value)
-		},
-	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	setAgentCommandCompletion(command, agents, projects)
-	return command
-}
-
-func writeAgentTranscript(command *cobra.Command, projectID, agentID string, value transcriptservice.Transcript) error {
-	if WantsJSON(command) {
-		return writeJSONOutput(command, agentTranscriptOutput{
-			SchemaVersion: jsonSchemaVersion, ProjectID: projectID, AgentID: agentID,
-			Provider: value.Provider, RepositoryName: value.RepositoryName,
-			UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Markdown: value.Markdown,
-		})
-	}
-	_, err := io.WriteString(command.OutOrStdout(), value.Markdown)
-	return err
 }
 
 func newAgentsListCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
@@ -461,22 +237,19 @@ func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservi
 			if err != nil {
 				return err
 			}
-			if isDryRun(command) {
-				agent, err := agents.ValidateRemove(args[0], project.ID)
-				if err != nil {
+			return runMutation(command, "agents.rm",
+				func() (string, string, error) {
+					agent, err := agents.ValidateRemove(args[0], project.ID)
+					return agent.ID, agent.Label, err
+				},
+				func() (string, string, error) {
+					agent, err := agents.Remove(args[0], project.ID)
+					return agent.ID, agent.Label, err
+				},
+				func(out io.Writer, id, name string) error {
+					_, err := fmt.Fprintf(out, "Removed Agent Session %s (%s)\n", id, name)
 					return err
-				}
-				return writeMutation(command, "agents.rm", "valid", agent.ID, agent.Label)
-			}
-			agent, err := agents.Remove(args[0], project.ID)
-			if err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeMutation(command, "agents.rm", "applied", agent.ID, agent.Label)
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed Agent Session %s (%s)\n", agent.ID, agent.Label)
-			return err
+				})
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -525,9 +298,9 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 				TotalCount: total, Truncated: truncated,
 			}
 			if adopt {
-				result.Status = "applied"
+				result.Status = statusApplied
 				if isDryRun(command) {
-					result.Status = "valid"
+					result.Status = statusValid
 				}
 				result.Adopted, err = adoptSessions(command, agents, project, found)
 				if err != nil {
@@ -540,7 +313,8 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			writer := command.OutOrStdout()
 			now := time.Now()
 			for _, session := range found {
-				if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", session.Provider, session.SessionID, session.RepositoryName, relativeAge(now, session.LastActivity)); err != nil {
+				age := formatAge(now.Sub(session.LastActivity)) + " ago"
+				if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", session.Provider, session.SessionID, session.RepositoryName, age); err != nil {
 					return err
 				}
 			}
@@ -583,28 +357,6 @@ func adoptSessions(command *cobra.Command, agents *agentservice.Service, project
 	return adopted, nil
 }
 
-func boolText(value bool) string {
-	if value {
-		return "yes"
-	}
-	return "no"
-}
-
-// relativeAge writes an age that a person can read, such as "5m ago".
-func relativeAge(now, value time.Time) string {
-	age := now.Sub(value)
-	switch {
-	case age < time.Minute:
-		return "now"
-	case age < time.Hour:
-		return fmt.Sprintf("%dm ago", int(age.Minutes()))
-	case age < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(age.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(age.Hours()/24))
-	}
-}
-
 func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "resume AGENT_ID",
@@ -623,7 +375,7 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 				if err := agents.ValidateResume(agent, project); err != nil {
 					return err
 				}
-				return writeMutation(command, "agents.resume", "valid", agent.ID, agent.Label)
+				return writeMutation(command, "agents.resume", statusValid, agent.ID, agent.Label)
 			}
 			agent, err = agents.Resume(agent, project)
 			if err != nil {
@@ -650,19 +402,19 @@ func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservic
 			if err != nil {
 				return err
 			}
-			if isDryRun(command) {
-				if !agents.IsLive(agent) {
-					return agentservice.NotLiveError(agent.ID)
-				}
-				return writeMutation(command, "agents.focus", "valid", agent.ID, agent.Label)
-			}
-			if err := agents.Focus(agent); err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeMutation(command, "agents.focus", "applied", agent.ID, agent.Label)
-			}
-			return nil
+			return runMutation(command, "agents.focus",
+				func() (string, string, error) {
+					if !agents.IsLive(agent) {
+						return "", "", agentservice.NotLiveError(agent.ID)
+					}
+					return agent.ID, agent.Label, nil
+				},
+				func() (string, string, error) {
+					return agent.ID, agent.Label, agents.Focus(agent)
+				},
+				// A successful focus is visible in tmux itself; text mode
+				// prints nothing.
+				func(io.Writer, string, string) error { return nil })
 		},
 	}
 	setAgentCommandCompletion(command, agents, projects)
@@ -705,7 +457,7 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 				if !agents.IsLive(agent) {
 					return agentservice.NotLiveError(agent.ID)
 				}
-				return writeMutation(command, "agents.send", "valid", agent.ID, agent.Label)
+				return writeMutation(command, "agents.send", statusValid, agent.ID, agent.Label)
 			}
 			if err := agents.Send(agent, project.ID, string(data)); err != nil {
 				return err
@@ -722,29 +474,4 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 	_ = command.MarkFlagRequired("stdin")
 	setAgentCommandCompletion(command, agents, projects)
 	return command
-}
-
-// toAgentOutput describes one Agent Session. With probeLive false, twt2 does
-// not ask tmux for the state of the pane: the status is "unknown" and the
-// capabilities that need a live pane are false.
-func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, projectActive, probeLive bool) agentOutput {
-	live := false
-	status := "unknown"
-	if probeLive {
-		live = service.IsLive(agent)
-		status = "stopped"
-		if live {
-			status = "live"
-		}
-	}
-	return agentOutput{
-		ID: agent.ID, ProviderSessionID: agent.ProviderSessionID, ProjectID: agent.ProjectID,
-		Provider: agent.Provider, Label: agent.Label, Status: status,
-		CreatedAt: agent.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt: agent.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Capabilities: agentCapabilities{
-			CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
-			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
-		},
-	}
 }

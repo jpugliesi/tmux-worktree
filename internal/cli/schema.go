@@ -2,9 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"sort"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -12,14 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
-
-type mutationOutput struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Operation     string `json:"operation"`
-	Status        string `json:"status"`
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name,omitempty"`
-}
 
 type commandSchema struct {
 	Path        string           `json:"path"`
@@ -69,40 +58,30 @@ type requestFieldSchema struct {
 	Condition string   `json:"condition,omitempty"`
 }
 
-type commandErrorOutput struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	Error         commandError `json:"error"`
-}
-
-type commandError struct {
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Hint        string `json:"hint,omitempty"`
-	HelpCommand string `json:"helpCommand,omitempty"`
-}
-
-func isDryRun(command *cobra.Command) bool {
-	value, _ := command.Flags().GetBool("dry-run")
-	return value
-}
-
-// applyLimit cuts a result list to the requested size. It returns the kept
-// values, the number of results before the cut, and whether the cut removed
-// results. Every list output reports totalCount and truncated.
-func applyLimit[T any](values []T, limit int) ([]T, int, bool, error) {
-	total := len(values)
-	if limit < 0 {
-		return nil, total, false, clierr.New(clierr.InvalidUsage, "--limit must be zero or greater")
-	}
-	if limit > 0 && total > limit {
-		return values[:limit], total, true, nil
-	}
-	return values, total, false, nil
-}
-
 // argumentsAnnotation holds the JSON positional argument schema of one
 // command. Each command declares its own arguments next to its Use value.
 const argumentsAnnotation = "twt2.arguments"
+
+// enumAnnotation stores the closed value set of one flag. setFlagEnum records
+// it next to the flag definition, and the schema command reads it back.
+const enumAnnotation = "twt2.enum"
+
+// setFlagEnum declares the closed value set of one flag. The schema command
+// reports the values, and shell completion offers them.
+func setFlagEnum(command *cobra.Command, name string, values ...string) {
+	flag := command.Flags().Lookup(name)
+	if flag == nil {
+		flag = command.PersistentFlags().Lookup(name)
+	}
+	if flag == nil {
+		return
+	}
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[enumAnnotation] = values
+	_ = command.RegisterFlagCompletionFunc(name, fixedCompletion(values...))
+}
 
 // setArguments records the positional argument schema of a command. The
 // schema command reads this annotation instead of a central table.
@@ -145,6 +124,12 @@ func variadicArgument(name string, required bool, condition string) argumentSche
 	return argumentSchema{Name: name, Type: "array[string]", Required: required, Variadic: true, Condition: condition}
 }
 
+// setAgentIDArgument declares the AGENT_ID argument of an Agent Session
+// command.
+func setAgentIDArgument(command *cobra.Command) {
+	setArguments(command, requiredArgument("agent_id"))
+}
+
 // skipSchemaCommand reports whether a command is a generated help or
 // completion command. These commands are not part of the twt2 contract.
 func skipSchemaCommand(command *cobra.Command) bool {
@@ -153,36 +138,6 @@ func skipSchemaCommand(command *cobra.Command) bool {
 		return true
 	}
 	return false
-}
-
-func writeMutation(command *cobra.Command, operation, status, id, name string) error {
-	if WantsJSON(command) {
-		return writeJSONOutput(command, mutationOutput{SchemaVersion: jsonSchemaVersion, Operation: operation, Status: status, ID: id, Name: name})
-	}
-	_, err := fmt.Fprintf(command.OutOrStdout(), "%s: %s\n", operation, status)
-	return err
-}
-
-func WriteError(command *cobra.Command, writer io.Writer, err error) error {
-	code := clierr.CodeOf(err)
-	hint := clierr.HintOf(err)
-	helpCommand := ""
-	var usage usageError
-	if errors.As(err, &usage) {
-		helpCommand = usage.helpCommand
-	}
-	if !WantsJSON(command) {
-		text := fmt.Sprintf("twt2: %v\n", err)
-		if hint != "" {
-			text += hint + "\n"
-		}
-		if helpCommand != "" {
-			text += fmt.Sprintf("Run '%s' for usage and examples.\n", helpCommand)
-		}
-		_, writeErr := io.WriteString(writer, text)
-		return writeErr
-	}
-	return json.NewEncoder(writer).Encode(commandErrorOutput{SchemaVersion: jsonSchemaVersion, Error: commandError{Code: string(code), Message: err.Error(), Hint: hint, HelpCommand: helpCommand}})
 }
 
 func newSchemaCommand(root *cobra.Command) *cobra.Command {
@@ -199,8 +154,8 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 				}
 				if current != root && current.Runnable() {
 					schema := commandSchema{Path: current.CommandPath(), Use: current.Use, Description: current.Short, Arguments: argumentsForCommand(current), Flags: []flagSchema{}}
-					current.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(current, flag)) })
-					current.InheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(current, flag)) })
+					current.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(flag)) })
+					current.InheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(flag)) })
 					sort.Slice(schema.Flags, func(i, j int) bool { return schema.Flags[i].Name < schema.Flags[j].Name })
 					schemas = append(schemas, schema)
 				}
@@ -214,7 +169,7 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 				SchemaVersion:   jsonSchemaVersion,
 				Version:         version.Version,
 				Commands:        schemas,
-				ApplyOperations: applyOperations(),
+				ApplyOperations: applyOperationSchemas(),
 				ErrorCodes:      clierr.Codes(),
 				ExitCodes:       map[string]string{"0": "success", "1": "internal", "2": "invalid_usage", "3": "precondition"},
 			})
@@ -222,20 +177,10 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 	}
 }
 
-func schemaForFlag(command *cobra.Command, flag *pflag.Flag) flagSchema {
+func schemaForFlag(flag *pflag.Flag) flagSchema {
 	required := false
 	if annotation := flag.Annotations[cobra.BashCompOneRequiredFlag]; len(annotation) > 0 && annotation[0] == "true" {
 		required = true
 	}
-	enums := map[string][]string{
-		"output":   outputFormatNames,
-		"provider": agentProviderNames,
-	}
-	return flagSchema{Name: flag.Name, Type: flag.Value.Type(), Default: flag.DefValue, Description: flag.Usage, Required: required, Enum: enums[flag.Name]}
-}
-
-// setAgentIDArgument declares the AGENT_ID argument of an Agent Session
-// command.
-func setAgentIDArgument(command *cobra.Command) {
-	setArguments(command, requiredArgument("agent_id"))
+	return flagSchema{Name: flag.Name, Type: flag.Value.Type(), Default: flag.DefValue, Description: flag.Usage, Required: required, Enum: flag.Annotations[enumAnnotation]}
 }

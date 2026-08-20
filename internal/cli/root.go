@@ -6,23 +6,74 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
+	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/jpugliesi/tmux-worktree/internal/version"
 	"github.com/spf13/cobra"
 )
 
+// RelocationRequest describes one archive or removal that must move the
+// calling tmux client out of the Project session first.
+type RelocationRequest struct {
+	// ProjectID is the Project that twt2 archives or removes.
+	ProjectID string
+	// DestinationProjectID is the Project that receives the tmux client. It
+	// is empty when no other active Project exists; twt2 then detaches the
+	// client.
+	DestinationProjectID string
+	// Keep stops the operation after the archive.
+	Keep bool
+	// AllowUnpublished permits removal of a branch with unpublished commits.
+	AllowUnpublished bool
+	// CurrentPane is the tmux pane that runs the command.
+	CurrentPane string
+}
+
 type Options struct {
-	ConfigDir              string
-	StateDir               string
-	DataDir                string
-	TmuxSocket             string
-	Stdout                 io.Writer
-	Stderr                 io.Writer
-	QuickCreateSwitch      func(session string) error
-	QuickCreateArchive     func(projectID string) error
-	FinishRelocate         func(destinationProjectID string) error
+	ConfigDir  string
+	StateDir   string
+	DataDir    string
+	TmuxSocket string
+	Stdout     io.Writer
+	Stderr     io.Writer
+	// QuickCreateSwitch moves the calling tmux client to a session. New
+	// installs the real tmux implementation when it is nil; tests replace it
+	// with a fake.
+	QuickCreateSwitch func(clientName, session string) error
+	// QuickCreateArchive archives the old Project after the client switch.
+	// New installs the real relocation worker implementation when it is nil.
+	QuickCreateArchive func(clientName, oldProjectID, newProjectID string) error
+	// DoneRelocate moves the calling tmux client out of the Project session
+	// and completes the archive or removal. New installs the real relocation
+	// worker implementation when it is nil.
+	DoneRelocate func(request RelocationRequest) error
+	// SwitchPick selects one line index from the switch Project picker. New
+	// installs the real fzf or numbered-list implementation when it is nil.
+	SwitchPick             func(command *cobra.Command, lines []string) (int, error)
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
+}
+
+// projectService builds the Project service for these Options.
+func (o Options) projectService() *projectservice.Service {
+	return projectservice.NewService(o.projectServiceOptions())
+}
+
+// projectServiceOptions builds the base Project service configuration.
+func (o Options) projectServiceOptions() projectservice.Options {
+	return projectservice.Options{StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket}
+}
+
+// templateStore builds the Project Template store for these Options.
+func (o Options) templateStore() store.TemplateStore {
+	return store.NewTemplateStore(o.ConfigDir)
+}
+
+// maintenanceService builds the maintenance service for these Options.
+func (o Options) maintenanceService() *maintenance.Service {
+	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir)
 }
 
 func DefaultOptions() Options {
@@ -49,7 +100,26 @@ func DefaultOptions() Options {
 	}
 }
 
+// withRealWorkflows fills every workflow hook that the caller left nil with
+// its real tmux implementation. Tests replace the hooks with fakes.
+func withRealWorkflows(options Options) Options {
+	if options.QuickCreateSwitch == nil {
+		options.QuickCreateSwitch = realQuickCreateSwitch(options)
+	}
+	if options.QuickCreateArchive == nil {
+		options.QuickCreateArchive = realQuickCreateArchive(options)
+	}
+	if options.DoneRelocate == nil {
+		options.DoneRelocate = realDoneRelocate(options)
+	}
+	if options.SwitchPick == nil {
+		options.SwitchPick = realSwitchPick
+	}
+	return options
+}
+
 func New(options Options) *cobra.Command {
+	options = withRealWorkflows(options)
 	root := &cobra.Command{
 		Use:     "twt2",
 		Version: version.Version,
@@ -60,7 +130,7 @@ Each Project can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
 		Example: `  twt2 templates list
   twt2 projects create fix-auth --template everysphere
-  twt2 create fix-logout
+  twt2 new fix-logout
   twt2 agents list --project current`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -79,7 +149,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	})
 	root.PersistentFlags().String("output", "text", "Set all command output to text or json")
 	root.PersistentFlags().Bool("dry-run", false, "Validate and show a mutation without applying it")
-	_ = root.RegisterFlagCompletionFunc("output", fixedCompletion(outputFormatNames...))
+	setFlagEnum(root, "output", outputFormatNames...)
 	root.AddGroup(
 		&cobra.Group{ID: "workflows", Title: "Workflows:"},
 		&cobra.Group{ID: "inspect", Title: "Inspect and maintain:"},
@@ -89,12 +159,14 @@ repository, and a set of resumable coding Agent Sessions.`,
 	templates.GroupID = "workflows"
 	projects := newProjectsCommand(options)
 	projects.GroupID = "workflows"
-	create := newQuickCreateCommand(options)
-	create.GroupID = "workflows"
+	quickCreate := newQuickCreateCommand(options)
+	quickCreate.GroupID = "workflows"
+	switchCommand := newSwitchCommand(options)
+	switchCommand.GroupID = "workflows"
 	archive := newArchiveCommand(options)
 	archive.GroupID = "workflows"
-	finish := newFinishCommand(options)
-	finish.GroupID = "workflows"
+	done := newDoneCommand(options)
+	done.GroupID = "workflows"
 	agents := newAgentsCommand(options)
 	agents.GroupID = "workflows"
 	context := newContextCommand(options)
@@ -109,7 +181,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	schema.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, create, archive, finish, agents, context, environments, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, context, environments, storage, doctor, schema, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

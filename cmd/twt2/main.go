@@ -13,7 +13,7 @@ import (
 var workers = map[string]func(cli.Options, []string) error{
 	"__twt2_prepare_worker":      cli.RunPrepareWorker,
 	"__twt2_quick_create_worker": cli.RunQuickCreateWorker,
-	"__twt2_finish_worker":       cli.RunFinishWorker,
+	"__twt2_done_worker":         cli.RunDoneWorker,
 }
 
 func main() {

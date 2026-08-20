@@ -53,7 +53,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundQuickCreate := false
 	foundArchive := false
 	for _, command := range schema.Commands {
-		if command.Path == "twt2 create" {
+		if command.Path == "twt2 new" {
 			foundQuickCreate = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
 				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
@@ -96,7 +96,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		t.Fatal("schema does not contain twt2 projects create")
 	}
 	if !foundQuickCreate {
-		t.Fatal("schema does not contain twt2 create")
+		t.Fatal("schema does not contain twt2 new")
 	}
 	if !foundArchive {
 		t.Fatal("schema does not contain twt2 archive")
@@ -173,7 +173,7 @@ func TestRawApplyArchivesAProject(t *testing.T) {
 	command.SetIn(strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me","name":"not-valid"}}`))
 	command.SetArgs([]string{"apply", "--stdin", "--dry-run", "--output", "json"})
 	err := command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "only project.reference") {
+	if err == nil || !strings.Contains(err.Error(), `unknown field "name"`) {
 		t.Fatalf("archive request with create fields error = %v", err)
 	}
 	options.Stdout, options.Stderr = nil, nil

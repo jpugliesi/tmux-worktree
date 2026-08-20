@@ -101,9 +101,9 @@ initialization does not run again for that physical worktree.
 Always pass `--no-open` for agent work. twt2 opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
-`twt2 create` is an interactive command for a person in the current Project
-tmux session. For agent work, use `twt2 projects create` and `twt2 projects
-archive` with explicit names, dry-runs, and JSON output.
+`twt2 new` and `twt2 switch` are interactive commands for a person in tmux.
+For agent work, use `twt2 projects create` and `twt2 projects archive` with
+explicit names, dry-runs, and JSON output.
 
 If setup fails, inspect the Project and retry the saved Template snapshot:
 
@@ -135,14 +135,14 @@ A blocked plan gives `blockers` with a stable `code` for each cause, such as
 `not_archived`, `uncommitted_changes`, or `unpublished_branch`. Correct the
 cause; do not repeat the same request.
 
-`twt2 finish PROJECT` archives the Project and then applies the removal plan.
+`twt2 done PROJECT` archives the Project and then applies the removal plan.
 Run it from outside the Project tmux session for JSON output. Use the dry run
 to read the complete plan first:
 
 ```sh
-twt2 finish PROJECT --dry-run --output json
-twt2 finish PROJECT --output json
-twt2 finish PROJECT --keep --output json
+twt2 done PROJECT --dry-run --output json
+twt2 done PROJECT --output json
+twt2 done PROJECT --keep --output json
 ```
 
 ## Work with Agent Sessions

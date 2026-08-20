@@ -179,7 +179,7 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 }
 
 func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
-	output, err := execute(t, t.TempDir(), "create", "--help")
+	output, err := execute(t, t.TempDir(), "new", "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
 		"latest saved version of the current Project Template",
 		"switches the calling client",
 		"archives the old Project",
-		"twt2 create fix-auth",
+		"twt2 new fix-auth",
 		"twt2 projects create",
 	} {
 		if !strings.Contains(output, want) {

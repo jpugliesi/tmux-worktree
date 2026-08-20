@@ -52,7 +52,7 @@ type environmentShowOutput struct {
 }
 
 func newEnvironmentsCommand(options Options) *cobra.Command {
-	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
+	service := options.maintenanceService()
 	environments := groupCommand(&cobra.Command{
 		Use:     "environments",
 		Aliases: []string{"envs"},
@@ -262,24 +262,9 @@ func environmentDetail(info maintenance.EnvironmentInfo) string {
 // time when it is not ready.
 func environmentAge(now time.Time, info maintenance.EnvironmentInfo) string {
 	if info.ReadyAt != nil {
-		return compactAge(now, *info.ReadyAt)
+		return formatAge(now.Sub(*info.ReadyAt))
 	}
-	return compactAge(now, info.CreatedAt)
-}
-
-// compactAge writes a short age, such as "2h" or "3d".
-func compactAge(now, value time.Time) string {
-	age := now.Sub(value)
-	switch {
-	case age < time.Minute:
-		return "now"
-	case age < time.Hour:
-		return fmt.Sprintf("%dm", int(age.Minutes()))
-	case age < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(age.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(age.Hours()/24))
-	}
+	return formatAge(now.Sub(info.CreatedAt))
 }
 
 func shortEnvironmentID(id string) string {

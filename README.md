@@ -42,8 +42,8 @@ From that Project tmux session, create the next Project with one short
 command:
 
 ```sh
-twt2 create fix-logout
-# Or run `twt2 create` and enter the name at the prompt.
+twt2 new fix-logout
+# Or run `twt2 new` and enter the name at the prompt.
 ```
 
 `twt2` uses the latest saved `product` template. It completes setup, switches
@@ -78,13 +78,16 @@ twt2 archive
 twt2 projects open fix-auth
 ```
 
-When the work is complete and pushed, `twt2 finish` archives the Project and
+When the work is complete and pushed, `twt2 done` archives the Project and
 removes its data in one step. From inside the Project session, it moves your
-tmux client to another active Project first:
+tmux client to another active Project first. `twt2 switch` moves your tmux
+client to any Project session, with an interactive picker when you give no
+name:
 
 ```sh
-twt2 finish
-twt2 finish fix-auth --keep
+twt2 done
+twt2 done fix-auth --keep
+twt2 switch fix-auth
 ```
 
 Inspect disk use and preview cleanup before you remove archived data:

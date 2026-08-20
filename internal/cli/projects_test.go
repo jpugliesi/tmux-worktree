@@ -38,7 +38,7 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}, nil, "projects", "list")
 
-	want := "everysphere-0\teverysphere\tactive\t3d\t0 B\n"
+	want := "everysphere-0\teverysphere\tactive\t3d\n"
 	if output != want {
 		t.Fatalf("projects list output = %q, want %q", output, want)
 	}
@@ -70,8 +70,8 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 	if got.ID != project.ID || got.Name != project.Name || got.Template != project.TemplateName || got.Status != string(project.Status) {
 		t.Fatalf("projects list JSON Project = %#v", got)
 	}
-	if !strings.Contains(jsonOutput, `"bytes":0`) {
-		t.Fatalf("projects list JSON has no bytes field: %s", jsonOutput)
+	if strings.Contains(jsonOutput, `"bytes"`) {
+		t.Fatalf("projects list JSON still has a bytes field: %s", jsonOutput)
 	}
 }
 
@@ -99,14 +99,14 @@ func TestProjectsListShowsRecentActiveProjectsBeforeArchives(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}
 	output := executeWithOptions(t, options, nil, "projects", "list", "--limit", "2")
-	want := "new-active\texample\tactive\t1h\t0 B\nold-active\texample\tactive\t2d\t0 B\n"
+	want := "new-active\texample\tactive\t1h\nold-active\texample\tactive\t2d\n"
 	if output != want {
 		t.Fatalf("limited projects list output = %q, want %q", output, want)
 	}
 
 	// An archived Project shows its age since the archive time.
 	fullOutput := executeWithOptions(t, options, nil, "projects", "list")
-	if !strings.Contains(fullOutput, "new-archive\texample\tarchived\t5h\t0 B\n") {
+	if !strings.Contains(fullOutput, "new-archive\texample\tarchived\t5h\n") {
 		t.Fatalf("projects list archived age = %q", fullOutput)
 	}
 }
@@ -246,7 +246,9 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	command = cli.New(options)
 	command.SetArgs([]string{"projects", "archive", project.ID})
 	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "cannot archive") || !strings.Contains(err.Error(), "switch to another session") {
+	// Inside the owned session, archive relocates the calling tmux client
+	// first. Without a client, the relocation fails and nothing changes.
+	if err == nil || !strings.Contains(err.Error(), "not active in a client") {
 		t.Fatalf("archive from the target session error = %v", err)
 	}
 	stillActive, err = store.NewProjectStore(options.StateDir).Find(project.ID)

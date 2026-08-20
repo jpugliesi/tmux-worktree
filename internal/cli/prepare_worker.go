@@ -26,7 +26,7 @@ func startPreparationRefill(options Options, templateName string, template domai
 			return nil
 		}
 	}
-	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	service := options.projectService()
 	queued, err := service.TopUpPool(templateName, template, template.EffectivePoolDepth())
 	if err != nil {
 		return err
@@ -77,8 +77,7 @@ func RunPrepareWorker(options Options, args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("invalid Prepared Environment worker request")
 	}
-	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-	environment, err := service.PrepareQueued(args[0], args[1])
+	environment, err := options.projectService().PrepareQueued(args[0], args[1])
 	if err != nil {
 		return err
 	}
