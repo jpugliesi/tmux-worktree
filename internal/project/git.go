@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
@@ -288,39 +290,129 @@ func validateCacheMarker(cachePath, expectedURL string) error {
 	return nil
 }
 
+// remoteProbeTimeout bounds each Git command that reads the remote during a
+// publication check.
+const remoteProbeTimeout = 10 * time.Second
+
+// remoteGitOutput runs one Git command that reads the remote. It refuses
+// interactive credential prompts and stops after remoteProbeTimeout. Tests
+// replace it to observe or block remote access.
+var remoteGitOutput = func(directory string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), remoteProbeTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", args...)
+	command.Dir = directory
+	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	data, err := command.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("git %s: twt2 could not reach the remote in %s", strings.Join(args, " "), remoteProbeTimeout)
+	}
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(data)))
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
 // branchPublished reports whether the branch commits are safe on the remote
 // or on another declared ref. It returns unknown=true when twt2 could not
-// read the remote, so the caller can refuse instead of a silent pass.
+// read the remote, so the caller can refuse instead of a silent pass. The
+// check reads the local cache first and uses at most one remote round trip:
+// one ls-remote probe answers both whether the branch is on the remote and
+// where the remote default branch points. A second round trip (a targeted
+// fetch of the default branch) happens only when the cache does not contain
+// the remote default tip.
 func branchPublished(cachePath, branch string) (published bool, unknown bool, err error) {
 	branchRef := "refs/heads/" + branch
-	heads, lsErr := output(cachePath, "git", "ls-remote", "--heads", "origin", branchRef)
-	if lsErr == nil && heads != "" {
-		return true, false, nil
+	published, err = branchOnLocalRefs(cachePath, branch)
+	if err != nil || published {
+		return published, false, err
 	}
-	unknown = lsErr != nil
+	defaultRef := ""
 	if defaultBranch, headErr := output(cachePath, "git", "symbolic-ref", "--short", "HEAD"); headErr == nil && defaultBranch != "" {
-		// Best-effort refresh of the default-branch tracking ref.
-		_ = run(cachePath, "git", "fetch", "--no-tags", "origin", "+refs/heads/"+defaultBranch+":refs/remotes/origin/"+defaultBranch)
+		defaultRef = "refs/heads/" + defaultBranch
 	}
+	probe := []string{"ls-remote", "--heads", "origin", branchRef}
+	if defaultRef != "" && defaultRef != branchRef {
+		probe = append(probe, defaultRef)
+	}
+	heads, lsErr := remoteGitOutput(cachePath, probe...)
+	if lsErr != nil {
+		return false, true, nil
+	}
+	remoteDefaultTip := ""
+	for _, line := range strings.Split(heads, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		if fields[1] == branchRef {
+			return true, false, nil
+		}
+		if fields[1] == defaultRef {
+			remoteDefaultTip = fields[0]
+		}
+	}
+	if remoteDefaultTip == "" {
+		return false, false, nil
+	}
+	exists, err := commitExists(cachePath, remoteDefaultTip)
+	if err != nil {
+		return false, false, err
+	}
+	if !exists {
+		// The cache is stale. Fetch the remote default branch once, then
+		// check again. A fetch failure keeps the ls-remote result: the
+		// branch is not on the remote.
+		defaultBranch := strings.TrimPrefix(defaultRef, "refs/heads/")
+		if _, fetchErr := remoteGitOutput(cachePath, "fetch", "--no-tags", "origin", "+"+defaultRef+":refs/remotes/origin/"+defaultBranch); fetchErr != nil {
+			return false, false, nil
+		}
+		exists, err = commitExists(cachePath, remoteDefaultTip)
+		if err != nil || !exists {
+			return false, false, err
+		}
+	}
+	published, err = isAncestor(cachePath, branchRef, remoteDefaultTip)
+	if err != nil {
+		return false, false, fmt.Errorf("compare branch %q with the remote default tip %q: %w", branch, shortCommit(remoteDefaultTip), err)
+	}
+	return published, false, nil
+}
+
+// branchOnLocalRefs reports whether another declared ref in the local cache
+// already contains the branch. It does not read the remote.
+func branchOnLocalRefs(cachePath, branch string) (bool, error) {
+	branchRef := "refs/heads/" + branch
 	refs, err := output(cachePath, "git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
 	if err != nil {
-		return false, unknown, fmt.Errorf("list refs for branch %q: %w", branch, err)
+		return false, fmt.Errorf("list refs for branch %q: %w", branch, err)
 	}
 	for _, ref := range strings.Split(refs, "\n") {
 		if ref == "" || ref == branchRef || strings.HasPrefix(ref, "refs/heads/twt2/") {
 			continue
 		}
-		command := exec.Command("git", "merge-base", "--is-ancestor", branchRef, ref)
-		command.Dir = cachePath
-		if err := command.Run(); err == nil {
-			return true, false, nil
-		} else if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
-			continue
-		} else {
-			return false, unknown, fmt.Errorf("compare branch %q with %q: %w", branch, ref, err)
+		contained, err := isAncestor(cachePath, branchRef, ref)
+		if err != nil {
+			return false, fmt.Errorf("compare branch %q with %q: %w", branch, ref, err)
+		}
+		if contained {
+			return true, nil
 		}
 	}
-	return false, unknown, nil
+	return false, nil
+}
+
+// commitExists reports whether the commit is in the local cache.
+func commitExists(cachePath, commit string) (bool, error) {
+	command := exec.Command("git", "cat-file", "-e", commit+"^{commit}")
+	command.Dir = cachePath
+	if err := command.Run(); err == nil {
+		return true, nil
+	} else if _, ok := err.(*exec.ExitError); ok {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("inspect commit %q in Repository Cache %q: %w", shortCommit(commit), cachePath, err)
+	}
 }
 
 func refExists(cachePath, ref string) (bool, error) {

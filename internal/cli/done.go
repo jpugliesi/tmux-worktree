@@ -92,7 +92,7 @@ func doneDryRun(command *cobra.Command, service *projectservice.Service, project
 	}
 	plan.Blockers = blockers
 	if WantsJSON(command) {
-		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: false, Plan: plan, Blockers: plan.Blockers, Bytes: plan.Bytes})
+		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: false, Plan: plan, Blockers: plan.Blockers})
 	}
 	out := command.OutOrStdout()
 	if _, err := fmt.Fprintf(out, "Archive of Project %q is valid.\n", plan.ProjectName); err != nil {
@@ -136,7 +136,7 @@ func doneSynchronously(command *cobra.Command, service *projectservice.Service, 
 		return err
 	}
 	if WantsJSON(command) {
-		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers, Bytes: plan.Bytes})
+		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers})
 	}
 	for _, worktree := range plan.Worktrees {
 		if _, err := fmt.Fprintf(out, "Removed worktree %s\n", worktree); err != nil {

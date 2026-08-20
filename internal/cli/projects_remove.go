@@ -16,7 +16,6 @@ type removalOutput struct {
 	Applied       bool                            `json:"applied"`
 	Plan          projectservice.RemovalPlan      `json:"plan"`
 	Blockers      []projectservice.RemovalBlocker `json:"blockers"`
-	Bytes         int64                           `json:"bytes"`
 }
 
 type bulkRemovalOutput struct {
@@ -97,7 +96,7 @@ func runProjectRemoval(command *cobra.Command, service *projectservice.Service, 
 			return err
 		}
 		if WantsJSON(command) {
-			return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers, Bytes: plan.Bytes})
+			return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers})
 		}
 		_, err = fmt.Fprintf(command.OutOrStdout(), "Removed Project %q\n", plan.ProjectName)
 		return err
@@ -107,7 +106,7 @@ func runProjectRemoval(command *cobra.Command, service *projectservice.Service, 
 		return err
 	}
 	if WantsJSON(command) {
-		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: false, Plan: plan, Blockers: plan.Blockers, Bytes: plan.Bytes})
+		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: false, Plan: plan, Blockers: plan.Blockers})
 	}
 	return printRemovalPlanText(command.OutOrStdout(), plan, !applyRemoval)
 }

@@ -200,6 +200,65 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	}
 }
 
+func TestProjectsRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	t.Setenv("TMUX_PANE", "")
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: policy\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "projects", "create", "offline", "--template", "policy", "--no-open")
+	project, err := store.NewProjectStore(options.StateDir).Find("offline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := project.Repositories[0].Path
+	runCommand(t, checkout, "git", "config", "user.name", "twt2 test")
+	runCommand(t, checkout, "git", "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(checkout, "new-work.txt"), []byte("important\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, checkout, "git", "add", "new-work.txt")
+	runCommand(t, checkout, "git", "commit", "-qm", "unpublished work")
+	executeWithOptions(t, options, nil, "projects", "archive", "offline")
+
+	// The plan cannot read the remote: the origin URL points to a missing
+	// repository.
+	runCommand(t, "", "git", "-C", project.Repositories[0].CachePath, "remote", "set-url", "origin", filepath.Join(root, "missing.git"))
+	planJSON := executeWithOptions(t, options, nil, "projects", "remove", "offline", "--output", "json")
+	var removal struct {
+		Blockers []struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"blockers"`
+	}
+	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
+		t.Fatalf("decode removal plan JSON: %v\n%s", err, planJSON)
+	}
+	if len(removal.Blockers) != 1 || removal.Blockers[0].Code != "unpublished_unknown" || !strings.Contains(removal.Blockers[0].Message, "could not read the remote") {
+		t.Fatalf("unreachable-remote removal blockers = %+v", removal.Blockers)
+	}
+	if _, err := os.Stat(filepath.Join(checkout, "new-work.txt")); err != nil {
+		t.Fatalf("unreachable-remote plan changed the checkout: %v", err)
+	}
+}
+
 func TestProjectsRemoveAllowUnpublishedRemovesUnpublishedWork(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")

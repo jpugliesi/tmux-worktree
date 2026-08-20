@@ -762,9 +762,8 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	}
 	planJSON := executeWithOptions(t, options, nil, "projects", "remove", "remove-me", "--output", "json")
 	var removal struct {
-		SchemaVersion int   `json:"schemaVersion"`
-		Applied       bool  `json:"applied"`
-		Bytes         int64 `json:"bytes"`
+		SchemaVersion int  `json:"schemaVersion"`
+		Applied       bool `json:"applied"`
 		Blockers      []struct {
 			Code string `json:"code"`
 		} `json:"blockers"`
@@ -782,7 +781,9 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
 		t.Fatalf("decode removal plan JSON: %v\n%s", err, planJSON)
 	}
-	if removal.SchemaVersion != 1 || removal.Applied || removal.Bytes <= 0 || removal.Plan.Bytes != removal.Bytes {
+	// A plan does not measure the Project size; only an applied removal and
+	// the bulk plan report bytes.
+	if removal.SchemaVersion != 1 || removal.Applied || removal.Plan.Bytes != 0 {
 		t.Fatalf("removal plan JSON metadata = %+v", removal)
 	}
 	if len(removal.Blockers) != 0 || len(removal.Plan.Blockers) != 0 {

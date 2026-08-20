@@ -21,7 +21,7 @@ type RemovalPlan struct {
 	Worktrees    []string         `json:"worktrees"`
 	TmuxSession  string           `json:"tmuxSession"`
 	StateRecords int              `json:"stateRecords"`
-	Bytes        int64            `json:"bytes"`
+	Bytes        int64            `json:"bytes,omitempty"`
 	Actions      []RemovalAction  `json:"actions"`
 	Blockers     []RemovalBlocker `json:"blockers"`
 }
@@ -92,7 +92,6 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 	for _, repository := range p.Repositories {
 		plan.Worktrees = append(plan.Worktrees, repository.Path)
 	}
-	plan.Bytes, _ = store.DirectoryBytes(p.Root)
 	actions := []RemovalAction{{Kind: "stop_tmux_session", Target: p.ID}}
 	for _, repository := range p.Repositories {
 		actions = append(actions,
@@ -206,11 +205,16 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 			if !exists {
 				return nil
 			}
+			if opts.AllowUnpublished {
+				// The operator accepts unpublished commits; do not read the
+				// remote.
+				return nil
+			}
 			published, unknown, err := branchPublished(repository.CachePath, repository.Branch)
 			if err != nil {
 				return err
 			}
-			if published || opts.AllowUnpublished {
+			if published {
 				return nil
 			}
 			if unknown {
@@ -249,6 +253,10 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	if len(plan.Blockers) > 0 {
 		return plan, removalRefusal(p.Name, plan.Blockers)
 	}
+	// Measure the Project root just before removal. The size feeds the
+	// reclaimed-space summary; a plan without removal does not pay for the
+	// walk.
+	plan.Bytes, _ = store.DirectoryBytes(p.Root)
 	if p.Status != domain.ProjectRemoving {
 		p.Status = domain.ProjectRemoving
 		p.UpdatedAt = s.now()
@@ -331,6 +339,8 @@ func (s *Service) BulkRemovalPlans(olderThan time.Duration, opts RemovalOptions)
 		if err != nil {
 			return nil, err
 		}
+		// The bulk plan shows the size of each selected Project.
+		plan.Bytes, _ = store.DirectoryBytes(p.Root)
 		plans = append(plans, plan)
 	}
 	sort.SliceStable(plans, func(i, j int) bool {
