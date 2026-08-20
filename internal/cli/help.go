@@ -92,10 +92,19 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state.", example: "  twt2 projects archive fix-auth\n  twt2 projects remove fix-auth --apply",
 		},
 		"twt2 agents register": {
-			long: "Register a resumable coding Agent Session with a Project. Use --session to link its provider transcript. Put the resume command after --.", example: "  twt2 agents register --project fix-auth --provider codex --label review --session SESSION_ID -- codex resume SESSION_ID",
+			long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt2 infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt2 agents register -- codex resume SESSION_ID\n  twt2 agents register --project fix-auth --label review -- claude --resume SESSION_ID",
 		},
 		"twt2 agents list": {
-			long: "List Agent Sessions for one Project, including status and capabilities.", example: "  twt2 agents list --project current --output json",
+			long: "List Agent Sessions for one Project, including status and capabilities. twt2 asks tmux for the live state of each pane. Use --live=false to not probe tmux.", example: "  twt2 agents list --project current --output json\n  twt2 agents list --project current --live=false",
+		},
+		"twt2 agents show": {
+			long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt2 does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt2 agents show AGENT_ID\n  twt2 agents show AGENT_ID --project current --output json",
+		},
+		"twt2 agents discover": {
+			long: "Find the Codex and Claude sessions that ran inside a repository of the Project and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command.", example: "  twt2 agents discover --project current\n  twt2 agents discover --project current --adopt --limit 3",
+		},
+		"twt2 agents rm": {
+			long: "Delete an Agent Session record. twt2 keeps the provider transcript and does not stop a live Agent process.", example: "  twt2 agents rm AGENT_ID\n  twt2 agents rm AGENT_ID --dry-run --output json",
 		},
 		"twt2 agents resume": {
 			long: "Focus a live Agent Session or start its saved resume command in a new Project window.", example: "  twt2 agents resume AGENT_ID",

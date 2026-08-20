@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
@@ -38,8 +39,17 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 	if err := s.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
 		return domain.AgentSession{}, err
 	}
-	if strings.TrimSpace(label) == "" {
-		label = provider
+	provider, providerSessionID, err = inferRegistration(provider, providerSessionID, resumeCommand)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	existing, err := s.store.List(project.ID)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	label, err = resolveLabel(label, provider, existing)
+	if err != nil {
+		return domain.AgentSession{}, err
 	}
 	id, err := agentID()
 	if err != nil {
@@ -66,10 +76,17 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 
 func (s *Service) ValidateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) error {
 	if project.Status != domain.ProjectActive {
-		return fmt.Errorf("Project %q setup is not complete", project.Name)
+		return projectNotActiveError(project)
+	}
+	if pane == "" && len(resumeCommand) == 0 {
+		return clierr.New(clierr.InvalidUsage, "set a live --pane or give a resume command after --")
+	}
+	provider, providerSessionID, err := inferRegistration(provider, providerSessionID, resumeCommand)
+	if err != nil {
+		return err
 	}
 	if !validProvider(provider) {
-		return fmt.Errorf("unsupported agent provider %q", provider)
+		return clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
 	}
 	if providerSessionID != "" {
 		if !transcript.SupportsProvider(provider) {
@@ -84,7 +101,7 @@ func (s *Service) ValidateRegistration(project domain.Project, provider, pane, p
 		}
 		for _, agent := range existing {
 			if agent.Provider == provider && agent.ProviderSessionID == providerSessionID {
-				return fmt.Errorf("provider session %q is already linked to Agent Session %q", providerSessionID, agent.ID)
+				return clierr.New(clierr.AlreadyExists, "provider session %q is already linked to Agent Session %q", providerSessionID, agent.ID)
 			}
 		}
 	}
@@ -97,10 +114,120 @@ func (s *Service) ValidateRegistration(project domain.Project, provider, pane, p
 			return fmt.Errorf("pane command %q does not match provider %q", command, provider)
 		}
 	}
-	if pane == "" && len(resumeCommand) == 0 {
-		return fmt.Errorf("set a live --pane or give a resume command after --")
-	}
 	return nil
+}
+
+// ValidateLabel checks that the display label is free inside the Project. An
+// empty label always passes, because twt2 makes a unique default label.
+func (s *Service) ValidateLabel(projectID, label string) error {
+	if strings.TrimSpace(label) == "" {
+		return nil
+	}
+	existing, err := s.store.List(projectID)
+	if err != nil {
+		return err
+	}
+	_, err = resolveLabel(label, "", existing)
+	return err
+}
+
+// resolveLabel returns the label for a new Agent Session. An explicit label
+// must be free. An empty label becomes the provider name, then the provider
+// name with a number, inside the Project.
+func resolveLabel(label, provider string, existing []domain.AgentSession) (string, error) {
+	used := map[string]bool{}
+	for _, agent := range existing {
+		used[agent.Label] = true
+	}
+	label = strings.TrimSpace(label)
+	if label != "" {
+		if used[label] {
+			return "", clierr.WithHint(
+				clierr.New(clierr.AlreadyExists, "Agent Session label %q is already in use in this Project", label),
+				"Give a different --label, or do not set --label.",
+			)
+		}
+		return label, nil
+	}
+	for number := 1; ; number++ {
+		candidate := provider
+		if number > 1 {
+			candidate = fmt.Sprintf("%s-%d", provider, number)
+		}
+		if !used[candidate] {
+			return candidate, nil
+		}
+	}
+}
+
+// inferRegistration fills in the provider and the provider session ID from
+// the resume command. An explicit value always wins.
+func inferRegistration(provider, providerSessionID string, resumeCommand []string) (string, string, error) {
+	if provider == "" {
+		if len(resumeCommand) == 0 {
+			return "", "", clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "twt2 cannot infer the provider"),
+				"Set --provider PROVIDER, or give a resume command after --.",
+			)
+		}
+		provider = inferProvider(resumeCommand)
+		if provider == "" {
+			return "", "", clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "twt2 cannot infer the provider from the resume command %q", resumeCommand[0]),
+				"Set --provider PROVIDER.",
+			)
+		}
+	}
+	if providerSessionID == "" && transcript.SupportsProvider(provider) {
+		providerSessionID = inferProviderSessionID(resumeCommand)
+	}
+	return provider, providerSessionID, nil
+}
+
+// inferProvider reads the provider from the program name of the resume
+// command. A shell program name gives no provider.
+func inferProvider(resumeCommand []string) string {
+	for _, provider := range []string{"codex", "claude", "cursor", "command"} {
+		if commandMatchesProvider(resumeCommand[0], provider, resumeCommand) {
+			return provider
+		}
+	}
+	return ""
+}
+
+// inferProviderSessionID reads the provider session ID from a resume command
+// such as "codex resume ID", "claude --resume ID", or "claude --resume=ID".
+func inferProviderSessionID(resumeCommand []string) string {
+	for index := 1; index < len(resumeCommand); index++ {
+		argument := resumeCommand[index]
+		if value, found := strings.CutPrefix(argument, "--resume="); found {
+			return sessionIDArgument(value)
+		}
+		if argument != "resume" && argument != "--resume" && argument != "-r" {
+			continue
+		}
+		if index+1 < len(resumeCommand) {
+			return sessionIDArgument(resumeCommand[index+1])
+		}
+	}
+	return ""
+}
+
+func sessionIDArgument(value string) string {
+	if value == "" || strings.HasPrefix(value, "-") || transcript.ValidateSessionID(value) != nil {
+		return ""
+	}
+	return value
+}
+
+func projectNotActiveError(project domain.Project) error {
+	if project.Status == domain.ProjectArchived {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Project %q is archived", project.Name),
+			"Run 'twt2 projects open %s' to open it.", project.Name,
+		)
+	}
+	return clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete", project.Name)
 }
 
 func (s *Service) List(projectID string) ([]domain.AgentSession, error) {
@@ -213,12 +340,49 @@ func (s *Service) ValidateResume(agent domain.AgentSession, project domain.Proje
 		return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, project.Name)
 	}
 	if project.Status != domain.ProjectActive {
-		return fmt.Errorf("Project %q setup is not complete", project.Name)
+		return projectNotActiveError(project)
 	}
 	if !s.IsLive(agent) && len(agent.ResumeCommand) == 0 {
-		return fmt.Errorf("Agent Session %q has no live pane or resume command", agent.ID)
+		return clierr.New(clierr.PreconditionFailed, "Agent Session %q has no live pane or resume command", agent.ID)
 	}
 	return nil
+}
+
+// NotLiveError reports that the Agent Session process is not live in its
+// owned pane, and tells the user how to start the Agent Session again.
+func NotLiveError(agentID string) error { return tmuxclient.NotLiveError(agentID) }
+
+// ExplainLiveness returns one check for each Agent Session pane predicate.
+func (s *Service) ExplainLiveness(agent domain.AgentSession) []tmuxclient.PaneCheck {
+	return s.tmux.ExplainPane(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
+}
+
+// Remove deletes the Agent Session record. It does not stop a live process.
+func (s *Service) Remove(reference, projectID string) (domain.AgentSession, error) {
+	lock, err := store.AcquireMutationLock(s.stateDir)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	defer lock.Release()
+	agent, err := s.ValidateRemove(reference, projectID)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	if err := s.store.Delete(agent.ID); err != nil {
+		return domain.AgentSession{}, err
+	}
+	return agent, nil
+}
+
+func (s *Service) ValidateRemove(reference, projectID string) (domain.AgentSession, error) {
+	agent, err := s.store.Find(reference)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	if projectID != "" && agent.ProjectID != projectID {
+		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agent.ID, projectID)
+	}
+	return agent, nil
 }
 
 func (s *Service) Focus(agent domain.AgentSession) error {

@@ -8,9 +8,10 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
+func (s *Service) codexRoot() string { return filepath.Join(s.home, ".codex", "sessions") }
+
 func (s *Service) readCodex(sessionID string, project domain.Project) (Transcript, error) {
-	root := filepath.Join(s.home, ".codex", "sessions")
-	paths, err := matchingFiles(root, sessionID, func(name string) bool { return strings.HasSuffix(name, sessionID) })
+	paths, err := matchingFiles(s.codexRoot(), sessionID, func(name string) bool { return strings.HasSuffix(name, sessionID) })
 	if err != nil {
 		return Transcript{}, err
 	}

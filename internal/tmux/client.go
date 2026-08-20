@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -58,16 +59,48 @@ func (c Client) ClaimAgentPane(pane, projectID, agentID string) error {
 	return nil
 }
 
+// PaneCheck is the result of one Agent Session pane predicate. An advisory
+// check does not change liveness. The current command of a pane changes when
+// the Agent starts a pager or an editor, so twt2 shows it but does not use it.
+type PaneCheck struct {
+	Name     string
+	OK       bool
+	Advisory bool
+}
+
+// ExplainPane returns one check for each Agent Session pane predicate, in a
+// stable order. Callers can show the result to a user.
+func (c Client) ExplainPane(pane, projectID, agentID, paneCommand, paneStart string) []PaneCheck {
+	projectPane := pane != "" && c.PaneBelongsToProject(pane, projectID)
+	owned := false
+	if pane != "" && agentID != "" {
+		owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt2_agent_id")
+		owned = err == nil && owner == agentID
+	}
+	dead, current, start := true, "", ""
+	if projectPane {
+		if value, err := c.output(nil, "display-message", "-p", "-t", pane, "#{pane_dead}\t#{pane_current_command}\t#{pane_start_command}"); err == nil {
+			if parts := strings.SplitN(value, "\t", 3); len(parts) == 3 {
+				dead, current, start = parts[0] != "0", parts[1], parts[2]
+			}
+		}
+	}
+	return []PaneCheck{
+		{Name: "project pane", OK: projectPane},
+		{Name: "agent marker", OK: owned},
+		{Name: "live process", OK: !dead},
+		{Name: "start command", OK: paneStart != "" && start == paneStart},
+		{Name: "current command", OK: paneCommand != "" && current == paneCommand, Advisory: true},
+	}
+}
+
 func (c Client) PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart string) bool {
-	if paneCommand == "" || paneStart == "" {
-		return false
+	for _, check := range c.ExplainPane(pane, projectID, agentID, paneCommand, paneStart) {
+		if !check.Advisory && !check.OK {
+			return false
+		}
 	}
-	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt2_agent_id")
-	if err != nil || owner != agentID {
-		return false
-	}
-	current, start, err := c.PaneProcess(pane, projectID)
-	return err == nil && current == paneCommand && start == paneStart
+	return true
 }
 
 func (c Client) StartAgent(project domain.Project, label string, command []string) (string, error) {
@@ -93,7 +126,7 @@ func (c Client) StartAgent(project domain.Project, label string, command []strin
 
 func (c Client) Focus(pane, projectID, agentID, paneCommand, paneStart string) error {
 	if !c.PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart) {
-		return fmt.Errorf("the Agent Session process is not live in its owned pane")
+		return NotLiveError(agentID)
 	}
 	if _, err := c.output(nil, "select-window", "-t", pane); err != nil {
 		return fmt.Errorf("select Agent Session window: %w", err)
@@ -104,9 +137,18 @@ func (c Client) Focus(pane, projectID, agentID, paneCommand, paneStart string) e
 	return nil
 }
 
+// NotLiveError reports that the Agent Session process is not live in its
+// owned pane, and tells the caller how to start the Agent Session again.
+func NotLiveError(agentID string) error {
+	return clierr.WithHint(
+		clierr.New(clierr.PreconditionFailed, "the Agent Session process is not live in its owned pane"),
+		"Run 'twt2 agents resume %s' to start the Agent Session again.", agentID,
+	)
+}
+
 func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text string) error {
 	if !c.PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart) {
-		return fmt.Errorf("the Agent Session process is not live in its owned pane")
+		return NotLiveError(agentID)
 	}
 	buffer := "twt2-feedback-" + strings.TrimPrefix(pane, "%")
 	if _, err := c.output(strings.NewReader(text), "load-buffer", "-b", buffer, "-"); err != nil {

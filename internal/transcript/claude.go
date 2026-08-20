@@ -8,8 +8,10 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
+func (s *Service) claudeRoot() string { return filepath.Join(s.home, ".claude", "projects") }
+
 func (s *Service) readClaude(sessionID string, project domain.Project) (Transcript, error) {
-	root := filepath.Join(s.home, ".claude", "projects")
+	root := s.claudeRoot()
 	fast := []string{}
 	for _, directory := range append([]string{project.Root}, repositoryPaths(project)...) {
 		if directory == "" {
