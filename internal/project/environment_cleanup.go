@@ -22,26 +22,9 @@ type EnvironmentCleanupItem struct {
 	Bytes        int64  `json:"bytes"`
 }
 
-// TemplateDigests describes the current Project Templates for a cleanup plan.
-// Each entry holds the digests of one Project Template. An entry with an empty
-// DigestSet marks a Project Template that twt2 cannot load: twt2 keeps its
-// Prepared Environments, because it cannot know if they are obsolete. A
-// Project Template that has no entry no longer exists, so its Prepared
-// Environments are obsolete.
-type TemplateDigests map[string]store.DigestSet
-
-// obsolete reports whether one prepared digest no longer matches its Project
-// Template.
-func (t TemplateDigests) obsolete(templateName, digest string) bool {
-	current, found := t[templateName]
-	if !found {
-		return true
-	}
-	if current.Environment == "" && current.Legacy == "" {
-		return false
-	}
-	return !current.Matches(digest)
-}
+// TemplateDigests names the Project Template catalog that a cleanup plan
+// uses. Load it with store.LoadTemplateCatalog.
+type TemplateDigests = store.TemplateCatalog
 
 func (s *Service) PreparedCleanupPlan(templates TemplateDigests) (EnvironmentCleanupPlan, error) {
 	environments, err := s.environments.List()
@@ -55,14 +38,15 @@ func (s *Service) PreparedCleanupPlan(templates TemplateDigests) (EnvironmentCle
 		case domain.EnvironmentFailed:
 			reason = "failed Prepared Environment"
 		case domain.EnvironmentReady:
-			if templates.obsolete(environment.TemplateName, environment.TemplateDigest) {
+			if templates.Disposition(environment.TemplateName, environment.TemplateDigest) == store.TemplateObsolete {
 				reason = "obsolete Prepared Environment"
 			}
 		}
 		if reason != "" {
+			bytes, _ := store.DirectoryBytes(environment.Root)
 			plan.Environments = append(plan.Environments, EnvironmentCleanupItem{
 				ID: environment.ID, TemplateName: environment.TemplateName, Reason: reason,
-				Root: environment.Root, Bytes: directorySize(environment.Root),
+				Root: environment.Root, Bytes: bytes,
 			})
 		}
 	}
@@ -89,7 +73,9 @@ func (s *Service) cleanPreparedEnvironment(environmentID string, templates Templ
 	}
 	environment, err := s.environments.Find(environmentID)
 	if err == nil {
-		candidate := environment.Status == domain.EnvironmentFailed || (environment.Status == domain.EnvironmentReady && templates.obsolete(environment.TemplateName, environment.TemplateDigest))
+		candidate := environment.Status == domain.EnvironmentFailed ||
+			(environment.Status == domain.EnvironmentReady &&
+				templates.Disposition(environment.TemplateName, environment.TemplateDigest) == store.TemplateObsolete)
 		if !candidate {
 			err = fmt.Errorf("Prepared Environment %q is not safe to clean", environment.ID)
 		}

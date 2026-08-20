@@ -29,32 +29,7 @@ func (s ProjectStore) Save(project domain.Project) error {
 		return fmt.Errorf("encode Project state: %w", err)
 	}
 	data = append(data, '\n')
-	path := filepath.Join(s.dir, project.ID+".json")
-	temporary, err := os.CreateTemp(s.dir, ".twt2-project-*")
-	if err != nil {
-		return fmt.Errorf("create temporary Project state: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return fmt.Errorf("set Project state permissions: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write Project state: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync Project state: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close Project state: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("save Project state: %w", err)
-	}
-	return nil
+	return WriteFileAtomic(filepath.Join(s.dir, project.ID+".json"), data, 0o600, "Project state")
 }
 
 func (s ProjectStore) List() ([]domain.Project, error) {

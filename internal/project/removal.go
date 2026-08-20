@@ -3,7 +3,6 @@ package project
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -67,7 +66,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 	for _, repository := range p.Repositories {
 		plan.Worktrees = append(plan.Worktrees, repository.Path)
 	}
-	plan.Bytes = directorySize(p.Root)
+	plan.Bytes, _ = store.DirectoryBytes(p.Root)
 	actions := []RemovalAction{{Kind: "stop_tmux_session", Target: p.ID}}
 	for _, repository := range p.Repositories {
 		actions = append(actions,
@@ -446,7 +445,7 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 		}
 	}
 	if markerPresent {
-		if err := validateProjectMarker(p.Root, p.ID); err != nil {
+		if err := ValidateProjectMarker(p.Root, p.ID); err != nil {
 			return blocked("unsafe_state", "%s", err.Error()), nil
 		}
 		return nil, nil
@@ -474,26 +473,4 @@ func dirtyPaths(status string, limit int) []string {
 		}
 	}
 	return paths
-}
-
-// DirectorySize returns the total size of the regular files under root. It
-// skips unreadable entries.
-func DirectorySize(root string) int64 {
-	return directorySize(root)
-}
-
-// directorySize returns the total size of the regular files under root. It
-// skips unreadable entries.
-func directorySize(root string) int64 {
-	var total int64
-	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry == nil || !entry.Type().IsRegular() {
-			return nil
-		}
-		if info, infoErr := entry.Info(); infoErr == nil {
-			total += info.Size()
-		}
-		return nil
-	})
-	return total
 }

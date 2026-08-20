@@ -34,15 +34,29 @@ func (c Client) PaneProcess(pane, projectID string) (string, string, error) {
 	if !c.PaneBelongsToProject(pane, projectID) {
 		return "", "", fmt.Errorf("the pane is not owned by this Project")
 	}
-	process, err := c.output(nil, "display-message", "-p", "-t", pane, "#{pane_dead}\t#{pane_current_command}\t#{pane_start_command}")
+	dead, current, start, err := c.paneState(pane)
 	if err != nil {
 		return "", "", fmt.Errorf("read pane process: %w", err)
 	}
-	parts := strings.SplitN(process, "\t", 3)
-	if len(parts) != 3 || parts[0] != "0" || parts[1] == "" || parts[2] == "" {
+	if dead || current == "" || start == "" {
 		return "", "", fmt.Errorf("the pane does not have a live direct process")
 	}
-	return parts[1], parts[2], nil
+	return current, start, nil
+}
+
+// paneState reads the dead flag, the current command, and the start command
+// of one pane in one tmux call. A pane state that twt2 cannot parse counts as
+// dead.
+func (c Client) paneState(pane string) (dead bool, current, start string, err error) {
+	value, err := c.output(nil, "display-message", "-p", "-t", pane, "#{pane_dead}\t#{pane_current_command}\t#{pane_start_command}")
+	if err != nil {
+		return true, "", "", err
+	}
+	parts := strings.SplitN(value, "\t", 3)
+	if len(parts) != 3 {
+		return true, "", "", nil
+	}
+	return parts[0] != "0", parts[1], parts[2], nil
 }
 
 func (c Client) ClaimAgentPane(pane, projectID, agentID string) error {
@@ -79,10 +93,8 @@ func (c Client) ExplainPane(pane, projectID, agentID, paneCommand, paneStart str
 	}
 	dead, current, start := true, "", ""
 	if projectPane {
-		if value, err := c.output(nil, "display-message", "-p", "-t", pane, "#{pane_dead}\t#{pane_current_command}\t#{pane_start_command}"); err == nil {
-			if parts := strings.SplitN(value, "\t", 3); len(parts) == 3 {
-				dead, current, start = parts[0] != "0", parts[1], parts[2]
-			}
+		if paneDead, paneCurrent, paneStart, err := c.paneState(pane); err == nil {
+			dead, current, start = paneDead, paneCurrent, paneStart
 		}
 	}
 	return []PaneCheck{

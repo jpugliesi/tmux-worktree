@@ -37,6 +37,73 @@ func Digests(template domain.Template) (DigestSet, error) {
 	return DigestSet{Environment: environment, Legacy: legacy}, nil
 }
 
+// TemplateStatus describes one current Project Template. Unreadable marks a
+// Project Template that twt2 cannot load or digest.
+type TemplateStatus struct {
+	Digests    DigestSet
+	Unreadable bool
+}
+
+// TemplateCatalog maps each current Project Template name to its status.
+type TemplateCatalog map[string]TemplateStatus
+
+// TemplateDisposition tells what to do with one prepared digest.
+type TemplateDisposition int
+
+const (
+	// TemplateCurrent: the digest matches the current Project Template.
+	TemplateCurrent TemplateDisposition = iota
+	// TemplateKeep: twt2 cannot read the Project Template, so it cannot know
+	// if the digest is obsolete. Keep the Prepared Environment.
+	TemplateKeep
+	// TemplateObsolete: the Project Template no longer exists, or the digest
+	// no longer matches it.
+	TemplateObsolete
+)
+
+// Disposition answers whether a Prepared Environment digest for templateName
+// is current, must be kept, or is obsolete.
+func (c TemplateCatalog) Disposition(templateName, digest string) TemplateDisposition {
+	status, found := c[templateName]
+	if !found {
+		return TemplateObsolete
+	}
+	if status.Unreadable {
+		return TemplateKeep
+	}
+	if status.Digests.Matches(digest) {
+		return TemplateCurrent
+	}
+	return TemplateObsolete
+}
+
+// LoadTemplateCatalog reads each Project Template and returns its digests.
+// The second return value holds one warning for each Project Template that
+// twt2 cannot load; the catalog marks those entries as Unreadable.
+func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
+	templates := NewTemplateStore(configDir)
+	names, err := templates.List()
+	if err != nil {
+		return nil, nil, err
+	}
+	catalog := make(TemplateCatalog, len(names))
+	var warnings []string
+	for _, name := range names {
+		var digests DigestSet
+		template, err := templates.Load(name)
+		if err == nil {
+			digests, err = Digests(template)
+		}
+		if err != nil {
+			catalog[name] = TemplateStatus{Unreadable: true}
+			warnings = append(warnings, fmt.Sprintf("Project Template %q is not valid. twt2 kept its Prepared Environments.", name))
+			continue
+		}
+		catalog[name] = TemplateStatus{Digests: digests}
+	}
+	return catalog, warnings, nil
+}
+
 // environmentDigestPayload holds only the Project Template values that change
 // the physical worktrees of a Prepared Environment. A change to the Project
 // Template name, a window name, the Project initialization, or the pool depth

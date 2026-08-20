@@ -30,31 +30,7 @@ func (s AgentStore) Save(agent domain.AgentSession) error {
 		return fmt.Errorf("encode Agent Session: %w", err)
 	}
 	data = append(data, '\n')
-	temporary, err := os.CreateTemp(s.dir, ".twt2-agent-*")
-	if err != nil {
-		return fmt.Errorf("create temporary Agent Session state: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write Agent Session state: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync Agent Session state: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temporaryPath, filepath.Join(s.dir, agent.ID+".json")); err != nil {
-		return fmt.Errorf("save Agent Session: %w", err)
-	}
-	return nil
+	return WriteFileAtomic(filepath.Join(s.dir, agent.ID+".json"), data, 0o600, "Agent Session state")
 }
 
 func (s AgentStore) List(projectID string) ([]domain.AgentSession, error) {

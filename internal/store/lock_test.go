@@ -22,8 +22,14 @@ func TestMutationLockRefusesConcurrentWriter(t *testing.T) {
 	if _, err := AcquireMutationLock(stateDir); err == nil || !strings.Contains(err.Error(), "another twt2 change") {
 		t.Fatalf("second lock error = %v", err)
 	}
+	if _, err := AcquireMutationLock(stateDir); !errors.Is(err, ErrLockHeld) {
+		t.Fatalf("second lock error = %v, want ErrLockHeld", err)
+	}
 	if err := first.Release(); err != nil {
 		t.Fatal(err)
+	}
+	if err := first.Release(); err != nil {
+		t.Fatalf("second Release() error = %v", err)
 	}
 	second, err := AcquireMutationLock(stateDir)
 	if err != nil {
@@ -111,7 +117,7 @@ func TestBoundedMutationLockWaitsForRelease(t *testing.T) {
 	var second *MutationLock
 	go func() {
 		var err error
-		second, err = AcquireMutationLockBlocking(stateDir, 2*time.Second)
+		second, err = AcquireMutationLockWithTimeout(stateDir, 2*time.Second)
 		result <- err
 	}()
 	time.Sleep(250 * time.Millisecond)
@@ -139,9 +145,12 @@ func TestBoundedMutationLockStopsAtItsDeadline(t *testing.T) {
 	}
 	defer first.Release()
 	started := time.Now()
-	_, err = AcquireMutationLockBlocking(stateDir, 300*time.Millisecond)
+	_, err = AcquireMutationLockWithTimeout(stateDir, 300*time.Millisecond)
 	if err == nil {
 		t.Fatal("bounded mutation lock did not fail")
+	}
+	if !errors.Is(err, ErrLockHeld) {
+		t.Fatalf("timeout error = %v, want ErrLockHeld", err)
 	}
 	if elapsed := time.Since(started); elapsed > 3*time.Second {
 		t.Fatalf("bounded mutation lock waited %s", elapsed)

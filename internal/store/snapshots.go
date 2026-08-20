@@ -388,32 +388,10 @@ func (s SnapshotStore) DeleteTemporaryFile(path string) error {
 	return nil
 }
 
+// writeSnapshotFile keeps the Transcript Snapshot temporary directory and
+// name prefix, because the cleanup scan finds orphan temporary files by them.
 func writeSnapshotFile(temporaryDirectory, path string, data []byte) error {
-	temporary, err := os.CreateTemp(temporaryDirectory, snapshotTemporaryPrefix+"*")
-	if err != nil {
-		return fmt.Errorf("create temporary Transcript Snapshot: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return fmt.Errorf("protect temporary Transcript Snapshot: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write Transcript Snapshot: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync Transcript Snapshot: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close Transcript Snapshot: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("save Transcript Snapshot: %w", err)
-	}
-	return nil
+	return writeFileAtomicIn(temporaryDirectory, snapshotTemporaryPrefix+"*", path, data, 0o600, "Transcript Snapshot")
 }
 
 func (s SnapshotStore) ensureRoots() error {

@@ -34,6 +34,11 @@ func newStorageCommand(options Options) *cobra.Command {
 			if WantsJSON(command) {
 				return writeJSONOutput(command, storageOutput{SchemaVersion: jsonSchemaVersion, Storage: result})
 			}
+			for _, warning := range result.Warnings {
+				if _, err := fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+					return err
+				}
+			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects (active): %s (%d)\nProjects (archived): %s (%d)\nWorktrees: %d\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n",
 				formatBytes(result.TotalBytes),
 				formatBytes(result.CacheBytes), result.CacheCount,
@@ -120,30 +125,16 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 // Project Template that twt2 cannot load gives a warning, and twt2 keeps its
 // Prepared Environments.
 func currentTemplateDigests(command *cobra.Command, configDir string) (projectservice.TemplateDigests, error) {
-	templates := store.NewTemplateStore(configDir)
-	names, err := templates.List()
+	catalog, warnings, err := store.LoadTemplateCatalog(configDir)
 	if err != nil {
 		return projectservice.TemplateDigests{}, err
 	}
-	result := make(projectservice.TemplateDigests, len(names))
-	for _, name := range names {
-		template, err := templates.Load(name)
-		if err == nil {
-			var digestSet store.DigestSet
-			digestSet, err = store.Digests(template)
-			if err == nil {
-				result[name] = digestSet
-				continue
-			}
-		}
-		// An empty DigestSet keeps the Prepared Environments of this Project
-		// Template.
-		result[name] = store.DigestSet{}
-		if _, writeErr := fmt.Fprintf(command.ErrOrStderr(), "Warning: Project Template %q is not valid. twt2 kept its Prepared Environments.\n", name); writeErr != nil {
+	for _, warning := range warnings {
+		if _, writeErr := fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", warning); writeErr != nil {
 			return projectservice.TemplateDigests{}, writeErr
 		}
 	}
-	return result, nil
+	return catalog, nil
 }
 
 func newDoctorCommand(options Options) *cobra.Command {

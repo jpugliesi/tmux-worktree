@@ -1,6 +1,9 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -135,6 +138,68 @@ func TestDigestSetMatchesBothDigests(t *testing.T) {
 	}
 	if digests.Matches("") || digests.Matches("other") {
 		t.Fatalf("DigestSet matches an unknown digest: %+v", digests)
+	}
+}
+
+func TestTemplateCatalogDisposition(t *testing.T) {
+	digests, err := Digests(digestTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := TemplateCatalog{
+		"readable":   TemplateStatus{Digests: digests},
+		"unreadable": TemplateStatus{Unreadable: true},
+	}
+	tests := []struct {
+		name     string
+		template string
+		digest   string
+		want     TemplateDisposition
+	}{
+		{"matching digest is current", "readable", digests.Environment, TemplateCurrent},
+		{"legacy digest is current", "readable", digests.Legacy, TemplateCurrent},
+		{"stale digest is obsolete", "readable", "stale", TemplateObsolete},
+		{"missing template is obsolete", "missing", digests.Environment, TemplateObsolete},
+		{"unreadable template keeps its environments", "unreadable", "stale", TemplateKeep},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := catalog.Disposition(test.template, test.digest); got != test.want {
+				t.Fatalf("Disposition(%q, %q) = %v, want %v", test.template, test.digest, got, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadTemplateCatalogWarnsAboutUnreadableTemplates(t *testing.T) {
+	configDir := t.TempDir()
+	directory := filepath.Join(configDir, "templates")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	valid := "version: 1\nname: good\nrepositories:\n  - name: app\n    clone: {url: https://example.com/app.git}\n"
+	if err := os.WriteFile(filepath.Join(directory, "good.yaml"), []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "bad.yaml"), []byte("{not yaml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	catalog, warnings, err := LoadTemplateCatalog(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) != 2 {
+		t.Fatalf("catalog = %+v", catalog)
+	}
+	if catalog["good"].Unreadable || catalog["good"].Digests.Environment == "" {
+		t.Fatalf("good template status = %+v", catalog["good"])
+	}
+	if !catalog["bad"].Unreadable {
+		t.Fatalf("bad template status = %+v", catalog["bad"])
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], `"bad"`) {
+		t.Fatalf("warnings = %v", warnings)
 	}
 }
 

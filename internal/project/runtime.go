@@ -15,6 +15,7 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
 func (s *Service) runInitialize(p domain.Project, directory string, init *domain.InitializeSpec) error {
@@ -76,7 +77,7 @@ func (s *Service) writeOwnershipMarker(p domain.Project) error {
 		if !os.IsExist(err) {
 			return fmt.Errorf("create Project root: %w", err)
 		}
-		if markerErr := validateProjectMarker(p.Root, p.ID); markerErr == nil {
+		if markerErr := ValidateProjectMarker(p.Root, p.ID); markerErr == nil {
 			return nil
 		}
 		entries, readErr := os.ReadDir(p.Root)
@@ -142,13 +143,12 @@ func writeJSON(path string, value any, mode os.FileMode) error {
 		return fmt.Errorf("encode ownership marker: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(path, data, mode); err != nil {
-		return fmt.Errorf("write ownership marker: %w", err)
-	}
-	return nil
+	return store.WriteFileAtomic(path, data, mode, "ownership marker")
 }
 
-func validateProjectMarker(root, expectedProjectID string) error {
+// ValidateProjectMarker checks that root carries the twt2 ownership marker of
+// the Project with expectedProjectID.
+func ValidateProjectMarker(root, expectedProjectID string) error {
 	data, err := os.ReadFile(filepath.Join(root, ".twt2-owned.json"))
 	if err != nil {
 		return clierr.New(clierr.UnsafeState, "Project root %q has no twt2 ownership marker", root)

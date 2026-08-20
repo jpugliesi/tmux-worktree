@@ -1,16 +1,15 @@
 package maintenance
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
@@ -31,6 +30,9 @@ type StorageStatus struct {
 	PreparingEnvironmentCount int   `json:"preparingEnvironmentCount"`
 	FailedEnvironmentCount    int   `json:"failedEnvironmentCount"`
 	PreparedWorktreeCount     int   `json:"preparedWorktreeCount"`
+	// Warnings holds one message for each directory that twt2 could not
+	// measure. Its size counts as zero.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // EnvironmentInfo describes one Prepared Environment. Status is the record
@@ -48,6 +50,9 @@ type EnvironmentInfo struct {
 	LogPath      string
 	Steps        []domain.SetupStep
 	Project      *EnvironmentProject
+	// SizeWarning tells why twt2 could not measure the Prepared Environment
+	// root. Bytes is zero in that case.
+	SizeWarning string
 }
 
 // EnvironmentProject describes the Project that claims a Prepared Environment.
@@ -79,15 +84,17 @@ func NewService(configDir, stateDir, dataDir string) *Service {
 }
 
 func (s *Service) StorageStatus() (StorageStatus, error) {
+	var warnings []string
+	measure := func(root string) int64 {
+		bytes, warning := bestEffortDirectoryBytes(root)
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+		return bytes
+	}
 	cacheRoot := filepath.Join(s.dataDir, "caches")
-	cacheBytes, err := DirectoryBytes(cacheRoot)
-	if err != nil {
-		return StorageStatus{}, err
-	}
-	snapshotBytes, err := DirectoryBytes(filepath.Join(s.stateDir, "snapshots"))
-	if err != nil {
-		return StorageStatus{}, err
-	}
+	cacheBytes := measure(cacheRoot)
+	snapshotBytes := measure(filepath.Join(s.stateDir, "snapshots"))
 	cacheCount, err := directoryCount(cacheRoot)
 	if err != nil {
 		return StorageStatus{}, err
@@ -101,10 +108,7 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	activeCount, archivedCount := 0, 0
 	for _, project := range projects {
 		worktrees += len(project.Repositories)
-		bytes, err := DirectoryBytes(project.Root)
-		if err != nil {
-			return StorageStatus{}, err
-		}
+		bytes := measure(project.Root)
 		if project.Status == domain.ProjectArchived {
 			archivedBytes += bytes
 			archivedCount++
@@ -120,22 +124,18 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	var preparedBytes int64
 	preparedCount, readyCount, preparingCount, failedCount, preparedWorktrees := 0, 0, 0, 0, 0
 	for _, environment := range environments {
-		if environment.Status == "claimed" || environment.Status == "claiming" {
+		if environment.Status == domain.EnvironmentClaimed || environment.Status == domain.EnvironmentClaiming {
 			continue
 		}
-		bytes, err := DirectoryBytes(environment.Root)
-		if err != nil {
-			return StorageStatus{}, err
-		}
-		preparedBytes += bytes
+		preparedBytes += measure(environment.Root)
 		preparedCount++
 		preparedWorktrees += len(environment.Repositories)
 		switch environment.Status {
-		case "ready":
+		case domain.EnvironmentReady:
 			readyCount++
-		case "queued", "preparing":
+		case domain.EnvironmentQueued, domain.EnvironmentPreparing:
 			preparingCount++
-		case "failed":
+		case domain.EnvironmentFailed:
 			failedCount++
 		}
 	}
@@ -145,7 +145,19 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 		CacheCount: cacheCount, ProjectCount: len(projects), ActiveProjectCount: activeCount, ArchivedProjectCount: archivedCount, WorktreeCount: worktrees,
 		PreparedEnvironmentCount: preparedCount, ReadyEnvironmentCount: readyCount,
 		PreparingEnvironmentCount: preparingCount, FailedEnvironmentCount: failedCount, PreparedWorktreeCount: preparedWorktrees,
+		Warnings: warnings,
 	}, nil
+}
+
+// bestEffortDirectoryBytes measures root. When the measurement fails, it
+// returns size zero and a warning, so one unreadable directory does not stop
+// a report.
+func bestEffortDirectoryBytes(root string) (int64, string) {
+	bytes, err := store.DirectoryBytes(root)
+	if err != nil {
+		return 0, err.Error()
+	}
+	return bytes, ""
 }
 
 // EnvironmentReport describes each Prepared Environment record. It joins the
@@ -157,7 +169,7 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	digests, unreadable, err := s.templateDigests()
+	catalog, _, err := store.LoadTemplateCatalog(s.configDir)
 	if err != nil {
 		return nil, err
 	}
@@ -176,13 +188,11 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 			ReadyAt: environment.ReadyAt, CreatedAt: environment.CreatedAt, Failure: environment.Failure,
 			BaseCommits: map[string]string{}, Steps: environment.Steps,
 		}
-		if environment.Status == domain.EnvironmentReady && !unreadable[environment.TemplateName] &&
-			!digests[environment.TemplateName].Matches(environment.TemplateDigest) {
+		if environment.Status == domain.EnvironmentReady &&
+			catalog.Disposition(environment.TemplateName, environment.TemplateDigest) == store.TemplateObsolete {
 			info.Status = "obsolete"
 		}
-		if bytes, err := DirectoryBytes(environment.Root); err == nil {
-			info.Bytes = bytes
-		}
+		info.Bytes, info.SizeWarning = bestEffortDirectoryBytes(environment.Root)
 		for _, repository := range environment.Repositories {
 			info.BaseCommits[repository.Name] = shortCommit(repository.BaseCommit)
 		}
@@ -199,32 +209,6 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 		report = append(report, info)
 	}
 	return report, nil
-}
-
-// templateDigests returns the digests of each Project Template that twt2 can
-// load, and the names of the Project Templates that it cannot load.
-func (s *Service) templateDigests() (map[string]store.DigestSet, map[string]bool, error) {
-	templates := store.NewTemplateStore(s.configDir)
-	names, err := templates.List()
-	if err != nil {
-		return nil, nil, err
-	}
-	digests := make(map[string]store.DigestSet, len(names))
-	unreadable := map[string]bool{}
-	for _, name := range names {
-		template, err := templates.Load(name)
-		if err != nil {
-			unreadable[name] = true
-			continue
-		}
-		digestSet, err := store.Digests(template)
-		if err != nil {
-			unreadable[name] = true
-			continue
-		}
-		digests[name] = digestSet
-	}
-	return digests, unreadable, nil
 }
 
 // prepareLogPath returns the twt2-owned preparation log of one Prepared
@@ -270,18 +254,8 @@ func (s *Service) Doctor() DoctorReport {
 	} else {
 		valid := true
 		for _, project := range projects {
-			data, err := os.ReadFile(filepath.Join(project.Root, ".twt2-owned.json"))
-			if err != nil {
-				report.addFailure("project:"+project.Name, "Project ownership marker is missing")
-				valid = false
-				continue
-			}
-			var marker struct {
-				Owner     string `json:"owner"`
-				ProjectID string `json:"projectId"`
-			}
-			if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt2" || marker.ProjectID != project.ID {
-				report.addFailure("project:"+project.Name, "Project ownership marker is invalid")
+			if err := projectservice.ValidateProjectMarker(project.Root, project.ID); err != nil {
+				report.addFailure("project:"+project.Name, err.Error())
 				valid = false
 			}
 		}
@@ -295,15 +269,15 @@ func (s *Service) Doctor() DoctorReport {
 	} else {
 		valid := true
 		for _, environment := range environments {
-			if environment.Status == "queued" {
+			if environment.Status == domain.EnvironmentQueued {
 				continue
 			}
 			markerName := ".twt2-environment.json"
-			if environment.Status == "claiming" || environment.Status == "claimed" {
+			if environment.Status == domain.EnvironmentClaiming || environment.Status == domain.EnvironmentClaimed {
 				markerName = ".twt2-owned.json"
 			}
 			if _, err := os.Stat(filepath.Join(environment.Root, markerName)); err != nil {
-				if (environment.Status == "preparing" || environment.Status == "failed") && os.IsNotExist(err) {
+				if (environment.Status == domain.EnvironmentPreparing || environment.Status == domain.EnvironmentFailed) && os.IsNotExist(err) {
 					continue
 				}
 				report.addFailure("environment:"+environment.ID, "Prepared Environment ownership marker is missing")
@@ -360,35 +334,6 @@ func (r *DoctorReport) addFailure(name, message string) {
 // report healthy, so twt2 doctor still ends with success.
 func (r *DoctorReport) addWarning(name, message string) {
 	r.Checks = append(r.Checks, Check{Name: name, Status: "warn", Message: message})
-}
-
-// DirectoryBytes returns the total size of the regular files under root. A
-// directory that does not exist has size zero.
-func DirectoryBytes(root string) (int64, error) {
-	var total int64
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if errors.Is(walkErr, os.ErrNotExist) {
-			return nil
-		}
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.Type().IsRegular() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			total += info.Size()
-		}
-		return nil
-	})
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("measure %q: %w", root, err)
-	}
-	return total, nil
 }
 
 func directoryCount(root string) (int, error) {

@@ -133,7 +133,7 @@ func (s *Service) cleanFailedEnvironments(templateName string, template domain.T
 	if err != nil {
 		return
 	}
-	current := map[string]store.DigestSet{templateName: digests}
+	current := TemplateDigests{templateName: store.TemplateStatus{Digests: digests}}
 	for _, environment := range environments {
 		if environment.Status == domain.EnvironmentFailed && digests.Matches(environment.TemplateDigest) {
 			_ = s.cleanPreparedEnvironment(environment.ID, current)
@@ -167,10 +167,7 @@ func (s *Service) TopUpPool(templateName string, template domain.Template, depth
 	if err != nil {
 		return nil, err
 	}
-	lock, err := store.AcquireMutationLock(s.options.StateDir)
-	if err != nil && clierr.CodeOf(err) == clierr.Locked {
-		lock, err = store.AcquireMutationLockBlocking(s.options.StateDir, 5*time.Second)
-	}
+	lock, err := store.AcquireMutationLockWithTimeout(s.options.StateDir, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +456,7 @@ func (s *Service) projectForEnvironment(name, templateName string, template doma
 }
 
 func (s *Service) completeEnvironmentClaim(environmentID, projectID string, opts CreateOptions) (domain.Project, error) {
-	lock, err := store.AcquireNamedLockBlocking(s.options.StateDir, "environment", environmentID)
+	lock, err := store.AcquireEnvironmentLockBlocking(s.options.StateDir, environmentID)
 	if err != nil {
 		return domain.Project{}, err
 	}
@@ -728,7 +725,7 @@ func (s *Service) newPreparedEnvironment(templateName, digest string, template d
 }
 
 func (s *Service) prepareEnvironment(environmentID, token string) (domain.PreparedEnvironment, error) {
-	lock, err := store.AcquireNamedLockBlocking(s.options.StateDir, "environment", environmentID)
+	lock, err := store.AcquireEnvironmentLockBlocking(s.options.StateDir, environmentID)
 	if err != nil {
 		return domain.PreparedEnvironment{}, err
 	}

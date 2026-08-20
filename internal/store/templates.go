@@ -176,31 +176,7 @@ func (s TemplateStore) write(path string, template domain.Template) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create template directory: %w", err)
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".twt2-template-*")
-	if err != nil {
-		return fmt.Errorf("create temporary template: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o644); err != nil {
-		temporary.Close()
-		return fmt.Errorf("set template permissions: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write temporary template: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync temporary template: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close temporary template: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("save Project Template: %w", err)
-	}
-	return nil
+	return WriteFileAtomic(path, data, 0o644, "Project Template")
 }
 
 func ValidateResourceName(name string) error {

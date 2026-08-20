@@ -612,7 +612,8 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				if project.Status == domain.ProjectArchived && project.ArchivedAt != nil {
 					reference = *project.ArchivedAt
 				}
-				size := formatBytes(projectservice.DirectorySize(project.Root))
+				bytes, _ := store.DirectoryBytes(project.Root)
+				size := formatBytes(bytes)
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status, formatAge(now.Sub(reference)), size); err != nil {
 					return err
 				}
@@ -804,6 +805,7 @@ func toProjectOutput(project domain.Project) projectOutput {
 	for _, repository := range project.Repositories {
 		repositories = append(repositories, repositoryOutput{Name: repository.Name, WindowName: repository.WindowName})
 	}
+	bytes, _ := store.DirectoryBytes(project.Root)
 	result := projectOutput{
 		ID:           project.ID,
 		Name:         project.Name,
@@ -811,7 +813,7 @@ func toProjectOutput(project domain.Project) projectOutput {
 		Status:       project.Status,
 		CreatedAt:    project.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Root:         project.Root,
-		Bytes:        projectservice.DirectorySize(project.Root),
+		Bytes:        bytes,
 		Repositories: repositories,
 	}
 	if project.ArchivedAt != nil {

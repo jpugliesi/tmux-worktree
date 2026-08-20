@@ -42,34 +42,7 @@ func (s EnvironmentStore) Save(environment domain.PreparedEnvironment) error {
 		return fmt.Errorf("encode Prepared Environment %q: %w", environment.ID, err)
 	}
 	data = append(data, '\n')
-	temporary, err := os.CreateTemp(s.dir, ".twt2-environment-*")
-	if err != nil {
-		return fmt.Errorf("create temporary Prepared Environment state: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return fmt.Errorf("set Prepared Environment state permissions: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write Prepared Environment state: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync Prepared Environment state: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close Prepared Environment state: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("save Prepared Environment state: %w", err)
-	}
-	if err := syncDirectory(s.dir); err != nil {
-		return fmt.Errorf("sync Prepared Environment state directory: %w", err)
-	}
-	return nil
+	return WriteFileAtomic(path, data, 0o600, "Prepared Environment state")
 }
 
 func (s EnvironmentStore) List() ([]domain.PreparedEnvironment, error) {
@@ -189,13 +162,4 @@ func requireJSONEnd(decoder *json.Decoder) error {
 		return err
 	}
 	return nil
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
 }

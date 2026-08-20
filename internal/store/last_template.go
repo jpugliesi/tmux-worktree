@@ -29,31 +29,7 @@ func SaveLastTemplate(stateDir, name string) error {
 		return fmt.Errorf("encode last Project Template: %w", err)
 	}
 	data = append(data, '\n')
-	temporary, err := os.CreateTemp(stateDir, ".twt2-last-template-*")
-	if err != nil {
-		return fmt.Errorf("create temporary last Project Template: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return fmt.Errorf("set last Project Template permissions: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write last Project Template: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync last Project Template: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close last Project Template: %w", err)
-	}
-	if err := os.Rename(temporaryPath, filepath.Join(stateDir, lastTemplateFileName)); err != nil {
-		return fmt.Errorf("save last Project Template: %w", err)
-	}
-	return nil
+	return WriteFileAtomic(filepath.Join(stateDir, lastTemplateFileName), data, 0o600, "last Project Template")
 }
 
 // LoadLastTemplate returns the recorded Project Template name. It returns an
