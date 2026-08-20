@@ -134,11 +134,11 @@ func applyJSONRequest(command *cobra.Command, options Options, request applyRequ
 			}
 			return writeMutation(command, request.Operation, "valid", "", reference)
 		}
-		project, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
+		result, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
 		if err != nil {
 			return err
 		}
-		return writeMutation(command, request.Operation, "applied", project.ID, project.Name)
+		return writeMutation(command, request.Operation, "applied", result.Project.ID, result.Project.Name)
 	case "agents.register":
 		if request.Agent == nil {
 			return fmt.Errorf("agent is required for agents.register")

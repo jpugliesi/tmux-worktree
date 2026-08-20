@@ -286,10 +286,14 @@ func (s *Service) validateOpen(reference string) (domain.Project, error) {
 	if err != nil {
 		return p, err
 	}
-	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived {
+	switch p.Status {
+	case domain.ProjectActive, domain.ProjectArchived:
+		return p, nil
+	case domain.ProjectRemoving:
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress. Run 'twt2 projects remove %s --apply' or 'twt2 projects remove %s --cancel'.", p.Name, p.ID, p.ID)
+	default:
 		return p, clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete; run twt2 projects setup retry %s", p.Name, p.ID)
 	}
-	return p, nil
 }
 
 func (s *Service) runPending(p *domain.Project) error {

@@ -7,18 +7,38 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
 )
 
-func (s *Service) Archive(reference, currentPane string) (domain.Project, error) {
+// ArchiveResult reports the archived Project and the Agent Sessions that had
+// a live pane before the archive stopped the Project tmux session.
+type ArchiveResult struct {
+	Project       domain.Project
+	StoppedAgents []domain.AgentSession
+}
+
+func (s *Service) Archive(reference, currentPane string) (ArchiveResult, error) {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
-		return domain.Project{}, err
+		return ArchiveResult{}, err
 	}
 	defer lock.Release()
 
 	p, sessions, err := s.validateArchive(reference, currentPane)
 	if err != nil {
-		return p, err
+		return ArchiveResult{Project: p}, err
+	}
+	stopped, err := s.LiveAgents(p.ID)
+	if err != nil {
+		return ArchiveResult{Project: p}, err
+	}
+	// Stop the sessions before the status save. A crash between the two
+	// steps leaves an active Project without a session, and 'projects
+	// open' repairs that state.
+	for _, sessionID := range sessions {
+		if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
+			return ArchiveResult{Project: p}, fmt.Errorf("stop Project tmux session: %w", err)
+		}
 	}
 	if p.Status != domain.ProjectArchived {
 		now := s.now()
@@ -26,22 +46,60 @@ func (s *Service) Archive(reference, currentPane string) (domain.Project, error)
 		p.ArchivedAt = &now
 		p.UpdatedAt = now
 		if err := s.store.Save(p); err != nil {
-			return p, err
+			return ArchiveResult{Project: p}, err
 		}
 	}
-	for _, sessionID := range sessions {
-		if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
-			return p, fmt.Errorf("stop Project tmux session: %w", err)
-		}
+	if err := s.clearAgentPanes(p.ID); err != nil {
+		return ArchiveResult{Project: p, StoppedAgents: stopped}, err
 	}
 	remaining, err := s.ownedSessions(p.ID)
 	if err != nil {
-		return p, err
+		return ArchiveResult{Project: p, StoppedAgents: stopped}, err
 	}
 	if len(remaining) != 0 {
-		return p, fmt.Errorf("Project %q still has an owned tmux session", p.Name)
+		return ArchiveResult{Project: p, StoppedAgents: stopped}, fmt.Errorf("Project %q still has an owned tmux session", p.Name)
 	}
-	return p, nil
+	return ArchiveResult{Project: p, StoppedAgents: stopped}, nil
+}
+
+// LiveAgents returns the Project's Agent Sessions that run live in their
+// owned tmux panes.
+func (s *Service) LiveAgents(projectID string) ([]domain.AgentSession, error) {
+	agents, err := store.NewAgentStore(s.options.StateDir).List(projectID)
+	if err != nil {
+		return nil, err
+	}
+	client := tmuxclient.Client{Socket: s.options.TmuxSocket}
+	live := []domain.AgentSession{}
+	for _, agent := range agents {
+		if client.PaneBelongsToAgent(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart) {
+			live = append(live, agent)
+		}
+	}
+	return live, nil
+}
+
+// clearAgentPanes blanks the recorded pane identity on the Project's Agent
+// Session records after their panes stopped.
+func (s *Service) clearAgentPanes(projectID string) error {
+	agentStore := store.NewAgentStore(s.options.StateDir)
+	agents, err := agentStore.List(projectID)
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if agent.TmuxPane == "" && agent.PaneCommand == "" && agent.PaneStart == "" {
+			continue
+		}
+		agent.TmuxPane = ""
+		agent.PaneCommand = ""
+		agent.PaneStart = ""
+		agent.UpdatedAt = s.now()
+		if err := agentStore.Save(agent); err != nil {
+			return fmt.Errorf("clear the stopped pane on Agent Session %q: %w", agent.ID, err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) ValidateArchive(reference, currentPane string) error {
@@ -54,8 +112,8 @@ func (s *Service) validateArchive(reference, currentPane string) (domain.Project
 	if err != nil {
 		return p, nil, err
 	}
-	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived {
-		return p, nil, clierr.New(clierr.PreconditionFailed, "Project %q has status %q; archive requires status %q or %q", p.Name, p.Status, domain.ProjectActive, domain.ProjectArchived)
+	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived && p.Status != domain.ProjectSetupFailed {
+		return p, nil, clierr.New(clierr.PreconditionFailed, "Project %q has status %q; archive requires status %q, %q, or %q", p.Name, p.Status, domain.ProjectActive, domain.ProjectSetupFailed, domain.ProjectArchived)
 	}
 	sessions, err := s.ownedSessions(p.ID)
 	if err != nil {

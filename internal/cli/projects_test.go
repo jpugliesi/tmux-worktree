@@ -245,11 +245,9 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 		t.Fatalf("self-archive changed Project status to %q", stillActive.Status)
 	}
 
-	command = cli.New(options)
-	command.SetArgs([]string{"projects", "remove", project.ID})
-	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "archive") {
-		t.Fatalf("active Project removal error = %v", err)
+	blockedPlan := executeWithOptions(t, options, nil, "projects", "remove", project.ID)
+	if !strings.Contains(blockedPlan, "Blocked:") || !strings.Contains(blockedPlan, "not archived") || !strings.Contains(blockedPlan, "The removal is blocked") {
+		t.Fatalf("active Project removal plan = %q", blockedPlan)
 	}
 	now := time.Now().UTC()
 	stillActive.Status = domain.ProjectArchived
@@ -258,7 +256,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	command = cli.New(options)
-	command.SetArgs([]string{"projects", "remove", project.ID, "--apply", "--dry-run"})
+	command.SetArgs([]string{"projects", "remove", project.ID, "--apply"})
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cannot remove") || !strings.Contains(err.Error(), "inside its tmux session") {
 		t.Fatalf("self-removal error = %v", err)
@@ -743,9 +741,46 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	}
 
 	plan := executeWithOptions(t, options, nil, "projects", "remove", "remove-me")
-	for _, want := range []string{"stop_tmux_session", "remove_worktree", "delete_branch", "delete_ownership_marker", "remove_project_root", "delete_transcript_snapshot", "delete_project_state", "Run again with --apply"} {
+	for _, want := range []string{"stop_tmux_session", "remove_worktree", "delete_branch", "keep_repository_cache", "delete_ownership_marker", "remove_project_root", "delete_transcript_snapshot", "delete_environment_record", "delete_project_state", "Run again with --apply"} {
 		if !strings.Contains(plan, want) {
 			t.Fatalf("removal plan does not contain %q: %s", want, plan)
+		}
+	}
+	planJSON := executeWithOptions(t, options, nil, "projects", "remove", "remove-me", "--output", "json")
+	var removal struct {
+		SchemaVersion int   `json:"schemaVersion"`
+		Applied       bool  `json:"applied"`
+		Bytes         int64 `json:"bytes"`
+		Blockers      []struct {
+			Code string `json:"code"`
+		} `json:"blockers"`
+		Plan struct {
+			Bytes   int64 `json:"bytes"`
+			Actions []struct {
+				Kind   string `json:"kind"`
+				Target string `json:"target"`
+			} `json:"actions"`
+			Blockers []struct {
+				Code string `json:"code"`
+			} `json:"blockers"`
+		} `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
+		t.Fatalf("decode removal plan JSON: %v\n%s", err, planJSON)
+	}
+	if removal.SchemaVersion != 1 || removal.Applied || removal.Bytes <= 0 || removal.Plan.Bytes != removal.Bytes {
+		t.Fatalf("removal plan JSON metadata = %+v", removal)
+	}
+	if len(removal.Blockers) != 0 || len(removal.Plan.Blockers) != 0 {
+		t.Fatalf("clean removal plan has blockers: %s", planJSON)
+	}
+	kinds := map[string]bool{}
+	for _, action := range removal.Plan.Actions {
+		kinds[action.Kind] = true
+	}
+	for _, want := range []string{"delete_environment_record", "keep_repository_cache"} {
+		if !kinds[want] {
+			t.Fatalf("removal plan JSON has no %q action: %s", want, planJSON)
 		}
 	}
 	if _, err := os.Stat(projectRoot); err != nil {
@@ -799,13 +834,23 @@ func TestProjectsRemoveRefusesDirtyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeWithOptions(t, options, nil, "projects", "archive", "keep-me")
+
+	// The plan renders with blockers and exit code 0 without --apply.
+	planOutput := executeWithOptions(t, options, nil, "projects", "remove", "keep-me")
+	if !strings.Contains(planOutput, "Blocked:") || !strings.Contains(planOutput, "uncommitted changes") || !strings.Contains(planOutput, "unsaved.txt") || !strings.Contains(planOutput, "The removal is blocked") {
+		t.Fatalf("dirty removal plan = %q", planOutput)
+	}
+	if strings.Contains(planOutput, "Run again with --apply") {
+		t.Fatalf("blocked removal plan invites --apply: %q", planOutput)
+	}
+
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetArgs([]string{"projects", "remove", "keep-me", "--apply", "--dry-run"})
 	err := command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
-		t.Fatalf("dirty dry-run removal error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--apply") {
+		t.Fatalf("--dry-run with --apply error = %v", err)
 	}
 	stdout.Reset()
 	stderr.Reset()
@@ -946,6 +991,102 @@ func TestStorageCleanPlansAndRemovesOnlyOrphanTranscriptSnapshots(t *testing.T) 
 	}
 	if _, err := os.Stat(activeDirectory); err != nil {
 		t.Fatalf("cleanup changed active Project snapshot: %v", err)
+	}
+}
+
+func TestProjectsRemoveCancelReturnsRemovingProjectToArchived(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	options := cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
+	project := domain.Project{Version: domain.ProjectVersion, ID: "cancel-me-id-0001", Name: "cancel-me", Status: domain.ProjectRemoving, CreatedAt: time.Now().UTC()}
+	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeWithOptions(t, options, nil, "projects", "remove", project.ID, "--cancel")
+	if !strings.Contains(output, "canceled") || !strings.Contains(output, "archived") {
+		t.Fatalf("cancel output = %q", output)
+	}
+	canceled, err := store.NewProjectStore(options.StateDir).Find(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Status != domain.ProjectArchived || canceled.ArchivedAt == nil {
+		t.Fatalf("Project after cancel has status %q and archive time %v", canceled.Status, canceled.ArchivedAt)
+	}
+
+	var stdout, stderr bytes.Buffer
+	repeatOptions := options
+	repeatOptions.Stdout, repeatOptions.Stderr = &stdout, &stderr
+	command := cli.New(repeatOptions)
+	command.SetArgs([]string{"projects", "remove", project.ID, "--cancel"})
+	err = command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "cancel requires status") {
+		t.Fatalf("cancel of an archived Project error = %v", err)
+	}
+
+	command = cli.New(repeatOptions)
+	command.SetArgs([]string{"projects", "remove", project.ID, "--cancel", "--apply"})
+	err = command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--cancel") {
+		t.Fatalf("cancel with apply error = %v", err)
+	}
+}
+
+func TestProjectsArchiveStopsAndReportsLiveAgentSessions(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	t.Setenv("TMUX_PANE", "")
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "projects", "create", "agent-archive", "--template", "example", "--no-open")
+	pane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=agent-archive", "-n", "agent", "--", "cat")
+	registration := executeWithOptions(t, options, nil, "agents", "register", "--project", "agent-archive", "--provider", "command", "--label", "review", "--pane", pane, "--", "cat")
+	fields := strings.Fields(registration)
+	if len(fields) < 4 {
+		t.Fatalf("registration output = %q", registration)
+	}
+	agentID := fields[3]
+	project, err := store.NewProjectStore(options.StateDir).Find("agent-archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeWithOptions(t, options, nil, "projects", "archive", "agent-archive")
+	if !strings.Contains(output, "Stopping 1 live Agent Sessions:") || !strings.Contains(output, agentID) || !strings.Contains(output, "command") || !strings.Contains(output, "review") {
+		t.Fatalf("archive output with a live Agent Session = %q", output)
+	}
+	if !strings.Contains(output, "Archived Project \"agent-archive\"") {
+		t.Fatalf("archive output = %q", output)
+	}
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=agent-archive").Run(); err == nil {
+		t.Fatal("archive kept the Project tmux session")
+	}
+	agents, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	if err != nil || len(agents) != 1 {
+		t.Fatalf("read Agent Sessions after archive: agents=%v error=%v", agents, err)
+	}
+	stopped := agents[0]
+	if stopped.TmuxPane != "" || stopped.PaneCommand != "" || stopped.PaneStart != "" {
+		t.Fatalf("archive kept pane identity on the Agent Session: %+v", stopped)
 	}
 }
 

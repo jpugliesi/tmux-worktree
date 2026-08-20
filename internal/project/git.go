@@ -100,6 +100,28 @@ func (s *Service) ensureRemotes(cachePath string, remotes map[string]string) err
 			return fmt.Errorf("add cache remote %q: %w", name, err)
 		}
 	}
+	return ensureOriginFetchRefspec(cachePath)
+}
+
+const originFetchRefspec = "+refs/heads/*:refs/remotes/origin/*"
+
+// ensureOriginFetchRefspec makes sure the bare cache tracks origin branches.
+// A cache from "git clone --bare" has no origin fetch refspec, so a push from
+// a worktree does not update refs/remotes/origin/*. This function lazily
+// migrates existing caches because it runs on every cache ensure and on the
+// removal validation path.
+func ensureOriginFetchRefspec(cachePath string) error {
+	existing, err := output(cachePath, "git", "config", "--get-all", "remote.origin.fetch")
+	if err == nil {
+		for _, line := range strings.Split(existing, "\n") {
+			if strings.TrimSpace(line) == originFetchRefspec {
+				return nil
+			}
+		}
+	}
+	if err := run(cachePath, "git", "config", "--add", "remote.origin.fetch", originFetchRefspec); err != nil {
+		return fmt.Errorf("add the origin fetch refspec to cache %q: %w", cachePath, err)
+	}
 	return nil
 }
 
@@ -223,12 +245,24 @@ func validateCacheMarker(cachePath, expectedURL string) error {
 	return nil
 }
 
-func branchIsPublished(cachePath, branch string) (bool, error) {
+// branchPublished reports whether the branch commits are safe on the remote
+// or on another declared ref. It returns unknown=true when twt2 could not
+// read the remote, so the caller can refuse instead of a silent pass.
+func branchPublished(cachePath, branch string) (published bool, unknown bool, err error) {
+	branchRef := "refs/heads/" + branch
+	heads, lsErr := output(cachePath, "git", "ls-remote", "--heads", "origin", branchRef)
+	if lsErr == nil && heads != "" {
+		return true, false, nil
+	}
+	unknown = lsErr != nil
+	if defaultBranch, headErr := output(cachePath, "git", "symbolic-ref", "--short", "HEAD"); headErr == nil && defaultBranch != "" {
+		// Best-effort refresh of the default-branch tracking ref.
+		_ = run(cachePath, "git", "fetch", "--no-tags", "origin", "+refs/heads/"+defaultBranch+":refs/remotes/origin/"+defaultBranch)
+	}
 	refs, err := output(cachePath, "git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
 	if err != nil {
-		return false, fmt.Errorf("list refs for branch %q: %w", branch, err)
+		return false, unknown, fmt.Errorf("list refs for branch %q: %w", branch, err)
 	}
-	branchRef := "refs/heads/" + branch
 	for _, ref := range strings.Split(refs, "\n") {
 		if ref == "" || ref == branchRef || strings.HasPrefix(ref, "refs/heads/twt2/") {
 			continue
@@ -236,14 +270,14 @@ func branchIsPublished(cachePath, branch string) (bool, error) {
 		command := exec.Command("git", "merge-base", "--is-ancestor", branchRef, ref)
 		command.Dir = cachePath
 		if err := command.Run(); err == nil {
-			return true, nil
+			return true, false, nil
 		} else if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
 			continue
 		} else {
-			return false, fmt.Errorf("compare branch %q with %q: %w", branch, ref, err)
+			return false, unknown, fmt.Errorf("compare branch %q with %q: %w", branch, ref, err)
 		}
 	}
-	return false, nil
+	return false, unknown, nil
 }
 
 func refExists(cachePath, ref string) (bool, error) {

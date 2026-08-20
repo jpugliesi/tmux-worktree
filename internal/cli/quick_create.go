@@ -69,6 +69,11 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				}
 				return err
 			}
+			if liveAgents, liveErr := service.LiveAgents(current.ID); liveErr == nil {
+				if err := printStoppedAgents(command.OutOrStdout(), liveAgents); err != nil {
+					return err
+				}
+			}
 			if testHooks {
 				if err := options.QuickCreateSwitch(created.TmuxSession); err != nil {
 					return archiveNewAfterQuickCreateFailure(service, created.ID, created.Name, currentPane, fmt.Errorf("switch to new Project: %w", err))

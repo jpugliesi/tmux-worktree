@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,9 +46,11 @@ type contextOutput struct {
 }
 
 type removalOutput struct {
-	SchemaVersion int                        `json:"schemaVersion"`
-	Applied       bool                       `json:"applied"`
-	Plan          projectservice.RemovalPlan `json:"plan"`
+	SchemaVersion int                             `json:"schemaVersion"`
+	Applied       bool                            `json:"applied"`
+	Plan          projectservice.RemovalPlan      `json:"plan"`
+	Blockers      []projectservice.RemovalBlocker `json:"blockers"`
+	Bytes         int64                           `json:"bytes"`
 }
 
 func newProjectsCommand(options Options) *cobra.Command {
@@ -112,41 +115,81 @@ func archiveProject(command *cobra.Command, service *projectservice.Service, ref
 		}
 		return writeMutation(command, "projects.archive", "valid", "", reference)
 	}
-	project, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
+	result, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
 	if err != nil {
 		return err
 	}
 	if WantsJSON(command) {
-		return writeMutation(command, "projects.archive", "applied", project.ID, project.Name)
+		return writeMutation(command, "projects.archive", "applied", result.Project.ID, result.Project.Name)
 	}
-	_, err = fmt.Fprintf(command.OutOrStdout(), "Archived Project %q\n", project.Name)
+	if err := printStoppedAgents(command.OutOrStdout(), result.StoppedAgents); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Archived Project %q\n", result.Project.Name)
 	return err
+}
+
+func printStoppedAgents(out io.Writer, agents []domain.AgentSession) error {
+	if len(agents) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(out, "Stopping %d live Agent Sessions:\n", len(agents)); err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if _, err := fmt.Fprintf(out, "  %s %s %s\n", agent.ID, agent.Provider, agent.Label); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 	var apply bool
+	var allowUnpublished bool
+	var cancel bool
 	command := &cobra.Command{
 		Use:   "remove PROJECT",
 		Short: "Plan or apply safe Project removal",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if err := service.ValidateRemoval(args[0], os.Getenv("TMUX_PANE")); err != nil {
+			if apply && isDryRun(command) {
+				return invalidUsage(command, "do not use --dry-run together with --apply; remove one of the two flags")
+			}
+			if cancel {
+				if apply || allowUnpublished {
+					return invalidUsage(command, "do not use --cancel together with --apply or --allow-unpublished")
+				}
+				project, err := service.CancelRemoval(args[0])
+				if err != nil {
+					return err
+				}
+				if WantsJSON(command) {
+					return writeMutation(command, "projects.remove.cancel", "applied", project.ID, project.Name)
+				}
+				_, err = fmt.Fprintf(command.OutOrStdout(), "Removal of Project %q is canceled. The Project is archived.\n", project.Name)
 				return err
 			}
-			plan, err := service.RemovalPlan(args[0])
-			if err != nil {
-				return err
-			}
-			if !isDryRun(command) && apply {
-				plan, err = service.Remove(args[0], os.Getenv("TMUX_PANE"))
+			options := projectservice.RemovalOptions{AllowUnpublished: allowUnpublished}
+			var plan projectservice.RemovalPlan
+			var err error
+			applied := false
+			if apply {
+				plan, err = service.Remove(args[0], os.Getenv("TMUX_PANE"), options)
+				if err != nil {
+					return err
+				}
+				applied = true
+			} else {
+				plan, err = service.PlanRemoval(args[0], os.Getenv("TMUX_PANE"), options)
 				if err != nil {
 					return err
 				}
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: apply && !isDryRun(command), Plan: plan})
+				return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: applied, Plan: plan, Blockers: plan.Blockers, Bytes: plan.Bytes})
 			}
-			if apply && !isDryRun(command) {
+			if applied {
 				_, err = fmt.Fprintf(command.OutOrStdout(), "Removed Project %q\n", plan.ProjectName)
 				return err
 			}
@@ -158,11 +201,35 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
+			if len(plan.Blockers) == 0 {
+				_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
+				return err
+			}
+			if _, err := fmt.Fprintln(command.OutOrStdout(), "Blocked:"); err != nil {
+				return err
+			}
+			for _, blocker := range plan.Blockers {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "  %s\n", blocker.Message); err != nil {
+					return err
+				}
+				for _, path := range blocker.Paths {
+					if _, err := fmt.Fprintf(command.OutOrStdout(), "    %s\n", path); err != nil {
+						return err
+					}
+				}
+				if blocker.Hint != "" {
+					if _, err := fmt.Fprintf(command.OutOrStdout(), "  Hint: %s\n", blocker.Hint); err != nil {
+						return err
+					}
+				}
+			}
+			_, err = fmt.Fprintln(command.OutOrStdout(), "The removal is blocked. Correct the causes above, then run the command again.")
 			return err
 		},
 	}
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the removal plan")
+	command.Flags().BoolVar(&allowUnpublished, "allow-unpublished", false, "Remove a branch with unpublished commits")
+	command.Flags().BoolVar(&cancel, "cancel", false, "Return a removing Project to the archived status")
 	return command
 }
 
