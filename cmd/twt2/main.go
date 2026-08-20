@@ -22,6 +22,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "__twt2_finish_worker" {
+		if err := cli.RunFinishWorker(cli.DefaultOptions(), os.Args[2:]); err != nil {
+			_, _ = os.Stderr.WriteString("twt2: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		return
+	}
 	command := cli.New(cli.DefaultOptions())
 	executed, err := command.ExecuteC()
 	if err != nil {

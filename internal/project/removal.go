@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -16,6 +18,7 @@ import (
 type RemovalPlan struct {
 	ProjectID    string           `json:"projectId"`
 	ProjectName  string           `json:"projectName"`
+	ArchivedAt   *time.Time       `json:"archivedAt,omitempty"`
 	Worktrees    []string         `json:"worktrees"`
 	TmuxSession  string           `json:"tmuxSession"`
 	StateRecords int              `json:"stateRecords"`
@@ -56,6 +59,10 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		return RemovalPlan{}, p, nil, err
 	}
 	plan := RemovalPlan{ProjectID: p.ID, ProjectName: p.Name, TmuxSession: p.TmuxSession, Blockers: []RemovalBlocker{}}
+	if p.ArchivedAt != nil {
+		archivedAt := *p.ArchivedAt
+		plan.ArchivedAt = &archivedAt
+	}
 	plan.Worktrees = make([]string, 0, len(p.Repositories))
 	for _, repository := range p.Repositories {
 		plan.Worktrees = append(plan.Worktrees, repository.Path)
@@ -278,6 +285,39 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	return plan, nil
 }
 
+// BulkRemovalPlans returns one removal plan for each archived Project whose
+// archive time is at least olderThan in the past. An olderThan of zero
+// selects all archived Projects. The oldest archive comes first.
+func (s *Service) BulkRemovalPlans(olderThan time.Duration, opts RemovalOptions) ([]RemovalPlan, error) {
+	projects, err := s.store.List()
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	plans := []RemovalPlan{}
+	for _, p := range projects {
+		if p.Status != domain.ProjectArchived || p.ArchivedAt == nil {
+			continue
+		}
+		if olderThan > 0 && now.Sub(*p.ArchivedAt) < olderThan {
+			continue
+		}
+		plan, err := s.PlanRemoval(p.ID, "", opts)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, plan)
+	}
+	sort.SliceStable(plans, func(i, j int) bool {
+		iTime, jTime := plans[i].ArchivedAt, plans[j].ArchivedAt
+		if iTime != nil && jTime != nil && !iTime.Equal(*jTime) {
+			return iTime.Before(*jTime)
+		}
+		return plans[i].ProjectName < plans[j].ProjectName
+	})
+	return plans, nil
+}
+
 // CancelRemoval returns a Project from status "removing" to "archived".
 func (s *Service) CancelRemoval(reference string) (domain.Project, error) {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
@@ -434,6 +474,12 @@ func dirtyPaths(status string, limit int) []string {
 		}
 	}
 	return paths
+}
+
+// DirectorySize returns the total size of the regular files under root. It
+// skips unreadable entries.
+func DirectorySize(root string) int64 {
+	return directorySize(root)
 }
 
 // directorySize returns the total size of the regular files under root. It
