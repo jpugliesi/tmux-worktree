@@ -67,6 +67,53 @@ func (s TemplateStore) List() ([]string, error) {
 	return names, nil
 }
 
+// Path returns the YAML file path of an existing Project Template.
+func (s TemplateStore) Path(name string) (string, error) {
+	if err := ValidateResourceName(name); err != nil {
+		return "", err
+	}
+	path := s.path(name)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return "", clierr.New(clierr.NotFound, "Project Template %q does not exist", name)
+	} else if err != nil {
+		return "", fmt.Errorf("inspect Project Template %q: %w", name, err)
+	}
+	return path, nil
+}
+
+// Delete removes the YAML file of a Project Template. The caller must check
+// that no Project uses the Project Template.
+func (s TemplateStore) Delete(name string) error {
+	path, err := s.Path(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("delete Project Template %q: %w", name, err)
+	}
+	return nil
+}
+
+// DecodeTemplate reads one strict Project Template YAML document. It rejects
+// unknown fields and more than one document. The source value names the input
+// in error messages. It does not validate the fields.
+func DecodeTemplate(reader io.Reader, source string) (domain.Template, error) {
+	var template domain.Template
+	decoder := yaml.NewDecoder(reader)
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&template); err != nil {
+		return template, fmt.Errorf("decode Project Template %s: %w", source, err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return template, fmt.Errorf("decode Project Template %s: %w", source, err)
+		}
+		return template, fmt.Errorf("decode Project Template %s: multiple YAML documents are not supported", source)
+	}
+	return template, nil
+}
+
 func (s TemplateStore) Load(name string) (domain.Template, error) {
 	var template domain.Template
 	if err := ValidateResourceName(name); err != nil {
@@ -81,17 +128,9 @@ func (s TemplateStore) Load(name string) (domain.Template, error) {
 	}
 	defer file.Close()
 
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&template); err != nil {
-		return template, fmt.Errorf("decode Project Template %q: %w", name, err)
-	}
-	var extra yaml.Node
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err != nil {
-			return template, fmt.Errorf("decode Project Template %q: %w", name, err)
-		}
-		return template, fmt.Errorf("decode Project Template %q: multiple YAML documents are not supported", name)
+	template, err = DecodeTemplate(file, fmt.Sprintf("%q", name))
+	if err != nil {
+		return template, err
 	}
 	if template.Name != name {
 		return template, fmt.Errorf("Project Template %q contains name %q", name, template.Name)

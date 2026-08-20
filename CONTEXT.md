@@ -30,8 +30,9 @@ A Git worktree assigned to one Project for one repository.
 _Avoid_: Workspace, repository clone
 
 **Prepared Environment**:
-An unclaimed set of initialized Git worktrees for one exact Project Template
-revision. A Project claims the complete set as its checkout leases.
+A lifecycle record for a set of Git worktrees for one exact Project Template
+revision. twt2 prepares the set, and one Project can claim the complete set as
+its checkout leases.
 _Avoid_: Warm Project, spare worktree, checkout pool item
 
 **Agent Session**:
@@ -53,3 +54,17 @@ _Avoid_: Agent Transcript, global latest.md
 A declared setup action that prepares a new physical Git worktree or Project
 for use. Repository initialization runs at most once on each physical worktree.
 _Avoid_: Bootstrap magic, implicit setup
+
+**Environment Digest**:
+The hash of the part of a Project Template revision that changes the physical
+worktrees: each repository name, clone source, depth, remotes, default branch,
+and repository initialization. A Project can claim a Prepared Environment only
+when the digests match. A change to the template name, a window name, the
+Project initialization, or the pool depth keeps the digest.
+_Avoid_: Template hash, template version
+
+**Removal Blocker**:
+One recorded reason that stops Project removal, with a stable code, a message,
+the related paths, and an optional hint. A removal plan holds all of its
+Removal Blockers, and removal applies no action while one stays.
+_Avoid_: Error, removal failure

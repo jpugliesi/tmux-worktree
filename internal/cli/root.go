@@ -79,6 +79,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	})
 	root.PersistentFlags().String("output", "text", "Set all command output to text or json")
 	root.PersistentFlags().Bool("dry-run", false, "Validate and show a mutation without applying it")
+	_ = root.RegisterFlagCompletionFunc("output", fixedCompletion(outputFormatNames...))
 	root.AddGroup(
 		&cobra.Group{ID: "workflows", Title: "Workflows:"},
 		&cobra.Group{ID: "inspect", Title: "Inspect and maintain:"},

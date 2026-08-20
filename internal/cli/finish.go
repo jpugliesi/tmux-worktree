@@ -29,21 +29,11 @@ func newFinishCommand(options Options) *cobra.Command {
 		Short: "Archive a Project and remove its data",
 		Args:  optionalArg("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			reference := ""
+			reference := currentProjectReference
 			if len(args) == 1 {
 				reference = args[0]
-			} else {
-				directory, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				current, err := service.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
-				if err != nil {
-					return err
-				}
-				reference = current.ID
 			}
-			project, err := service.Find(reference)
+			project, err := resolveProject(service, reference)
 			if err != nil {
 				return err
 			}
@@ -65,6 +55,8 @@ func newFinishCommand(options Options) *cobra.Command {
 	}
 	command.Flags().BoolVar(&keep, "keep", false, "Stop after the archive and keep the Project data")
 	command.Flags().BoolVar(&allowUnpublished, "allow-unpublished", false, "Remove a branch with unpublished commits")
+	setArguments(command, optionalArgument("project", "the current Project when absent"))
+	command.ValidArgsFunction = projectNameCompletion(service)
 	return command
 }
 

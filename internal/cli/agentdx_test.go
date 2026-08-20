@@ -46,7 +46,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 4 {
+	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 6 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -201,10 +201,17 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	var list struct {
-		Templates []string `json:"templates"`
+		Templates []struct {
+			Name string `json:"name"`
+		} `json:"templates"`
+		TotalCount int  `json:"totalCount"`
+		Truncated  bool `json:"truncated"`
 	}
-	if err := json.Unmarshal([]byte(output), &list); err != nil || len(list.Templates) != 1 {
+	if err := json.Unmarshal([]byte(output), &list); err != nil || len(list.Templates) != 1 || list.Templates[0].Name != "alpha" {
 		t.Fatalf("limited list = %s; error = %v", output, err)
+	}
+	if list.TotalCount != 2 || !list.Truncated {
+		t.Fatalf("limited list totals = %s", output)
 	}
 
 	var stdout, stderr bytes.Buffer

@@ -32,14 +32,21 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 		},
 		RunE: func(command *cobra.Command, args []string) error {
 			currentPane := os.Getenv("TMUX_PANE")
-			current, err := service.CurrentFromPane(currentPane)
-			outside := false
+			directory, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			current, err := service.CurrentForQuickCreate(directory, os.Getenv("TWT2_PROJECT_ID"), currentPane)
+			known := err == nil
 			if err != nil {
 				if !errors.Is(err, projectservice.ErrNotInProject) {
 					return err
 				}
-				outside = true
 			}
+			// The tmux client switch and the archive of the current Project
+			// need the calling pane. Without a pane, quick create uses the
+			// outside-session flow and keeps the current Project active.
+			outside := !known || currentPane == ""
 			testHooks := options.QuickCreateSwitch != nil || options.QuickCreateArchive != nil
 			if testHooks && (options.QuickCreateSwitch == nil || options.QuickCreateArchive == nil) {
 				return fmt.Errorf("quick create test hooks are incomplete")
@@ -47,15 +54,15 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			templateStore := store.NewTemplateStore(options.ConfigDir)
 			selected := strings.TrimSpace(templateName)
 			if selected == "" {
-				if outside {
+				if known {
+					selected = current.TemplateName
+				} else {
 					inferred, source, err := inferTemplateName(command, options, templateStore)
 					if err != nil {
 						return err
 					}
 					selected = inferred
 					_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", selected, source)
-				} else {
-					selected = current.TemplateName
 				}
 			}
 			clientName := ""
@@ -158,6 +165,8 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
+	setArguments(command, optionalArgument("name", "the interactive prompt asks for it when absent"))
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(store.NewTemplateStore(options.ConfigDir)))
 	return command
 }
 

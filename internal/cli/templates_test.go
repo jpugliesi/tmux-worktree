@@ -152,7 +152,7 @@ func TestTemplatesInitializationCommands(t *testing.T) {
 	if _, err := execute(t, root, "templates", "repos", "add", "everysphere", "app", "https://example.com/app.git"); err != nil {
 		t.Fatalf("add repository: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "repos", "init", "set", "everysphere", "app", "--", "./init.sh", "--quick"); err != nil {
+	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--repo", "app", "--", "./init.sh", "--quick"); err != nil {
 		t.Fatalf("set repository initialization: %v", err)
 	}
 	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--cwd", "app", "--", "./scripts/init-project.sh"); err != nil {

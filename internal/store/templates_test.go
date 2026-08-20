@@ -56,6 +56,62 @@ repositories:
 	}
 }
 
+func TestTemplateStoreKeepsDeclaredAgentSessionsThroughAYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	directory := filepath.Join(configDir, "templates")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `version: 1
+name: example
+repositories:
+  - name: app
+    clone: {url: https://example.com/app.git}
+agents:
+  - label: review
+    provider: codex
+    start: [codex]
+`
+	if err := os.WriteFile(filepath.Join(directory, "example.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	templates := store.NewTemplateStore(configDir)
+	loaded, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Agents) != 1 {
+		t.Fatalf("loaded Agent Sessions = %+v", loaded.Agents)
+	}
+	agent := loaded.Agents[0]
+	if agent.Label != "review" || agent.Provider != "codex" || len(agent.Start) != 1 || agent.Start[0] != "codex" {
+		t.Fatalf("loaded declared Agent Session = %+v", agent)
+	}
+
+	if err := templates.Save(loaded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(directory, "example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"agents:", "label: review", "provider: codex", "start:"} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("saved Project Template does not keep %q:\n%s", want, encoded)
+		}
+	}
+	again, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Agents) != 1 || again.Agents[0].Label != "review" {
+		t.Fatalf("reloaded declared Agent Sessions = %+v", again.Agents)
+	}
+}
+
 func TestTemplateStoreRejectsInvalidYAML(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +204,42 @@ repositories:
 			name:    "negative pool depth",
 			yaml:    "version: 1\nname: example\nrepositories: []\npool_depth: -1\n",
 			message: "pool_depth -1 is negative",
+		},
+		{
+			name: "unknown agent field",
+			yaml: `version: 1
+name: example
+repositories: []
+agents:
+  - label: review
+    provider: codex
+    start: [codex]
+    unknown: true
+`,
+			message: "field unknown not found",
+		},
+		{
+			name: "declared agent without a start command",
+			yaml: `version: 1
+name: example
+repositories: []
+agents:
+  - label: review
+    provider: codex
+`,
+			message: "has no start command",
+		},
+		{
+			name: "declared agent with an unsupported provider",
+			yaml: `version: 1
+name: example
+repositories: []
+agents:
+  - label: review
+    provider: robot
+    start: [robot]
+`,
+			message: "unsupported provider",
 		},
 		{
 			name: "template initialization without cwd",

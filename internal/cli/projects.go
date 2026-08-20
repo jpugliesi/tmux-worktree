@@ -22,16 +22,15 @@ import (
 const jsonSchemaVersion = 1
 
 type projectOutput struct {
-	SchemaVersion int                  `json:"schemaVersion"`
-	ID            string               `json:"id"`
-	Name          string               `json:"name"`
-	Template      string               `json:"template"`
-	Status        domain.ProjectStatus `json:"status"`
-	CreatedAt     string               `json:"createdAt"`
-	ArchivedAt    string               `json:"archivedAt,omitempty"`
-	Root          string               `json:"root"`
-	Bytes         int64                `json:"bytes"`
-	Repositories  []repositoryOutput   `json:"repositories"`
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Template     string               `json:"template"`
+	Status       domain.ProjectStatus `json:"status"`
+	CreatedAt    string               `json:"createdAt"`
+	ArchivedAt   string               `json:"archivedAt,omitempty"`
+	Root         string               `json:"root"`
+	Bytes        int64                `json:"bytes"`
+	Repositories []repositoryOutput   `json:"repositories"`
 }
 
 type repositoryOutput struct {
@@ -42,6 +41,13 @@ type repositoryOutput struct {
 type projectsListOutput struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Projects      []projectOutput `json:"projects"`
+	TotalCount    int             `json:"totalCount"`
+	Truncated     bool            `json:"truncated,omitempty"`
+}
+
+type projectShowOutput struct {
+	SchemaVersion int           `json:"schemaVersion"`
+	Project       projectOutput `json:"project"`
 }
 
 type contextOutput struct {
@@ -78,40 +84,44 @@ func newProjectsCommand(options Options) *cobra.Command {
 }
 
 func newProjectsArchiveCommand(options Options, service *projectservice.Service) *cobra.Command {
-	return &cobra.Command{
+	command := &cobra.Command{
 		Use:   "archive PROJECT",
 		Short: "Archive a Project without removing its data",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			return archiveProject(command, options, service, args[0])
-		},
-	}
-}
-
-func newArchiveCommand(options Options) *cobra.Command {
-	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-	return &cobra.Command{
-		Use:   "archive [PROJECT]",
-		Short: "Archive the current Project or a specified Project",
-		Args:  optionalArg("PROJECT"),
-		RunE: func(command *cobra.Command, args []string) error {
-			reference := ""
-			if len(args) == 1 {
-				reference = args[0]
-			} else {
-				directory, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				current, err := service.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
-				if err != nil {
-					return err
-				}
-				reference = current.ID
+			reference, err := resolveProjectReference(service, args[0])
+			if err != nil {
+				return err
 			}
 			return archiveProject(command, options, service, reference)
 		},
 	}
+	setArguments(command, requiredArgument("project"))
+	command.ValidArgsFunction = projectNameCompletion(service)
+	return command
+}
+
+func newArchiveCommand(options Options) *cobra.Command {
+	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	command := &cobra.Command{
+		Use:   "archive [PROJECT]",
+		Short: "Archive the current Project or a specified Project",
+		Args:  optionalArg("PROJECT"),
+		RunE: func(command *cobra.Command, args []string) error {
+			reference := currentProjectReference
+			if len(args) == 1 {
+				reference = args[0]
+			}
+			reference, err := resolveProjectReference(service, reference)
+			if err != nil {
+				return err
+			}
+			return archiveProject(command, options, service, reference)
+		},
+	}
+	setArguments(command, optionalArgument("project", "the current Project when absent"))
+	command.ValidArgsFunction = projectNameCompletion(service)
+	return command
 }
 
 func archiveProject(command *cobra.Command, options Options, service *projectservice.Service, reference string) error {
@@ -190,11 +200,15 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 			if len(args) != 1 {
 				return invalidUsage(command, "missing required argument PROJECT")
 			}
+			reference, err := resolveProjectReference(service, args[0])
+			if err != nil {
+				return err
+			}
 			if cancel {
 				if apply || allowUnpublished {
 					return invalidUsage(command, "do not use --cancel together with --apply or --allow-unpublished")
 				}
-				project, err := service.CancelRemoval(args[0])
+				project, err := service.CancelRemoval(reference)
 				if err != nil {
 					return err
 				}
@@ -206,16 +220,15 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 			}
 			options := projectservice.RemovalOptions{AllowUnpublished: allowUnpublished}
 			var plan projectservice.RemovalPlan
-			var err error
 			applied := false
 			if apply {
-				plan, err = service.Remove(args[0], os.Getenv("TMUX_PANE"), options)
+				plan, err = service.Remove(reference, os.Getenv("TMUX_PANE"), options)
 				if err != nil {
 					return err
 				}
 				applied = true
 			} else {
-				plan, err = service.PlanRemoval(args[0], os.Getenv("TMUX_PANE"), options)
+				plan, err = service.PlanRemoval(reference, os.Getenv("TMUX_PANE"), options)
 				if err != nil {
 					return err
 				}
@@ -235,6 +248,8 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 	command.Flags().BoolVar(&cancel, "cancel", false, "Return a removing Project to the archived status")
 	command.Flags().BoolVar(&allArchived, "all-archived", false, "Plan or apply removal of all archived Projects")
 	command.Flags().StringVar(&olderThan, "older-than", "", "With --all-archived, select only Projects archived at least this long ago (for example 14d, 36h, or 30m)")
+	setArguments(command, optionalArgument("project", "required when --all-archived is not set"))
+	command.ValidArgsFunction = projectNameCompletion(service)
 	return command
 }
 
@@ -435,25 +450,30 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 				return createFailureError(project, err)
 			}
 			_ = store.SaveLastTemplate(options.StateDir, selected)
-			if !noOpen && !WantsJSON(command) {
-				if err := openTmux(options, project.TmuxSession); err != nil {
+			if WantsJSON(command) {
+				if err := writeMutation(command, "projects.create", "applied", project.ID, project.Name); err != nil {
+					return err
+				}
+			} else {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Created Project %q (%s)\n", project.Name, project.ID); err != nil {
+					return err
+				}
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Root: %s\n", project.Root); err != nil {
 					return err
 				}
 			}
-			if WantsJSON(command) {
-				return writeMutation(command, "projects.create", "applied", project.ID, project.Name)
+			if !noOpen && terminalWriter(command.OutOrStdout()) {
+				return openTmux(options, project.TmuxSession)
 			}
-			if _, err := fmt.Fprintf(command.OutOrStdout(), "Created Project %q (%s)\n", project.Name, project.ID); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Root: %s\n", project.Root)
-			return err
+			return nil
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Project Template")
 	command.Flags().BoolVar(&noOpen, "no-open", false, "Do not open the tmux session")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
+	setArguments(command, requiredArgument("name"))
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(store.NewTemplateStore(options.ConfigDir)))
 	return command
 }
 
@@ -512,7 +532,7 @@ func inferTemplateName(command *cobra.Command, options Options, templateStore st
 }
 
 func newProjectsPathCommand(service *projectservice.Service) *cobra.Command {
-	return &cobra.Command{
+	command := &cobra.Command{
 		Use:   "path PROJECT [REPO]",
 		Short: "Print the Project root path or a repository checkout path",
 		Args: func(command *cobra.Command, args []string) error {
@@ -525,7 +545,7 @@ func newProjectsPathCommand(service *projectservice.Service) *cobra.Command {
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := service.Find(args[0])
+			project, err := resolveProject(service, args[0])
 			if err != nil {
 				return err
 			}
@@ -547,6 +567,9 @@ func newProjectsPathCommand(service *projectservice.Service) *cobra.Command {
 			return err
 		},
 	}
+	setArguments(command, requiredArgument("project"), optionalArgument("repo", "the Project root when absent"))
+	command.ValidArgsFunction = projectRepositoryCompletion(service)
+	return command
 }
 
 func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
@@ -568,7 +591,7 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				}
 				return projects[i].CreatedAt.After(projects[j].CreatedAt)
 			})
-			projects, err = applyLimit(projects, limit)
+			projects, total, truncated, err := applyLimit(projects, limit)
 			if err != nil {
 				return err
 			}
@@ -577,7 +600,11 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				for _, project := range projects {
 					values = append(values, toProjectOutput(project))
 				}
-				return writeJSONOutput(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: values})
+				return writeJSONOutput(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: values, TotalCount: total, Truncated: truncated})
+			}
+			if total == 0 {
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Projects exist. Run 'twt2 projects create NAME'.")
+				return err
 			}
 			now := time.Now().UTC()
 			for _, project := range projects {
@@ -603,18 +630,25 @@ func newProjectsShowCommand(service *projectservice.Service) *cobra.Command {
 		Short: "Show a Project",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := service.Find(args[0])
+			project, err := resolveProject(service, args[0])
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, toProjectOutput(project))
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\nRoot: %s\n", project.Name, project.ID, project.TemplateName, project.Status, project.Root)
-			return err
+			return writeProject(command, project)
 		},
 	}
+	setArguments(command, requiredArgument("project"))
+	command.ValidArgsFunction = projectNameCompletion(service)
 	return command
+}
+
+// writeProject writes one Project as the show envelope or as text.
+func writeProject(command *cobra.Command, project domain.Project) error {
+	if WantsJSON(command) {
+		return writeJSONOutput(command, projectShowOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project)})
+	}
+	_, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\nRoot: %s\n", project.Name, project.ID, project.TemplateName, project.Status, project.Root)
+	return err
 }
 
 func newProjectsOpenCommand(options Options, service *projectservice.Service) *cobra.Command {
@@ -624,27 +658,36 @@ func newProjectsOpenCommand(options Options, service *projectservice.Service) *c
 		Short: "Open or repair a Project tmux session",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if isDryRun(command) {
-				if err := service.ValidateOpen(args[0]); err != nil {
-					return err
-				}
-				return writeMutation(command, "projects.open", "valid", "", args[0])
-			}
-			project, err := service.Open(args[0])
+			reference, err := resolveProjectReference(service, args[0])
 			if err != nil {
 				return err
 			}
-			if !noAttach && !WantsJSON(command) {
-				return openTmux(options, project.TmuxSession)
+			if isDryRun(command) {
+				if err := service.ValidateOpen(reference); err != nil {
+					return err
+				}
+				return writeMutation(command, "projects.open", "valid", "", reference)
+			}
+			project, err := service.Open(reference)
+			if err != nil {
+				return err
 			}
 			if WantsJSON(command) {
-				return writeMutation(command, "projects.open", "applied", project.ID, project.Name)
+				if err := writeMutation(command, "projects.open", "applied", project.ID, project.Name); err != nil {
+					return err
+				}
+			} else if _, err := fmt.Fprintf(command.OutOrStdout(), "Opened Project %q\n", project.Name); err != nil {
+				return err
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Opened Project %q\n", project.Name)
-			return err
+			if !noAttach && terminalWriter(command.OutOrStdout()) {
+				return openTmux(options, project.TmuxSession)
+			}
+			return nil
 		},
 	}
 	command.Flags().BoolVar(&noAttach, "no-attach", false, "Repair the session without attaching")
+	setArguments(command, requiredArgument("project"))
+	command.ValidArgsFunction = projectNameCompletion(service)
 	return command
 }
 
@@ -663,7 +706,7 @@ func newProjectsCurrentCommand(service *projectservice.Service) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, toProjectOutput(project))
+				return writeJSONOutput(command, projectShowOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project)})
 			}
 			_, err = fmt.Fprintln(command.OutOrStdout(), project.Name)
 			return err
@@ -724,18 +767,22 @@ func repositoryForDirectory(project domain.Project, directory string) string {
 
 func newProjectsSetupCommand(service *projectservice.Service) *cobra.Command {
 	setup := groupCommand(&cobra.Command{Use: "setup", Short: "Manage Project setup"})
-	setup.AddCommand(&cobra.Command{
+	retry := &cobra.Command{
 		Use:   "retry PROJECT",
 		Short: "Retry incomplete Project setup steps",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
+			reference, err := resolveProjectReference(service, args[0])
+			if err != nil {
+				return err
+			}
 			if isDryRun(command) {
-				if err := service.ValidateRetry(args[0]); err != nil {
+				if err := service.ValidateRetry(reference); err != nil {
 					return err
 				}
-				return writeMutation(command, "projects.setup.retry", "valid", "", args[0])
+				return writeMutation(command, "projects.setup.retry", "valid", "", reference)
 			}
-			project, err := service.Retry(args[0])
+			project, err := service.Retry(reference)
 			if err != nil {
 				return err
 			}
@@ -745,7 +792,10 @@ func newProjectsSetupCommand(service *projectservice.Service) *cobra.Command {
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Project %q setup is complete\n", project.Name)
 			return err
 		},
-	})
+	}
+	setArguments(retry, requiredArgument("project"))
+	retry.ValidArgsFunction = projectNameCompletion(service)
+	setup.AddCommand(retry)
 	return setup
 }
 
@@ -755,15 +805,14 @@ func toProjectOutput(project domain.Project) projectOutput {
 		repositories = append(repositories, repositoryOutput{Name: repository.Name, WindowName: repository.WindowName})
 	}
 	result := projectOutput{
-		SchemaVersion: jsonSchemaVersion,
-		ID:            project.ID,
-		Name:          project.Name,
-		Template:      project.TemplateName,
-		Status:        project.Status,
-		CreatedAt:     project.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Root:          project.Root,
-		Bytes:         projectservice.DirectorySize(project.Root),
-		Repositories:  repositories,
+		ID:           project.ID,
+		Name:         project.Name,
+		Template:     project.TemplateName,
+		Status:       project.Status,
+		CreatedAt:    project.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Root:         project.Root,
+		Bytes:        projectservice.DirectorySize(project.Root),
+		Repositories: repositories,
 	}
 	if project.ArchivedAt != nil {
 		result.ArchivedAt = project.ArchivedAt.Format("2006-01-02T15:04:05Z07:00")

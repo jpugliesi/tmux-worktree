@@ -43,6 +43,7 @@ type environmentsListOutput struct {
 	SchemaVersion int                 `json:"schemaVersion"`
 	Environments  []environmentOutput `json:"environments"`
 	TotalCount    int                 `json:"totalCount"`
+	Truncated     bool                `json:"truncated,omitempty"`
 }
 
 type environmentShowOutput struct {
@@ -72,9 +73,8 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			total := len(report)
 			sortEnvironmentReport(report)
-			report, err = applyLimit(report, limit)
+			report, total, truncated, err := applyLimit(report, limit)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 				for _, info := range report {
 					values = append(values, toEnvironmentOutput(info, false))
 				}
-				return writeJSONOutput(command, environmentsListOutput{SchemaVersion: jsonSchemaVersion, Environments: values, TotalCount: total})
+				return writeJSONOutput(command, environmentsListOutput{SchemaVersion: jsonSchemaVersion, Environments: values, TotalCount: total, Truncated: truncated})
 			}
 			return writeEnvironmentTree(command.OutOrStdout(), time.Now(), report)
 		},
@@ -93,7 +93,7 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 }
 
 func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
-	return &cobra.Command{
+	command := &cobra.Command{
 		Use:   "show ENVIRONMENT_ID",
 		Short: "Show a Prepared Environment",
 		Args:  exactArgs("ENVIRONMENT_ID"),
@@ -112,6 +112,9 @@ func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
 			return writeEnvironmentDetail(command.OutOrStdout(), time.Now(), info)
 		},
 	}
+	setArguments(command, requiredArgument("environment_id"))
+	command.ValidArgsFunction = environmentIDCompletion(service)
+	return command
 }
 
 // findEnvironment accepts a complete Prepared Environment ID or a unique

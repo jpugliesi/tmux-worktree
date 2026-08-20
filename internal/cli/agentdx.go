@@ -86,14 +86,73 @@ func isDryRun(command *cobra.Command) bool {
 	return value
 }
 
-func applyLimit[T any](values []T, limit int) ([]T, error) {
+// applyLimit cuts a result list to the requested size. It returns the kept
+// values, the number of results before the cut, and whether the cut removed
+// results. Every list output reports totalCount and truncated.
+func applyLimit[T any](values []T, limit int) ([]T, int, bool, error) {
+	total := len(values)
 	if limit < 0 {
-		return nil, fmt.Errorf("--limit must be zero or greater")
+		return nil, total, false, clierr.New(clierr.InvalidUsage, "--limit must be zero or greater")
 	}
-	if limit > 0 && len(values) > limit {
-		return values[:limit], nil
+	if limit > 0 && total > limit {
+		return values[:limit], total, true, nil
 	}
-	return values, nil
+	return values, total, false, nil
+}
+
+// argumentsAnnotation holds the JSON positional argument schema of one
+// command. Each command declares its own arguments next to its Use value.
+const argumentsAnnotation = "twt2.arguments"
+
+// setArguments records the positional argument schema of a command. The
+// schema command reads this annotation instead of a central table.
+func setArguments(command *cobra.Command, args ...argumentSchema) {
+	data, err := json.Marshal(args)
+	if err != nil {
+		return
+	}
+	if command.Annotations == nil {
+		command.Annotations = map[string]string{}
+	}
+	command.Annotations[argumentsAnnotation] = string(data)
+}
+
+// argumentsForCommand reads the declared positional arguments of a command.
+func argumentsForCommand(command *cobra.Command) []argumentSchema {
+	value := command.Annotations[argumentsAnnotation]
+	if value == "" {
+		return []argumentSchema{}
+	}
+	var arguments []argumentSchema
+	if err := json.Unmarshal([]byte(value), &arguments); err != nil || arguments == nil {
+		return []argumentSchema{}
+	}
+	return arguments
+}
+
+// requiredArgument declares one required positional string argument.
+func requiredArgument(name string) argumentSchema {
+	return argumentSchema{Name: name, Type: "string", Required: true}
+}
+
+// optionalArgument declares one optional positional string argument.
+func optionalArgument(name string, condition string) argumentSchema {
+	return argumentSchema{Name: name, Type: "string", Required: false, Condition: condition}
+}
+
+// variadicArgument declares the trailing list of positional arguments.
+func variadicArgument(name string, required bool, condition string) argumentSchema {
+	return argumentSchema{Name: name, Type: "array[string]", Required: required, Variadic: true, Condition: condition}
+}
+
+// skipSchemaCommand reports whether a command is a generated help or
+// completion command. These commands are not part of the twt2 contract.
+func skipSchemaCommand(command *cobra.Command) bool {
+	switch command.Name() {
+	case "help", "completion", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+		return true
+	}
+	return false
 }
 
 func writeMutation(command *cobra.Command, operation, status, id, name string) error {
@@ -135,8 +194,11 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 			var schemas []commandSchema
 			var walk func(*cobra.Command)
 			walk = func(current *cobra.Command) {
+				if skipSchemaCommand(current) {
+					return
+				}
 				if current != root && current.Runnable() {
-					schema := commandSchema{Path: current.CommandPath(), Use: current.Use, Description: current.Short, Arguments: argumentsForCommand(current.CommandPath()), Flags: []flagSchema{}}
+					schema := commandSchema{Path: current.CommandPath(), Use: current.Use, Description: current.Short, Arguments: argumentsForCommand(current), Flags: []flagSchema{}}
 					current.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(current, flag)) })
 					current.InheritedFlags().VisitAll(func(flag *pflag.Flag) { schema.Flags = append(schema.Flags, schemaForFlag(current, flag)) })
 					sort.Slice(schema.Flags, func(i, j int) bool { return schema.Flags[i].Name < schema.Flags[j].Name })
@@ -148,29 +210,11 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 			}
 			walk(root)
 			sort.Slice(schemas, func(i, j int) bool { return schemas[i].Path < schemas[j].Path })
-			operations := []applyOperationSchema{
-				{Operation: "templates.create", Payload: "template", Fields: []requestFieldSchema{{Path: "template.name", Type: "string", Required: true}}},
-				{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
-					{Path: "project.name", Type: "string", Required: true},
-					{Path: "project.template", Type: "string", Required: true},
-				}},
-				{Operation: "projects.archive", Payload: "project", Fields: []requestFieldSchema{
-					{Path: "project.reference", Type: "string", Required: true},
-				}},
-				{Operation: "agents.register", Payload: "agent", Fields: []requestFieldSchema{
-					{Path: "agent.project", Type: "string", Required: true},
-					{Path: "agent.provider", Type: "string", Required: true, Enum: []string{"codex", "claude", "cursor", "command"}},
-					{Path: "agent.label", Type: "string", Required: false},
-					{Path: "agent.pane", Type: "string", Required: false, Condition: "required when agent.resumeCommand is empty"},
-					{Path: "agent.providerSessionId", Type: "string", Required: false},
-					{Path: "agent.resumeCommand", Type: "array[string]", Required: false, Condition: "required when agent.pane is empty"},
-				}},
-			}
 			return writeJSONOutput(command, schemaOutput{
 				SchemaVersion:   jsonSchemaVersion,
 				Version:         version.Version,
 				Commands:        schemas,
-				ApplyOperations: operations,
+				ApplyOperations: applyOperations(),
 				ErrorCodes:      clierr.Codes(),
 				ExitCodes:       map[string]string{"0": "success", "1": "internal", "2": "invalid_usage", "3": "precondition"},
 			})
@@ -184,44 +228,14 @@ func schemaForFlag(command *cobra.Command, flag *pflag.Flag) flagSchema {
 		required = true
 	}
 	enums := map[string][]string{
-		"output":   {"text", "json"},
-		"provider": {"codex", "claude", "cursor", "command"},
+		"output":   outputFormatNames,
+		"provider": agentProviderNames,
 	}
 	return flagSchema{Name: flag.Name, Type: flag.Value.Type(), Default: flag.DefValue, Description: flag.Usage, Required: required, Enum: enums[flag.Name]}
 }
 
-func argumentsForCommand(path string) []argumentSchema {
-	stringArgument := func(name string) argumentSchema {
-		return argumentSchema{Name: name, Type: "string", Required: true}
-	}
-	switch path {
-	case "twt2 templates create", "twt2 templates show", "twt2 templates validate", "twt2 templates prepare":
-		return []argumentSchema{stringArgument("name")}
-	case "twt2 templates repos add":
-		return []argumentSchema{stringArgument("template"), stringArgument("repository"), stringArgument("url")}
-	case "twt2 templates repos init set":
-		return []argumentSchema{stringArgument("template"), stringArgument("repository"), {Name: "command", Type: "array[string]", Required: true, Variadic: true}}
-	case "twt2 templates init set":
-		return []argumentSchema{stringArgument("template"), {Name: "command", Type: "array[string]", Required: true, Variadic: true}}
-	case "twt2 projects create":
-		return []argumentSchema{stringArgument("name")}
-	case "twt2 create":
-		return []argumentSchema{{Name: "name", Type: "string", Required: false}}
-	case "twt2 archive", "twt2 finish":
-		return []argumentSchema{{Name: "project", Type: "string", Required: false}}
-	case "twt2 projects remove":
-		return []argumentSchema{{Name: "project", Type: "string", Required: false, Condition: "required when --all-archived is not set"}}
-	case "twt2 projects show", "twt2 projects open", "twt2 projects archive", "twt2 projects setup retry":
-		return []argumentSchema{stringArgument("project")}
-	case "twt2 projects path":
-		return []argumentSchema{stringArgument("project"), {Name: "repository", Type: "string", Required: false}}
-	case "twt2 environments show":
-		return []argumentSchema{stringArgument("environment_id")}
-	case "twt2 agents register":
-		return []argumentSchema{{Name: "resume_command", Type: "array[string]", Variadic: true, Condition: "required when --pane is empty"}}
-	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send", "twt2 agents show", "twt2 agents rm", "twt2 agents transcript show", "twt2 agents transcript snapshot", "twt2 agents transcript link":
-		return []argumentSchema{stringArgument("agent_id")}
-	default:
-		return []argumentSchema{}
-	}
+// setAgentIDArgument declares the AGENT_ID argument of an Agent Session
+// command.
+func setAgentIDArgument(command *cobra.Command) {
+	setArguments(command, requiredArgument("agent_id"))
 }

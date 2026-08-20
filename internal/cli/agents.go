@@ -39,6 +39,8 @@ type agentsListOutput struct {
 	SchemaVersion int           `json:"schemaVersion"`
 	ProjectID     string        `json:"projectId"`
 	Agents        []agentOutput `json:"agents"`
+	TotalCount    int           `json:"totalCount"`
+	Truncated     bool          `json:"truncated,omitempty"`
 }
 
 type agentShowOutput struct {
@@ -114,7 +116,7 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsDiscoverCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsRemoveCommand(agents, projects))
 	command.AddCommand(newAgentsResumeCommand(agents, projects))
-	command.AddCommand(newAgentsFocusCommand(agents))
+	command.AddCommand(newAgentsFocusCommand(agents, projects))
 	command.AddCommand(newAgentsSendCommand(agents, projects))
 	command.AddCommand(newAgentTranscriptCommand(agents, projects, options.StateDir))
 	return command
@@ -174,18 +176,31 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	command.Flags().StringVar(&label, "label", "", "Set the display label. The default label is the provider name")
 	command.Flags().StringVar(&pane, "pane", "", "Set an owned tmux pane ID, or use current")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading. twt2 infers it from the resume command")
+	setArguments(command, variadicArgument("resume_command", false, "required when --pane is empty"))
+	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	_ = command.RegisterFlagCompletionFunc("provider", fixedCompletion(agentProviderNames...))
 	return command
+}
+
+// setAgentCommandCompletion declares the AGENT_ID argument of one Agent
+// Session command with its completion and the --project flag completion.
+func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service) {
+	setAgentIDArgument(command)
+	command.ValidArgsFunction = agentIDCompletion(agents, projects)
+	if command.Flags().Lookup("project") != nil {
+		_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	}
 }
 
 func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	command := groupCommand(&cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"})
 	command.AddCommand(newAgentTranscriptShowCommand(agents, projects, stateDir))
-	command.AddCommand(newAgentTranscriptSnapshotCommand(projects, stateDir))
+	command.AddCommand(newAgentTranscriptSnapshotCommand(agents, projects, stateDir))
 	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
 	return command
 }
 
-func newAgentTranscriptSnapshotCommand(projects *projectservice.Service, stateDir string) *cobra.Command {
+func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	var projectReference string
 	command := &cobra.Command{
 		Use:   "snapshot AGENT_ID",
@@ -227,6 +242,7 @@ func newAgentTranscriptSnapshotCommand(projects *projectservice.Service, stateDi
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
 
@@ -264,6 +280,7 @@ func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *proje
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Set the provider session ID")
 	_ = command.MarkFlagRequired("session")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
 
@@ -294,6 +311,7 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *proje
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
 
@@ -326,7 +344,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			values, err = applyLimit(values, limit)
+			values, total, truncated, err := applyLimit(values, limit)
 			if err != nil {
 				return err
 			}
@@ -335,7 +353,10 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 				outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive, live))
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, agentsListOutput{SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs})
+				return writeJSONOutput(command, agentsListOutput{
+					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs,
+					TotalCount: total, Truncated: truncated,
+				})
 			}
 			for _, output := range outputs {
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", output.ID, output.Provider, output.Status, output.Label); err != nil {
@@ -348,6 +369,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
 	command.Flags().BoolVar(&live, "live", true, "Probe tmux for live state. Use --live=false to not probe tmux for live state")
+	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
 }
 
@@ -415,6 +437,7 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
 
@@ -449,6 +472,7 @@ func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservi
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
 
@@ -477,8 +501,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			if err != nil {
 				return err
 			}
-			total := len(found)
-			found, err = applyLimit(found, limit)
+			found, total, truncated, err := applyLimit(found, limit)
 			if err != nil {
 				return err
 			}
@@ -491,7 +514,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			}
 			result := agentsDiscoverOutput{
 				SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Sessions: sessions,
-				TotalCount: total, Truncated: len(found) < total,
+				TotalCount: total, Truncated: truncated,
 			}
 			if adopt {
 				result.Status = "applied"
@@ -524,6 +547,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	command.Flags().BoolVar(&adopt, "adopt", false, "Register each discovered provider session as an Agent Session")
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
 }
 
@@ -574,7 +598,7 @@ func relativeAge(now, value time.Time) string {
 }
 
 func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
-	return &cobra.Command{
+	command := &cobra.Command{
 		Use:   "resume AGENT_ID",
 		Short: "Resume or focus an Agent Session",
 		Args:  exactArgs("AGENT_ID"),
@@ -604,10 +628,12 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 			return err
 		},
 	}
+	setAgentCommandCompletion(command, agents, projects)
+	return command
 }
 
-func newAgentsFocusCommand(agents *agentservice.Service) *cobra.Command {
-	return &cobra.Command{
+func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "focus AGENT_ID",
 		Short: "Focus a live Agent Session pane",
 		Args:  exactArgs("AGENT_ID"),
@@ -631,6 +657,8 @@ func newAgentsFocusCommand(agents *agentservice.Service) *cobra.Command {
 			return nil
 		},
 	}
+	setAgentCommandCompletion(command, agents, projects)
+	return command
 }
 
 func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
@@ -684,18 +712,8 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	_ = command.MarkFlagRequired("stdin")
+	setAgentCommandCompletion(command, agents, projects)
 	return command
-}
-
-func resolveProject(projects *projectservice.Service, reference string) (domain.Project, error) {
-	if reference != "current" {
-		return projects.Find(reference)
-	}
-	directory, err := os.Getwd()
-	if err != nil {
-		return domain.Project{}, err
-	}
-	return projects.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
 }
 
 // toAgentOutput describes one Agent Session. With probeLive false, twt2 does

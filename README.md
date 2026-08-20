@@ -23,7 +23,7 @@ repository, one API repository, and one tmux window for each repository:
 twt2 templates create product
 twt2 templates repos add product web git@github.com:acme/web.git
 twt2 templates repos add product api git@github.com:acme/api.git
-twt2 templates repos init set product web -- ./init.sh
+twt2 templates init set product --repo web -- ./init.sh
 twt2 templates prepare product
 ```
 
@@ -70,12 +70,21 @@ note batch with `<leader>arr`. One Neovim process can safely work across
 different Projects. Linked transcript loading supports Codex and Claude.
 Archive keeps the snapshot. Applied Project removal deletes it.
 
-Archive the current Project when you finish its work. This keeps its worktrees,
+Archive the current Project when you stop its work. This keeps its worktrees,
 branches, and Agent Session records:
 
 ```sh
 twt2 archive
 twt2 projects open fix-auth
+```
+
+When the work is complete and pushed, `twt2 finish` archives the Project and
+removes its data in one step. From inside the Project session, it moves your
+tmux client to another active Project first:
+
+```sh
+twt2 finish
+twt2 finish fix-auth --keep
 ```
 
 Inspect disk use and preview cleanup before you remove archived data:
@@ -117,6 +126,10 @@ go build -o ./bin/twt2 ./cmd/twt2
 exec zsh
 twt2 --help
 ```
+
+Install shell completion for command names, Project Template names, Project
+names, and Agent Session IDs with `twt2 completion zsh > "${fpath[1]}/_twt2"`.
+Use `bash`, `fish`, or `powershell` for the other shells.
 
 With lazy.nvim, load the included Neovim plug-in from the same checkout:
 

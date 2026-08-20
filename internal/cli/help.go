@@ -46,13 +46,22 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Create and initialize one Prepared Environment for the next Project. Repository initialization does not run again when a Project claims it.", example: "  twt2 templates prepare everysphere",
 		},
 		"twt2 templates repos": {
-			long: "Manage the repository specifications inside one Project Template.", example: "  twt2 templates repos add everysphere app https://example.com/app.git",
-		},
-		"twt2 templates repos init": {
-			long: "Manage the command that runs once when twt2 prepares a new repository worktree.", example: "  twt2 templates repos init set everysphere app -- ./init.sh",
+			long: "Manage the repository specifications inside one Project Template.", example: "  twt2 templates repos add everysphere app https://example.com/app.git\n  twt2 templates repos remove everysphere app",
 		},
 		"twt2 templates init": {
-			long: "Manage the Project-level initialization command for a Project Template.", example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh",
+			long: "Manage the initialization commands of a Project Template. One command runs for the Project, and one command runs for each repository.", example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh\n  twt2 templates init set product --repo web -- ./init.sh",
+		},
+		"twt2 templates path": {
+			long: "Print the YAML file path of one Project Template. The output is one bare path for command substitution.", example: "  twt2 templates path everysphere\n  $EDITOR $(twt2 templates path everysphere)",
+		},
+		"twt2 templates edit": {
+			long: "Open the Project Template YAML file in VISUAL or EDITOR, then validate the result. An invalid file stays on disk and twt2 reports the unsafe_state error.", example: "  twt2 templates edit everysphere",
+		},
+		"twt2 templates remove": {
+			long: "Delete the YAML file of a Project Template. twt2 refuses removal while a Project record still uses the Project Template.", example: "  twt2 templates remove everysphere\n  twt2 templates remove everysphere --dry-run --output json",
+		},
+		"twt2 templates repos remove": {
+			long: "Remove one repository specification from a Project Template. Existing Projects keep their saved Project Template snapshot.", example: "  twt2 templates repos remove everysphere app",
 		},
 		"twt2 projects setup": {
 			long: "Manage Project setup steps.", example: "  twt2 projects setup retry fix-auth",
@@ -64,13 +73,11 @@ func configureCommandHelp(root *cobra.Command) {
 			long:    "Add one repository specification to a Project Template. Flags define clone depth, remotes, default branch, and tmux window name.",
 			example: "  twt2 templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --depth 1 \\\n    --remote github=https://github.com/anysphere/everysphere.git",
 		},
-		"twt2 templates repos init set": {
-			long:    "Set the command that runs once when twt2 prepares a new repository worktree. Put the command and its arguments after --.",
-			example: "  twt2 templates repos init set everysphere everysphere -- ./init.sh",
-		},
 		"twt2 templates init set": {
-			long:    "Set a Project-level initialization command. The command runs after all repository worktrees exist.",
-			example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh",
+			long: "Set one initialization command. Put the command and its arguments after --.\n\n" +
+				"With --repo REPO, the command is repository initialization: twt2 runs it one time on each new physical worktree of that repository.\n\n" +
+				"Without --repo, the command is Project initialization: twt2 runs it after all repository worktrees exist, and --cwd PATH must give its working directory inside the Project root.",
+			example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh\n  twt2 templates init set product --repo web -- ./init.sh",
 		},
 		"twt2 projects create": {
 			long:    "Create a Project from a saved Project Template. twt2 claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session.",
