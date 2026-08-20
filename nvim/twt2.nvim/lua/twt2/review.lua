@@ -24,7 +24,7 @@ local function location(note)
     return nil, "a review-note file moved outside its repository"
   end
   local line = marks[1] + 1
-  local last = (marks[3] and marks[3].end_row or marks[1]) + 1
+  local last = marks[3] and marks[3].end_row or line
   local snippet = vim.api.nvim_buf_get_lines(note.buffer, line - 1, last, false)
   return {
     line = line,
@@ -110,6 +110,19 @@ function M.clear(project_id)
   end
 end
 
+function M.clear_current(done)
+  done = done or function() end
+  local directory = config.get().directory()
+  client.context(directory, function(err, context)
+    if err then
+      done(err)
+      return
+    end
+    M.clear(context.project.id)
+    done(nil, context.project.id)
+  end)
+end
+
 local function clear_ids(ids)
 	local remove = {}
 	for _, id in ipairs(ids) do remove[id] = true end
@@ -138,7 +151,7 @@ function M.send(done)
 		agents.send(prompt, function(send_err, result)
 			if not send_err and config.get().clear_after_send then clear_ids(included) end
 			done(send_err, result)
-		end, context.project.id, directory)
+		end, { project_id = context.project.id, directory = directory })
   end)
 end
 

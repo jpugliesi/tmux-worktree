@@ -77,7 +77,7 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state.", example: "  twt2 projects archive fix-auth\n  twt2 projects remove fix-auth --apply",
 		},
 		"twt2 agents register": {
-			long: "Register a resumable coding Agent Session with a Project. Put the resume command after --.", example: "  twt2 agents register --project fix-auth --provider codex --label review -- codex resume SESSION_ID",
+			long: "Register a resumable coding Agent Session with a Project. Use --session to link its provider transcript. Put the resume command after --.", example: "  twt2 agents register --project fix-auth --provider codex --label review --session SESSION_ID -- codex resume SESSION_ID",
 		},
 		"twt2 agents list": {
 			long: "List Agent Sessions for one Project, including status and capabilities.", example: "  twt2 agents list --project current --output json",
@@ -89,7 +89,13 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Focus the tmux pane for a live Agent Session.", example: "  twt2 agents focus AGENT_ID",
 		},
 		"twt2 agents send": {
-			long: "Send standard-input text to a live, owned Agent Session. twt2 never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt2 agents send AGENT_ID --stdin",
+			long: "Send standard-input text to a live, owned Agent Session in the selected Project. twt2 never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt2 agents send AGENT_ID --project current --stdin",
+		},
+		"twt2 agents transcript show": {
+			long: "Read the provider transcript linked to one Agent Session. twt2 checks that the transcript belongs to the selected Project and does not return its source path.", example: "  twt2 agents transcript show AGENT_ID --project current --output json",
+		},
+		"twt2 agents transcript link": {
+			long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt2 agents transcript link AGENT_ID --project current --session SESSION_ID",
 		},
 		"twt2 context": {
 			long: "Show the Project and repository context for a directory or the current tmux pane.", example: "  twt2 context --output json\n  twt2 context --directory /path/to/worktree --output json",

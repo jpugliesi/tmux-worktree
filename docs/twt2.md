@@ -191,6 +191,7 @@ twt2 agents register \
   --project current \
   --provider codex \
   --label auth-review \
+  --session SESSION_ID \
   -- codex resume SESSION_ID
 ```
 
@@ -207,7 +208,7 @@ twt2 agents list --project current
 twt2 agents focus AGENT_ID
 twt2 agents resume AGENT_ID
 printf '%s\n' 'Please fix the selected review note.' | \
-  twt2 agents send AGENT_ID --stdin
+  twt2 agents send AGENT_ID --project current --stdin
 ```
 
 `send` works only when the Agent Session has a live tmux pane that belongs to
@@ -227,7 +228,8 @@ twt2 context --directory /path/to/current/buffer --output json
 twt2 agents list --project current --format json
 twt2 agents resume AGENT_ID --format json
 printf '%s' "$REVIEW_TEXT" | \
-  twt2 agents send AGENT_ID --stdin --format json
+  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --format json
+twt2 agents transcript show AGENT_ID --project PROJECT_ID --output json
 ```
 
 An explicit context directory takes priority over tmux and environment
@@ -235,15 +237,25 @@ context. This lets one Neovim process edit buffers from different Projects.
 The JSON context also identifies the current repository in a multi-repository
 Project.
 
-The plug-in owns the picker, mappings, selected review text, and messages.
-`twt2` owns Project lookup, Agent Session records, resume behavior, and safe
-feedback transport. A first plug-in can call these commands with
-`vim.system()` when the picker opens. This design does not need a daemon or a
-local RPC service.
+The plug-in owns the picker, mappings, selected review text, Project-specific
+`latest.md` snapshots, and messages. `twt2` owns Project lookup, Agent Session
+records, provider transcript reading, resume behavior, and safe feedback
+transport. Provider transcript paths and tmux targets do not enter the JSON
+interface.
 
-This preview selects Agent Sessions and sends review-note batches. It does not
-read Agent transcript files. The earlier transcript plug-in can remain active
-until twt2 has a provider-neutral transcript command.
+Linked transcript reading supports Codex and Claude. twt2 does not read Cursor
+transcripts because the local Cursor records do not give an exact Project
+directory that twt2 can verify.
+
+`<leader>arp` selects a linked Agent Session and writes its transcript to
+`stdpath("state")/twt2/projects/PROJECT_ID/latest.md`. Different Projects use
+different private files. For an older Agent Session, add the provider link:
+
+```sh
+twt2 agents transcript link AGENT_ID \
+  --project current \
+  --session SESSION_ID
+```
 
 ## Archive and reopen a Project
 

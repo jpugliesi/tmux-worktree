@@ -39,6 +39,15 @@ A resumable coding-agent conversation associated with one Project and,
 optionally, one checkout lease.
 _Avoid_: Agent process, tmux pane
 
+**Agent Transcript**:
+The provider conversation history linked to one Agent Session. An Agent
+Transcript belongs to the same Project as its Agent Session.
+_Avoid_: Log file, latest.md
+
+**Transcript Snapshot**:
+A Project-scoped Markdown copy of an Agent Transcript for review and display.
+_Avoid_: Agent Transcript, global latest.md
+
 **Initialization**:
 A declared setup action that prepares a new physical Git worktree or Project
 for use. Repository initialization runs at most once on each physical worktree.

@@ -579,6 +579,31 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 		t.Fatalf("registration output = %q", registration)
 	}
 	agentID := fields[3]
+	projectStore := store.NewProjectStore(baseOptions.StateDir)
+	otherProject, err := projectStore.Find("agent-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProject.ID = "other-project"
+	otherProject.Name = "other-project"
+	otherProject.Root = filepath.Join(root, "data", "projects", "other-project")
+	otherProject.TmuxSession = "other-project"
+	for index := range otherProject.Repositories {
+		otherProject.Repositories[index].Path = filepath.Join(otherProject.Root, otherProject.Repositories[index].Name)
+	}
+	if err := projectStore.Save(otherProject); err != nil {
+		t.Fatal(err)
+	}
+	wrongProject := cli.New(baseOptions)
+	wrongProject.SetIn(strings.NewReader("must not reach the Agent Session\n"))
+	wrongProject.SetArgs([]string{"agents", "send", agentID, "--project", otherProject.ID, "--stdin"})
+	if err := wrongProject.Execute(); err == nil || !strings.Contains(err.Error(), "does not belong") {
+		t.Fatalf("cross-Project send error = %v", err)
+	}
+	wrongCapture := runCommand(t, "", "tmux", "-L", socket, "capture-pane", "-p", "-t", pane)
+	if strings.Contains(wrongCapture, "must not reach") {
+		t.Fatalf("cross-Project feedback reached the Agent Session: %s", wrongCapture)
+	}
 	var duplicateOut, duplicateErr bytes.Buffer
 	duplicateOptions := baseOptions
 	duplicateOptions.Stdout, duplicateOptions.Stderr = &duplicateOut, &duplicateErr

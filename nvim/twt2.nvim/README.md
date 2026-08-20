@@ -23,21 +23,25 @@ It uses core `vim.ui.select`, so a picker provider is optional.
 
 | Mapping | Action |
 | --- | --- |
-| `<leader>arp` | Select an Agent Session for the current Project |
+| `<leader>arp` | Select an Agent Session and open its transcript |
 | `<leader>an` | Add a multi-line review note |
 | `<leader>arr` | Send the current Project review batch |
 | `<leader>aru` | Resume the selected Agent Session |
 | `<leader>arf` | Focus the selected Agent Session |
 | `<leader>arx` | Clear review notes |
 
-Agent selection and review notes are scoped by immutable Project ID. Each note
+Agent selection, transcript snapshots, and review notes are scoped by immutable Project ID. Each note
 also contains the repository name. Extmarks keep note lines current after file
 edits. A successful send completes and clears the batch. A failed or uncertain
 send keeps the batch. The plug-in does not retry a send.
 
-This preview does not read coding-agent transcript files. Keep the old
-transcript picker if you need transcript viewing. A later version can add that
-feature after `twt2` has a provider-neutral transcript command.
+`twt2` reads the linked provider transcript and checks its Project. The plug-in
+writes only the returned Markdown to
+`stdpath("state")/twt2/projects/PROJECT_ID/latest.md`. It uses a different
+private file for each Project. Register a new Agent Session with `--session
+SESSION_ID`, or use `twt2 agents transcript link` for an existing record.
+Transcript loading supports Codex and Claude. Cursor transcript loading stays
+off because its local records do not contain a safe, exact Project directory.
 
 ## Lua interface
 
@@ -52,8 +56,8 @@ twt2.review.send()
 twt2.review.clear()
 ```
 
-Run the headless test:
+Run both headless tests. The second test uses the real `twt2` binary and two separate Projects:
 
 ```sh
-nvim --headless -u NONE -l nvim/twt2.nvim/tests/run.lua
+./nvim/twt2.nvim/tests/test.sh
 ```

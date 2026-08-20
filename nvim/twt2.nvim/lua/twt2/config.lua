@@ -5,11 +5,15 @@ local defaults = {
   default_keymaps = true,
   max_agents = 40,
   clear_after_send = true,
+  snapshot_root = nil,
+  snapshot_split = "tab drop",
   runner = nil,
   select = function(items, opts, done)
     vim.ui.select(items, opts, done)
   end,
   directory = function()
+		local fixed = vim.b.twt2_project_directory
+		if fixed and fixed ~= "" then return fixed end
     local name = vim.api.nvim_buf_get_name(0)
     return name ~= "" and vim.fs.dirname(name) or vim.fn.getcwd()
   end,

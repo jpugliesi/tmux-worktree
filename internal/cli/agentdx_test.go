@@ -95,7 +95,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	}
 	foundArchiveOperation := false
 	for _, operation := range schema.ApplyOperations {
-		if operation.Operation == "agents.register" && len(operation.Fields) != 5 {
+		if operation.Operation == "agents.register" && len(operation.Fields) != 6 {
 			t.Fatalf("agents.register fields = %+v", operation.Fields)
 		}
 		if operation.Operation == "projects.archive" {

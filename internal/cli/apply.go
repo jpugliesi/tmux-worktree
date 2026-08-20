@@ -31,11 +31,12 @@ type applyProjectRequest struct {
 }
 
 type applyAgentRequest struct {
-	Project       string   `json:"project"`
-	Provider      string   `json:"provider"`
-	Label         string   `json:"label,omitempty"`
-	Pane          string   `json:"pane,omitempty"`
-	ResumeCommand []string `json:"resumeCommand,omitempty"`
+	Project           string   `json:"project"`
+	Provider          string   `json:"provider"`
+	Label             string   `json:"label,omitempty"`
+	Pane              string   `json:"pane,omitempty"`
+	ProviderSessionID string   `json:"providerSessionId,omitempty"`
+	ResumeCommand     []string `json:"resumeCommand,omitempty"`
 }
 
 func newApplyCommand(options Options) *cobra.Command {
@@ -153,12 +154,12 @@ func applyJSONRequest(command *cobra.Command, options Options, request applyRequ
 		}
 		agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
 		if isDryRun(command) {
-			if err := agents.ValidateRegistration(project, request.Agent.Provider, pane, request.Agent.ResumeCommand); err != nil {
+			if err := agents.ValidateRegistration(project, request.Agent.Provider, pane, request.Agent.ProviderSessionID, request.Agent.ResumeCommand); err != nil {
 				return err
 			}
 			return writeMutation(command, request.Operation, "valid", "", request.Agent.Label)
 		}
-		agent, err := agents.Register(project, request.Agent.Provider, request.Agent.Label, pane, request.Agent.ResumeCommand)
+		agent, err := agents.Register(project, request.Agent.Provider, request.Agent.Label, pane, request.Agent.ProviderSessionID, request.Agent.ResumeCommand)
 		if err != nil {
 			return err
 		}

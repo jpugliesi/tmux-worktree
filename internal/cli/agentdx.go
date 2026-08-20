@@ -157,6 +157,7 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 					{Path: "agent.provider", Type: "string", Required: true, Enum: []string{"codex", "claude", "cursor", "command"}},
 					{Path: "agent.label", Type: "string", Required: false},
 					{Path: "agent.pane", Type: "string", Required: false, Condition: "required when agent.resumeCommand is empty"},
+					{Path: "agent.providerSessionId", Type: "string", Required: false},
 					{Path: "agent.resumeCommand", Type: "array[string]", Required: false, Condition: "required when agent.pane is empty"},
 				}},
 			}
@@ -201,7 +202,7 @@ func argumentsForCommand(path string) []argumentSchema {
 		return []argumentSchema{stringArgument("project")}
 	case "twt2 agents register":
 		return []argumentSchema{{Name: "resume_command", Type: "array[string]", Variadic: true, Condition: "required when --pane is empty"}}
-	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send":
+	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send", "twt2 agents transcript show", "twt2 agents transcript link":
 		return []argumentSchema{stringArgument("agent_id")}
 	default:
 		return []argumentSchema{}

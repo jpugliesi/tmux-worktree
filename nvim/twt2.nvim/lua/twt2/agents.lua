@@ -1,9 +1,11 @@
 local client = require("twt2.client")
 local config = require("twt2.config")
+local snapshot = require("twt2.snapshot")
 local M = {}
 
 local selected = {}
-local sending = false
+local selection_generation = {}
+local sending = {}
 
 local function current(done, fixed_directory)
 	local directory = fixed_directory or config.get().directory()
@@ -33,7 +35,7 @@ local function list_for(context, directory, done)
       done("twt2 returned Agent Sessions for a different Project")
       return
     end
-    done(nil, result.agents or {}, context)
+    done(nil, result.agents or {}, context, directory)
   end)
 end
 
@@ -48,7 +50,7 @@ function M.list(done)
 end
 
 function M.pick(done)
-  M.list(function(err, agents, context)
+  M.list(function(err, agents, context, directory)
     if err then
       vim.notify("twt2: " .. err, vim.log.levels.ERROR)
       if done then done(nil, err) end
@@ -65,21 +67,61 @@ function M.pick(done)
         return string.format("%s · %s · %s", agent.label, agent.provider, agent.status)
       end,
     }, function(agent)
-      if agent then
-        selected[context.project.id] = agent.id
+      if not agent then
+        if done then done(nil) end
+        return
       end
-      if done then done(agent) end
+      local project_id = context.project.id
+      local generation = (selection_generation[project_id] or 0) + 1
+      selection_generation[project_id] = generation
+      if not agent.capabilities or not agent.capabilities.canReadTranscript then
+        local message = "the selected Agent Session has no linked transcript"
+        vim.notify("twt2: " .. message, vim.log.levels.WARN)
+        if done then done(agent, message) end
+        return
+      end
+      client.request({ "agents", "transcript", "show", agent.id, "--project", context.project.id }, { cwd = directory }, function(transcript_err, transcript)
+        if selection_generation[project_id] ~= generation then
+          if done then done(agent, "a newer Agent Session selection replaced this request") end
+          return
+        end
+        if transcript_err then
+          vim.notify("twt2: " .. transcript_err, vim.log.levels.ERROR)
+          if done then done(agent, transcript_err) end
+          return
+        end
+        if transcript.projectId ~= context.project.id or transcript.agentId ~= agent.id then
+          local message = "twt2 returned a transcript for a different Project or Agent Session"
+          vim.notify("twt2: " .. message, vim.log.levels.ERROR)
+          if done then done(agent, message) end
+          return
+        end
+        local path, write_err = snapshot.write(context.project.id, transcript.markdown)
+        if not path then
+          vim.notify("twt2: " .. write_err, vim.log.levels.ERROR)
+          if done then done(agent, write_err) end
+          return
+        end
+		selected[project_id] = agent.id
+        local _, open_err = snapshot.open(context.project.id, directory)
+        if open_err then
+          vim.notify("twt2: " .. open_err, vim.log.levels.ERROR)
+          if done then done(agent, open_err) end
+          return
+        end
+        if done then done(agent, nil, path) end
+      end)
     end)
   end)
 end
 
-local function with_selected(done, expected_project_id, fixed_directory)
+local function with_selected(done, expected)
 	current(function(err, context, directory)
 		if err then
       done(err)
 			return
 		end
-		if expected_project_id and context.project.id ~= expected_project_id then
+		if expected and context.project.id ~= expected.project_id then
 			done("the current buffer changed to a different Project")
 			return
 		end
@@ -97,20 +139,16 @@ local function with_selected(done, expected_project_id, fixed_directory)
       end
       done("select an Agent Session for this Project first")
     end)
-	end, fixed_directory)
+	end, expected and expected.directory or nil)
 end
 
-function M.send(text, done, expected_project_id, fixed_directory)
+function M.send(text, done, expected)
   done = done or function() end
-  if sending then
-    done("a review send is already in progress")
-    return
-  end
   if not text or text == "" then
     done("review text is empty")
     return
   end
-	with_selected(function(err, agent, _, directory)
+	with_selected(function(err, agent, context, directory)
     if err then
       done(err)
       return
@@ -119,27 +157,37 @@ function M.send(text, done, expected_project_id, fixed_directory)
       done("the selected Agent Session cannot receive feedback")
       return
     end
-    sending = true
-    client.request({ "agents", "send", agent.id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
-      sending = false
-      done(send_err, result)
-	end, expected_project_id, fixed_directory)
-  end)
+		local project_id = context.project.id
+		if sending[project_id] then
+			done("a review send is already in progress for this Project")
+			return
+		end
+		sending[project_id] = true
+		client.request({ "agents", "send", agent.id, "--project", context.project.id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
+			sending[project_id] = nil
+			done(send_err, result)
+		end)
+	end, expected)
 end
 
 local function action(name, capability, done)
+  local function finish(err, result)
+    if done then
+      done(err, result)
+    elseif err then
+      vim.notify("twt2: " .. err, vim.log.levels.ERROR)
+    end
+  end
   with_selected(function(err, agent, _, directory)
     if err then
-      if done then done(err) end
+      finish(err)
       return
     end
     if capability and (not agent.capabilities or not agent.capabilities[capability]) then
-      if done then done("the selected Agent Session cannot " .. name) end
+      finish("the selected Agent Session cannot " .. name)
       return
     end
-    client.request({ "agents", name, agent.id }, { cwd = directory }, done or function(request_err)
-      if request_err then vim.notify("twt2: " .. request_err, vim.log.levels.ERROR) end
-    end)
+    client.request({ "agents", name, agent.id }, { cwd = directory }, finish)
   end)
 end
 

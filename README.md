@@ -57,15 +57,17 @@ twt2 agents register \
   --project fix-auth \
   --provider codex \
   --label auth-review \
+  --session CODEX_SESSION_ID \
   -- codex resume CODEX_SESSION_ID
 twt2 agents list --project fix-auth
 twt2 agents resume AGENT_ID
 ```
 
 Install [twt2.nvim](nvim/twt2.nvim/README.md) to select that Agent Session
-with `<leader>arp`, add review notes with `<leader>an`, and send the note batch
-with `<leader>arr`. The plug-in resolves the Project from the current buffer,
-so one Neovim process can safely work across different Projects.
+with `<leader>arp`. The plug-in opens that transcript in a private
+Project-specific `latest.md`. Add review notes with `<leader>an`, and send the
+note batch with `<leader>arr`. One Neovim process can safely work across
+different Projects.
 
 Archive the current Project when you finish its work. This keeps its worktrees,
 branches, and Agent Session records:

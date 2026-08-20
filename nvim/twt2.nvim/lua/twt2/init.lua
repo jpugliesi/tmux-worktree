@@ -1,6 +1,7 @@
 local M = {
   agents = require("twt2.agents"),
   review = require("twt2.review"),
+  snapshot = require("twt2.snapshot"),
 }
 
 function M.setup(options)
@@ -16,7 +17,11 @@ function M.setup(options)
   end, { desc = "Send twt2 review notes" })
   vim.keymap.set("n", "<leader>aru", M.agents.resume, { desc = "Resume selected twt2 Agent Session" })
   vim.keymap.set("n", "<leader>arf", M.agents.focus, { desc = "Focus selected twt2 Agent Session" })
-  vim.keymap.set("n", "<leader>arx", M.review.clear, { desc = "Clear twt2 review notes" })
+  vim.keymap.set("n", "<leader>arx", function()
+    M.review.clear_current(function(err)
+      vim.notify(err and ("twt2: " .. err) or "twt2: Project review notes cleared", err and vim.log.levels.ERROR or vim.log.levels.INFO)
+    end)
+  end, { desc = "Clear twt2 review notes" })
   vim.api.nvim_create_autocmd("User", { group = group, pattern = "Twt2Refresh", callback = function() end })
 end
 

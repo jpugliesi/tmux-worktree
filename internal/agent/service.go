@@ -11,6 +11,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
+	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
 type Service struct {
@@ -24,7 +25,7 @@ func NewService(stateDir, tmuxSocket string) *Service {
 	return &Service{stateDir: stateDir, store: store.NewAgentStore(stateDir), tmux: tmuxclient.Client{Socket: tmuxSocket}, now: func() time.Time { return time.Now().UTC() }}
 }
 
-func (s *Service) Register(project domain.Project, provider, label, pane string, resumeCommand []string) (domain.AgentSession, error) {
+func (s *Service) Register(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLock(s.stateDir)
 	if err != nil {
 		return domain.AgentSession{}, err
@@ -34,7 +35,7 @@ func (s *Service) Register(project domain.Project, provider, label, pane string,
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	if err := s.ValidateRegistration(project, provider, pane, resumeCommand); err != nil {
+	if err := s.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
 		return domain.AgentSession{}, err
 	}
 	if strings.TrimSpace(label) == "" {
@@ -56,19 +57,36 @@ func (s *Service) Register(project domain.Project, provider, label, pane string,
 			return domain.AgentSession{}, err
 		}
 	}
-	agent := domain.AgentSession{Version: domain.AgentVersion, ID: id, ProjectID: project.ID, Provider: provider, Label: label, TmuxPane: pane, PaneCommand: paneCommand, PaneStart: paneStart, ResumeCommand: append([]string(nil), resumeCommand...), CreatedAt: now, UpdatedAt: now}
+	agent := domain.AgentSession{Version: domain.AgentVersion, ID: id, ProjectID: project.ID, Provider: provider, Label: label, ProviderSessionID: providerSessionID, TmuxPane: pane, PaneCommand: paneCommand, PaneStart: paneStart, ResumeCommand: append([]string(nil), resumeCommand...), CreatedAt: now, UpdatedAt: now}
 	if err := s.store.Save(agent); err != nil {
 		return domain.AgentSession{}, err
 	}
 	return agent, nil
 }
 
-func (s *Service) ValidateRegistration(project domain.Project, provider, pane string, resumeCommand []string) error {
+func (s *Service) ValidateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) error {
 	if project.Status != domain.ProjectActive {
 		return fmt.Errorf("Project %q setup is not complete", project.Name)
 	}
 	if !validProvider(provider) {
 		return fmt.Errorf("unsupported agent provider %q", provider)
+	}
+	if providerSessionID != "" {
+		if !transcript.SupportsProvider(provider) {
+			return fmt.Errorf("provider %q does not support verifiable linked transcripts", provider)
+		}
+		if err := transcript.ValidateSessionID(providerSessionID); err != nil {
+			return err
+		}
+		existing, err := s.store.List(project.ID)
+		if err != nil {
+			return err
+		}
+		for _, agent := range existing {
+			if agent.Provider == provider && agent.ProviderSessionID == providerSessionID {
+				return fmt.Errorf("provider session %q is already linked to Agent Session %q", providerSessionID, agent.ID)
+			}
+		}
 	}
 	if pane != "" {
 		command, start, err := s.tmux.PaneProcess(pane, project.ID)
@@ -90,6 +108,58 @@ func (s *Service) List(projectID string) ([]domain.AgentSession, error) {
 }
 
 func (s *Service) Find(reference string) (domain.AgentSession, error) { return s.store.Find(reference) }
+
+func (s *Service) LinkTranscript(agentID, projectID, providerSessionID string) (domain.AgentSession, error) {
+	lock, err := store.AcquireMutationLock(s.stateDir)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	defer lock.Release()
+	agent, err := s.validateTranscriptLink(agentID, projectID, providerSessionID)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	agent.ProviderSessionID = providerSessionID
+	agent.UpdatedAt = s.now()
+	if err := s.store.Save(agent); err != nil {
+		return domain.AgentSession{}, err
+	}
+	return agent, nil
+}
+
+func (s *Service) ValidateTranscriptLink(agentID, projectID, providerSessionID string) error {
+	_, err := s.validateTranscriptLink(agentID, projectID, providerSessionID)
+	return err
+}
+
+func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID string) (domain.AgentSession, error) {
+	if _, err := store.NewProjectStore(s.stateDir).Find(projectID); err != nil {
+		return domain.AgentSession{}, err
+	}
+	agent, err := s.store.Find(agentID)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	if agent.ProjectID != projectID {
+		return domain.AgentSession{}, fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, projectID)
+	}
+	if !transcript.SupportsProvider(agent.Provider) {
+		return domain.AgentSession{}, fmt.Errorf("provider %q does not support verifiable linked transcripts", agent.Provider)
+	}
+	if err := transcript.ValidateSessionID(providerSessionID); err != nil {
+		return domain.AgentSession{}, err
+	}
+	agents, err := s.store.List(projectID)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	for _, existing := range agents {
+		if existing.ID != agent.ID && existing.Provider == agent.Provider && existing.ProviderSessionID == providerSessionID {
+			return domain.AgentSession{}, fmt.Errorf("provider session %q is already linked to Agent Session %q", providerSessionID, existing.ID)
+		}
+	}
+	return agent, nil
+}
 
 func (s *Service) IsLive(agent domain.AgentSession) bool {
 	return s.tmux.PaneBelongsToAgent(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
@@ -155,7 +225,10 @@ func (s *Service) Focus(agent domain.AgentSession) error {
 	return s.tmux.Focus(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
 }
 
-func (s *Service) Send(agent domain.AgentSession, text string) error {
+func (s *Service) Send(agent domain.AgentSession, projectID, text string) error {
+	if agent.ProjectID != projectID {
+		return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, projectID)
+	}
 	if text == "" {
 		return fmt.Errorf("feedback input is empty")
 	}

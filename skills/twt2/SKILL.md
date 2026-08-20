@@ -98,14 +98,29 @@ standard input so shell quoting does not change the text.
 
 ```sh
 printf '%s' "$REVIEW_TEXT" | \
-  twt2 agents send AGENT_ID --stdin --dry-run --output json
+  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --dry-run --output json
 
 printf '%s' "$REVIEW_TEXT" | \
-  twt2 agents send AGENT_ID --stdin --output json
+  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --output json
 ```
 
 Feedback is valid only for a live pane that has the matching immutable
 Project ID.
+
+Link a provider session ID when transcript review is required. Transcript
+JSON does not contain the provider file path.
+
+```sh
+twt2 agents transcript link AGENT_ID \
+  --project PROJECT_ID \
+  --session PROVIDER_SESSION_ID \
+  --dry-run \
+  --output json
+
+twt2 agents transcript show AGENT_ID \
+  --project PROJECT_ID \
+  --output json
+```
 
 ## Completion
 

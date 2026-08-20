@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	transcriptservice "github.com/jpugliesi/tmux-worktree/internal/transcript"
 	"github.com/spf13/cobra"
 )
 
@@ -22,9 +24,10 @@ type agentOutput struct {
 }
 
 type agentCapabilities struct {
-	CanResume bool `json:"canResume"`
-	CanSend   bool `json:"canSend"`
-	CanFocus  bool `json:"canFocus"`
+	CanResume         bool `json:"canResume"`
+	CanSend           bool `json:"canSend"`
+	CanFocus          bool `json:"canFocus"`
+	CanReadTranscript bool `json:"canReadTranscript"`
 }
 
 type agentsListOutput struct {
@@ -44,6 +47,16 @@ type agentSendOutput struct {
 	Status        string `json:"status"`
 }
 
+type agentTranscriptOutput struct {
+	SchemaVersion  int    `json:"schemaVersion"`
+	ProjectID      string `json:"projectId"`
+	AgentID        string `json:"agentId"`
+	Provider       string `json:"provider"`
+	RepositoryName string `json:"repositoryName"`
+	UpdatedAt      string `json:"updatedAt"`
+	Markdown       string `json:"markdown"`
+}
+
 func newAgentsCommand(options Options) *cobra.Command {
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
 	projects := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
@@ -52,7 +65,8 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsListCommand(agents, projects))
 	command.AddCommand(newAgentsResumeCommand(agents, projects))
 	command.AddCommand(newAgentsFocusCommand(agents))
-	command.AddCommand(newAgentsSendCommand(agents))
+	command.AddCommand(newAgentsSendCommand(agents, projects))
+	command.AddCommand(newAgentTranscriptCommand(agents, projects))
 	return command
 }
 
@@ -61,6 +75,7 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	var provider string
 	var label string
 	var pane string
+	var providerSessionID string
 	command := &cobra.Command{
 		Use:   "register [-- RESUME_COMMAND...]",
 		Short: "Register an Agent Session with a Project",
@@ -85,12 +100,12 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 				pane = os.Getenv("TMUX_PANE")
 			}
 			if isDryRun(command) {
-				if err := agents.ValidateRegistration(project, provider, pane, args); err != nil {
+				if err := agents.ValidateRegistration(project, provider, pane, providerSessionID, args); err != nil {
 					return err
 				}
 				return writeMutation(command, "agents.register", "valid", "", label)
 			}
-			agent, err := agents.Register(project, provider, label, pane, args)
+			agent, err := agents.Register(project, provider, label, pane, providerSessionID, args)
 			if err != nil {
 				return err
 			}
@@ -105,7 +120,90 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	command.Flags().StringVar(&provider, "provider", "", "Set the provider: codex, claude, cursor, or command")
 	command.Flags().StringVar(&label, "label", "", "Set the display label")
 	command.Flags().StringVar(&pane, "pane", "", "Set an owned tmux pane ID, or use current")
+	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading")
 	_ = command.MarkFlagRequired("provider")
+	return command
+}
+
+func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+	command := &cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"}
+	command.AddCommand(newAgentTranscriptShowCommand(agents, projects))
+	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
+	return command
+}
+
+func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+	var projectReference string
+	var providerSessionID string
+	command := &cobra.Command{
+		Use:   "link AGENT_ID",
+		Short: "Link an Agent Session to its provider transcript",
+		Args:  exactArgs("AGENT_ID"),
+		PreRunE: func(command *cobra.Command, _ []string) error {
+			if providerSessionID == "" {
+				return invalidUsage(command, "missing required flag --session SESSION_ID")
+			}
+			return nil
+		},
+		RunE: func(command *cobra.Command, args []string) error {
+			project, err := resolveProject(projects, projectReference)
+			if err != nil {
+				return err
+			}
+			if isDryRun(command) {
+				if err := agents.ValidateTranscriptLink(args[0], project.ID, providerSessionID); err != nil {
+					return err
+				}
+				return writeMutation(command, "agents.transcript.link", "valid", args[0], providerSessionID)
+			}
+			agent, err := agents.LinkTranscript(args[0], project.ID, providerSessionID)
+			if err != nil {
+				return err
+			}
+			return writeMutation(command, "agents.transcript.link", "applied", agent.ID, agent.Label)
+		},
+	}
+	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&providerSessionID, "session", "", "Set the provider session ID")
+	_ = command.MarkFlagRequired("session")
+	return command
+}
+
+func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+	var projectReference string
+	command := &cobra.Command{
+		Use:   "show AGENT_ID",
+		Short: "Read a linked Agent Session transcript",
+		Args:  exactArgs("AGENT_ID"),
+		RunE: func(command *cobra.Command, args []string) error {
+			project, err := resolveProject(projects, projectReference)
+			if err != nil {
+				return err
+			}
+			agent, err := agents.Find(args[0])
+			if err != nil {
+				return err
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("find home directory: %w", err)
+			}
+			value, err := transcriptservice.New(home).ReadLinked(agent, project)
+			if err != nil {
+				return err
+			}
+			if WantsJSON(command) {
+				return writeJSONOutput(command, agentTranscriptOutput{
+					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, AgentID: agent.ID,
+					Provider: value.Provider, RepositoryName: value.RepositoryName,
+					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Markdown: value.Markdown,
+				})
+			}
+			_, err = io.WriteString(command.OutOrStdout(), value.Markdown)
+			return err
+		},
+	}
+	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	return command
 }
 
@@ -220,9 +318,10 @@ func newAgentsFocusCommand(agents *agentservice.Service) *cobra.Command {
 	}
 }
 
-func newAgentsSendCommand(agents *agentservice.Service) *cobra.Command {
+func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
 	var useStdin bool
 	var format string
+	var projectReference string
 	command := &cobra.Command{
 		Use:   "send AGENT_ID",
 		Short: "Send feedback to a live Agent Session pane",
@@ -234,6 +333,10 @@ func newAgentsSendCommand(agents *agentservice.Service) *cobra.Command {
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
+			project, err := resolveProject(projects, projectReference)
+			if err != nil {
+				return err
+			}
 			data, err := io.ReadAll(command.InOrStdin())
 			if err != nil {
 				return fmt.Errorf("read feedback: %w", err)
@@ -242,13 +345,16 @@ func newAgentsSendCommand(agents *agentservice.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if agent.ProjectID != project.ID {
+				return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, project.Name)
+			}
 			if isDryRun(command) {
 				if len(data) == 0 || !agents.IsLive(agent) {
 					return fmt.Errorf("feedback requires text and a live owned Agent Session pane")
 				}
 				return writeMutation(command, "agents.send", "valid", agent.ID, agent.Label)
 			}
-			if err := agents.Send(agent, string(data)); err != nil {
+			if err := agents.Send(agent, project.ID, string(data)); err != nil {
 				return err
 			}
 			if wantsJSON(command, format) {
@@ -263,6 +369,7 @@ func newAgentsSendCommand(agents *agentservice.Service) *cobra.Command {
 	}
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
 	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
+	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	_ = command.MarkFlagRequired("stdin")
 	return command
 }
@@ -287,6 +394,9 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, pro
 	return agentOutput{
 		ID: agent.ID, ProjectID: agent.ProjectID, Provider: agent.Provider, Label: agent.Label,
 		Status: status, UpdatedAt: agent.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Capabilities: agentCapabilities{CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live},
+		Capabilities: agentCapabilities{
+			CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
+			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
+		},
 	}
 }
