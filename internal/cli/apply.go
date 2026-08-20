@@ -10,6 +10,7 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,8 @@ type applyRequest struct {
 	Template  json.RawMessage `json:"template,omitempty"`
 	Project   json.RawMessage `json:"project,omitempty"`
 	Agent     json.RawMessage `json:"agent,omitempty"`
+	Ticket    json.RawMessage `json:"ticket,omitempty"`
+	Board     json.RawMessage `json:"board,omitempty"`
 }
 
 type templateCreateRequest struct {
@@ -54,6 +57,38 @@ type projectRemoveRequest struct {
 	Reference        string `json:"reference"`
 	Apply            bool   `json:"apply,omitempty"`
 	AllowUnpublished bool   `json:"allowUnpublished,omitempty"`
+}
+
+type ticketCreateApplyRequest struct {
+	Title    string `json:"title"`
+	Body     string `json:"body,omitempty"`
+	Board    string `json:"board,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Priority *int   `json:"priority,omitempty"`
+}
+
+// ticketSetApplyRequest uses pointers so apply can tell an absent field from
+// an empty value, the same as a flag presence check.
+type ticketSetApplyRequest struct {
+	Reference string  `json:"reference"`
+	Status    *string `json:"status,omitempty"`
+	Priority  *int    `json:"priority,omitempty"`
+	Board     *string `json:"board,omitempty"`
+}
+
+type ticketClaimApplyRequest struct {
+	Reference string `json:"reference"`
+	As        string `json:"as"`
+}
+
+type ticketCommentApplyRequest struct {
+	Reference string `json:"reference"`
+	Text      string `json:"text"`
+}
+
+type boardCreateApplyRequest struct {
+	Name string `json:"name"`
 }
 
 type agentRegisterRequest struct {
@@ -109,6 +144,35 @@ func applyOperations() []applyOperation {
 			{Path: "agent.providerSessionId", Type: "string", Required: false},
 			{Path: "agent.resumeCommand", Type: "array[string]", Required: false, Condition: "required when agent.pane is empty"},
 		}}, applyAgentsRegister},
+		{applyOperationSchema{Operation: "tickets.create", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.title", Type: "string", Required: true},
+			{Path: "ticket.body", Type: "string", Required: false},
+			{Path: "ticket.board", Type: "string", Required: false, Condition: "the Board must exist"},
+			{Path: "ticket.slug", Type: "string", Required: false, Condition: "absent derives the slug from the title"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "absent selects needs-triage"},
+			{Path: "ticket.priority", Type: "integer", Required: false, Condition: "0 (highest) to 4 (lowest); absent selects 2"},
+		}}, applyTicketsCreate},
+		{applyOperationSchema{Operation: "tickets.set", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, or ticket.board"},
+			{Path: "ticket.priority", Type: "integer", Required: false},
+			{Path: "ticket.board", Type: "string", Required: false},
+		}}, applyTicketsSet},
+		{applyOperationSchema{Operation: "tickets.claim", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+		}}, applyTicketsClaim},
+		{applyOperationSchema{Operation: "tickets.unclaim", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+		}}, applyTicketsUnclaim},
+		{applyOperationSchema{Operation: "tickets.comment", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.text", Type: "string", Required: true},
+		}}, applyTicketsComment},
+		{applyOperationSchema{Operation: "tickets.boards.create", Payload: "board", Fields: []requestFieldSchema{
+			{Path: "board.name", Type: "string", Required: true},
+		}}, applyTicketsBoardsCreate},
 	}
 }
 
@@ -285,4 +349,125 @@ func applyAgentsRegister(command *cobra.Command, options Options, request applyR
 	}
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
 	return registerAgent(command, agents, project, payload.Provider, payload.Label, payload.Pane, payload.ProviderSessionID, payload.ResumeCommand)
+}
+
+func applyTicketsCreate(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCreateApplyRequest
+	if err := decodeApplyPayload("tickets.create", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Title == "" {
+		return fmt.Errorf("ticket.title is required for tickets.create")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	priority := -1
+	if payload.Priority != nil {
+		priority = *payload.Priority
+	}
+	return createTicket(command, service, ticketservice.CreateRequest{
+		Title:    payload.Title,
+		Slug:     payload.Slug,
+		Board:    payload.Board,
+		Body:     payload.Body,
+		Status:   domain.TicketStatus(payload.Status),
+		Priority: priority,
+	})
+}
+
+func applyTicketsSet(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketSetApplyRequest
+	if err := decodeApplyPayload("tickets.set", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" {
+		return fmt.Errorf("ticket.reference is required for tickets.set")
+	}
+	setRequest := ticketservice.SetRequest{}
+	if payload.Status != nil {
+		setRequest.Status, setRequest.StatusSet = *payload.Status, true
+	}
+	if payload.Priority != nil {
+		setRequest.Priority, setRequest.PrioritySet = *payload.Priority, true
+	}
+	if payload.Board != nil {
+		setRequest.Board, setRequest.BoardSet = *payload.Board, true
+	}
+	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.BoardSet {
+		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, or ticket.board")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return setTicket(command, service, payload.Reference, setRequest)
+}
+
+// decodeTicketClaimPayload decodes one claim or unclaim payload. Apply is
+// never a terminal, so ticket.as is required.
+func decodeTicketClaimPayload(operation string, raw json.RawMessage) (ticketClaimApplyRequest, error) {
+	var payload ticketClaimApplyRequest
+	if err := decodeApplyPayload(operation, "ticket", raw, &payload); err != nil {
+		return payload, err
+	}
+	if payload.Reference == "" || payload.As == "" {
+		return payload, fmt.Errorf("ticket.reference and ticket.as are required for %s", operation)
+	}
+	return payload, nil
+}
+
+func applyTicketsClaim(command *cobra.Command, options Options, request applyRequest) error {
+	payload, err := decodeTicketClaimPayload("tickets.claim", request.Ticket)
+	if err != nil {
+		return err
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return claimTicket(command, service, payload.Reference, payload.As)
+}
+
+func applyTicketsUnclaim(command *cobra.Command, options Options, request applyRequest) error {
+	payload, err := decodeTicketClaimPayload("tickets.unclaim", request.Ticket)
+	if err != nil {
+		return err
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return unclaimTicket(command, service, payload.Reference, payload.As)
+}
+
+func applyTicketsComment(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCommentApplyRequest
+	if err := decodeApplyPayload("tickets.comment", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Text == "" {
+		return fmt.Errorf("ticket.reference and ticket.text are required for tickets.comment")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return commentTicket(command, service, payload.Reference, payload.Text)
+}
+
+func applyTicketsBoardsCreate(command *cobra.Command, options Options, request applyRequest) error {
+	var payload boardCreateApplyRequest
+	if err := decodeApplyPayload("tickets.boards.create", "board", request.Board, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("board.name is required for tickets.boards.create")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return createBoard(command, service, payload.Name)
 }

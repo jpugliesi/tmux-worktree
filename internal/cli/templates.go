@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -49,7 +48,7 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	templates.AddCommand(newTemplatesShowCommand(templateStore))
 	templates.AddCommand(newTemplatesPathCommand(templateStore))
 	templates.AddCommand(newTemplatesValidateCommand(templateStore))
-	templates.AddCommand(newTemplatesEditCommand(templateStore, options.StateDir))
+	templates.AddCommand(newTemplatesEditCommand(templateStore, options))
 	templates.AddCommand(newTemplatesRemoveCommand(templateStore, options))
 	templates.AddCommand(newTemplatePrepareCommand(options, templateStore))
 	templates.AddCommand(newTemplateRepositoriesCommand(options, templateStore))
@@ -308,19 +307,12 @@ func newTemplatesValidateCommand(templateStore store.TemplateStore) *cobra.Comma
 	return command
 }
 
-func newTemplatesEditCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
+func newTemplatesEditCommand(templateStore store.TemplateStore, options Options) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "edit NAME",
 		Short: "Edit a Project Template YAML file in your editor",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
-			editor := os.Getenv("VISUAL")
-			if strings.TrimSpace(editor) == "" {
-				editor = os.Getenv("EDITOR")
-			}
-			if strings.TrimSpace(editor) == "" {
-				return invalidUsage(command, "set VISUAL or EDITOR to the editor command that twt2 must start")
-			}
 			path, err := templateStore.Path(args[0])
 			if err != nil {
 				return err
@@ -330,18 +322,13 @@ func newTemplatesEditCommand(templateStore store.TemplateStore, stateDir string)
 					return "", args[0], nil
 				},
 				func() (string, string, error) {
-					lock, err := store.AcquireMutationLock(stateDir)
+					lock, err := store.AcquireMutationLock(options.StateDir)
 					if err != nil {
 						return "", "", err
 					}
 					defer lock.Release()
-					parts := strings.Fields(editor)
-					process := exec.Command(parts[0], append(parts[1:], path)...)
-					process.Stdin = os.Stdin
-					process.Stdout = command.OutOrStdout()
-					process.Stderr = command.ErrOrStderr()
-					if err := process.Run(); err != nil {
-						return "", "", fmt.Errorf("run the editor %q: %w", editor, err)
+					if err := options.OpenEditor(path); err != nil {
+						return "", "", err
 					}
 					if _, err := templateStore.Load(args[0]); err != nil {
 						return "", "", clierr.WithHint(clierr.Wrap(clierr.UnsafeState, err),

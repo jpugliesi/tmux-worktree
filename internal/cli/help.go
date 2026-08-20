@@ -150,6 +150,48 @@ var commandHelp = map[string]helpContent{
 	"twt2 agents transcript link": {
 		long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt2 agents transcript link AGENT_ID --project current --session SESSION_ID",
 	},
+	"twt2 tickets": {
+		long: "Create and manage Markdown tickets in the configured Tickets home. Each Ticket is one Obsidian note with YAML frontmatter, and the CLI owns every mutation.", example: "  twt2 tickets create \"fix the vfs tools\" --board change-monitor\n  twt2 tickets list --ready --output json",
+	},
+	"twt2 tickets init": {
+		long: "Create the Tickets home directory with its hub index.md and its create template. twt2 writes each file only when that file is missing. It never overwrites notes.", example: "  twt2 tickets init\n  twt2 tickets init --dry-run --output json",
+	},
+	"twt2 tickets create": {
+		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt2 reads the body from standard input and --title is required. With no input in an interactive terminal, twt2 opens VISUAL or EDITOR on a copy of the create template.", example: "  twt2 tickets create \"fix the vfs tools\" --board change-monitor --output json\n  printf '%s\\n' 'Steps...' | twt2 tickets create --title \"Fix auth\" --stdin",
+	},
+	"twt2 tickets list": {
+		long: "List Tickets sorted by priority, then by slug. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --status is a raw filter; do not use it together with --ready.", example: "  twt2 tickets list --ready --output json\n  twt2 tickets list --board change-monitor --limit 10",
+	},
+	"twt2 tickets show": {
+		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt2 tickets show fix-the-vfs-tools\n  twt2 tickets show '[[fix-the-vfs-tools]]' --output json",
+	},
+	"twt2 tickets edit": {
+		long: "Replace the body of one Ticket. With --stdin, twt2 reads the new body from standard input. In an interactive terminal without --stdin, twt2 opens VISUAL or EDITOR on the Ticket file and then validates the result. An invalid file stays on disk and twt2 reports the unsafe_state error.", example: "  printf '%s\\n' '# Title' 'New body' | twt2 tickets edit fix-the-vfs-tools --stdin\n  twt2 tickets edit fix-the-vfs-tools",
+	},
+	"twt2 tickets set": {
+		long: "Change the status, the priority, or the Board of one Ticket. Pass at least one flag. A Board change moves the Ticket file into the Board directory.", example: "  twt2 tickets set fix-the-vfs-tools --status done\n  twt2 tickets set fix-the-vfs-tools --priority 1 --board change-monitor",
+	},
+	"twt2 tickets claim": {
+		long: "Claim one Ticket for a work session. The claimant comes from --as, then TWT2_CLAIMANT, then the OS username in an interactive terminal. A Ticket that a different claimant holds returns the locked error.", example: "  twt2 tickets claim fix-the-vfs-tools --as codex-fix-auth\n  twt2 tickets claim fix-the-vfs-tools --as codex-fix-auth --output json",
+	},
+	"twt2 tickets unclaim": {
+		long: "Remove the claim on one Ticket. The claimant resolution is the same as claim, and only the current claimant can remove its claim. An unclaimed Ticket succeeds without a change.", example: "  twt2 tickets unclaim fix-the-vfs-tools --as codex-fix-auth",
+	},
+	"twt2 tickets comment": {
+		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt2 creates that heading when it is missing.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt2 tickets comment fix-the-vfs-tools --stdin",
+	},
+	"twt2 tickets boards": {
+		long: "Manage Boards. A Board is one directory under the Tickets home that groups Tickets and outlives any checkout.", example: "  twt2 tickets boards create change-monitor\n  twt2 tickets boards list --output json",
+	},
+	"twt2 tickets boards create": {
+		long: "Create one Board directory and write its index.md only when that file is missing.", example: "  twt2 tickets boards create change-monitor",
+	},
+	"twt2 tickets boards list": {
+		long: "List every Board with its Ticket count.", example: "  twt2 tickets boards list\n  twt2 tickets boards list --output json",
+	},
+	"twt2 tickets boards show": {
+		long: "Show one Board: its path, its Ticket count, and whether it has an index.md.", example: "  twt2 tickets boards show change-monitor --output json",
+	},
 	"twt2 context": {
 		long: "Show the Project and repository context for a directory or the current tmux pane.", example: "  twt2 context --output json\n  twt2 context --directory /path/to/worktree --output json",
 	},

@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -77,10 +79,13 @@ type Service struct {
 	configDir string
 	stateDir  string
 	dataDir   string
+	// ticketsHome is the resolved Tickets home, or empty when no source sets
+	// one. Doctor reports its state.
+	ticketsHome string
 }
 
-func NewService(configDir, stateDir, dataDir string) *Service {
-	return &Service{configDir: configDir, stateDir: stateDir, dataDir: dataDir}
+func NewService(configDir, stateDir, dataDir, ticketsHome string) *Service {
+	return &Service{configDir: configDir, stateDir: stateDir, dataDir: dataDir, ticketsHome: ticketsHome}
 }
 
 func (s *Service) StorageStatus() (StorageStatus, error) {
@@ -294,7 +299,30 @@ func (s *Service) Doctor() DoctorReport {
 			report.addWarning("environment:"+environment.ID, s.failedEnvironmentMessage(environment))
 		}
 	}
+	s.checkTicketsHome(&report)
 	return report
+}
+
+// checkTicketsHome reports the state of the Tickets home. A missing or
+// unusable home is a warning, not a failure: tickets are optional and the
+// installation stays healthy.
+func (s *Service) checkTicketsHome(report *DoctorReport) {
+	if strings.TrimSpace(s.ticketsHome) == "" {
+		report.addWarning("tickets-home", "No Tickets home is set. Set ticketsHome in config.yaml or TWT2_TICKETS_HOME.")
+		return
+	}
+	info, err := os.Stat(s.ticketsHome)
+	if err != nil || !info.IsDir() {
+		report.addWarning("tickets-home", fmt.Sprintf("Tickets home %q does not exist. Run 'twt2 tickets init'.", s.ticketsHome))
+		return
+	}
+	// Check write access without a probe file, so doctor never writes into a
+	// vault.
+	if err := syscall.Access(s.ticketsHome, 0x2); err != nil {
+		report.addWarning("tickets-home", fmt.Sprintf("Tickets home %q is not writable: %v", s.ticketsHome, err))
+		return
+	}
+	report.addPass("tickets-home", s.ticketsHome)
 }
 
 // failedEnvironmentMessage tells a person why one Prepared Environment failed

@@ -128,6 +128,15 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt2 templates path":         {"name"},
 		"twt2 templates edit":         {"name"},
 		"twt2 templates repos remove": {"template", "repo"},
+		"twt2 tickets create":         {"description"},
+		"twt2 tickets show":           {"ticket"},
+		"twt2 tickets edit":           {"ticket"},
+		"twt2 tickets set":            {"ticket"},
+		"twt2 tickets claim":          {"ticket"},
+		"twt2 tickets unclaim":        {"ticket"},
+		"twt2 tickets comment":        {"ticket"},
+		"twt2 tickets boards create":  {"name"},
+		"twt2 tickets boards show":    {"name"},
 	}
 	for path, names := range want {
 		if strings.Join(arguments[path], ",") != strings.Join(names, ",") {

@@ -1,14 +1,19 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/jpugliesi/tmux-worktree/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -35,8 +40,16 @@ type Options struct {
 	StateDir   string
 	DataDir    string
 	TmuxSocket string
-	Stdout     io.Writer
-	Stderr     io.Writer
+	// TicketsHome is the root directory of the Markdown ticket files. When it
+	// is empty, twt2 resolves TWT2_TICKETS_HOME and then the ticketsHome value
+	// of config.yaml at command time.
+	TicketsHome string
+	Stdout      io.Writer
+	Stderr      io.Writer
+	// OpenEditor opens one file in the interactive editor and returns after
+	// the editor closes. New installs the real VISUAL/EDITOR implementation
+	// when it is nil; tests replace it with a fake.
+	OpenEditor func(path string) error
 	// QuickCreateSwitch moves the calling tmux client to a session. New
 	// installs the real tmux implementation when it is nil; tests replace it
 	// with a fake.
@@ -71,9 +84,48 @@ func (o Options) templateStore() store.TemplateStore {
 	return store.NewTemplateStore(o.ConfigDir)
 }
 
-// maintenanceService builds the maintenance service for these Options.
+// maintenanceService builds the maintenance service for these Options. A
+// config read failure leaves the Tickets home empty, and doctor then reports
+// the unset home.
 func (o Options) maintenanceService() *maintenance.Service {
-	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir)
+	home, err := o.resolveTicketsHome()
+	if err != nil {
+		home = ""
+	}
+	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir, home)
+}
+
+// resolveTicketsHome resolves the Tickets home: the injected Options value,
+// then TWT2_TICKETS_HOME, then the ticketsHome value of config.yaml. The
+// result is empty when no source sets a home.
+func (o Options) resolveTicketsHome() (string, error) {
+	if o.TicketsHome != "" {
+		return o.TicketsHome, nil
+	}
+	if value := os.Getenv("TWT2_TICKETS_HOME"); value != "" {
+		return value, nil
+	}
+	config, err := store.LoadConfig(o.ConfigDir)
+	if err != nil {
+		return "", err
+	}
+	return config.TicketsHome, nil
+}
+
+// ticketService builds the ticket service for these Options. It fails when no
+// Tickets home is set, so every tickets command reports the same
+// precondition error.
+func (o Options) ticketService() (*ticketservice.Service, error) {
+	home, err := o.resolveTicketsHome()
+	if err != nil {
+		return nil, err
+	}
+	if home == "" {
+		return nil, clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
+			"Set ticketsHome in ~/.config/twt2/config.yaml or TWT2_TICKETS_HOME.")
+	}
+	return ticketservice.NewService(ticketservice.Options{Home: home, StateDir: o.StateDir}), nil
 }
 
 func DefaultOptions() Options {
@@ -115,7 +167,39 @@ func withRealWorkflows(options Options) Options {
 	if options.SwitchPick == nil {
 		options.SwitchPick = realSwitchPick
 	}
+	if options.OpenEditor == nil {
+		options.OpenEditor = realOpenEditor(options)
+	}
 	return options
+}
+
+// realOpenEditor starts the VISUAL or EDITOR command on one file and waits
+// for it. The editor value splits on spaces; twt2 never starts a shell.
+func realOpenEditor(options Options) func(path string) error {
+	return func(path string) error {
+		editor := os.Getenv("VISUAL")
+		if strings.TrimSpace(editor) == "" {
+			editor = os.Getenv("EDITOR")
+		}
+		if strings.TrimSpace(editor) == "" {
+			return clierr.New(clierr.InvalidUsage, "set VISUAL or EDITOR to the editor command that twt2 must start")
+		}
+		parts := strings.Fields(editor)
+		process := exec.Command(parts[0], append(parts[1:], path)...)
+		process.Stdin = os.Stdin
+		process.Stdout = options.Stdout
+		process.Stderr = options.Stderr
+		if process.Stdout == nil {
+			process.Stdout = os.Stdout
+		}
+		if process.Stderr == nil {
+			process.Stderr = os.Stderr
+		}
+		if err := process.Run(); err != nil {
+			return fmt.Errorf("run the editor %q: %w", editor, err)
+		}
+		return nil
+	}
 }
 
 func New(options Options) *cobra.Command {
@@ -169,6 +253,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	done.GroupID = "workflows"
 	agents := newAgentsCommand(options)
 	agents.GroupID = "workflows"
+	tickets := newTicketsCommand(options)
+	tickets.GroupID = "workflows"
 	context := newContextCommand(options)
 	context.GroupID = "inspect"
 	environments := newEnvironmentsCommand(options)
@@ -181,7 +267,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	schema.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, context, environments, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, environments, storage, doctor, schema, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)
