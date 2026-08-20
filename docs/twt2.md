@@ -613,6 +613,163 @@ twt2 doctor
 twt2 doctor --output json
 ```
 
+## Track work with tickets
+
+`twt2 tickets` is a personal Markdown ticket tracker. Ticket files are the
+store, and the CLI owns every mutation; do not edit ticket files by hand.
+This tracker is not Linear, GitHub Issues, or Origin issues.
+
+### Configure Tickets home
+
+Set the root directory of ticket Markdown files in
+`$TWT2_CONFIG_DIR/config.yaml` (default `~/.config/twt2/config.yaml`):
+
+```yaml
+ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
+```
+
+`TWT2_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
+and more than one document, the same as Project Template loading.
+`twt2 doctor` reports whether Tickets home is set, exists, and is writable.
+
+### Commands
+
+```sh
+twt2 tickets init
+twt2 tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
+twt2 tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
+twt2 tickets show TICKET
+twt2 tickets edit TICKET [--stdin]
+twt2 tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
+twt2 tickets claim TICKET [--as NAME]
+twt2 tickets unclaim TICKET [--as NAME]
+twt2 tickets comment TICKET --stdin
+twt2 tickets boards create NAME
+twt2 tickets boards list [--limit N]
+twt2 tickets boards show NAME
+```
+
+`twt2 tickets init` creates Tickets home if it is missing, and writes
+`index.md` and `templates/ticket.md` only when those files are missing. It
+never overwrites an existing note. `twt2 tickets boards create NAME` creates
+the Board directory and writes `index.md` only when that file is missing.
+
+### Create a ticket
+
+| Input | Behavior |
+|---|---|
+| No args, stdout is a terminal, stdin is a terminal | Opens `$VISUAL` or `$EDITOR` on a temp copy of `templates/ticket.md`, then parses the saved file. An empty save is `invalid_usage`. |
+| No args, not a terminal | Exits 2, with a hint to pass DESCRIPTION, `--title`, or `--stdin`. |
+| DESCRIPTION args | Joins the args as the body. Derives `title` from the first line when `--title` is absent, and derives the slug from the title. |
+| `--stdin` | Reads the body from standard input. Requires `--title`. |
+
+The default status is `needs-triage`. `--dry-run` prints the file that would
+be written and writes nothing.
+
+```sh
+twt2 tickets create "fix the vfs tools" --board change-monitor --dry-run --output json
+twt2 tickets create "fix the vfs tools" --board change-monitor --output json
+printf '%s' "$BODY" | twt2 tickets create --stdin --title "Fix the vfs tools" --output json
+```
+
+### List and filter
+
+`--status` is a raw status filter on one of the six statuses:
+`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
+`wontfix`, `done`. It can still return a blocked or claimed ticket.
+
+`--ready` is the pickable work queue, not a synonym of
+`--status ready-for-agent`. A ticket matches `--ready` only when its status
+is `ready-for-agent`, `claimed_by` is empty, and every `blocked_by` target
+has status `done` or `wontfix`. Results sort by `priority` ascending, then
+slug. Passing both `--ready` and `--status` exits 2 with a hint to use only
+one.
+
+```sh
+twt2 tickets list --ready --output json --limit 20
+twt2 tickets list --board change-monitor --status needs-triage --output json
+```
+
+`list` results omit the body. `show` returns the metadata and the body.
+
+### Claim, unclaim, and comment
+
+`claim` is a compare-and-set write on the resolved claimant:
+
+- Empty `claimed_by` becomes the claimant, and `claimed_at` is set.
+- The same claimant succeeds again with no change.
+- A different claimant gets `locked`, with the current claimant in the hint.
+
+`claimed_by` resolves in this order: `--as NAME`, then `TWT2_CLAIMANT`, then
+the OS username. A terminal claim may fall back to the OS username. A
+non-terminal claim, and every `apply` claim or unclaim, must set `--as` or
+`TWT2_CLAIMANT`, or the command exits 2 with a hint to pass `--as NAME`. This
+stops two agents from both succeeding as the same OS user. Agents should
+pass a unique `--as` value per session, such as `codex-fix-auth` or the
+Agent Session ID.
+
+`unclaim` uses the same claimant resolution. It succeeds only when
+`claimed_by` is empty or equals the resolved claimant, and it then clears
+`claimed_by` and `claimed_at`. Resolve shipped work with
+`twt2 tickets set TICKET --status done`, then `unclaim`:
+
+```sh
+twt2 tickets claim TICKET --as codex-fix-auth --output json
+twt2 tickets set TICKET --status done --output json
+twt2 tickets unclaim TICKET --as codex-fix-auth --output json
+```
+
+`comment` requires `--stdin`. It appends the text under the `## Comments`
+heading, creating that heading if it is missing, and sets `updated`:
+
+```sh
+printf '%s' "$NOTE" | twt2 tickets comment TICKET --stdin --output json
+```
+
+### Boards
+
+A Board is one directory under Tickets home, with its own `index.md`. It
+groups tickets and outlives any single Project checkout. Use `board:` in
+ticket frontmatter, not `project:`.
+
+```sh
+twt2 tickets boards create change-monitor --output json
+twt2 tickets boards list --output json
+twt2 tickets boards show change-monitor --output json
+```
+
+### Resolve a TICKET argument
+
+A `TICKET` argument resolves in this order:
+
+1. Exact slug
+2. Unique prefix
+3. `title`
+4. `aliases`
+5. Wiki-link form `[[…]]`
+6. Path under Tickets home
+
+An ambiguous prefix returns `invalid_usage`, with the candidate slugs in
+`hint`.
+
+Existing legacy ticket files, such as `tkt-cm-001.md`, stay valid: the
+resolver accepts any Markdown stem, not only a kebab slug. When `twt2
+tickets` mutates a file, it keeps frontmatter fields it does not recognize,
+so hand edits to a ticket are not lost on the next CLI write.
+
+### Install the skill in three trees
+
+Keep one canonical skill file in this repository at
+[`skills/twt2/SKILL.md`](../skills/twt2/SKILL.md). Symlink it into each user
+skill tree so Cursor, Claude Code, and Codex all see the same rules:
+
+```sh
+mkdir -p ~/.cursor/skills/twt2 ~/.claude/skills/twt2 ~/.agents/skills/twt2
+ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.cursor/skills/twt2/SKILL.md
+ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.claude/skills/twt2/SKILL.md
+ln -sf "$(pwd)/skills/twt2/SKILL.md" ~/.agents/skills/twt2/SKILL.md
+```
+
 ## JSON contract
 
 The JSON output has `schemaVersion: 1`. It uses immutable IDs, RFC 3339 time

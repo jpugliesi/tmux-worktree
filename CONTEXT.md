@@ -68,3 +68,22 @@ One recorded reason that stops Project removal, with a stable code, a message,
 the related paths, and an optional hint. A removal plan holds all of its
 Removal Blockers, and removal applies no action while one stays.
 _Avoid_: Error, removal failure
+
+**Tickets home**:
+Configured root directory of ticket Markdown files. Default personal value:
+`~/Vaults/spacexai/tickets/`.
+_Avoid_: Vault, issues dir
+
+**Board**:
+One directory under Tickets home, with `index.md`. Groups tickets. Outlives
+any checkout.
+_Avoid_: Project, workspace, epic folder
+
+**Ticket**:
+One Markdown file with YAML frontmatter.
+_Avoid_: Issue, task file, combined tickets note
+
+**Topic note**:
+An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`.
+Not a Board.
+_Avoid_: Project

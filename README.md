@@ -6,7 +6,9 @@ The repository also contains `twt2`, a Go preview that uses Projects, YAML
 Project Templates, multiple repositories, and Project Agent Sessions. See the
 [twt2 preview guide](docs/twt2.md).
 The preview also includes a tested [Neovim plug-in](nvim/twt2.nvim/README.md)
-for Project-scoped Agent selection and review feedback.
+for Project-scoped Agent selection and review feedback, and a personal
+Markdown ticket tracker (`twt2 tickets`) for a coding-agent backlog. See the
+[twt2 preview guide](docs/twt2.md) for setup and commands.
 
 ## Try the change-focused twt2 workflow
 

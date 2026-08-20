@@ -1,6 +1,6 @@
 ---
 name: twt2
-description: Manage twt2 Project Templates, Project creation and archive, repository worktrees, tmux windows, and Project Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt2.
+description: Manage twt2 Project Templates, Project creation and archive, repository worktrees, tmux windows, and Project Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt2. Manage personal Markdown tickets through `twt2 tickets`. Use when creating, listing, claiming, or updating tickets, boards, or a tickets home in an Obsidian vault.
 ---
 
 # twt2
@@ -196,6 +196,58 @@ twt2 agents transcript snapshot AGENT_ID \
 Delete an Agent Session record with `twt2 agents rm AGENT_ID --project
 PROJECT_ID`. This keeps the provider transcript and does not stop a live
 process.
+
+## Track tickets
+
+`twt2 tickets` is a personal Markdown ticket tracker. The files are the store,
+and the CLI owns every mutation. This tracker is the backlog for this user.
+Do not create Linear, GitHub, or Origin issues for this user's tickets unless
+the user asks for one.
+
+Follow these rules for every ticket command:
+
+1. Run `twt2 schema` when the installed version is not known. The schema is
+   the source of truth for the ticket frontmatter fields and command flags;
+   this skill does not repeat them.
+2. Use `twt2 tickets` for every ticket read and write. Do not write ticket
+   Markdown files by hand.
+3. Pass `--output json` on every command.
+4. Pass `--dry-run` before every mutation.
+5. Pass `--limit` on list commands.
+6. Create a ticket with a DESCRIPTION argument or `--stdin`. Do not rely on
+   `$EDITOR`; that path only opens for a person at an interactive terminal.
+7. Claim a ticket before starting work, and resolve it when the work ships.
+8. Link related tickets and Topic notes with `[[slug]]`, the Obsidian
+   wiki-link form.
+9. List pickable work with `twt2 tickets list --ready --output json`.
+
+```sh
+twt2 tickets list --ready --output json --limit 20
+twt2 tickets show TICKET --output json
+twt2 tickets create "fix the vfs tools" --board change-monitor --dry-run --output json
+twt2 tickets create "fix the vfs tools" --board change-monitor --output json
+```
+
+### Claim and resolve
+
+`claimed_by` identifies who is doing the work. A person at an interactive
+terminal can claim with the OS user as the default claimant. An agent, and
+any non-interactive call, must pass `--as NAME` with a unique value for the
+session, such as `codex-fix-auth` or the Agent Session ID; `--as` is required
+whenever the call is not interactive, so two agents cannot both succeed as
+the same OS user.
+
+```sh
+twt2 tickets claim TICKET --as codex-fix-auth --dry-run --output json
+twt2 tickets claim TICKET --as codex-fix-auth --output json
+```
+
+Resolve finished work by setting the status, then releasing the claim:
+
+```sh
+twt2 tickets set TICKET --status done --output json
+twt2 tickets unclaim TICKET --as codex-fix-auth --output json
+```
 
 ## Completion
 

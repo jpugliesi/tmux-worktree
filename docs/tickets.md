@@ -173,8 +173,8 @@ twt2 tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
 twt2 tickets show TICKET
 twt2 tickets edit TICKET [--stdin]
 twt2 tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
-twt2 tickets claim TICKET
-twt2 tickets unclaim TICKET
+twt2 tickets claim TICKET [--as NAME]
+twt2 tickets unclaim TICKET [--as NAME]
 twt2 tickets comment TICKET --stdin
 twt2 tickets boards create NAME
 twt2 tickets boards list [--limit N]
@@ -235,11 +235,34 @@ only one.
 
 List results omit the body. `show` returns metadata plus body.
 
+### Claimant identity
+
+`claimed_by` is a short name string. Resolve it in this order:
+
+1. `--as NAME`
+2. `TWT2_CLAIMANT`
+3. The OS username (`user.Current().Username`, then `$USER`)
+
+A TTY claim may use the OS username. A non-TTY claim, and every `apply`
+claim or unclaim, must set `--as` or `TWT2_CLAIMANT`. If both are missing,
+exit 2. Hint: pass `--as NAME`. This stops two agents from both succeeding
+as the same OS user under the "same claimant" branch.
+
+`--as` and `TWT2_CLAIMANT` use the same resource-name rules as other twt2
+IDs: no path separators, no `..`, no percent signs, no query characters, no
+control characters.
+
+Agents pass a unique `--as` value per session, for example
+`codex-fix-auth` or the Agent Session ID. Do not add a `claimant:` config
+field in v1.
+
 ### `tickets claim`
 
-Claim is the first write of a work session. Compare-and-set:
+Claim is the first write of a work session. Compare-and-set on the resolved
+claimant:
 
-- Empty `claimed_by` → set `claimed_by` and `claimed_at` (`YYYY-MM-DD`)
+- Empty `claimed_by` → write the claimant into `claimed_by` and set
+  `claimed_at` (`YYYY-MM-DD`)
 - Same claimant → success, no change
 - Different claimant → `locked`. Hint names the current claimant.
 
@@ -247,7 +270,9 @@ Take the lock in `$TWT2_STATE_DIR`. Then write the Markdown file with
 `store.WriteFileAtomic`. Do not leave lock files in Tickets home. Temp write
 files live next to the destination and must not remain after success.
 
-`unclaim` clears `claimed_by` and `claimed_at`.
+`unclaim` uses the same claimant resolution. It succeeds only when
+`claimed_by` is empty or equals the resolved claimant. A different claimant
+gets `locked`. It then clears `claimed_by` and `claimed_at`.
 
 Resolve shipped work with `twt2 tickets set TICKET --status done` and
 `unclaim`.
@@ -271,6 +296,9 @@ Add:
 `twt2 schema` must list every new command and these operations. Update
 `TestSchemaDescribesCommandsFlagsAndRawApplyOperations`. That test currently
 asserts exactly six apply operations.
+
+`tickets.claim` and `tickets.unclaim` require `ticket.as`. Apply is never a
+TTY path, so it has no OS-username default.
 
 ### JSON envelopes
 
@@ -328,7 +356,8 @@ Skill rules:
 4. Pass `--dry-run` before every mutation.
 5. Pass `--limit` on list commands.
 6. Create with a DESCRIPTION or `--stdin`. Do not rely on `$EDITOR`.
-7. Claim before work. Resolve with `set --status done` and `unclaim`.
+7. Claim before work with `--as NAME`. Resolve with `set --status done`
+   and `unclaim --as NAME`.
 8. Link tickets with `[[slug]]`.
 9. List pickable work with `twt2 tickets list --ready --output json`.
 
@@ -382,6 +411,8 @@ Do not edit everysphere. Do not rename `projects` commands. Do not add MCP.
 - Missing Board returns `not_found`
 - Create with no args in a non-TTY returns `invalid_usage`
 - Claim by a second claimant returns `locked`
+- Non-TTY claim without `--as` or `TWT2_CLAIMANT` returns `invalid_usage`
+- TTY claim without `--as` writes the OS username into `claimed_by`
 - `--ready` omits blocked, claimed, and non-ready statuses
 - `--ready` with `--status` returns `invalid_usage`
 - Wiki-link, prefix, and title resolve
