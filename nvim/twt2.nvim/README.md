@@ -41,10 +41,17 @@ available:
 | Command | Action |
 | --- | --- |
 | `:Twt2Agents` | Select an Agent Session and open its transcript |
+| `:Twt2Note` | Add a multi-line review note |
+| `:Twt2Review` | Send the current Project review batch |
 | `:Twt2Send` | Write free text in a window and send it |
 | `:Twt2Notes` | List the review notes of this Project |
 | `:Twt2Resume` | Resume the selected Agent Session |
+| `:Twt2Focus` | Focus the selected Agent Session |
 | `:Twt2Refresh` | Write a new transcript snapshot for the selected Agent Session |
+| `:Twt2Clear` | Clear review notes |
+
+Each mapping has a command. The commands and the mappings do the same work and
+show the same messages.
 
 `:Twt2Notes` shows the notes of the current Project. Select a note, then
 select `Delete` or `Go to the line`.
@@ -106,20 +113,30 @@ files manually after you confirm that the new snapshot exists.
 ```lua
 local twt2 = require("twt2")
 
-twt2.agents.pick()
-twt2.agents.prompt_send()
-twt2.agents.refresh()
-twt2.agents.resume()
-twt2.agents.focus()
+twt2.agents.pick(done)
+twt2.agents.prompt_send(done)
+twt2.agents.refresh(done)
+twt2.agents.resume(done)
+twt2.agents.focus(done)
 twt2.agents.status()
-twt2.review.prompt_add()
-twt2.review.prompt_notes()
-twt2.review.send()
+twt2.review.prompt_add(done)
+twt2.review.prompt_notes(done)
+twt2.review.send(done)
 twt2.review.list()
 twt2.review.delete(note_id)
 twt2.review.jump(note_id)
 twt2.review.clear()
 ```
+
+Each `done` is error-first: `done(err)` for a failure, or `done(nil, result)`
+for a success. `done` is optional. These modules show no message, so the caller
+decides what the user sees.
+
+`pick` and `refresh` give
+`done(nil, { agent = agent, path = path })` with the Agent Session and the
+snapshot file that they opened. A canceled picker gives `done(nil)` with no
+result. A canceled text window gives no answer, so `prompt_add` and
+`prompt_send` show nothing after `q`.
 
 `setup` accepts a `confirm` function for the resume question:
 

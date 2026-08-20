@@ -1,3 +1,4 @@
+local buffers = require("twt2.buffers")
 local config = require("twt2.config")
 local M = {}
 
@@ -20,16 +21,23 @@ local function root()
   return state_dir() .. "/snapshots/projects"
 end
 
--- Fallback only: derives the shared per-Project latest.md path the same way
--- an older twt2 binary lays it out. A current twt2 returns the per-agent
--- snapshot path directly in the `agents transcript snapshot` JSON response,
--- so callers should prefer that path and reach for this only when the
--- response has no `path` field.
-function M.fallback_path(project_id)
+-- Derives the shared per-Project latest.md path the same way an older twt2
+-- binary lays it out.
+local function fallback_path(project_id)
   if not valid_project_id(project_id) then
     return nil, "twt2 returned an invalid Project ID"
   end
   return root() .. "/" .. project_id .. "/latest.md"
+end
+
+-- Resolves the file a snapshot response must open: the per-agent path that a
+-- current twt2 reports in the `agents transcript snapshot` JSON response, or
+-- (only when an older twt2 omits it) the shared latest.md fallback.
+function M.resolve(transcript, project_id)
+  if transcript.path and transcript.path ~= "" then
+    return transcript.path
+  end
+  return fallback_path(project_id)
 end
 
 -- Opens (or reloads) the snapshot at `path`. If that file is already visible
@@ -55,8 +63,8 @@ function M.open(path, project_id, project_directory)
   vim.bo.modifiable = false
   vim.bo.readonly = true
   vim.bo.autoread = true
-  vim.b.twt2_project_id = project_id
-  vim.b.twt2_project_directory = project_directory
+  vim.b[buffers.project_id] = project_id
+  vim.b[buffers.project_directory] = project_directory
   vim.cmd("normal! G")
   return path
 end

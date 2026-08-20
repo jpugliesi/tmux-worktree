@@ -1,14 +1,35 @@
+local buffers = require("twt2.buffers")
 local client = require("twt2.client")
 local config = require("twt2.config")
 local input = require("twt2.input")
 local snapshot = require("twt2.snapshot")
 local M = {}
 
-local selected = {}
-local snapshotting = {}
-local sending = {}
-local known = {}
+-- Every callback in this module is error-first: `done(err)` on a failure, or
+-- `done(nil, result)` on success. This module never notifies the user. The
+-- caller decides what to show.
+
+local cannot_send = "the selected Agent Session cannot receive feedback"
+
+-- One record for each Project: the selected Agent Session, the two
+-- one-at-a-time guards, and the labels of the last listing (for the
+-- statusline).
+local projects = {}
 local last_project_id
+
+local function project(project_id)
+  local record = projects[project_id]
+  if not record then
+    record = { agents = {} }
+    projects[project_id] = record
+  end
+  return record
+end
+
+local function can(agent, capability)
+  local capabilities = agent.capabilities
+  return capabilities ~= nil and capabilities[capability] == true
+end
 
 local function notify_refresh()
   vim.api.nvim_exec_autocmds("User", { pattern = "Twt2Refresh" })
@@ -16,33 +37,21 @@ end
 
 -- Keeps the label and the liveness of the last listing, for the statusline.
 local function remember(project_id, agents)
-  local project = {}
+  local known = {}
   for _, agent in ipairs(agents) do
-    project[agent.id] = { label = agent.label, live = agent.status == "live" }
+    known[agent.id] = { label = agent.label, live = agent.status == "live" }
   end
-  known[project_id] = project
+  project(project_id).agents = known
   last_project_id = project_id
 end
 
 function M.status()
-  local project_id = vim.b.twt2_project_id or last_project_id
-  if not project_id then return nil end
-  local project = known[project_id]
-  local id = selected[project_id]
-  local entry = project and id and project[id]
+  local project_id = vim.b[buffers.project_id] or last_project_id
+  local record = project_id and projects[project_id]
+  if not record then return nil end
+  local entry = record.selected_id and record.agents[record.selected_id]
   if not entry then return nil end
   return { label = entry.label, live = entry.live }
-end
-
-local function current(done, fixed_directory)
-  local directory = fixed_directory or config.get().directory()
-  client.context(directory, function(err, context)
-    if err then
-      done(err)
-      return
-    end
-    done(nil, context, directory)
-  end)
 end
 
 local function list_for(context, directory, done)
@@ -69,7 +78,7 @@ local function list_for(context, directory, done)
 end
 
 function M.list(done)
-  current(function(err, context, directory)
+  client.project_context(function(err, context, directory)
     if err then
       done(err)
       return
@@ -78,68 +87,57 @@ function M.list(done)
   end)
 end
 
--- Resolves the file a snapshot response should open: the per-agent path
--- twt2 reports directly, or (only when an older twt2 omits it) the shared
--- latest.md fallback derived the way twt2 used to lay it out.
-local function snapshot_path(transcript, project_id)
-  if transcript.path and transcript.path ~= "" then
-    return transcript.path
-  end
-  return snapshot.fallback_path(project_id)
-end
-
 -- Writes a new transcript snapshot for one Agent Session and opens the file.
+-- It answers `done(nil, { agent = agent, path = path })`.
 local function take_snapshot(agent, project_id, directory, done)
-  done = done or function() end
-  local function fail(message, level)
-    vim.notify("twt2: " .. message, level or vim.log.levels.ERROR)
-    done(agent, message)
-  end
-  if not agent.capabilities or not agent.capabilities.canReadTranscript then
-    fail("the selected Agent Session has no linked transcript", vim.log.levels.WARN)
+  if not can(agent, "canReadTranscript") then
+    done("the selected Agent Session has no linked transcript")
     return
   end
-  if snapshotting[project_id] then
-    fail("a transcript snapshot is already in progress for this Project", vim.log.levels.WARN)
+  local record = project(project_id)
+  if record.snapshotting then
+    done("a transcript snapshot is already in progress for this Project")
     return
   end
-  snapshotting[project_id] = true
+  record.snapshotting = true
   client.request({ "agents", "transcript", "snapshot", agent.id, "--project", project_id }, { cwd = directory }, function(transcript_err, transcript)
-    snapshotting[project_id] = nil
+    record.snapshotting = nil
     if transcript_err then
-      fail(transcript_err)
+      done(transcript_err)
       return
     end
     if transcript.projectId ~= project_id or transcript.agentId ~= agent.id then
-      fail("twt2 returned a transcript for a different Project or Agent Session")
+      done("twt2 returned a transcript for a different Project or Agent Session")
       return
     end
-    local path, path_err = snapshot_path(transcript, project_id)
+    local path, path_err = snapshot.resolve(transcript, project_id)
     if not path then
-      fail(path_err)
+      done(path_err)
       return
     end
     local _, open_err = snapshot.open(path, project_id, directory)
     if open_err then
-      fail(open_err)
+      done(open_err)
       return
     end
-    selected[project_id] = agent.id
+    record.selected_id = agent.id
     notify_refresh()
-    done(agent, nil, path)
+    done(nil, { agent = agent, path = path })
   end)
 end
 
+-- Lists the Agent Sessions of the current Project, then writes and opens the
+-- transcript snapshot of the selected one. A canceled selection answers
+-- `done(nil)` with no result.
 function M.pick(done)
+  done = done or function() end
   M.list(function(err, agents, context, directory)
     if err then
-      vim.notify("twt2: " .. err, vim.log.levels.ERROR)
-      if done then done(nil, err) end
+      done(err)
       return
     end
     if #agents == 0 then
-      vim.notify("twt2: this Project has no Agent Sessions", vim.log.levels.WARN)
-      if done then done(nil, "no Agent Sessions") end
+      done("this Project has no Agent Sessions")
       return
     end
     config.get().select(agents, {
@@ -149,7 +147,7 @@ function M.pick(done)
       end,
     }, function(agent)
       if not agent then
-        if done then done(nil) end
+        done(nil)
         return
       end
       take_snapshot(agent, context.project.id, directory, done)
@@ -158,7 +156,7 @@ function M.pick(done)
 end
 
 local function with_selected(done, expected)
-  current(function(err, context, directory)
+  client.project_context(function(err, context, directory)
     if err then
       done(err)
       return
@@ -172,7 +170,7 @@ local function with_selected(done, expected)
         done(list_err)
         return
       end
-      local id = selected[context.project.id]
+      local id = project(context.project.id).selected_id
       for _, agent in ipairs(agents) do
         if agent.id == id then
           done(nil, agent, context, directory)
@@ -184,43 +182,62 @@ local function with_selected(done, expected)
   end, expected and expected.directory or nil)
 end
 
-local function send_text(text, done, expected, resumed)
+-- Sends `text` to one live Agent Session. One send at a time for each Project.
+local function send_now(agent, project_id, directory, text, done)
+  if not can(agent, "canSend") then
+    done(cannot_send)
+    return
+  end
+  local record = project(project_id)
+  if record.sending then
+    done("a review send is already in progress for this Project")
+    return
+  end
+  record.sending = true
+  client.request({ "agents", "send", agent.id, "--project", project_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
+    record.sending = nil
+    if not send_err then notify_refresh() end
+    done(send_err, result)
+  end)
+end
+
+local function send_text(text, done, expected)
   with_selected(function(err, agent, context, directory)
     if err then
       done(err)
       return
     end
     local project_id = context.project.id
-    if not agent.capabilities or not agent.capabilities.canSend then
-      if resumed or not agent.capabilities or not agent.capabilities.canResume then
-        done("the selected Agent Session cannot receive feedback")
+    if can(agent, "canSend") then
+      send_now(agent, project_id, directory, text, done)
+      return
+    end
+    if not can(agent, "canResume") then
+      done(cannot_send)
+      return
+    end
+    config.get().confirm("The Agent Session is not live. Resume and send?", function(yes)
+      if not yes then
+        done(cannot_send)
         return
       end
-      config.get().confirm("The Agent Session is not live. Resume and send?", function(yes)
-        if not yes then
-          done("the selected Agent Session cannot receive feedback")
+      client.request({ "agents", "resume", agent.id }, { cwd = directory }, function(resume_err)
+        if resume_err then
+          done(resume_err)
           return
         end
-        client.request({ "agents", "resume", agent.id }, { cwd = directory }, function(resume_err)
-          if resume_err then
-            done(resume_err)
+        notify_refresh()
+        -- Reads the Agent Session one more time, so the send uses the
+        -- capabilities of the resumed Agent Session.
+        local from = { project_id = project_id, directory = directory }
+        with_selected(function(live_err, live_agent, live_context, live_directory)
+          if live_err then
+            done(live_err)
             return
           end
-          notify_refresh()
-          send_text(text, done, { project_id = project_id, directory = directory }, true)
-        end)
+          send_now(live_agent, live_context.project.id, live_directory, text, done)
+        end, from)
       end)
-      return
-    end
-    if sending[project_id] then
-      done("a review send is already in progress for this Project")
-      return
-    end
-    sending[project_id] = true
-    client.request({ "agents", "send", agent.id, "--project", project_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
-      sending[project_id] = nil
-      if not send_err then notify_refresh() end
-      done(send_err, result)
     end)
   end, expected)
 end
@@ -231,27 +248,29 @@ function M.send(text, done, expected)
     done("review text is empty")
     return
   end
-  send_text(text, done, expected, false)
+  send_text(text, done, expected)
 end
 
-function M.prompt_send()
+-- Asks for free text, then sends it. A canceled window sends nothing.
+function M.prompt_send(done)
+  done = done or function() end
   input.open({ title = "Agent message" }, function(text)
+    if not text then return end
     if text == "" then
-      vim.notify("twt2: enter a message first", vim.log.levels.WARN)
+      done("enter a message first")
       return
     end
-    M.send(text, function(err)
-      vim.notify(err and ("twt2: " .. err) or "twt2: message sent", err and vim.log.levels.ERROR or vim.log.levels.INFO)
-    end)
+    M.send(text, done)
   end)
 end
 
--- Writes a new snapshot for the Agent Session that the Project already selected.
+-- Writes a new snapshot for the Agent Session that the Project already
+-- selected. It answers `done(nil, { agent = agent, path = path })`.
 function M.refresh(done)
+  done = done or function() end
   with_selected(function(err, agent, context, directory)
     if err then
-      vim.notify("twt2: " .. err, vim.log.levels.ERROR)
-      if done then done(nil, err) end
+      done(err)
       return
     end
     take_snapshot(agent, context.project.id, directory, done)
@@ -259,20 +278,17 @@ function M.refresh(done)
 end
 
 local function action(name, capability, done)
+  done = done or function() end
   local function finish(err, result)
     if not err then notify_refresh() end
-    if done then
-      done(err, result)
-    elseif err then
-      vim.notify("twt2: " .. err, vim.log.levels.ERROR)
-    end
+    done(err, result)
   end
   with_selected(function(err, agent, _, directory)
     if err then
       finish(err)
       return
     end
-    if capability and (not agent.capabilities or not agent.capabilities[capability]) then
+    if capability and not can(agent, capability) then
       finish("the selected Agent Session cannot " .. name)
       return
     end

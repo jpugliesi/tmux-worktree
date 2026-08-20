@@ -5,7 +5,7 @@ local function message(result)
   for _, value in ipairs({ result.stderr, result.stdout }) do
     if value and value ~= "" then
       local ok, decoded = pcall(vim.json.decode, value)
-      if ok and decoded.error and decoded.error.message then
+      if ok and type(decoded) == "table" and type(decoded.error) == "table" and decoded.error.message then
         return decoded.error.message
       end
       return vim.trim(value)
@@ -53,6 +53,20 @@ end
 
 function M.context(directory, done)
   M.request({ "context", "--directory", directory }, { cwd = directory }, done)
+end
+
+-- Reads the Project context of `fixed_directory`, or of the directory that the
+-- current buffer selects. It answers `done(err)`, or
+-- `done(nil, context, directory)` with the directory that it used.
+function M.project_context(done, fixed_directory)
+  local directory = fixed_directory or config.get().directory()
+  M.context(directory, function(err, context)
+    if err then
+      done(err)
+      return
+    end
+    done(nil, context, directory)
+  end)
 end
 
 return M

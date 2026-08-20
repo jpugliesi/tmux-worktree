@@ -110,9 +110,9 @@ require("twt2").setup({
 local function pick(expected_agent)
   local finished = false
   local result_error
-  require("twt2").agents.pick(function(agent, err)
+  require("twt2").agents.pick(function(err, result)
     result_error = err
-    assert(agent and agent.id == expected_agent)
+    if not err then assert(result.agent.id == expected_agent) end
     finished = true
   end)
   assert(vim.wait(5000, function() return finished end), "Agent Session picker timed out")
