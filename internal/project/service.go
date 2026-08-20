@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,13 @@ type Options struct {
 	StateDir   string
 	DataDir    string
 	TmuxSocket string
+	// Progress receives one short user-facing message for each long step.
+	// A nil value turns progress reporting off.
+	Progress func(message string)
+	// AfterClaimReserved runs after a Prepared Environment claim reservation
+	// is saved and after the mutation lock is released. The CLI uses it to
+	// start the background pool refill.
+	AfterClaimReserved func()
 }
 
 type Service struct {
@@ -35,20 +43,16 @@ func NewService(options Options) *Service {
 	}
 }
 
+// report sends one progress message when the service has a Progress function.
+func (s *Service) report(format string, a ...any) {
+	if s.options.Progress == nil {
+		return
+	}
+	s.options.Progress(fmt.Sprintf(format, a...))
+}
+
 func (s *Service) Create(name, templateName string, template domain.Template) (domain.Project, error) {
-	if reserved, found, err := s.restoreReservedProject(name); err != nil {
-		return domain.Project{}, err
-	} else if found {
-		return s.completeEnvironmentClaim(reserved.EnvironmentID, reserved.ID)
-	}
-	if err := s.ValidateCreate(name, templateName, template); err != nil {
-		return domain.Project{}, err
-	}
-	environment, err := s.Prepare(templateName, template)
-	if err != nil {
-		return domain.Project{}, err
-	}
-	return s.claimPreparedEnvironment(name, templateName, template, environment.ID)
+	return s.CreateWithOptions(name, templateName, template, CreateOptions{})
 }
 
 func (s *Service) ValidateCreate(name, templateName string, template domain.Template) error {
@@ -77,17 +81,27 @@ func (s *Service) List() ([]domain.Project, error) { return s.store.List() }
 
 func (s *Service) Find(reference string) (domain.Project, error) { return s.store.Find(reference) }
 
+// ErrNotInProject marks a tmux context that is not inside a twt2 Project
+// session. Callers can branch on it with errors.Is.
+var ErrNotInProject = errors.New("the tmux pane is not in a twt2 Project session")
+
+type notInProjectError struct{ message string }
+
+func (e notInProjectError) Error() string { return e.message }
+
+func (e notInProjectError) Is(target error) bool { return target == ErrNotInProject }
+
 func (s *Service) CurrentFromPane(tmuxPane string) (domain.Project, error) {
 	if tmuxPane == "" {
-		return domain.Project{}, fmt.Errorf("run this command inside a twt2 Project tmux session")
+		return domain.Project{}, notInProjectError{message: "run this command inside a twt2 Project tmux session"}
 	}
 	sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
 	if err != nil || sessionID == "" {
-		return domain.Project{}, fmt.Errorf("find the Project tmux session for pane %q", tmuxPane)
+		return domain.Project{}, notInProjectError{message: fmt.Sprintf("find the Project tmux session for pane %q", tmuxPane)}
 	}
 	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
 	if err != nil || projectID == "" {
-		return domain.Project{}, fmt.Errorf("tmux pane %q is not in a twt2 Project", tmuxPane)
+		return domain.Project{}, notInProjectError{message: fmt.Sprintf("tmux pane %q is not in a twt2 Project", tmuxPane)}
 	}
 	p, err := s.store.Find(projectID)
 	if err != nil {
@@ -155,7 +169,7 @@ func (s *Service) Retry(reference string) (domain.Project, error) {
 	if findErr == nil && reserved.EnvironmentID != "" {
 		environment, environmentErr := s.environments.Find(reserved.EnvironmentID)
 		if environmentErr == nil && environment.Status == domain.EnvironmentClaiming {
-			return s.completeEnvironmentClaim(environment.ID, reserved.ID)
+			return s.completeEnvironmentClaim(environment.ID, reserved.ID, CreateOptions{})
 		}
 	}
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
@@ -302,6 +316,7 @@ func (s *Service) runPending(p *domain.Project) error {
 			continue
 		}
 		step := &p.Steps[index]
+		s.report("Step %d of %d: %s", index+1, len(p.Steps), step.ID)
 		now := s.now()
 		step.Status = domain.StepRunning
 		step.Attempts++

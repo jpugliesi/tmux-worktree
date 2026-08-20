@@ -122,8 +122,11 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err := promptCommand.Execute(); err != nil {
 		t.Fatalf("quick create with prompt: %v", err)
 	}
-	if promptError.String() != "Project name: " {
+	if !strings.HasPrefix(promptError.String(), "Project name: ") {
 		t.Fatalf("quick create prompt = %q", promptError.String())
+	}
+	if !strings.Contains(promptError.String(), "Step ") || !strings.Contains(promptError.String(), "Base: origin/main @ ") {
+		t.Fatalf("quick create progress = %q", promptError.String())
 	}
 	output := promptOutput.String()
 	if !strings.Contains(output, "Created Project \"new-project\"") {
@@ -158,14 +161,16 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	command := cli.New(options)
 	command.SetArgs([]string{"create", "failed-switch"})
 	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "test switch failure") || !strings.Contains(err.Error(), "was archived") {
+	if err == nil || !strings.Contains(err.Error(), "test switch failure") ||
+		!strings.Contains(err.Error(), "could not switch to the new Project") ||
+		!strings.Contains(err.Error(), "twt2 projects open failed-switch") {
 		t.Fatalf("quick create switch failure = %v", err)
 	}
 	if archiveCalled {
 		t.Fatal("quick create archived the current Project after a failed switch")
 	}
 	failedSwitch, findErr := store.NewProjectStore(options.StateDir).Find("failed-switch")
-	if findErr != nil || failedSwitch.Status != domain.ProjectArchived {
+	if findErr != nil || failedSwitch.Status != domain.ProjectActive {
 		t.Fatalf("new Project after switch failure: status=%q error=%v", failedSwitch.Status, findErr)
 	}
 	currentAfterFailure, findErr := store.NewProjectStore(options.StateDir).Find(newProject.ID)
@@ -207,7 +212,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	}
 }
 
-func TestQuickCreateRequiresAProjectTmuxSession(t *testing.T) {
+func TestQuickCreateOutsideASessionNeedsATemplate(t *testing.T) {
 	t.Setenv("TMUX_PANE", "")
 	root := t.TempDir()
 	var stdout, stderr bytes.Buffer
@@ -221,7 +226,7 @@ func TestQuickCreateRequiresAProjectTmuxSession(t *testing.T) {
 	command := cli.New(options)
 	command.SetArgs([]string{"create", "new-project"})
 	err := command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "run this command inside a twt2 Project tmux session") {
+	if err == nil || !strings.Contains(err.Error(), "no Project Templates exist") {
 		t.Fatalf("quick create outside tmux error = %v", err)
 	}
 	projects, listErr := store.NewProjectStore(options.StateDir).List()
@@ -230,6 +235,24 @@ func TestQuickCreateRequiresAProjectTmuxSession(t *testing.T) {
 	}
 	if len(projects) != 0 {
 		t.Fatalf("quick create outside tmux made Projects: %+v", projects)
+	}
+
+	// Two templates without a last-used record need an explicit selection.
+	if err := os.MkdirAll(filepath.Join(root, "config", "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		template := fmt.Sprintf("version: 1\nname: %s\nrepositories:\n  - name: app\n    clone:\n      url: https://example.com/app.git\n", name)
+		if err := os.WriteFile(filepath.Join(root, "config", "templates", name+".yaml"), []byte(template), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command = cli.New(options)
+	command.SetArgs([]string{"create", "new-project"})
+	err = command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--template TEMPLATE") ||
+		!strings.Contains(err.Error(), "alpha") || !strings.Contains(err.Error(), "beta") {
+		t.Fatalf("quick create outside tmux with two templates = %v", err)
 	}
 }
 
@@ -429,11 +452,13 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	failingOutputCommand := cli.New(failingOutputOptions)
 	failingOutputCommand.SetArgs([]string{"create", "output-fails"})
 	err = failingOutputCommand.Execute()
-	if err == nil || !strings.Contains(err.Error(), "test output failure") || !strings.Contains(err.Error(), "was archived") {
+	if err == nil || !strings.Contains(err.Error(), "test output failure") ||
+		!strings.Contains(err.Error(), "could not switch to the new Project") ||
+		!strings.Contains(err.Error(), "twt2 projects open output-fails") {
 		t.Fatalf("quick create output failure = %v", err)
 	}
 	failedOutputProject, findErr := store.NewProjectStore(options.StateDir).Find("output-fails")
-	if findErr != nil || failedOutputProject.Status != domain.ProjectArchived {
+	if findErr != nil || failedOutputProject.Status != domain.ProjectActive {
 		t.Fatalf("new Project after output failure: status=%q error=%v", failedOutputProject.Status, findErr)
 	}
 	currentProject, findErr := store.NewProjectStore(options.StateDir).Find(oldProject.ID)
@@ -464,6 +489,96 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 		windows, err := exec.Command("tmux", "-L", socket, "list-windows", "-t", newProject.TmuxSession, "-F", "#{window_name}").CombinedOutput()
 		return err == nil && strings.TrimSpace(string(windows)) == "app"
 	}, "successful archive helper window did not close")
+}
+
+func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
+	oldProject, err := store.NewProjectStore(options.StateDir).Find("old-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	t.Setenv("TMUX_PANE", oldPane)
+
+	var events []string
+	options.QuickCreateSwitch = func(session string) error {
+		events = append(events, "switch:"+session)
+		return nil
+	}
+	options.QuickCreateArchive = func(projectID string) error {
+		events = append(events, "archive:"+projectID)
+		return nil
+	}
+
+	// --keep-current switches without an archive.
+	keepOutput := executeWithOptions(t, options, nil, "create", "second", "--keep-current")
+	if !strings.Contains(keepOutput, "stays active") {
+		t.Fatalf("quick create --keep-current output = %q", keepOutput)
+	}
+	second, err := store.NewProjectStore(options.StateDir).Find("second")
+	if err != nil || second.Status != domain.ProjectActive {
+		t.Fatalf("new Project after --keep-current: status=%q error=%v", second.Status, err)
+	}
+	oldProject, err = store.NewProjectStore(options.StateDir).Find(oldProject.ID)
+	if err != nil || oldProject.Status != domain.ProjectActive {
+		t.Fatalf("old Project after --keep-current: status=%q error=%v", oldProject.Status, err)
+	}
+	if strings.Join(events, "\n") != "switch:"+second.TmuxSession {
+		t.Fatalf("quick create --keep-current events = %v", events)
+	}
+
+	// Outside a Project session quick create uses the last-used template.
+	otherTemplate := "version: 1\nname: zeta\nrepositories:\n  - name: app\n    clone:\n      url: " + source + "\n"
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "zeta.yaml"), []byte(otherTemplate), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMUX_PANE", "")
+	events = nil
+	var stdout, stderr bytes.Buffer
+	outsideOptions := options
+	outsideOptions.Stdout, outsideOptions.Stderr = &stdout, &stderr
+	outsideCommand := cli.New(outsideOptions)
+	outsideCommand.SetArgs([]string{"create", "outsider"})
+	if err := outsideCommand.Execute(); err != nil {
+		t.Fatalf("quick create outside a Project session: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Template: example (last used)") {
+		t.Fatalf("outside quick create inference = %q", stderr.String())
+	}
+	outsider, err := store.NewProjectStore(options.StateDir).Find("outsider")
+	if err != nil || outsider.Status != domain.ProjectActive || outsider.TemplateName != "example" {
+		t.Fatalf("outside quick create Project = %+v, error=%v", outsider, err)
+	}
+	if strings.Join(events, "\n") != "switch:"+outsider.TmuxSession {
+		t.Fatalf("outside quick create events = %v; the archive hook must not run", events)
+	}
+	for _, reference := range []string{oldProject.ID, second.ID} {
+		project, err := store.NewProjectStore(options.StateDir).Find(reference)
+		if err != nil || project.Status != domain.ProjectActive {
+			t.Fatalf("Project %s after outside quick create: status=%q error=%v", reference, project.Status, err)
+		}
+	}
 }
 
 type errorWriter struct{}

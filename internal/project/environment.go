@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -17,9 +19,126 @@ const environmentMarkerName = ".twt2-environment.json"
 
 const preparationLaunchLease = 10 * time.Second
 
+// claimFreshnessWindow is the age after which a claim refreshes the default
+// branch of each repository before it creates the Project branch.
+const claimFreshnessWindow = 15 * time.Minute
+
+// ErrEnvironmentFailed marks a Prepared Environment that has the failed
+// status. Callers can branch on it with errors.Is.
+var ErrEnvironmentFailed = errors.New("the Prepared Environment failed")
+
+// ErrClaimLostRace marks a claim attempt that found the selected Prepared
+// Environment already taken or changed. Create retries on this error.
+var ErrClaimLostRace = errors.New("the Prepared Environment claim lost a race")
+
+// EnvironmentFailedError describes one failed Prepared Environment.
+type EnvironmentFailedError struct {
+	EnvironmentID string
+	Failure       string
+	LogPath       string
+}
+
+func (e *EnvironmentFailedError) Error() string {
+	return fmt.Sprintf("Prepared Environment %q failed: %s. See the log: %s", e.EnvironmentID, e.Failure, e.LogPath)
+}
+
+func (e *EnvironmentFailedError) Is(target error) bool { return target == ErrEnvironmentFailed }
+
+// PrepareLogPath returns the log file of the background preparation worker
+// for one Prepared Environment.
+func PrepareLogPath(stateDir, environmentID string) string {
+	return filepath.Join(stateDir, "logs", "prepare-"+environmentID+".log")
+}
+
+func (s *Service) failedEnvironmentError(environment domain.PreparedEnvironment) error {
+	failure := environment.Failure
+	if failure == "" {
+		failure = "twt2 did not save a failure cause"
+	}
+	return clierr.Wrap(clierr.Internal, &EnvironmentFailedError{
+		EnvironmentID: environment.ID,
+		Failure:       failure,
+		LogPath:       PrepareLogPath(s.options.StateDir, environment.ID),
+	})
+}
+
+// CreateOptions changes how Create claims a Prepared Environment.
+type CreateOptions struct {
+	// Branch is an optional custom Project branch name. An empty value uses
+	// the default twt2/<name>-<id> branch name.
+	Branch string
+	// NoFetch turns the default-branch refresh before the claim off.
+	NoFetch bool
+}
+
 type PreparationQueue struct {
 	Environment domain.PreparedEnvironment
 	ShouldStart bool
+}
+
+func (s *Service) CreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) (domain.Project, error) {
+	if reserved, found, err := s.restoreReservedProject(name); err != nil {
+		return domain.Project{}, err
+	} else if found {
+		return s.completeEnvironmentClaim(reserved.EnvironmentID, reserved.ID, opts)
+	}
+	if err := s.ValidateCreate(name, templateName, template); err != nil {
+		return domain.Project{}, err
+	}
+	healed := false
+	for attempt := 1; ; attempt++ {
+		environment, err := s.Prepare(templateName, template)
+		if err != nil {
+			if s.replaceFailedEnvironment(templateName, template, err, &healed) {
+				continue
+			}
+			return domain.Project{}, err
+		}
+		project, err := s.claimPreparedEnvironment(name, templateName, template, environment.ID, opts)
+		if err == nil {
+			return project, nil
+		}
+		if errors.Is(err, ErrClaimLostRace) && attempt < 3 {
+			continue
+		}
+		if s.replaceFailedEnvironment(templateName, template, err, &healed) {
+			continue
+		}
+		return project, err
+	}
+}
+
+// replaceFailedEnvironment reports whether Create can retry after cause. It
+// removes failed Prepared Environments of this Project Template revision one
+// time, so the retry prepares a fresh replacement in the foreground.
+func (s *Service) replaceFailedEnvironment(templateName string, template domain.Template, cause error, healed *bool) bool {
+	var failed *EnvironmentFailedError
+	if *healed || !errors.As(cause, &failed) {
+		return false
+	}
+	*healed = true
+	s.report("Prepared Environment %s failed. twt2 prepares a replacement.", failed.EnvironmentID)
+	s.cleanFailedEnvironments(templateName, template)
+	return true
+}
+
+// cleanFailedEnvironments removes failed Prepared Environments that match
+// this Project Template revision. The cleanup is best-effort.
+func (s *Service) cleanFailedEnvironments(templateName string, template domain.Template) {
+	digests, err := store.Digests(template)
+	if err != nil {
+		return
+	}
+	environments, err := s.environments.List()
+	if err != nil {
+		return
+	}
+	current := map[string]store.DigestSet{templateName: digests}
+	for _, environment := range environments {
+		if environment.Status == domain.EnvironmentFailed && digests.Matches(environment.TemplateDigest) {
+			_ = s.cleanPreparedEnvironment(environment.ID, current)
+		}
+	}
 }
 
 func (s *Service) Prepare(templateName string, template domain.Template) (domain.PreparedEnvironment, error) {
@@ -30,7 +149,84 @@ func (s *Service) Prepare(templateName string, template domain.Template) (domain
 	if queued.Environment.Status == domain.EnvironmentReady {
 		return queued.Environment, nil
 	}
+	if !queued.ShouldStart {
+		s.report("Waiting for the background preparation of Prepared Environment %s. Log: %s.",
+			queued.Environment.ID, PrepareLogPath(s.options.StateDir, queued.Environment.ID))
+	}
 	return s.prepareEnvironment(queued.Environment.ID, queued.Environment.QueueToken)
+}
+
+// TopUpPool creates queued Prepared Environments until this Project Template
+// revision has depth environments that are queued, preparing, or ready. It
+// returns the queued environments that the caller must prepare or start.
+func (s *Service) TopUpPool(templateName string, template domain.Template, depth int) ([]domain.PreparedEnvironment, error) {
+	if err := template.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid Project Template %q: %w", templateName, err)
+	}
+	digests, err := store.Digests(template)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := store.AcquireMutationLock(s.options.StateDir)
+	if err != nil && clierr.CodeOf(err) == clierr.Locked {
+		lock, err = store.AcquireMutationLockBlocking(s.options.StateDir, 5*time.Second)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+	environments, err := s.environments.List()
+	if err != nil {
+		return nil, err
+	}
+	pooled := 0
+	start := []domain.PreparedEnvironment{}
+	for _, environment := range environments {
+		if environment.FormatVersion != domain.PreparationFormatVersion || !digests.Matches(environment.TemplateDigest) {
+			continue
+		}
+		switch environment.Status {
+		case domain.EnvironmentReady, domain.EnvironmentPreparing:
+			pooled++
+		case domain.EnvironmentQueued:
+			pooled++
+			if s.now().Sub(environment.QueuedAt) >= preparationLaunchLease {
+				token, tokenErr := newID()
+				if tokenErr != nil {
+					return nil, tokenErr
+				}
+				environment.QueueToken = token
+				environment.QueuedAt = s.now()
+				environment.UpdatedAt = environment.QueuedAt
+				if err := s.environments.Save(environment); err != nil {
+					return nil, err
+				}
+				start = append(start, environment)
+			}
+		}
+	}
+	for pooled < depth {
+		environment, err := s.saveNewQueuedEnvironment(templateName, digests, template)
+		if err != nil {
+			return start, err
+		}
+		start = append(start, environment)
+		pooled++
+	}
+	return start, nil
+}
+
+// saveNewQueuedEnvironment creates one queued Prepared Environment record.
+// The caller must hold the mutation lock.
+func (s *Service) saveNewQueuedEnvironment(templateName string, digests store.DigestSet, template domain.Template) (domain.PreparedEnvironment, error) {
+	environment, err := s.newPreparedEnvironment(templateName, digests.Environment, template)
+	if err != nil {
+		return domain.PreparedEnvironment{}, err
+	}
+	if err := s.environments.Save(environment); err != nil {
+		return domain.PreparedEnvironment{}, err
+	}
+	return environment, nil
 }
 
 func (s *Service) QueuePreparation(templateName string, template domain.Template) (PreparationQueue, error) {
@@ -94,10 +290,7 @@ func (s *Service) QueuePreparation(templateName string, template domain.Template
 			return PreparationQueue{}, lockErr
 		}
 	}
-	environment, err := s.newPreparedEnvironment(templateName, digests.Environment, template)
-	if err == nil {
-		err = s.environments.Save(environment)
-	}
+	environment, err := s.saveNewQueuedEnvironment(templateName, digests, template)
 	if releaseErr := lock.Release(); err == nil && releaseErr != nil {
 		err = releaseErr
 	}
@@ -128,8 +321,16 @@ func (s *Service) FailQueuedPreparation(environmentID, token string, cause error
 	return err
 }
 
-func (s *Service) claimPreparedEnvironment(name, templateName string, template domain.Template, environmentID string) (domain.Project, error) {
+func (s *Service) claimPreparedEnvironment(name, templateName string, template domain.Template, environmentID string, opts CreateOptions) (domain.Project, error) {
 	digests, err := store.Digests(template)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	projectID, err := newID()
+	if err != nil {
+		return domain.Project{}, err
+	}
+	branch, err := s.resolveProjectBranch(name, projectID, template, opts)
 	if err != nil {
 		return domain.Project{}, err
 	}
@@ -138,17 +339,19 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 		return domain.Project{}, err
 	}
 	environment, err := s.environments.Find(environmentID)
-	if err == nil && (environment.Status != domain.EnvironmentReady || !digests.Matches(environment.TemplateDigest) || environment.FormatVersion != domain.PreparationFormatVersion) {
-		err = fmt.Errorf("Prepared Environment %q is not ready for this Project Template revision", environment.ID)
+	if err == nil {
+		if environment.Status == domain.EnvironmentFailed {
+			err = s.failedEnvironmentError(environment)
+		} else if environment.Status != domain.EnvironmentReady || !digests.Matches(environment.TemplateDigest) || environment.FormatVersion != domain.PreparationFormatVersion {
+			err = fmt.Errorf("%w: Prepared Environment %q is not ready for this Project Template revision", ErrClaimLostRace, environment.ID)
+		}
 	}
 	if err == nil {
 		err = s.requireProjectNameAvailable(name)
 	}
 	var project domain.Project
 	if err == nil {
-		project, err = s.projectForEnvironment(name, templateName, template, environment)
-	}
-	if err == nil {
+		project = s.projectForEnvironment(name, templateName, template, environment, projectID, branch)
 		environment.Status = domain.EnvironmentClaiming
 		environment.ClaimReservation = &domain.EnvironmentClaim{Project: project, ReservedAt: s.now()}
 		environment.UpdatedAt = s.now()
@@ -163,7 +366,45 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 	if err != nil {
 		return project, err
 	}
-	return s.completeEnvironmentClaim(environment.ID, project.ID)
+	if s.options.AfterClaimReserved != nil {
+		s.options.AfterClaimReserved()
+	}
+	return s.completeEnvironmentClaim(environment.ID, project.ID, opts)
+}
+
+// resolveProjectBranch selects the Project branch name before the claim
+// reservation is saved. A custom branch must not be a repository default
+// branch. On a name collision twt2 falls back to the default branch name.
+func (s *Service) resolveProjectBranch(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
+	defaultName := "twt2/" + name + "-" + projectID[:8]
+	candidate := strings.TrimSpace(opts.Branch)
+	if candidate == "" {
+		return defaultName, nil
+	}
+	for _, spec := range template.Repositories {
+		repositoryDefault := spec.DefaultBranch
+		cachePath := s.cachePath(spec.Name, spec.Clone.URL)
+		cacheInfo, statErr := os.Stat(cachePath)
+		cacheExists := statErr == nil && cacheInfo.IsDir()
+		if repositoryDefault == "" && cacheExists {
+			repositoryDefault, _ = output(cachePath, "git", "symbolic-ref", "--short", "HEAD")
+		}
+		if repositoryDefault != "" && candidate == repositoryDefault {
+			return "", clierr.New(clierr.InvalidUsage, "branch %q is the default branch of repository %q; use a different branch name", candidate, spec.Name)
+		}
+		if !cacheExists {
+			continue
+		}
+		exists, err := refExists(cachePath, "refs/heads/"+candidate)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			s.report("Branch %q exists. twt2 uses %q.", candidate, defaultName)
+			return defaultName, nil
+		}
+	}
+	return candidate, nil
 }
 
 func (s *Service) requireProjectNameAvailable(name string) error {
@@ -188,11 +429,7 @@ func (s *Service) requireProjectNameAvailable(name string) error {
 	return nil
 }
 
-func (s *Service) projectForEnvironment(name, templateName string, template domain.Template, environment domain.PreparedEnvironment) (domain.Project, error) {
-	id, err := newID()
-	if err != nil {
-		return domain.Project{}, err
-	}
+func (s *Service) projectForEnvironment(name, templateName string, template domain.Template, environment domain.PreparedEnvironment, id, branch string) domain.Project {
 	now := s.now()
 	project := domain.Project{
 		Version: domain.ProjectVersion, ID: id, Name: name, TemplateName: templateName,
@@ -203,7 +440,7 @@ func (s *Service) projectForEnvironment(name, templateName string, template doma
 	for _, repository := range environment.Repositories {
 		project.Repositories = append(project.Repositories, domain.ProjectRepository{
 			Name: repository.Name, CachePath: repository.CachePath, Path: repository.Path,
-			Branch: "twt2/" + name + "-" + id[:8], WindowName: repository.WindowName,
+			Branch: branch, WindowName: repository.WindowName,
 		})
 		project.Steps = append(project.Steps,
 			successfulStep("cache:"+repository.Name, domain.StepCache, repository.Name, now),
@@ -217,10 +454,10 @@ func (s *Service) projectForEnvironment(name, templateName string, template doma
 	if template.Initialize != nil {
 		project.Steps = append(project.Steps, newStep("project_init", domain.StepProjectInit, ""))
 	}
-	return project, nil
+	return project
 }
 
-func (s *Service) completeEnvironmentClaim(environmentID, projectID string) (domain.Project, error) {
+func (s *Service) completeEnvironmentClaim(environmentID, projectID string, opts CreateOptions) (domain.Project, error) {
 	lock, err := store.AcquireNamedLockBlocking(s.options.StateDir, "environment", environmentID)
 	if err != nil {
 		return domain.Project{}, err
@@ -242,20 +479,21 @@ func (s *Service) completeEnvironmentClaim(environmentID, projectID string) (dom
 	}
 	for index := range project.Repositories {
 		repository := &project.Repositories[index]
-		prepared, err := preparedRepositoryByName(environment, repository.Name)
+		spec, prepared, preparedIndex, err := preparedRepositoryFor(environment, repository.Name)
 		if err != nil {
 			return project, err
 		}
 		err = s.withCacheLock(repository.CachePath, func() error {
-			if err := validatePreparedRepositoryForClaim(prepared, *repository); err != nil {
-				return err
-			}
-			branch, err := output(repository.Path, "git", "branch", "--show-current")
+			branch, err := validatePreparedRepositoryForClaim(prepared, *repository)
 			if err != nil {
 				return err
 			}
 			if branch == "" {
-				if err := run(repository.Path, "git", "switch", "-c", repository.Branch, prepared.BaseCommit); err != nil {
+				base, err := s.claimBaseCommit(&environment, preparedIndex, spec, opts)
+				if err != nil {
+					return err
+				}
+				if err := run(repository.Path, "git", "switch", "-c", repository.Branch, base); err != nil {
 					return fmt.Errorf("create Project branch for repository %q: %w", repository.Name, err)
 				}
 			} else if branch != repository.Branch {
@@ -303,23 +541,100 @@ func (s *Service) validateEnvironmentForClaim(environment domain.PreparedEnviron
 	return nil
 }
 
-func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, projectRepository domain.ProjectRepository) error {
+// validatePreparedRepositoryForClaim checks one prepared checkout and returns
+// the branch that the checkout already uses. An empty branch means that the
+// checkout is still detached at the saved base commit.
+func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, projectRepository domain.ProjectRepository) (string, error) {
 	if repository.BaseCommit == "" {
-		return fmt.Errorf("Prepared Environment repository %q has no base commit", repository.Name)
+		return "", fmt.Errorf("Prepared Environment repository %q has no base commit", repository.Name)
 	}
 	commonDir, err := output(repository.Path, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil || !sameDirectory(commonDir, repository.CachePath) {
-		return fmt.Errorf("Prepared Environment repository %q does not use its Repository Cache", repository.Name)
+		return "", fmt.Errorf("Prepared Environment repository %q does not use its Repository Cache", repository.Name)
 	}
 	branch, err := output(repository.Path, "git", "branch", "--show-current")
 	if err != nil || (branch != "" && branch != projectRepository.Branch) {
-		return fmt.Errorf("Prepared Environment repository %q has an invalid claim branch", repository.Name)
+		return "", fmt.Errorf("Prepared Environment repository %q has an invalid claim branch", repository.Name)
 	}
 	commit, err := output(repository.Path, "git", "rev-parse", "HEAD")
 	if err != nil || commit != repository.BaseCommit {
-		return fmt.Errorf("Prepared Environment repository %q is not at its saved base commit", repository.Name)
+		return "", fmt.Errorf("Prepared Environment repository %q is not at its saved base commit", repository.Name)
 	}
-	return nil
+	return branch, nil
+}
+
+// claimBaseCommit returns the base commit for the new Project branch of one
+// repository. It runs inside the repository cache lock. When the Prepared
+// Environment is stale, it refreshes the default branch and moves the
+// detached checkout to the new tip when the saved base is its ancestor.
+func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index int, spec domain.RepositorySpec, opts CreateOptions) (string, error) {
+	repository := environment.Repositories[index]
+	base := repository.BaseCommit
+	defaultBranch := spec.DefaultBranch
+	if defaultBranch == "" {
+		resolved, err := output(repository.CachePath, "git", "symbolic-ref", "--short", "HEAD")
+		if err != nil {
+			return "", fmt.Errorf("find default branch for Repository Cache: %w", err)
+		}
+		defaultBranch = resolved
+	}
+	fetchedAt := environment.ReadyAt
+	if !opts.NoFetch {
+		if environment.ReadyAt == nil || s.now().Sub(*environment.ReadyAt) > claimFreshnessWindow {
+			if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, defaultBranch); err != nil {
+				s.report("Warning: twt2 could not fetch origin for repository %q: %v. twt2 uses the saved base commit.", repository.Name, err)
+			} else {
+				now := s.now()
+				fetchedAt = &now
+			}
+		}
+		tip, err := output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+defaultBranch)
+		if err == nil && tip != base {
+			ancestor, ancestorErr := isAncestor(repository.CachePath, base, tip)
+			if ancestorErr != nil {
+				return "", ancestorErr
+			}
+			if ancestor {
+				if err := run(repository.Path, "git", "reset", "--hard", tip); err != nil {
+					return "", fmt.Errorf("move repository %q to the new origin/%s tip: %w", repository.Name, defaultBranch, err)
+				}
+				environment.Repositories[index].BaseCommit = tip
+				environment.UpdatedAt = s.now()
+				if err := s.environments.Save(*environment); err != nil {
+					return "", err
+				}
+				base = tip
+			} else {
+				s.report("Warning: origin/%s does not contain the saved base commit for repository %q. twt2 keeps the saved base commit.", defaultBranch, repository.Name)
+			}
+		}
+	}
+	age := "an unknown time"
+	if fetchedAt != nil {
+		age = s.now().Sub(*fetchedAt).Truncate(time.Second).String()
+	}
+	s.report("Base: origin/%s @ %s (fetched %s ago)", defaultBranch, shortCommit(base), age)
+	return base, nil
+}
+
+// isAncestor reports whether ancestor is reachable from descendant.
+func isAncestor(cachePath, ancestor, descendant string) (bool, error) {
+	command := exec.Command("git", "merge-base", "--is-ancestor", ancestor, descendant)
+	command.Dir = cachePath
+	if err := command.Run(); err == nil {
+		return true, nil
+	} else if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("compare commits in Repository Cache %q: %w", cachePath, err)
+	}
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
 }
 
 func validateEnvironmentClaimMarker(environment domain.PreparedEnvironment, project domain.Project) error {
@@ -352,15 +667,6 @@ func markProjectStepSucceeded(project *domain.Project, id string, now time.Time)
 			return
 		}
 	}
-}
-
-func preparedRepositoryByName(environment domain.PreparedEnvironment, name string) (domain.PreparedRepository, error) {
-	for _, repository := range environment.Repositories {
-		if repository.Name == name {
-			return repository, nil
-		}
-	}
-	return domain.PreparedRepository{}, fmt.Errorf("repository %q is not in Prepared Environment %q", name, environment.ID)
 }
 
 func projectRepositoryByName(project domain.Project, name string) (domain.ProjectRepository, error) {
@@ -433,6 +739,9 @@ func (s *Service) prepareEnvironment(environmentID, token string) (domain.Prepar
 	if environment.Status == domain.EnvironmentReady {
 		return environment, nil
 	}
+	if environment.Status == domain.EnvironmentFailed {
+		return environment, s.failedEnvironmentError(environment)
+	}
 	if environment.QueueToken != token || (environment.Status != domain.EnvironmentQueued && environment.Status != domain.EnvironmentPreparing) {
 		return environment, fmt.Errorf("Prepared Environment %q does not have the requested queue token", environment.ID)
 	}
@@ -446,8 +755,9 @@ func (s *Service) prepareEnvironment(environmentID, token string) (domain.Prepar
 		if step.Status == domain.StepSucceeded {
 			continue
 		}
+		s.report("Step %d of %d: %s", index+1, len(environment.Steps), step.ID)
 		if step.Kind == domain.StepRepositoryInit && step.Status == domain.StepRunning {
-			return s.failEnvironment(&environment, fmt.Errorf("repository initialization was interrupted; this physical environment will not be initialized again"))
+			return s.failEnvironment(&environment, fmt.Errorf("repository initialization was interrupted; twt2 removes this environment and prepares a new one on the next create"))
 		}
 		now := s.now()
 		step.Status = domain.StepRunning

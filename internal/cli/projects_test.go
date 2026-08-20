@@ -26,7 +26,7 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 		Name:         "everysphere-0",
 		TemplateName: "everysphere",
 		Status:       domain.ProjectActive,
-		CreatedAt:    time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC),
+		CreatedAt:    time.Now().UTC().Add(-3 * 24 * time.Hour),
 	}
 	if err := store.NewProjectStore(filepath.Join(root, "state")).Save(project); err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}, nil, "projects", "list")
 
-	want := "everysphere-0\teverysphere\tactive\n"
+	want := "everysphere-0\teverysphere\tactive\t3d\t0 B\n"
 	if output != want {
 		t.Fatalf("projects list output = %q, want %q", output, want)
 	}
@@ -70,16 +70,21 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 	if got.ID != project.ID || got.Name != project.Name || got.Template != project.TemplateName || got.Status != string(project.Status) {
 		t.Fatalf("projects list JSON Project = %#v", got)
 	}
+	if !strings.Contains(jsonOutput, `"bytes":0`) {
+		t.Fatalf("projects list JSON has no bytes field: %s", jsonOutput)
+	}
 }
 
 func TestProjectsListShowsRecentActiveProjectsBeforeArchives(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
+	now := time.Now().UTC()
+	archivedAt := now.Add(-5 * time.Hour)
 	projects := []domain.Project{
-		{Version: domain.ProjectVersion, ID: "old-active", Name: "old-active", TemplateName: "example", Status: domain.ProjectActive, CreatedAt: time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)},
-		{Version: domain.ProjectVersion, ID: "new-archive", Name: "new-archive", TemplateName: "example", Status: domain.ProjectArchived, CreatedAt: time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)},
-		{Version: domain.ProjectVersion, ID: "new-active", Name: "new-active", TemplateName: "example", Status: domain.ProjectActive, CreatedAt: time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)},
+		{Version: domain.ProjectVersion, ID: "old-active", Name: "old-active", TemplateName: "example", Status: domain.ProjectActive, CreatedAt: now.Add(-2 * 24 * time.Hour)},
+		{Version: domain.ProjectVersion, ID: "new-archive", Name: "new-archive", TemplateName: "example", Status: domain.ProjectArchived, CreatedAt: now.Add(-30 * time.Minute), ArchivedAt: &archivedAt},
+		{Version: domain.ProjectVersion, ID: "new-active", Name: "new-active", TemplateName: "example", Status: domain.ProjectActive, CreatedAt: now.Add(-time.Hour)},
 	}
 	projectStore := store.NewProjectStore(filepath.Join(root, "state"))
 	for _, project := range projects {
@@ -88,14 +93,21 @@ func TestProjectsListShowsRecentActiveProjectsBeforeArchives(t *testing.T) {
 		}
 	}
 
-	output := executeWithOptions(t, cli.Options{
+	options := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),
 		StateDir:  filepath.Join(root, "state"),
 		DataDir:   filepath.Join(root, "data"),
-	}, nil, "projects", "list", "--limit", "2")
-	want := "new-active\texample\tactive\nold-active\texample\tactive\n"
+	}
+	output := executeWithOptions(t, options, nil, "projects", "list", "--limit", "2")
+	want := "new-active\texample\tactive\t1h\t0 B\nold-active\texample\tactive\t2d\t0 B\n"
 	if output != want {
 		t.Fatalf("limited projects list output = %q, want %q", output, want)
+	}
+
+	// An archived Project shows its age since the archive time.
+	fullOutput := executeWithOptions(t, options, nil, "projects", "list")
+	if !strings.Contains(fullOutput, "new-archive\texample\tarchived\t5h\t0 B\n") {
+		t.Fatalf("projects list archived age = %q", fullOutput)
 	}
 }
 
@@ -906,7 +918,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	t.Setenv("TWT2_PROJECT_ID", "")
 	t.Setenv("TMUX_PANE", pane)
 	contextOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
-	if !strings.Contains(contextOutput, `"name":"json-test"`) || strings.Contains(contextOutput, "tmuxSession") || strings.Contains(contextOutput, `"root"`) {
+	if !strings.Contains(contextOutput, `"name":"json-test"`) || strings.Contains(contextOutput, "tmuxSession") {
 		t.Fatalf("context JSON has an invalid contract: %s", contextOutput)
 	}
 	projectRoots, err := os.ReadDir(filepath.Join(root, "data", "projects"))
@@ -918,11 +930,11 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	if !strings.Contains(explicitContext, `"name":"json-test"`) || !strings.Contains(explicitContext, `"repositoryName":"app"`) {
 		t.Fatalf("explicit directory context JSON = %s", explicitContext)
 	}
-	if err := store.NewSnapshotStore(options.StateDir).Save(projects.Projects[0].ID, "snapshot bytes\n"); err != nil {
+	if _, err := store.NewSnapshotStore(options.StateDir).Save(projects.Projects[0].ID, "aa11", "snapshot bytes\n"); err != nil {
 		t.Fatal(err)
 	}
 
-	storageOutput := executeWithOptions(t, options, nil, "storage", "status", "--output", "json")
+	storageOutput := executeWithOptions(t, options, nil, "storage", "show", "--output", "json")
 	var storageResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Storage       struct {
@@ -953,10 +965,10 @@ func TestStorageCleanPlansAndRemovesOnlyOrphanTranscriptSnapshots(t *testing.T) 
 		t.Fatal(err)
 	}
 	snapshots := store.NewSnapshotStore(stateDir)
-	if err := snapshots.Save(project.ID, "active\n"); err != nil {
+	if _, err := snapshots.Save(project.ID, "aa11", "active\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := snapshots.Save("orphan-project", "orphan\n"); err != nil {
+	if _, err := snapshots.Save("orphan-project", "bb22", "orphan\n"); err != nil {
 		t.Fatal(err)
 	}
 	temporarySnapshot := filepath.Join(stateDir, "snapshots", "projects", ".twt2-snapshot-interrupted")
@@ -1031,6 +1043,152 @@ func TestProjectsRemoveCancelReturnsRemovingProjectToArchived(t *testing.T) {
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--cancel") {
 		t.Fatalf("cancel with apply error = %v", err)
+	}
+}
+
+func TestProjectsRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	t.Setenv("TMUX_PANE", "")
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+
+	projectStore := store.NewProjectStore(options.StateDir)
+	ages := map[string]time.Duration{"old-clean": 20 * 24 * time.Hour, "old-dirty": 16 * 24 * time.Hour, "fresh": 2 * 24 * time.Hour}
+	roots := map[string]string{}
+	for _, name := range []string{"old-clean", "old-dirty", "fresh"} {
+		executeWithOptions(t, options, nil, "projects", "create", name, "--template", "example", "--no-open")
+		executeWithOptions(t, options, nil, "projects", "archive", name)
+		project, err := projectStore.Find(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		roots[name] = project.Root
+		archivedAt := time.Now().UTC().Add(-ages[name])
+		project.ArchivedAt = &archivedAt
+		if err := projectStore.Save(project); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(roots["old-dirty"], "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The flags are mutually exclusive with a positional and --cancel.
+	for _, args := range [][]string{
+		{"projects", "remove", "old-clean", "--all-archived"},
+		{"projects", "remove", "--all-archived", "--cancel"},
+		{"projects", "remove", "old-clean", "--older-than", "14d"},
+		{"projects", "remove", "--all-archived", "--older-than", "2x"},
+	} {
+		var stdout, stderr bytes.Buffer
+		usageOptions := options
+		usageOptions.Stdout, usageOptions.Stderr = &stdout, &stderr
+		command := cli.New(usageOptions)
+		command.SetArgs(args)
+		if err := command.Execute(); err == nil {
+			t.Fatalf("%v did not fail", args)
+		}
+	}
+
+	plan := executeWithOptions(t, options, nil, "projects", "remove", "--all-archived", "--older-than", "14d")
+	for _, want := range []string{"Project \"old-clean\": age 20d, size ", "Project \"old-dirty\": age 16d, size ", "Blocked:", "uncommitted changes", "Run again with --apply"} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("bulk removal plan does not contain %q: %s", want, plan)
+		}
+	}
+	if strings.Contains(plan, "fresh") {
+		t.Fatalf("bulk removal plan selected a fresh archive: %s", plan)
+	}
+	if strings.Contains(plan, "size 0 B") {
+		t.Fatalf("bulk removal plan has no Project size: %s", plan)
+	}
+	for _, name := range []string{"old-clean", "old-dirty", "fresh"} {
+		if _, err := os.Stat(roots[name]); err != nil {
+			t.Fatalf("bulk removal plan changed Project %q: %v", name, err)
+		}
+	}
+
+	planJSON := executeWithOptions(t, options, nil, "projects", "remove", "--all-archived", "--output", "json")
+	var bulk struct {
+		SchemaVersion int  `json:"schemaVersion"`
+		Applied       bool `json:"applied"`
+		RemovedCount  int  `json:"removedCount"`
+		SkippedCount  int  `json:"skippedCount"`
+		Plans         []struct {
+			ProjectName string `json:"projectName"`
+			ArchivedAt  string `json:"archivedAt"`
+			Bytes       int64  `json:"bytes"`
+		} `json:"plans"`
+	}
+	if err := json.Unmarshal([]byte(planJSON), &bulk); err != nil {
+		t.Fatalf("decode bulk removal JSON: %v\n%s", err, planJSON)
+	}
+	if bulk.SchemaVersion != 1 || bulk.Applied || bulk.RemovedCount != 0 || bulk.SkippedCount != 0 || len(bulk.Plans) != 3 {
+		t.Fatalf("bulk removal JSON metadata = %+v", bulk)
+	}
+	if bulk.Plans[0].ProjectName != "old-clean" || bulk.Plans[0].ArchivedAt == "" || bulk.Plans[0].Bytes <= 0 {
+		t.Fatalf("bulk removal JSON first plan = %+v", bulk.Plans[0])
+	}
+
+	applied := executeWithOptions(t, options, nil, "projects", "remove", "--all-archived", "--older-than", "14d", "--apply")
+	if !strings.Contains(applied, "Removed 1 Projects (") || !strings.Contains(applied, "Skipped 1 blocked Projects.") {
+		t.Fatalf("bulk removal apply output = %q", applied)
+	}
+	if _, err := os.Stat(roots["old-clean"]); !os.IsNotExist(err) {
+		t.Fatalf("bulk removal apply kept the clean Project root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(roots["old-dirty"], "app", "unsaved.txt")); err != nil {
+		t.Fatalf("bulk removal apply changed the blocked Project: %v", err)
+	}
+	if _, err := os.Stat(roots["fresh"]); err != nil {
+		t.Fatalf("bulk removal apply changed the fresh archive: %v", err)
+	}
+	dirty, err := projectStore.Find("old-dirty")
+	if err != nil || dirty.Status != domain.ProjectArchived {
+		t.Fatalf("blocked Project after bulk apply: status=%q error=%v", dirty.Status, err)
+	}
+	if _, err := projectStore.Find("old-clean"); err == nil {
+		t.Fatal("bulk removal apply kept the clean Project record")
+	}
+}
+
+func TestParseAgeDuration(t *testing.T) {
+	t.Parallel()
+
+	valid := map[string]time.Duration{
+		"14d": 14 * 24 * time.Hour,
+		"0d":  0,
+		"36h": 36 * time.Hour,
+		"30m": 30 * time.Minute,
+	}
+	for value, want := range valid {
+		got, err := cli.ParseAgeDuration(value)
+		if err != nil || got != want {
+			t.Fatalf("ParseAgeDuration(%q) = %v, %v; want %v", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"", "d", "14", "14x", "-3d", "1.5h", "d14", "3 d"} {
+		if _, err := cli.ParseAgeDuration(value); err == nil {
+			t.Fatalf("ParseAgeDuration(%q) did not fail", value)
+		}
 	}
 }
 

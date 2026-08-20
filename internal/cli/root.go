@@ -19,6 +19,7 @@ type Options struct {
 	Stderr                 io.Writer
 	QuickCreateSwitch      func(session string) error
 	QuickCreateArchive     func(projectID string) error
+	FinishRelocate         func(destinationProjectID string) error
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
@@ -91,10 +92,14 @@ repository, and a set of resumable coding Agent Sessions.`,
 	create.GroupID = "workflows"
 	archive := newArchiveCommand(options)
 	archive.GroupID = "workflows"
+	finish := newFinishCommand(options)
+	finish.GroupID = "workflows"
 	agents := newAgentsCommand(options)
 	agents.GroupID = "workflows"
 	context := newContextCommand(options)
 	context.GroupID = "inspect"
+	environments := newEnvironmentsCommand(options)
+	environments.GroupID = "inspect"
 	storage := newStorageCommand(options)
 	storage.GroupID = "inspect"
 	doctor := newDoctorCommand(options)
@@ -103,7 +108,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	schema.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, create, archive, agents, context, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, create, archive, finish, agents, context, environments, storage, doctor, schema, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

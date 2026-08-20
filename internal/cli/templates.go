@@ -36,11 +36,16 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	return templates
 }
 
+type templatePrepareOutput struct {
+	SchemaVersion int      `json:"schemaVersion"`
+	Template      string   `json:"template"`
+	Environments  []string `json:"environments"`
+}
+
 func newTemplatePrepareCommand(options Options, templateStore store.TemplateStore) *cobra.Command {
-	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
 	return &cobra.Command{
 		Use:   "prepare TEMPLATE",
-		Short: "Prepare the next initialized environment",
+		Short: "Prepare the next initialized environments",
 		Args:  exactArgs("TEMPLATE"),
 		RunE: func(command *cobra.Command, args []string) error {
 			template, err := templateStore.Load(args[0])
@@ -53,15 +58,38 @@ func newTemplatePrepareCommand(options Options, templateStore store.TemplateStor
 				}
 				return writeMutation(command, "templates.prepare", "valid", "", args[0])
 			}
-			environment, err := service.Prepare(args[0], template)
+			serviceOptions := projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket}
+			if !WantsJSON(command) {
+				serviceOptions.Progress = func(message string) {
+					_, _ = fmt.Fprintln(command.ErrOrStderr(), message)
+				}
+			}
+			service := projectservice.NewService(serviceOptions)
+			queued, err := service.TopUpPool(args[0], template, template.EffectivePoolDepth())
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeMutation(command, "templates.prepare", "applied", environment.ID, environment.TemplateName)
+			prepared := make([]string, 0, len(queued))
+			for _, entry := range queued {
+				environment, err := service.PrepareQueued(entry.ID, entry.QueueToken)
+				if err != nil {
+					return err
+				}
+				prepared = append(prepared, environment.ID)
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Prepared Environment %q for Project Template %q\n", environment.ID, environment.TemplateName)
-			return err
+			if WantsJSON(command) {
+				return writeJSONOutput(command, templatePrepareOutput{SchemaVersion: jsonSchemaVersion, Template: args[0], Environments: prepared})
+			}
+			if len(prepared) == 0 {
+				_, err = fmt.Fprintf(command.OutOrStdout(), "The Prepared Environment pool for Project Template %q is full\n", args[0])
+				return err
+			}
+			for _, id := range prepared {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Prepared Environment %q for Project Template %q\n", id, args[0]); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 }

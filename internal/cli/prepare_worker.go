@@ -27,22 +27,30 @@ func startPreparationRefill(options Options, templateName string, template domai
 		}
 	}
 	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-	queued, err := service.QueuePreparation(templateName, template)
+	queued, err := service.TopUpPool(templateName, template, template.EffectivePoolDepth())
 	if err != nil {
 		return err
 	}
-	if !queued.ShouldStart {
-		return nil
+	for _, environment := range queued {
+		if err := startPrepareWorker(options, service, executable, environment); err != nil {
+			return err
+		}
 	}
-	logDirectory := filepath.Join(options.StateDir, "logs")
-	if err := os.MkdirAll(logDirectory, 0o755); err != nil {
+	return nil
+}
+
+// startPrepareWorker starts one detached background preparation process for a
+// queued Prepared Environment.
+func startPrepareWorker(options Options, service *projectservice.Service, executable string, environment domain.PreparedEnvironment) error {
+	logPath := projectservice.PrepareLogPath(options.StateDir, environment.ID)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return fmt.Errorf("create preparation log directory: %w", err)
 	}
-	logFile, err := os.OpenFile(filepath.Join(logDirectory, "prepare-"+queued.Environment.ID+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open preparation log: %w", err)
 	}
-	command := exec.Command(executable, prepareWorkerArgument, queued.Environment.ID, queued.Environment.QueueToken)
+	command := exec.Command(executable, prepareWorkerArgument, environment.ID, environment.QueueToken)
 	command.Env = append(os.Environ(),
 		"TWT2_CONFIG_DIR="+options.ConfigDir,
 		"TWT2_STATE_DIR="+options.StateDir,
@@ -55,7 +63,7 @@ func startPreparationRefill(options Options, templateName string, template domai
 	if err := command.Start(); err != nil {
 		logFile.Close()
 		cause := fmt.Errorf("start background preparation: %w", err)
-		_ = service.FailQueuedPreparation(queued.Environment.ID, queued.Environment.QueueToken, cause)
+		_ = service.FailQueuedPreparation(environment.ID, environment.QueueToken, cause)
 		return cause
 	}
 	if err := command.Process.Release(); err != nil {

@@ -21,11 +21,17 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 archive": {
 			long: "Archive the current Project or a Project that you specify. twt2 keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt2 archive\n  twt2 archive fix-auth",
 		},
+		"twt2 finish": {
+			long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt2 moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive.", example: "  twt2 finish\n  twt2 finish fix-auth --keep",
+		},
 		"twt2 agents": {
 			long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt2 agents list --project current\n  twt2 agents resume AGENT_ID",
 		},
 		"twt2 storage": {
-			long: "Inspect the disk space used by twt2 Projects, worktrees, and shared repository caches.", example: "  twt2 storage status",
+			long: "Inspect the disk space used by twt2 Projects, worktrees, and shared repository caches.", example: "  twt2 storage show",
+		},
+		"twt2 environments": {
+			long: "Inspect the Prepared Environments that twt2 keeps for the next Project. A Prepared Environment holds initialized worktrees before a Project claims them.", example: "  twt2 environments list\n  twt2 environments show ENVIRONMENT_ID",
 		},
 		"twt2 templates list": {
 			long: "List all saved Project Templates.", example: "  twt2 templates list\n  twt2 templates list --output json",
@@ -79,6 +85,9 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 projects current": {
 			long: "Find the Project for the current directory or tmux pane.", example: "  twt2 projects current",
 		},
+		"twt2 projects path": {
+			long: "Print the root path of a Project, or the checkout path of one repository in it. The output is one bare path for command substitution.", example: "  cd $(twt2 projects path fix-auth)\n  cd $(twt2 projects path fix-auth app)",
+		},
 		"twt2 projects open": {
 			long: "Open a Project tmux session. twt2 makes an archived Project active. It also repairs missing managed windows.", example: "  twt2 projects open fix-auth\n  twt2 projects open fix-auth --no-attach",
 		},
@@ -89,7 +98,7 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Retry failed or interrupted setup steps from the saved Project Template snapshot.", example: "  twt2 projects setup retry fix-auth",
 		},
 		"twt2 projects remove": {
-			long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state.", example: "  twt2 projects archive fix-auth\n  twt2 projects remove fix-auth --apply",
+			long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Projects; apply skips blocked Projects.", example: "  twt2 projects archive fix-auth\n  twt2 projects remove fix-auth --apply\n  twt2 projects remove --all-archived --older-than 14d --apply",
 		},
 		"twt2 agents register": {
 			long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt2 infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt2 agents register -- codex resume SESSION_ID\n  twt2 agents register --project fix-auth --label review -- claude --resume SESSION_ID",
@@ -119,7 +128,7 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Read the provider transcript linked to one Agent Session. twt2 checks that the transcript belongs to the selected Project and does not return its source path.", example: "  twt2 agents transcript show AGENT_ID --project current --output json",
 		},
 		"twt2 agents transcript snapshot": {
-			long: "Read a linked provider transcript and save a private Project-owned Markdown snapshot. Project removal deletes this snapshot.", example: "  twt2 agents transcript snapshot AGENT_ID --project current --output json",
+			long: "Read a linked provider transcript and save a private Project-owned Markdown snapshot. Each Agent Session has its own file, and twt2 also writes latest.md as a copy of the most recent snapshot. The result gives the file path. Project removal deletes these snapshots.", example: "  twt2 agents transcript snapshot AGENT_ID --project current --output json",
 		},
 		"twt2 agents transcript link": {
 			long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt2 agents transcript link AGENT_ID --project current --session SESSION_ID",
@@ -127,11 +136,17 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 context": {
 			long: "Show the Project and repository context for a directory or the current tmux pane.", example: "  twt2 context --output json\n  twt2 context --directory /path/to/worktree --output json",
 		},
-		"twt2 storage status": {
-			long: "Show the disk space used by Projects, worktrees, and shared repository caches.", example: "  twt2 storage status\n  twt2 storage status --output json",
+		"twt2 storage show": {
+			long: "Show the disk space used by active Projects, archived Projects, Prepared Environments, worktrees, and shared repository caches.", example: "  twt2 storage show\n  twt2 storage show --output json",
 		},
 		"twt2 storage clean": {
-			long: "Show a safe cleanup plan for failed and obsolete Prepared Environments and orphan Transcript Snapshots. Add --apply to remove only twt2-owned data.", example: "  twt2 storage clean\n  twt2 storage clean --apply",
+			long: "Show a safe cleanup plan for failed and obsolete Prepared Environments, orphan Transcript Snapshots, and orphan Agent Session records. Add --apply to remove only twt2-owned data.", example: "  twt2 storage clean\n  twt2 storage clean --apply",
+		},
+		"twt2 environments list": {
+			long: "List the Prepared Environments of each Project Template, with status, age, and disk space. A ready Prepared Environment that no longer matches its Project Template has status obsolete.", example: "  twt2 environments list\n  twt2 environments list --limit 10 --output json",
+		},
+		"twt2 environments show": {
+			long: "Show one Prepared Environment, its preparation steps, its base commit for each repository, and the Project that claims it. ENVIRONMENT_ID accepts a unique ID prefix.", example: "  twt2 environments show 1a2b3c4d\n  twt2 environments show ENVIRONMENT_ID --output json",
 		},
 		"twt2 doctor": {
 			long: "Check required tools, Project Templates, Project state, and ownership markers.", example: "  twt2 doctor\n  twt2 doctor --output json",

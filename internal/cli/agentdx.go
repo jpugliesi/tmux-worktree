@@ -207,10 +207,16 @@ func argumentsForCommand(path string) []argumentSchema {
 		return []argumentSchema{stringArgument("name")}
 	case "twt2 create":
 		return []argumentSchema{{Name: "name", Type: "string", Required: false}}
-	case "twt2 archive":
+	case "twt2 archive", "twt2 finish":
 		return []argumentSchema{{Name: "project", Type: "string", Required: false}}
-	case "twt2 projects show", "twt2 projects open", "twt2 projects archive", "twt2 projects remove", "twt2 projects setup retry":
+	case "twt2 projects remove":
+		return []argumentSchema{{Name: "project", Type: "string", Required: false, Condition: "required when --all-archived is not set"}}
+	case "twt2 projects show", "twt2 projects open", "twt2 projects archive", "twt2 projects setup retry":
 		return []argumentSchema{stringArgument("project")}
+	case "twt2 projects path":
+		return []argumentSchema{stringArgument("project"), {Name: "repository", Type: "string", Required: false}}
+	case "twt2 environments show":
+		return []argumentSchema{stringArgument("environment_id")}
 	case "twt2 agents register":
 		return []argumentSchema{{Name: "resume_command", Type: "array[string]", Variadic: true, Condition: "required when --pane is empty"}}
 	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send", "twt2 agents show", "twt2 agents rm", "twt2 agents transcript show", "twt2 agents transcript snapshot", "twt2 agents transcript link":

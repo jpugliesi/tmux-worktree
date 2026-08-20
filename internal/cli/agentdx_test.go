@@ -82,8 +82,14 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 				enum     []string
 			}{flag.Required, flag.Enum}
 		}
-		if !flags["template"].required || len(flags["output"].enum) != 2 {
+		if flags["template"].required || len(flags["output"].enum) != 2 {
 			t.Fatalf("projects create schema flags = %+v", flags)
+		}
+		if _, ok := flags["branch"]; !ok {
+			t.Fatalf("projects create schema misses --branch: %+v", flags)
+		}
+		if _, ok := flags["no-fetch"]; !ok {
+			t.Fatalf("projects create schema misses --no-fetch: %+v", flags)
 		}
 	}
 	if !foundCreate {
