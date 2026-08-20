@@ -105,6 +105,14 @@ func (s AgentStore) Find(reference string) (domain.AgentSession, error) {
 	return domain.AgentSession{}, clierr.New(clierr.NotFound, "Agent Session %q does not exist", reference)
 }
 
+// Delete removes one Agent Session record by its exact ID.
+func (s AgentStore) Delete(agentID string) error {
+	if err := os.Remove(filepath.Join(s.dir, agentID+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete Agent Session %q: %w", agentID, err)
+	}
+	return nil
+}
+
 func (s AgentStore) DeleteProject(projectID string) error {
 	agents, err := s.List(projectID)
 	if err != nil {

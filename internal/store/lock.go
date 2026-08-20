@@ -3,16 +3,66 @@ package store
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
 var ErrLockHeld = errors.New("lock is held")
+
+// lockRetryInterval is the wait between attempts of a bounded blocking acquire.
+const lockRetryInterval = 100 * time.Millisecond
+
+// lockHolder describes the process that holds a lock file. twt2 writes this
+// value into the lock file for better messages. Correctness comes from flock.
+type lockHolder struct {
+	PID        int    `json:"pid"`
+	Command    string `json:"command"`
+	AcquiredAt string `json:"acquiredAt"`
+}
+
+// writeLockHolder records this process in the lock file. A failure changes no
+// lock behavior, so this function does not report one.
+func writeLockHolder(file *os.File) {
+	holder := lockHolder{
+		PID:        os.Getpid(),
+		Command:    strings.Join(os.Args, " "),
+		AcquiredAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(holder)
+	if err != nil {
+		return
+	}
+	if err := file.Truncate(0); err != nil {
+		return
+	}
+	_, _ = file.WriteAt(data, 0)
+}
+
+// lockHolderDescription reads the holder of the lock file at path. It returns an
+// empty string when the file has no usable holder record.
+func lockHolderDescription(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	var holder lockHolder
+	if err := json.Unmarshal(data, &holder); err != nil || holder.PID == 0 {
+		return ""
+	}
+	command := holder.Command
+	if strings.TrimSpace(command) == "" {
+		command = "unknown command"
+	}
+	return fmt.Sprintf("process %d: %s", holder.PID, command)
+}
 
 type NamedLock struct {
 	file *os.File
@@ -26,11 +76,64 @@ func AcquireMutationLock(stateDir string) (*MutationLock, error) {
 	return acquireMutationLock(stateDir, false)
 }
 
-func AcquireMutationLockBlocking(stateDir string) (*MutationLock, error) {
-	return acquireMutationLock(stateDir, true)
+// AcquireMutationLockBlocking waits for the mutation lock. Without a timeout it
+// waits without a limit. With a timeout it retries until the deadline and then
+// reports the process that holds the lock.
+func AcquireMutationLockBlocking(stateDir string, timeout ...time.Duration) (*MutationLock, error) {
+	if len(timeout) == 0 {
+		return acquireMutationLock(stateDir, true)
+	}
+	return acquireMutationLockWithin(stateDir, timeout[0])
 }
 
 func acquireMutationLock(stateDir string, blocking bool) (*MutationLock, error) {
+	file, err := openMutationLock(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	operation := syscall.LOCK_EX
+	if !blocking {
+		operation |= syscall.LOCK_NB
+	}
+	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
+		name := file.Name()
+		file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return nil, mutationLockHeldError(name)
+		}
+		return nil, fmt.Errorf("acquire mutation lock: %w", err)
+	}
+	writeLockHolder(file)
+	return &MutationLock{file: file}, nil
+}
+
+// acquireMutationLockWithin keeps one open file and retries until the deadline.
+func acquireMutationLockWithin(stateDir string, timeout time.Duration) (*MutationLock, error) {
+	file, err := openMutationLock(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		flockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if flockErr == nil {
+			writeLockHolder(file)
+			return &MutationLock{file: file}, nil
+		}
+		if !errors.Is(flockErr, syscall.EWOULDBLOCK) && !errors.Is(flockErr, syscall.EAGAIN) {
+			file.Close()
+			return nil, fmt.Errorf("acquire mutation lock: %w", flockErr)
+		}
+		if !time.Now().Add(lockRetryInterval).Before(deadline) {
+			name := file.Name()
+			file.Close()
+			return nil, mutationLockHeldError(name)
+		}
+		time.Sleep(lockRetryInterval)
+	}
+}
+
+func openMutationLock(stateDir string) (*os.File, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
@@ -38,18 +141,14 @@ func acquireMutationLock(stateDir string, blocking bool) (*MutationLock, error) 
 	if err != nil {
 		return nil, fmt.Errorf("open mutation lock: %w", err)
 	}
-	operation := syscall.LOCK_EX
-	if !blocking {
-		operation |= syscall.LOCK_NB
+	return file, nil
+}
+
+func mutationLockHeldError(path string) error {
+	if holder := lockHolderDescription(path); holder != "" {
+		return clierr.New(clierr.Locked, "another twt2 change is in progress (%s)", holder)
 	}
-	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
-		file.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, clierr.New(clierr.Locked, "another twt2 change is in progress")
-		}
-		return nil, fmt.Errorf("acquire mutation lock: %w", err)
-	}
-	return &MutationLock{file: file}, nil
+	return clierr.New(clierr.Locked, "another twt2 change is in progress")
 }
 
 func (l *MutationLock) Release() error {
@@ -162,10 +261,14 @@ func acquireNamedLock(stateDir, namespace, name string, blocking bool) (*NamedLo
 	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
 		file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			if holder := lockHolderDescription(path); holder != "" {
+				return nil, clierr.Wrap(clierr.Locked, fmt.Errorf("%w: %s %q (%s)", ErrLockHeld, namespace, name, holder))
+			}
 			return nil, clierr.Wrap(clierr.Locked, fmt.Errorf("%w: %s %q", ErrLockHeld, namespace, name))
 		}
 		return nil, fmt.Errorf("acquire named lock: %w", err)
 	}
+	writeLockHolder(file)
 	return &NamedLock{file: file}, nil
 }
 

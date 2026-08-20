@@ -16,6 +16,17 @@ type Template struct {
 	Name         string           `yaml:"name" json:"name"`
 	Repositories []RepositorySpec `yaml:"repositories" json:"repositories"`
 	Initialize   *InitializeSpec  `yaml:"initialize,omitempty" json:"initialize,omitempty"`
+	// PoolDepth is the number of ready Prepared Environments to keep for this
+	// Project Template. A value of 0 uses the default depth of 1.
+	PoolDepth int `yaml:"pool_depth,omitempty" json:"poolDepth,omitempty"`
+}
+
+// EffectivePoolDepth returns the number of ready Prepared Environments to keep.
+func (t Template) EffectivePoolDepth() int {
+	if t.PoolDepth < 1 {
+		return 1
+	}
+	return t.PoolDepth
 }
 
 type RepositorySpec struct {
@@ -48,6 +59,9 @@ func NewTemplate(name string) Template {
 func (t Template) Validate() error {
 	if t.Version != TemplateVersion {
 		return fmt.Errorf("unsupported template version %d: expected %d", t.Version, TemplateVersion)
+	}
+	if t.PoolDepth < 0 {
+		return fmt.Errorf("pool_depth %d is negative", t.PoolDepth)
 	}
 	seen := make(map[string]struct{}, len(t.Repositories))
 	environmentNames := make(map[string]string, len(t.Repositories))

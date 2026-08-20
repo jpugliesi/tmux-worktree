@@ -21,7 +21,7 @@ type EnvironmentCleanupItem struct {
 	Root         string `json:"root"`
 }
 
-func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]string) (EnvironmentCleanupPlan, error) {
+func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]store.DigestSet) (EnvironmentCleanupPlan, error) {
 	environments, err := s.environments.List()
 	if err != nil {
 		return EnvironmentCleanupPlan{}, err
@@ -33,7 +33,7 @@ func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]string) 
 		case domain.EnvironmentFailed:
 			reason = "failed Prepared Environment"
 		case domain.EnvironmentReady:
-			if currentTemplateDigests[environment.TemplateName] != environment.TemplateDigest {
+			if !currentTemplateDigests[environment.TemplateName].Matches(environment.TemplateDigest) {
 				reason = "obsolete Prepared Environment"
 			}
 		}
@@ -46,7 +46,7 @@ func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]string) 
 	return plan, nil
 }
 
-func (s *Service) CleanPrepared(currentTemplateDigests map[string]string) (EnvironmentCleanupPlan, error) {
+func (s *Service) CleanPrepared(currentTemplateDigests map[string]store.DigestSet) (EnvironmentCleanupPlan, error) {
 	plan, err := s.PreparedCleanupPlan(currentTemplateDigests)
 	if err != nil {
 		return plan, err
@@ -59,14 +59,14 @@ func (s *Service) CleanPrepared(currentTemplateDigests map[string]string) (Envir
 	return plan, nil
 }
 
-func (s *Service) cleanPreparedEnvironment(environmentID string, currentTemplateDigests map[string]string) error {
+func (s *Service) cleanPreparedEnvironment(environmentID string, currentTemplateDigests map[string]store.DigestSet) error {
 	global, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return err
 	}
 	environment, err := s.environments.Find(environmentID)
 	if err == nil {
-		candidate := environment.Status == domain.EnvironmentFailed || (environment.Status == domain.EnvironmentReady && currentTemplateDigests[environment.TemplateName] != environment.TemplateDigest)
+		candidate := environment.Status == domain.EnvironmentFailed || (environment.Status == domain.EnvironmentReady && !currentTemplateDigests[environment.TemplateName].Matches(environment.TemplateDigest))
 		if !candidate {
 			err = fmt.Errorf("Prepared Environment %q is not safe to clean", environment.ID)
 		}

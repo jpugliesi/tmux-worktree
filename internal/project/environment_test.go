@@ -22,7 +22,7 @@ func TestRetryRestoresProjectFromDurableEnvironmentClaim(t *testing.T) {
 			Clone: domain.CloneSpec{URL: "https://example.com/app.git"},
 		}},
 	}
-	digest, err := store.TemplateDigest(template)
+	digest, err := store.EnvironmentDigest(template)
 	if err != nil {
 		t.Fatal(err)
 	}

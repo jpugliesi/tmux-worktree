@@ -1,0 +1,80 @@
+package store
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+const lastTemplateFileName = "last-template.json"
+
+type lastTemplateRecord struct {
+	Name string `json:"name"`
+}
+
+// SaveLastTemplate records the Project Template that the last Project creation
+// used. The write uses a temporary file and a rename, so a reader sees the
+// complete old value or the complete new value.
+func SaveLastTemplate(stateDir, name string) error {
+	if err := ValidateResourceName(name); err != nil {
+		return fmt.Errorf("invalid Project Template name: %w", err)
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("create state directory: %w", err)
+	}
+	data, err := json.Marshal(lastTemplateRecord{Name: name})
+	if err != nil {
+		return fmt.Errorf("encode last Project Template: %w", err)
+	}
+	data = append(data, '\n')
+	temporary, err := os.CreateTemp(stateDir, ".twt2-last-template-*")
+	if err != nil {
+		return fmt.Errorf("create temporary last Project Template: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return fmt.Errorf("set last Project Template permissions: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return fmt.Errorf("write last Project Template: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return fmt.Errorf("sync last Project Template: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close last Project Template: %w", err)
+	}
+	if err := os.Rename(temporaryPath, filepath.Join(stateDir, lastTemplateFileName)); err != nil {
+		return fmt.Errorf("save last Project Template: %w", err)
+	}
+	return nil
+}
+
+// LoadLastTemplate returns the recorded Project Template name. It returns an
+// empty name when no record exists.
+func LoadLastTemplate(stateDir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(stateDir, lastTemplateFileName))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read last Project Template: %w", err)
+	}
+	var record lastTemplateRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return "", fmt.Errorf("decode last Project Template: %w", err)
+	}
+	if record.Name == "" {
+		return "", nil
+	}
+	if err := ValidateResourceName(record.Name); err != nil {
+		return "", fmt.Errorf("invalid last Project Template name: %w", err)
+	}
+	return record.Name, nil
+}

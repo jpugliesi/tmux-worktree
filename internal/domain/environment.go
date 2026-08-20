@@ -35,6 +35,7 @@ type PreparedEnvironment struct {
 	QueueToken       string                    `json:"queueToken"`
 	QueuedAt         time.Time                 `json:"queuedAt"`
 	ClaimReservation *EnvironmentClaim         `json:"claimReservation,omitempty"`
+	ReadyAt          *time.Time                `json:"readyAt,omitempty"`
 	CreatedAt        time.Time                 `json:"createdAt"`
 	UpdatedAt        time.Time                 `json:"updatedAt"`
 	Failure          string                    `json:"failure,omitempty"`
@@ -91,6 +92,11 @@ func (e PreparedEnvironment) Validate() error {
 	}
 	if e.CreatedAt.IsZero() || e.UpdatedAt.IsZero() {
 		return fmt.Errorf("Prepared Environment %q has incomplete timestamps", e.ID)
+	}
+	// ReadyAt is optional. Records that twt2 wrote before this field exists do
+	// not have it.
+	if e.ReadyAt != nil && e.ReadyAt.IsZero() {
+		return fmt.Errorf("Prepared Environment %q has an empty ready time", e.ID)
 	}
 	if e.ClaimReservation != nil {
 		if e.ClaimReservation.Project.ID == "" || e.ClaimReservation.Project.Version != ProjectVersion {

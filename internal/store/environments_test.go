@@ -138,6 +138,54 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 	}
 }
 
+func TestEnvironmentStoreLoadsARecordWithTheLegacyTemplateDigest(t *testing.T) {
+	stateDir := t.TempDir()
+	environments := NewEnvironmentStore(stateDir)
+	environment := testEnvironment("legacy-digest", time.Now().UTC())
+	legacy, err := LegacyTemplateDigest(environment.TemplateSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment.TemplateDigest = legacy
+	if err := environments.Save(environment); err != nil {
+		t.Fatalf("Save() legacy digest error = %v", err)
+	}
+	got, err := environments.Find(environment.ID)
+	if err != nil {
+		t.Fatalf("Find() legacy digest error = %v", err)
+	}
+	if got.TemplateDigest != legacy {
+		t.Fatalf("loaded digest = %q, want the legacy digest %q", got.TemplateDigest, legacy)
+	}
+}
+
+func TestEnvironmentStoreRejectsAnUnknownTemplateDigest(t *testing.T) {
+	environments := NewEnvironmentStore(t.TempDir())
+	environment := testEnvironment("unknown-digest", time.Now().UTC())
+	environment.TemplateDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+	if err := environments.Save(environment); err == nil || !strings.Contains(err.Error(), "Project Template digest") {
+		t.Fatalf("Save() unknown digest error = %v", err)
+	}
+}
+
+func TestEnvironmentStoreKeepsTheReadyTime(t *testing.T) {
+	environments := NewEnvironmentStore(t.TempDir())
+	environment := testEnvironment("ready-time", time.Now().UTC())
+	readyAt := environment.CreatedAt.Add(time.Minute)
+	environment.Status = domain.EnvironmentReady
+	environment.ReadyAt = &readyAt
+	if err := environments.Save(environment); err != nil {
+		t.Fatal(err)
+	}
+	got, err := environments.Find(environment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReadyAt == nil || !got.ReadyAt.Equal(readyAt) {
+		t.Fatalf("ReadyAt = %v, want %v", got.ReadyAt, readyAt)
+	}
+}
+
 func testEnvironment(id string, createdAt time.Time) domain.PreparedEnvironment {
 	template := domain.Template{
 		Version: domain.TemplateVersion,
@@ -167,7 +215,7 @@ func testEnvironment(id string, createdAt time.Time) domain.PreparedEnvironment 
 		CreatedAt:  createdAt,
 		UpdatedAt:  createdAt,
 	}
-	digest, err := TemplateDigest(template)
+	digest, err := EnvironmentDigest(template)
 	if err != nil {
 		panic(err)
 	}

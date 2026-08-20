@@ -18,7 +18,7 @@ type SnapshotCleanupItem struct {
 	Bytes     int64  `json:"bytes"`
 }
 
-func (s *Service) StorageCleanupPlan(currentTemplateDigests map[string]string) (StorageCleanupPlan, error) {
+func (s *Service) StorageCleanupPlan(currentTemplateDigests map[string]store.DigestSet) (StorageCleanupPlan, error) {
 	prepared, err := s.PreparedCleanupPlan(currentTemplateDigests)
 	if err != nil {
 		return StorageCleanupPlan{}, err
@@ -55,7 +55,7 @@ func (s *Service) StorageCleanupPlan(currentTemplateDigests map[string]string) (
 	return plan, nil
 }
 
-func (s *Service) CleanStorage(currentTemplateDigests map[string]string) (StorageCleanupPlan, error) {
+func (s *Service) CleanStorage(currentTemplateDigests map[string]store.DigestSet) (StorageCleanupPlan, error) {
 	plan, err := s.StorageCleanupPlan(currentTemplateDigests)
 	if err != nil {
 		return plan, err

@@ -165,12 +165,12 @@ func validateEnvironment(environment domain.PreparedEnvironment) error {
 	if err := environment.Validate(); err != nil {
 		return err
 	}
-	digest, err := TemplateDigest(environment.TemplateSnapshot)
+	digests, err := Digests(environment.TemplateSnapshot)
 	if err != nil {
 		return fmt.Errorf("digest Project Template for Prepared Environment %q: %w", environment.ID, err)
 	}
-	if environment.TemplateDigest != digest {
-		return fmt.Errorf("Prepared Environment %q has Project Template digest %q; expected %q", environment.ID, environment.TemplateDigest, digest)
+	if !digests.Matches(environment.TemplateDigest) {
+		return fmt.Errorf("Prepared Environment %q has Project Template digest %q; expected %q", environment.ID, environment.TemplateDigest, digests.Environment)
 	}
 	return nil
 }

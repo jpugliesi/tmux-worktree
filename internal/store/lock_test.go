@@ -68,6 +68,89 @@ func TestBlockingMutationLockWaitsForRelease(t *testing.T) {
 	}
 }
 
+func TestMutationLockContentionNamesTheHolder(t *testing.T) {
+	stateDir := t.TempDir()
+	first, err := AcquireMutationLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	_, err = AcquireMutationLock(stateDir)
+	if err == nil {
+		t.Fatal("second lock did not fail")
+	}
+	want := fmt.Sprintf("process %d: %s", os.Getpid(), strings.Join(os.Args, " "))
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("second lock error = %v, want text %q", err, want)
+	}
+}
+
+func TestNamedLockContentionNamesTheHolder(t *testing.T) {
+	stateDir := t.TempDir()
+	first, err := AcquireNamedLock(stateDir, "environment", "held")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	_, err = AcquireNamedLock(stateDir, "environment", "held")
+	if !errors.Is(err, ErrLockHeld) {
+		t.Fatalf("second lock error = %v", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("process %d", os.Getpid())) {
+		t.Fatalf("second lock error = %v, want the holder process", err)
+	}
+}
+
+func TestBoundedMutationLockWaitsForRelease(t *testing.T) {
+	stateDir := t.TempDir()
+	first, err := AcquireMutationLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	var second *MutationLock
+	go func() {
+		var err error
+		second, err = AcquireMutationLockBlocking(stateDir, 2*time.Second)
+		result <- err
+	}()
+	time.Sleep(250 * time.Millisecond)
+	if err := first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("bounded mutation lock did not return after release")
+	}
+	if err := second.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBoundedMutationLockStopsAtItsDeadline(t *testing.T) {
+	stateDir := t.TempDir()
+	first, err := AcquireMutationLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	started := time.Now()
+	_, err = AcquireMutationLockBlocking(stateDir, 300*time.Millisecond)
+	if err == nil {
+		t.Fatal("bounded mutation lock did not fail")
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("bounded mutation lock waited %s", elapsed)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("process %d", os.Getpid())) {
+		t.Fatalf("timeout error = %v, want the holder process", err)
+	}
+}
+
 func TestNamedLockRejectsConcurrentUseAndKeepsNamesInsideTheStateDirectory(t *testing.T) {
 	stateDir := t.TempDir()
 	first, err := AcquireNamedLock(stateDir, "environment", "../../outside")

@@ -37,7 +37,7 @@ func (s *Service) QueuePreparation(templateName string, template domain.Template
 	if err := template.Validate(); err != nil {
 		return PreparationQueue{}, fmt.Errorf("invalid Project Template %q: %w", templateName, err)
 	}
-	digest, err := store.TemplateDigest(template)
+	digests, err := store.Digests(template)
 	if err != nil {
 		return PreparationQueue{}, err
 	}
@@ -51,13 +51,13 @@ func (s *Service) QueuePreparation(templateName string, template domain.Template
 		return PreparationQueue{}, err
 	}
 	for _, environment := range environments {
-		if environment.FormatVersion == domain.PreparationFormatVersion && environment.TemplateDigest == digest && environment.Status == domain.EnvironmentReady {
+		if environment.FormatVersion == domain.PreparationFormatVersion && digests.Matches(environment.TemplateDigest) && environment.Status == domain.EnvironmentReady {
 			lock.Release()
 			return PreparationQueue{Environment: environment}, nil
 		}
 	}
 	for _, environment := range environments {
-		if environment.FormatVersion != domain.PreparationFormatVersion || environment.TemplateDigest != digest {
+		if environment.FormatVersion != domain.PreparationFormatVersion || !digests.Matches(environment.TemplateDigest) {
 			continue
 		}
 		if environment.Status == domain.EnvironmentQueued {
@@ -94,7 +94,7 @@ func (s *Service) QueuePreparation(templateName string, template domain.Template
 			return PreparationQueue{}, lockErr
 		}
 	}
-	environment, err := s.newPreparedEnvironment(templateName, digest, template)
+	environment, err := s.newPreparedEnvironment(templateName, digests.Environment, template)
 	if err == nil {
 		err = s.environments.Save(environment)
 	}
@@ -129,7 +129,7 @@ func (s *Service) FailQueuedPreparation(environmentID, token string, cause error
 }
 
 func (s *Service) claimPreparedEnvironment(name, templateName string, template domain.Template, environmentID string) (domain.Project, error) {
-	digest, err := store.TemplateDigest(template)
+	digests, err := store.Digests(template)
 	if err != nil {
 		return domain.Project{}, err
 	}
@@ -138,7 +138,7 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 		return domain.Project{}, err
 	}
 	environment, err := s.environments.Find(environmentID)
-	if err == nil && (environment.Status != domain.EnvironmentReady || environment.TemplateDigest != digest || environment.FormatVersion != domain.PreparationFormatVersion) {
+	if err == nil && (environment.Status != domain.EnvironmentReady || !digests.Matches(environment.TemplateDigest) || environment.FormatVersion != domain.PreparationFormatVersion) {
 		err = fmt.Errorf("Prepared Environment %q is not ready for this Project Template revision", environment.ID)
 	}
 	if err == nil {
@@ -473,8 +473,10 @@ func (s *Service) prepareEnvironment(environmentID, token string) (domain.Prepar
 			return environment, err
 		}
 	}
+	readyAt := s.now()
 	environment.Status = domain.EnvironmentReady
-	environment.UpdatedAt = s.now()
+	environment.UpdatedAt = readyAt
+	environment.ReadyAt = &readyAt
 	if err := s.environments.Save(environment); err != nil {
 		return environment, err
 	}

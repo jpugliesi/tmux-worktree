@@ -98,23 +98,23 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 	return command
 }
 
-func currentTemplateDigests(configDir string) (map[string]string, error) {
+func currentTemplateDigests(configDir string) (map[string]store.DigestSet, error) {
 	templates := store.NewTemplateStore(configDir)
 	names, err := templates.List()
 	if err != nil {
 		return nil, err
 	}
-	digests := make(map[string]string, len(names))
+	digests := make(map[string]store.DigestSet, len(names))
 	for _, name := range names {
 		template, err := templates.Load(name)
 		if err != nil {
 			return nil, err
 		}
-		digest, err := store.TemplateDigest(template)
+		digestSet, err := store.Digests(template)
 		if err != nil {
 			return nil, err
 		}
-		digests[name] = digest
+		digests[name] = digestSet
 	}
 	return digests, nil
 }

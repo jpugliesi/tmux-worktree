@@ -9,6 +9,53 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
+func TestTemplateStoreKeepsPoolDepthThroughAYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	directory := filepath.Join(configDir, "templates")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `version: 1
+name: example
+pool_depth: 2
+repositories:
+  - name: app
+    clone: {url: https://example.com/app.git}
+`
+	if err := os.WriteFile(filepath.Join(directory, "example.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	templates := store.NewTemplateStore(configDir)
+	loaded, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.PoolDepth != 2 || loaded.EffectivePoolDepth() != 2 {
+		t.Fatalf("loaded pool depth = %d", loaded.PoolDepth)
+	}
+
+	if err := templates.Save(loaded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(directory, "example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), "pool_depth: 2") {
+		t.Fatalf("saved Project Template does not keep pool_depth:\n%s", encoded)
+	}
+	again, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.PoolDepth != 2 {
+		t.Fatalf("reloaded pool depth = %d", again.PoolDepth)
+	}
+}
+
 func TestTemplateStoreRejectsInvalidYAML(t *testing.T) {
 	t.Parallel()
 
@@ -96,6 +143,11 @@ repositories:
     initialize: {command: [""]}
 `,
 			message: "command must not be empty",
+		},
+		{
+			name:    "negative pool depth",
+			yaml:    "version: 1\nname: example\nrepositories: []\npool_depth: -1\n",
+			message: "pool_depth -1 is negative",
 		},
 		{
 			name: "template initialization without cwd",
