@@ -317,12 +317,13 @@ twt2 projects path fix-auth everysphere
 twt2 projects open fix-auth
 ```
 
-The text list shows the Project name, Project Template, status, and age, in
-that order. The list does not read disk sizes, so it stays fast; use
-`twt2 storage show` for disk space:
+The text list shows an aligned table with the Project name, Project Template,
+status, and age, in that order. The list does not read disk sizes, so it stays
+fast; use `twt2 storage show` for disk space:
 
 ```text
-fix-auth	everysphere	active	2h
+NAME      TEMPLATE     STATUS  AGE
+fix-auth  everysphere  active  2h
 ```
 
 Use `--output json` when a program needs the immutable Project ID.

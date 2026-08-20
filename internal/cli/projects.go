@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"text/tabwriter"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -54,13 +55,17 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				return err
 			}
 			now := time.Now().UTC()
+			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)
+			if _, err := fmt.Fprintln(writer, "NAME\tTEMPLATE\tSTATUS\tAGE"); err != nil {
+				return err
+			}
 			for _, project := range projects {
 				age := formatAge(now.Sub(projectAgeReference(project)))
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status, age); err != nil {
+				if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status, age); err != nil {
 					return err
 				}
 			}
-			return nil
+			return writer.Flush()
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")

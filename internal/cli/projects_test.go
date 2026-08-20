@@ -38,7 +38,8 @@ func TestProjectsListShowsHumanFieldsFirst(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}, nil, "projects", "list")
 
-	want := "everysphere-0\teverysphere\tactive\t3d\n"
+	want := "NAME           TEMPLATE     STATUS  AGE\n" +
+		"everysphere-0  everysphere  active  3d\n"
 	if output != want {
 		t.Fatalf("projects list output = %q, want %q", output, want)
 	}
@@ -99,15 +100,46 @@ func TestProjectsListShowsRecentActiveProjectsBeforeArchives(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}
 	output := executeWithOptions(t, options, nil, "projects", "list", "--limit", "2")
-	want := "new-active\texample\tactive\t1h\nold-active\texample\tactive\t2d\n"
+	want := "NAME        TEMPLATE  STATUS  AGE\n" +
+		"new-active  example   active  1h\n" +
+		"old-active  example   active  2d\n"
 	if output != want {
 		t.Fatalf("limited projects list output = %q, want %q", output, want)
 	}
 
 	// An archived Project shows its age since the archive time.
 	fullOutput := executeWithOptions(t, options, nil, "projects", "list")
-	if !strings.Contains(fullOutput, "new-archive\texample\tarchived\t5h\n") {
+	if !strings.Contains(fullOutput, "new-archive  example   archived  5h\n") {
 		t.Fatalf("projects list archived age = %q", fullOutput)
+	}
+}
+
+func TestProjectsListReturnsTableFlushErrors(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	project := domain.Project{
+		Version:      domain.ProjectVersion,
+		ID:           "output-error-project",
+		Name:         "output-error",
+		TemplateName: "example",
+		Status:       domain.ProjectActive,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := store.NewProjectStore(filepath.Join(root, "state")).Save(project); err != nil {
+		t.Fatal(err)
+	}
+
+	command := cli.New(cli.Options{
+		ConfigDir: filepath.Join(root, "config"),
+		StateDir:  filepath.Join(root, "state"),
+		DataDir:   filepath.Join(root, "data"),
+		Stdout:    errorWriter{},
+		Stderr:    &bytes.Buffer{},
+	})
+	command.SetArgs([]string{"projects", "list"})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "test output failure") {
+		t.Fatalf("projects list output error = %v", err)
 	}
 }
 
