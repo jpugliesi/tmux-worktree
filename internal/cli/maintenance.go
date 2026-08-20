@@ -22,8 +22,8 @@ type doctorOutput struct {
 func newStorageCommand(options Options) *cobra.Command {
 	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
 	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt2 storage"})
-	status := &cobra.Command{
-		Use:   "status",
+	show := &cobra.Command{
+		Use:   "show",
 		Short: "Show Project and repository storage use",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -34,16 +34,24 @@ func newStorageCommand(options Options) *cobra.Command {
 			if WantsJSON(command) {
 				return writeJSONOutput(command, storageOutput{SchemaVersion: jsonSchemaVersion, Storage: result})
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount, formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount, formatBytes(result.SnapshotBytes))
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects (active): %s (%d)\nProjects (archived): %s (%d)\nWorktrees: %d\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n",
+				formatBytes(result.TotalBytes),
+				formatBytes(result.CacheBytes), result.CacheCount,
+				formatBytes(result.ActiveProjectBytes), result.ActiveProjectCount,
+				formatBytes(result.ArchivedProjectBytes), result.ArchivedProjectCount,
+				result.WorktreeCount,
+				formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount,
+				formatBytes(result.SnapshotBytes))
 			return err
 		},
 	}
-	storage.AddCommand(status, newStorageCleanCommand(options))
+	storage.AddCommand(show, newStorageCleanCommand(options))
 	return storage
 }
 
 type storageCleanupOutput struct {
 	SchemaVersion int                               `json:"schemaVersion"`
+	Applied       bool                              `json:"applied"`
 	Plan          projectservice.StorageCleanupPlan `json:"plan"`
 }
 
@@ -54,26 +62,31 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 		Short: "Remove unused twt2-owned data",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			digests, err := currentTemplateDigests(options.ConfigDir)
+			templates, err := currentTemplateDigests(command, options.ConfigDir)
 			if err != nil {
 				return err
 			}
 			service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-			plan, err := service.StorageCleanupPlan(digests)
+			plan, err := service.StorageCleanupPlan(templates)
 			if err != nil {
 				return err
 			}
-			if apply && !isDryRun(command) {
-				plan, err = service.CleanStorage(digests)
+			applied := apply && !isDryRun(command)
+			if applied {
+				plan, err = service.CleanStorage(templates)
 				if err != nil {
 					return err
 				}
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, storageCleanupOutput{SchemaVersion: jsonSchemaVersion, Plan: plan})
+				return writeJSONOutput(command, storageCleanupOutput{SchemaVersion: jsonSchemaVersion, Applied: applied, Plan: plan})
+			}
+			if len(plan.Environments) == 0 && len(plan.Snapshots) == 0 && len(plan.Agents) == 0 {
+				_, err = fmt.Fprintln(command.OutOrStdout(), "Nothing to clean.")
+				return err
 			}
 			for _, item := range plan.Environments {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q\n", item.Reason, item.ID, item.TemplateName); err != nil {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q (%s)\n", item.Reason, item.ID, item.TemplateName, formatBytes(item.Bytes)); err != nil {
 					return err
 				}
 			}
@@ -86,11 +99,16 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 					return err
 				}
 			}
-			if !apply || isDryRun(command) {
+			for _, item := range plan.Agents {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for missing Project %q\n", item.Reason, item.ID, item.ProjectID); err != nil {
+					return err
+				}
+			}
+			if !applied {
 				_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
 				return err
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments and %d Transcript Snapshots\n", len(plan.Environments), len(plan.Snapshots))
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments, %d Transcript Snapshots, and %d Agent Session records\n", len(plan.Environments), len(plan.Snapshots), len(plan.Agents))
 			return err
 		},
 	}
@@ -98,25 +116,34 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 	return command
 }
 
-func currentTemplateDigests(configDir string) (map[string]store.DigestSet, error) {
+// currentTemplateDigests reads the digests of the current Project Templates. A
+// Project Template that twt2 cannot load gives a warning, and twt2 keeps its
+// Prepared Environments.
+func currentTemplateDigests(command *cobra.Command, configDir string) (projectservice.TemplateDigests, error) {
 	templates := store.NewTemplateStore(configDir)
 	names, err := templates.List()
 	if err != nil {
-		return nil, err
+		return projectservice.TemplateDigests{}, err
 	}
-	digests := make(map[string]store.DigestSet, len(names))
+	result := make(projectservice.TemplateDigests, len(names))
 	for _, name := range names {
 		template, err := templates.Load(name)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			var digestSet store.DigestSet
+			digestSet, err = store.Digests(template)
+			if err == nil {
+				result[name] = digestSet
+				continue
+			}
 		}
-		digestSet, err := store.Digests(template)
-		if err != nil {
-			return nil, err
+		// An empty DigestSet keeps the Prepared Environments of this Project
+		// Template.
+		result[name] = store.DigestSet{}
+		if _, writeErr := fmt.Fprintf(command.ErrOrStderr(), "Warning: Project Template %q is not valid. twt2 kept its Prepared Environments.\n", name); writeErr != nil {
+			return projectservice.TemplateDigests{}, writeErr
 		}
-		digests[name] = digestSet
 	}
-	return digests, nil
+	return result, nil
 }
 
 func newDoctorCommand(options Options) *cobra.Command {

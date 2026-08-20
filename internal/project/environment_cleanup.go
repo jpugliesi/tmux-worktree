@@ -19,9 +19,31 @@ type EnvironmentCleanupItem struct {
 	TemplateName string `json:"template"`
 	Reason       string `json:"reason"`
 	Root         string `json:"root"`
+	Bytes        int64  `json:"bytes"`
 }
 
-func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]store.DigestSet) (EnvironmentCleanupPlan, error) {
+// TemplateDigests describes the current Project Templates for a cleanup plan.
+// Each entry holds the digests of one Project Template. An entry with an empty
+// DigestSet marks a Project Template that twt2 cannot load: twt2 keeps its
+// Prepared Environments, because it cannot know if they are obsolete. A
+// Project Template that has no entry no longer exists, so its Prepared
+// Environments are obsolete.
+type TemplateDigests map[string]store.DigestSet
+
+// obsolete reports whether one prepared digest no longer matches its Project
+// Template.
+func (t TemplateDigests) obsolete(templateName, digest string) bool {
+	current, found := t[templateName]
+	if !found {
+		return true
+	}
+	if current.Environment == "" && current.Legacy == "" {
+		return false
+	}
+	return !current.Matches(digest)
+}
+
+func (s *Service) PreparedCleanupPlan(templates TemplateDigests) (EnvironmentCleanupPlan, error) {
 	environments, err := s.environments.List()
 	if err != nil {
 		return EnvironmentCleanupPlan{}, err
@@ -33,40 +55,41 @@ func (s *Service) PreparedCleanupPlan(currentTemplateDigests map[string]store.Di
 		case domain.EnvironmentFailed:
 			reason = "failed Prepared Environment"
 		case domain.EnvironmentReady:
-			if !currentTemplateDigests[environment.TemplateName].Matches(environment.TemplateDigest) {
+			if templates.obsolete(environment.TemplateName, environment.TemplateDigest) {
 				reason = "obsolete Prepared Environment"
 			}
 		}
 		if reason != "" {
 			plan.Environments = append(plan.Environments, EnvironmentCleanupItem{
-				ID: environment.ID, TemplateName: environment.TemplateName, Reason: reason, Root: environment.Root,
+				ID: environment.ID, TemplateName: environment.TemplateName, Reason: reason,
+				Root: environment.Root, Bytes: directorySize(environment.Root),
 			})
 		}
 	}
 	return plan, nil
 }
 
-func (s *Service) CleanPrepared(currentTemplateDigests map[string]store.DigestSet) (EnvironmentCleanupPlan, error) {
-	plan, err := s.PreparedCleanupPlan(currentTemplateDigests)
+func (s *Service) CleanPrepared(templates TemplateDigests) (EnvironmentCleanupPlan, error) {
+	plan, err := s.PreparedCleanupPlan(templates)
 	if err != nil {
 		return plan, err
 	}
 	for _, item := range plan.Environments {
-		if err := s.cleanPreparedEnvironment(item.ID, currentTemplateDigests); err != nil {
+		if err := s.cleanPreparedEnvironment(item.ID, templates); err != nil {
 			return plan, err
 		}
 	}
 	return plan, nil
 }
 
-func (s *Service) cleanPreparedEnvironment(environmentID string, currentTemplateDigests map[string]store.DigestSet) error {
+func (s *Service) cleanPreparedEnvironment(environmentID string, templates TemplateDigests) error {
 	global, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return err
 	}
 	environment, err := s.environments.Find(environmentID)
 	if err == nil {
-		candidate := environment.Status == domain.EnvironmentFailed || (environment.Status == domain.EnvironmentReady && !currentTemplateDigests[environment.TemplateName].Matches(environment.TemplateDigest))
+		candidate := environment.Status == domain.EnvironmentFailed || (environment.Status == domain.EnvironmentReady && templates.obsolete(environment.TemplateName, environment.TemplateDigest))
 		if !candidate {
 			err = fmt.Errorf("Prepared Environment %q is not safe to clean", environment.ID)
 		}

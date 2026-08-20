@@ -301,14 +301,17 @@ twt2 projects open fix-auth
 Inspect disk use:
 
 ```sh
-twt2 storage status
-twt2 storage status --output json
+twt2 storage show
+twt2 storage show --output json
 ```
 
-`storage status` reports claimed Project data, unclaimed Prepared Environment
-data, and Transcript Snapshot data separately. `storage clean` finds failed or
-obsolete unclaimed environments and owned snapshots whose Project record no
-longer exists. Preview the cleanup, then apply it:
+`storage show` reports active Project data, archived Project data, unclaimed
+Prepared Environment data, and Transcript Snapshot data separately.
+`storage clean` finds failed or obsolete unclaimed environments, owned
+snapshots whose Project record no longer exists, and Agent Session records
+whose Project record no longer exists. If a Project Template YAML file is not
+valid, `storage clean` gives a warning and keeps its Prepared Environments.
+Preview the cleanup, then apply it:
 
 ```sh
 twt2 storage clean
@@ -330,8 +333,21 @@ that are not on another known ref. It removes only a Project root that has the
 matching twt2 ownership marker.
 
 Project removal keeps the shared repository cache. This makes later Project
-creation fast. `storage status` includes these caches. Automatic cache removal
+creation fast. `storage show` includes these caches. Automatic cache removal
 is not in this preview.
+
+Inspect the Prepared Environment pool:
+
+```sh
+twt2 environments list
+twt2 environments show ENVIRONMENT_ID --output json
+```
+
+The text list groups the Prepared Environments by Project Template. Each line
+shows the short ID, status, age, size, and the most useful value for that
+status: the base commit, the preparation log of a failed environment, or the
+Project that claims it. A ready environment that no longer matches its Project
+Template has status `obsolete`.
 
 Check tools, YAML files, Project records, and ownership markers:
 

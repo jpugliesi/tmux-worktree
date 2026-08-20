@@ -81,7 +81,8 @@ twt2 projects open fix-auth
 Inspect disk use and preview cleanup before you remove archived data:
 
 ```sh
-twt2 storage status
+twt2 storage show
+twt2 environments list
 twt2 storage clean
 twt2 storage clean --apply
 twt2 projects remove fix-auth
