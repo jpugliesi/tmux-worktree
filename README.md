@@ -67,7 +67,7 @@ Install [twt2.nvim](nvim/twt2.nvim/README.md) to select that Agent Session
 with `<leader>arp`. The plug-in opens that transcript in a private
 Project-specific `latest.md`. Add review notes with `<leader>an`, and send the
 note batch with `<leader>arr`. One Neovim process can safely work across
-different Projects.
+different Projects. Linked transcript loading supports Codex and Claude.
 
 Archive the current Project when you finish its work. This keeps its worktrees,
 branches, and Agent Session records:
