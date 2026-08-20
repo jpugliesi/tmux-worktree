@@ -45,7 +45,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
 	t.Setenv("TWT2_PROJECT_ID", "stale-project-id")
 	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", oldPane, "@twt2_project_id", oldProject.Name)
@@ -112,7 +112,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		_, err := service.Archive(projectID, "")
 		return err
 	}
-	attachControlClient(t, socket, "old-project")
+	attachControlClient(t, socket, "twt2-old-project")
 
 	var promptOutput, promptError bytes.Buffer
 	promptOptions := options
@@ -149,9 +149,9 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		t.Fatalf("new Project does not use the latest Project Template: %+v", newProject)
 	}
 
-	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=new-project", "-F", "#{pane_id}")
+	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-new-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", newPane)
-	attachControlClient(t, socket, "new-project")
+	attachControlClient(t, socket, "twt2-new-project")
 	archiveCalled := false
 	options.QuickCreateSwitch = func(string, string) error { return fmt.Errorf("test switch failure") }
 	options.QuickCreateArchive = func(string, string, string) error {
@@ -282,7 +282,7 @@ func TestQuickCreateChecksTheTmuxClientBeforeProjectSetup(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
 	initLog := filepath.Join(root, "init.log")
 	t.Setenv("TWT2_TEST_INIT_LOG", initLog)
@@ -341,7 +341,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	helperPane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=new-project", "-n", "archive-helper", "--", "sleep", "60")
+	helperPane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-new-project", "-n", "archive-helper", "--", "sleep", "60")
 	t.Setenv("TMUX_PANE", helperPane)
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
@@ -378,7 +378,7 @@ func TestQuickCreateWorkerArchivesOldProjectFromTheNewSession(t *testing.T) {
 	if err != nil || newProject.Status != domain.ProjectActive {
 		t.Fatalf("new Project after worker: status=%q error=%v", newProject.Status, err)
 	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=old-project").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt2-old-project").Run(); err == nil {
 		t.Fatal("quick create worker kept the old tmux session")
 	}
 }
@@ -421,11 +421,11 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
 	otherPane := runCommand(t, "", "tmux", "-L", socket, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", oldPane)
 	runCommand(t, "", "tmux", "-L", socket, "select-pane", "-t", otherPane)
 
-	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "old-project")
+	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "twt2-old-project")
 	clientInput, err := client.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -520,9 +520,9 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt2-old-project", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", oldPane)
-	attachControlClient(t, socket, "old-project")
+	attachControlClient(t, socket, "twt2-old-project")
 
 	var events []string
 	options.QuickCreateSwitch = func(_ string, session string) error {

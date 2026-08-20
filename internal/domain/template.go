@@ -16,6 +16,9 @@ type Template struct {
 	Name         string           `yaml:"name" json:"name"`
 	Repositories []RepositorySpec `yaml:"repositories" json:"repositories"`
 	Initialize   *InitializeSpec  `yaml:"initialize,omitempty" json:"initialize,omitempty"`
+	// Session is the command that twt2 runs each time it creates the tmux
+	// session of a Project. Use it to lay out the windows and the panes.
+	Session *SessionSpec `yaml:"session,omitempty" json:"session,omitempty"`
 	// PoolDepth is the number of ready Prepared Environments to keep for this
 	// Project Template. A value of 0 uses the default depth of 1.
 	PoolDepth int `yaml:"pool_depth,omitempty" json:"poolDepth,omitempty"`
@@ -75,6 +78,18 @@ type RepositorySpec struct {
 type CloneSpec struct {
 	URL   string `yaml:"url" json:"url"`
 	Depth int    `yaml:"depth,omitempty" json:"depth,omitempty"`
+}
+
+// SessionSpec declares one command that twt2 runs each time it creates the
+// tmux session of a Project. twt2 runs the command after it makes the session
+// and one window for each repository. twt2 never runs it against a session
+// that is already live, so the command cannot disturb panes that the user
+// arranged.
+type SessionSpec struct {
+	Command []string `yaml:"command" json:"command"`
+	// CWD is the working directory of the command. It is relative to the
+	// Project root. An empty value uses the Project root.
+	CWD string `yaml:"cwd,omitempty" json:"cwd,omitempty"`
 }
 
 type InitializeSpec struct {
@@ -139,6 +154,9 @@ func (t Template) Validate() error {
 	if err := validateInitialize(t.Initialize, true); err != nil {
 		return fmt.Errorf("template initialization: %w", err)
 	}
+	if err := validateSession(t.Session); err != nil {
+		return fmt.Errorf("template session command: %w", err)
+	}
 	if err := validateTemplateAgents(t.Agents); err != nil {
 		return err
 	}
@@ -189,11 +207,31 @@ func validateInitialize(initialize *InitializeSpec, requireWorkingDirectory bool
 	if requireWorkingDirectory && strings.TrimSpace(initialize.WorkingDirectory) == "" {
 		return fmt.Errorf("working_directory must be set")
 	}
-	if requireWorkingDirectory {
-		clean := filepath.Clean(initialize.WorkingDirectory)
-		if filepath.IsAbs(initialize.WorkingDirectory) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("working_directory must stay inside the Project root")
-		}
+	if requireWorkingDirectory && !insideProjectRoot(initialize.WorkingDirectory) {
+		return fmt.Errorf("working_directory must stay inside the Project root")
 	}
 	return nil
+}
+
+func validateSession(session *SessionSpec) error {
+	if session == nil {
+		return nil
+	}
+	if len(session.Command) == 0 || strings.TrimSpace(session.Command[0]) == "" {
+		return fmt.Errorf("command must not be empty")
+	}
+	if session.CWD != "" && !insideProjectRoot(session.CWD) {
+		return fmt.Errorf("cwd must stay inside the Project root")
+	}
+	return nil
+}
+
+// insideProjectRoot reports whether a declared relative directory stays inside
+// the Project root.
+func insideProjectRoot(directory string) bool {
+	if filepath.IsAbs(directory) {
+		return false
+	}
+	clean := filepath.Clean(directory)
+	return clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }

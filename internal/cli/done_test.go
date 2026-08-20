@@ -91,7 +91,7 @@ func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 	if _, err := store.NewProjectStore(options.StateDir).Find(project.ID); err == nil {
 		t.Fatal("Project record still exists after done")
 	}
-	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=finish-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt2-finish-me").Run(); err == nil {
 		t.Fatal("Project tmux session still exists after done")
 	}
 }
@@ -155,7 +155,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gammaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=gamma", "-F", "#{pane_id}")
+	gammaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-gamma", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", gammaPane)
 
 	// JSON output cannot relocate the tmux client.
@@ -212,7 +212,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 
 	// Archive relocates too, keeps the Project data, and behaves like done
 	// --keep.
-	betaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=beta", "-F", "#{pane_id}")
+	betaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-beta", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", betaPane)
 	archiveOutput := executeWithOptions(t, options, nil, "archive")
 	if !strings.Contains(archiveOutput, "Archiving Project \"beta\"; switching the client to Project \"alpha\"") {
@@ -227,7 +227,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	}
 
 	// Without another active Project, done reports an empty destination.
-	alphaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=alpha", "-F", "#{pane_id}")
+	alphaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=twt2-alpha", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", alphaPane)
 	lastOutput := executeWithOptions(t, options, nil, "done")
 	if !strings.Contains(lastOutput, "No other active Project exists.") {
@@ -260,7 +260,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	helperPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=worker-dest", "-n", "done-helper", "--", "sleep", "60")
+	helperPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=twt2-worker-dest", "-n", "done-helper", "--", "sleep", "60")
 	t.Setenv("TMUX_PANE", helperPane)
 
 	timeoutOptions := options
@@ -297,7 +297,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if _, err := os.Stat(source.Root); !os.IsNotExist(err) {
 		t.Fatalf("done worker kept the Project root: %v", err)
 	}
-	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=worker-src").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=twt2-worker-src").Run(); err == nil {
 		t.Fatal("done worker kept the source tmux session")
 	}
 }

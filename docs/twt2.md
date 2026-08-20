@@ -171,6 +171,60 @@ Project initialization receives these environment variables:
 - `TWT2_PROJECT_ROOT`
 - `TWT2_REPOSITORY_<NAME>` for each repository
 
+## Lay out the tmux session
+
+A Project Template can declare one session command. `twt2` runs it each time it
+creates the tmux session of a Project: at Project creation, and again when
+`twt2 projects open` makes the session for an archived Project. The command
+runs after `twt2` makes the session and one window for each repository.
+
+`twt2` never runs the command against a session that is already live. A setup
+retry on a live session skips it, so the command cannot disturb panes that you
+arranged.
+
+```yaml
+session:
+  command:
+    - ./scripts/layout.sh
+  cwd: everysphere
+```
+
+`command` is an argv list, like an initialization command. `cwd` is optional
+and relative to the Project root; the default working directory is the Project
+root.
+
+The session command receives the Project initialization variables
+(`TWT2_PROJECT_ID`, `TWT2_PROJECT_NAME`, `TWT2_PROJECT_ROOT`, and
+`TWT2_REPOSITORY_<NAME>`) and these tmux targets:
+
+- `TWT2_TMUX_SESSION` is the tmux session ID, for example `$5`.
+- `TWT2_TMUX_WINDOW_<NAME>` is the tmux window ID of the window of each
+  repository, for example `@7`. The name part follows the repository name in
+  upper case, with `-` and `.` changed to `_`.
+- `TWT2_TMUX_SOCKET` is the tmux socket name when `twt2` uses a socket that is
+  not the default one. It is empty for the default tmux server.
+
+Use the IDs to make your own tmux targets. A pane target is
+`<window id>.<pane index>`, and the pane index follows your
+`pane-base-index` option. This script makes a three-pane layout in the
+`everysphere` window: one pane beside the first pane that takes 34% of the
+width, then one pane under the first pane that takes 25% of its height.
+
+```sh
+#!/bin/sh
+set -e
+window="$TWT2_TMUX_WINDOW_EVERYSPHERE"
+tmux split-window -d -h -l 34% -t "$window" -c "$TWT2_REPOSITORY_EVERYSPHERE"
+tmux split-window -d -v -l 25% -t "$window.1" -c "$TWT2_REPOSITORY_EVERYSPHERE"
+```
+
+The example uses `-l 34%`, the modern size flag. The old `-p 34` flag is
+deprecated. `-d` keeps the new pane out of the focus. The example targets pane
+`1` with `pane-base-index 1`; use `$window.0` with the tmux default.
+
+A session command that fails makes the tmux setup step fail. The Project keeps
+its record, and `twt2 projects setup retry PROJECT` runs the step again.
+
 ## Work with Projects
 
 Create and open a Project:
@@ -192,6 +246,14 @@ Two flags control the Git start point:
 `twt2` opens or attaches the tmux session only when standard output is a
 terminal. Use `--no-open` to never open it. `--output json` no longer implies
 no-open: a program that pipes the output gets no tmux change.
+
+`twt2` names the new tmux session `twt2-<project name>`, for example
+`twt2-fix-auth`. The prefix makes the sessions of `twt2` clear in the tmux
+session picker. If a session with that name already exists and belongs to
+something else, `twt2` adds the first 8 characters of the Project ID to the
+name. The name is presentation only: `twt2` finds each session through the
+tmux session ID and the `@twt2_project_id` option, so you can rename a session
+and every command still works.
 
 From the Project tmux session, create the next Project and archive the current
 Project:

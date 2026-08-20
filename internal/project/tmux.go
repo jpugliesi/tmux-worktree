@@ -2,36 +2,58 @@ package project
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
+// sessionNamePrefix marks each tmux session that twt2 owns. The prefix makes
+// twt2 sessions clear in the native tmux session picker. The name is
+// presentation only: twt2 finds its sessions through the session ID and the
+// @twt2_project_id option.
+const sessionNamePrefix = "twt2-"
+
+// sessionName returns the tmux session name that twt2 uses for a new Project.
+func sessionName(projectName string) string {
+	if strings.HasPrefix(projectName, sessionNamePrefix) {
+		return projectName
+	}
+	return sessionNamePrefix + projectName
+}
+
 func (s *Service) ensureTmux(p *domain.Project) error {
 	if len(p.Repositories) == 0 {
 		return fmt.Errorf("Project Template has no repositories")
 	}
-	sessionID, projectID, exists, err := s.findSession(p.ID, p.TmuxSession)
+	name := sessionName(p.Name)
+	sessionID, projectID, exists, err := s.findSession(p.ID, name)
 	if err != nil {
 		return err
 	}
 	if exists && projectID != p.ID {
-		fallback := p.Name + "-" + p.ID[:8]
+		fallback := name + "-" + p.ID[:8]
 		sessionID, projectID, exists, err = s.findSession(p.ID, fallback)
 		if err != nil {
 			return err
 		}
 		if exists && projectID != p.ID {
-			return fmt.Errorf("tmux sessions %q and %q already exist and belong to other Projects", p.TmuxSession, fallback)
+			return fmt.Errorf("tmux sessions %q and %q already exist and belong to other Projects", name, fallback)
 		}
-		p.TmuxSession = fallback
+		name = fallback
+	}
+	if !exists && p.TmuxSession != name {
+		p.TmuxSession = name
 		if err := s.store.Save(*p); err != nil {
-			return fmt.Errorf("save fallback tmux session name: %w", err)
+			return fmt.Errorf("save tmux session name: %w", err)
 		}
 	}
+	createdSession := false
 	if !exists {
 		first := p.Repositories[0]
-		created, createErr := output("", "tmux", s.tmuxArgs("new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}", "-s", p.TmuxSession, "-n", first.WindowName, "-c", first.Path)...)
+		created, createErr := output("", "tmux", s.tmuxArgs("new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}", "-s", name, "-n", first.WindowName, "-c", first.Path)...)
 		if createErr != nil {
 			return fmt.Errorf("create tmux session: %w", createErr)
 		}
@@ -47,24 +69,70 @@ func (s *Service) ensureTmux(p *domain.Project) error {
 		if err := s.markWindow(windowID, first); err != nil {
 			return err
 		}
+		createdSession = true
 	}
+	windowIDs := make(map[string]string, len(p.Repositories))
 	for _, repository := range p.Repositories {
-		hasWindow, err := s.hasManagedWindow(sessionID, repository.Name)
+		windowID, hasWindow, err := s.managedWindowID(sessionID, repository.Name)
 		if err != nil {
 			return err
 		}
-		if hasWindow {
+		if !hasWindow {
+			windowID, err = output("", "tmux", s.tmuxArgs("new-window", "-d", "-P", "-F", "#{window_id}", "-t", sessionID, "-n", repository.WindowName, "-c", repository.Path)...)
+			if err != nil {
+				return fmt.Errorf("create tmux window for repository %q: %w", repository.Name, err)
+			}
+			if err := s.markWindow(windowID, repository); err != nil {
+				return err
+			}
+		}
+		windowIDs[repository.Name] = windowID
+	}
+	if !createdSession {
+		return nil
+	}
+	return s.runSessionCommand(*p, sessionID, windowIDs)
+}
+
+// runSessionCommand runs the declared session command of the Project Template.
+// The caller runs it only after it creates the tmux session, so a setup retry
+// against a live session keeps the panes that the user arranged. A failure
+// fails the tmux step, and a setup retry runs the step again.
+func (s *Service) runSessionCommand(p domain.Project, sessionID string, windowIDs map[string]string) error {
+	session := p.TemplateSnapshot.Session
+	if session == nil || len(session.Command) == 0 {
+		return nil
+	}
+	directory := p.Root
+	if session.CWD != "" {
+		directory = filepath.Join(p.Root, filepath.FromSlash(session.CWD))
+	}
+	command := exec.Command(session.Command[0], session.Command[1:]...)
+	command.Dir = directory
+	environment := append(os.Environ(), projectEnvironment(p)...)
+	environment = append(environment,
+		"TWT2_TMUX_SESSION="+sessionID,
+		"TWT2_TMUX_SOCKET="+s.options.TmuxSocket,
+	)
+	for _, repository := range p.Repositories {
+		windowID, found := windowIDs[repository.Name]
+		if !found {
 			continue
 		}
-		windowID, err := output("", "tmux", s.tmuxArgs("new-window", "-d", "-P", "-F", "#{window_id}", "-t", sessionID, "-n", repository.WindowName, "-c", repository.Path)...)
-		if err != nil {
-			return fmt.Errorf("create tmux window for repository %q: %w", repository.Name, err)
-		}
-		if err := s.markWindow(windowID, repository); err != nil {
-			return err
-		}
+		environment = append(environment, "TWT2_TMUX_WINDOW_"+repositoryEnvironmentKey(repository.Name)+"="+windowID)
+	}
+	command.Env = environment
+	commandOutput, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("run Project Template session command in %q: %w: %s", directory, err, strings.TrimSpace(string(commandOutput)))
 	}
 	return nil
+}
+
+// repositoryEnvironmentKey makes the environment variable suffix of one
+// repository name. It matches the suffix of TWT2_REPOSITORY_<NAME>.
+func repositoryEnvironmentKey(name string) string {
+	return strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(name))
 }
 
 func (s *Service) findSession(projectID, name string) (sessionID, ownerID string, exists bool, err error) {
@@ -97,17 +165,20 @@ func (s *Service) findSession(projectID, name string) (sessionID, ownerID string
 	return "", "", false, nil
 }
 
-func (s *Service) hasManagedWindow(sessionID, repositoryName string) (bool, error) {
-	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{@twt2_repository_name}")...)
+// managedWindowID returns the ID of the window that twt2 marked for the
+// repository in this session.
+func (s *Service) managedWindowID(sessionID, repositoryName string) (string, bool, error) {
+	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{@twt2_repository_name}\t#{window_id}")...)
 	if err != nil {
-		return false, fmt.Errorf("list tmux windows: %w", err)
+		return "", false, fmt.Errorf("list tmux windows: %w", err)
 	}
-	for _, value := range strings.Split(rows, "\n") {
-		if value == repositoryName {
-			return true, nil
+	for _, row := range strings.Split(rows, "\n") {
+		parts := strings.SplitN(row, "\t", 2)
+		if len(parts) == 2 && parts[0] == repositoryName {
+			return parts[1], true, nil
 		}
 	}
-	return false, nil
+	return "", false, nil
 }
 
 func (s *Service) markWindow(windowID string, repository domain.ProjectRepository) error {

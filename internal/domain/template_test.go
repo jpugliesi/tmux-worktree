@@ -86,6 +86,61 @@ func TestTemplateValidatesDeclaredAgentSessions(t *testing.T) {
 	}
 }
 
+func TestTemplateValidatesTheSessionCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		session *SessionSpec
+		message string
+	}{
+		{
+			name: "no session command",
+		},
+		{
+			name:    "command only",
+			session: &SessionSpec{Command: []string{"./scripts/layout.sh"}},
+		},
+		{
+			name:    "command with arguments and a directory",
+			session: &SessionSpec{Command: []string{"./scripts/layout.sh", "--wide"}, CWD: "app/scripts"},
+		},
+		{
+			name:    "empty command",
+			session: &SessionSpec{},
+			message: "command must not be empty",
+		},
+		{
+			name:    "blank command",
+			session: &SessionSpec{Command: []string{" "}},
+			message: "command must not be empty",
+		},
+		{
+			name:    "absolute directory",
+			session: &SessionSpec{Command: []string{"./layout.sh"}, CWD: "/etc"},
+			message: "cwd must stay inside the Project root",
+		},
+		{
+			name:    "directory above the Project root",
+			session: &SessionSpec{Command: []string{"./layout.sh"}, CWD: "../elsewhere"},
+			message: "cwd must stay inside the Project root",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			template := Template{Version: TemplateVersion, Name: "example", Session: test.session}
+			err := template.Validate()
+			if test.message == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want no error", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("Validate() error = %v, want text %q", err, test.message)
+			}
+		})
+	}
+}
+
 func TestValidAgentProvider(t *testing.T) {
 	for _, provider := range AgentProviders {
 		if !ValidAgentProvider(provider) {

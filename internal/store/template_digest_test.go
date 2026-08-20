@@ -44,6 +44,9 @@ func TestEnvironmentDigestIgnoresChangesThatKeepTheWorktreeSet(t *testing.T) {
 			template.Initialize = &domain.InitializeSpec{Command: []string{"./init.sh"}, WorkingDirectory: "app"}
 		}},
 		{"pool depth", func(template *domain.Template) { template.PoolDepth = 3 }},
+		{"session command", func(template *domain.Template) {
+			template.Session = &domain.SessionSpec{Command: []string{"./scripts/layout.sh"}, CWD: "app"}
+		}},
 	}
 	base, err := EnvironmentDigest(digestTemplate())
 	if err != nil {
@@ -200,6 +203,28 @@ func TestLoadTemplateCatalogWarnsAboutUnreadableTemplates(t *testing.T) {
 	}
 	if len(warnings) != 1 || !strings.Contains(warnings[0], `"bad"`) {
 		t.Fatalf("warnings = %v", warnings)
+	}
+}
+
+// A session command is presentation. An edit to it must keep each ready
+// Prepared Environment of the Project Template usable.
+func TestSessionCommandEditKeepsPreparedEnvironments(t *testing.T) {
+	prepared, err := Digests(digestTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := digestTemplate()
+	edited.Session = &domain.SessionSpec{Command: []string{"./scripts/layout.sh"}}
+	editedDigests, err := Digests(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if editedDigests.Environment != prepared.Environment {
+		t.Fatalf("environment digest changed: %q != %q", editedDigests.Environment, prepared.Environment)
+	}
+	catalog := TemplateCatalog{"example": TemplateStatus{Digests: editedDigests}}
+	if got := catalog.Disposition("example", prepared.Environment); got != TemplateCurrent {
+		t.Fatalf("Disposition after a session command edit = %v, want %v", got, TemplateCurrent)
 	}
 }
 

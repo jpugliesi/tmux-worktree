@@ -112,6 +112,59 @@ agents:
 	}
 }
 
+func TestTemplateStoreKeepsTheSessionCommandThroughAYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	directory := filepath.Join(configDir, "templates")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `version: 1
+name: example
+repositories:
+  - name: app
+    clone: {url: https://example.com/app.git}
+session:
+  command:
+    - ./scripts/layout.sh
+    - --wide
+  cwd: app
+`
+	if err := os.WriteFile(filepath.Join(directory, "example.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	templates := store.NewTemplateStore(configDir)
+	loaded, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Session == nil || len(loaded.Session.Command) != 2 || loaded.Session.Command[1] != "--wide" || loaded.Session.CWD != "app" {
+		t.Fatalf("loaded session command = %+v", loaded.Session)
+	}
+
+	if err := templates.Save(loaded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(directory, "example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"session:", "command:", "./scripts/layout.sh", "cwd: app"} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("saved Project Template does not keep %q:\n%s", want, encoded)
+		}
+	}
+	again, err := templates.Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Session == nil || again.Session.Command[0] != "./scripts/layout.sh" || again.Session.CWD != "app" {
+		t.Fatalf("reloaded session command = %+v", again.Session)
+	}
+}
+
 func TestTemplateStoreRejectsInvalidYAML(t *testing.T) {
 	t.Parallel()
 
