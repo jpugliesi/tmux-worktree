@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
 )
 
 type Options struct {
@@ -91,27 +93,28 @@ func (e notInProjectError) Error() string { return e.message }
 
 func (e notInProjectError) Is(target error) bool { return target == ErrNotInProject }
 
-func (s *Service) CurrentFromPane(tmuxPane string) (domain.Project, error) {
-	if tmuxPane == "" {
-		return domain.Project{}, notInProjectError{message: "run this command inside a twt2 Project tmux session"}
-	}
-	sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
-	if err != nil || sessionID == "" {
-		return domain.Project{}, notInProjectError{message: fmt.Sprintf("find the Project tmux session for pane %q", tmuxPane)}
-	}
-	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
-	if err != nil || projectID == "" {
-		return domain.Project{}, notInProjectError{message: fmt.Sprintf("tmux pane %q is not in a twt2 Project", tmuxPane)}
-	}
-	p, err := s.store.Find(projectID)
+// CurrentForQuickCreate resolves the current Project for quick create. It
+// uses the tmux pane of the caller, then the project ID value, then the
+// current directory. Quick create needs an active Project. When the caller
+// runs inside the tmux session that the Project owns, that session must be
+// the only session of the Project, because quick create switches the calling
+// tmux client and then archives the Project.
+func (s *Service) CurrentForQuickCreate(directory, projectID, tmuxPane string) (domain.Project, error) {
+	p, sessionID, err := s.projectForPane(tmuxPane)
 	if err != nil {
 		return domain.Project{}, err
 	}
-	if p.ID != projectID {
-		return domain.Project{}, fmt.Errorf("tmux session %q does not contain an immutable Project ID", sessionID)
+	if sessionID == "" {
+		p, err = s.Current(directory, projectID, "")
+		if err != nil {
+			return domain.Project{}, notInProjectError{message: "run this command inside a twt2 Project worktree or tmux session"}
+		}
 	}
 	if p.Status != domain.ProjectActive {
 		return domain.Project{}, fmt.Errorf("Project %q has status %q; quick create requires status %q", p.Name, p.Status, domain.ProjectActive)
+	}
+	if sessionID == "" {
+		return p, nil
 	}
 	sessions, err := s.ownedSessions(p.ID)
 	if err != nil {
@@ -121,6 +124,31 @@ func (s *Service) CurrentFromPane(tmuxPane string) (domain.Project, error) {
 		return domain.Project{}, fmt.Errorf("tmux session %q is not the unique session for Project %q", sessionID, p.Name)
 	}
 	return p, nil
+}
+
+// projectForPane returns the Project of the tmux session that owns the pane,
+// with that session ID. An empty session ID means that the pane gives no
+// Project, and the caller must use another part of the context chain.
+func (s *Service) projectForPane(tmuxPane string) (domain.Project, string, error) {
+	if tmuxPane == "" {
+		return domain.Project{}, "", nil
+	}
+	sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
+	if err != nil || sessionID == "" {
+		return domain.Project{}, "", nil
+	}
+	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
+	if err != nil || projectID == "" {
+		return domain.Project{}, "", nil
+	}
+	p, err := s.store.Find(projectID)
+	if err != nil {
+		return domain.Project{}, "", err
+	}
+	if p.ID != projectID {
+		return domain.Project{}, "", fmt.Errorf("tmux session %q does not contain an immutable Project ID", sessionID)
+	}
+	return p, sessionID, nil
 }
 
 func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project, error) {
@@ -370,7 +398,82 @@ func (s *Service) runStep(p *domain.Project, step domain.SetupStep) error {
 		init := p.TemplateSnapshot.Initialize
 		workingDirectory := filepath.Join(p.Root, filepath.FromSlash(init.WorkingDirectory))
 		return s.runInitialize(*p, workingDirectory, init)
+	case domain.StepAgent:
+		return s.ensureTemplateAgent(*p, step.Agent)
 	default:
 		return fmt.Errorf("unknown setup step %q", step.Kind)
 	}
+}
+
+// agentSteps returns one setup step for each Agent Session that the Project
+// Template declares. These steps come after the tmux step and after Project
+// initialization, so each Agent starts in a complete Project.
+func agentSteps(template domain.Template) []domain.SetupStep {
+	steps := make([]domain.SetupStep, 0, len(template.Agents))
+	for _, declared := range template.Agents {
+		steps = append(steps, domain.SetupStep{
+			ID: "agent:" + declared.Label, Kind: domain.StepAgent,
+			Agent: declared.Label, Status: domain.StepPending,
+		})
+	}
+	return steps
+}
+
+// ensureTemplateAgent registers one declared Agent Session and starts it in
+// its own Project window. The step is idempotent: a saved record with the
+// same label makes it succeed again, so a setup retry does not make a second
+// Agent Session. It writes the record with the Agent Session store, because
+// the mutation lock is already held on the create and the retry path.
+//
+// A Project without a live owned tmux session gets a record with no pane and
+// with the declared start command as its resume command. The Agent Session
+// can then start later with 'twt2 agents resume'.
+func (s *Service) ensureTemplateAgent(p domain.Project, label string) error {
+	var declared *domain.TemplateAgent
+	for index := range p.TemplateSnapshot.Agents {
+		if p.TemplateSnapshot.Agents[index].Label == label {
+			declared = &p.TemplateSnapshot.Agents[index]
+			break
+		}
+	}
+	if declared == nil {
+		return fmt.Errorf("the Project Template snapshot does not declare Agent Session %q", label)
+	}
+	agents := store.NewAgentStore(s.options.StateDir)
+	existing, err := agents.List(p.ID)
+	if err != nil {
+		return err
+	}
+	for _, session := range existing {
+		if session.Label == label {
+			return nil
+		}
+	}
+	session, err := agent.BuildSession(p, declared.Provider, declared.Label, "", "", declared.Start, existing, s.now())
+	if err != nil {
+		return err
+	}
+	_, ownerID, exists, err := s.findSession(p.ID, p.TmuxSession)
+	if err != nil {
+		return err
+	}
+	client := tmuxclient.Client{Socket: s.options.TmuxSocket}
+	if exists && ownerID == p.ID {
+		pane, startErr := client.StartAgent(p, declared.Label, declared.Start)
+		if startErr != nil {
+			return fmt.Errorf("start Agent Session %q: %w", label, startErr)
+		}
+		session.TmuxPane = pane
+		session.PaneCommand, session.PaneStart, err = client.PaneProcess(pane, p.ID)
+		if err != nil {
+			return fmt.Errorf("read the pane of Agent Session %q: %w", label, err)
+		}
+		if !agent.MatchesProvider(session.PaneCommand, session.PaneStart, session.Provider, session.ResumeCommand) {
+			return fmt.Errorf("the started pane command %q of Agent Session %q does not match provider %q", session.PaneCommand, label, session.Provider)
+		}
+		if err := client.ClaimAgentPane(pane, p.ID, session.ID); err != nil {
+			return fmt.Errorf("mark the pane of Agent Session %q: %w", label, err)
+		}
+	}
+	return agents.Save(session)
 }

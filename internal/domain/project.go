@@ -25,6 +25,7 @@ const (
 	StepRepositoryInit StepKind = "repository_init"
 	StepTmux           StepKind = "tmux"
 	StepProjectInit    StepKind = "project_init"
+	StepAgent          StepKind = "agent"
 )
 
 const (
@@ -61,9 +62,11 @@ type ProjectRepository struct {
 }
 
 type SetupStep struct {
-	ID         string     `json:"id"`
-	Kind       StepKind   `json:"kind"`
-	Repository string     `json:"repository,omitempty"`
+	ID         string   `json:"id"`
+	Kind       StepKind `json:"kind"`
+	Repository string   `json:"repository,omitempty"`
+	// Agent is the label of the declared Agent Session of an agent step.
+	Agent      string     `json:"agent,omitempty"`
 	Status     StepStatus `json:"status"`
 	Attempts   int        `json:"attempts"`
 	Error      string     `json:"error,omitempty"`

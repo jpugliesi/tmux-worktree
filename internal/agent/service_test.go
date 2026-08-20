@@ -181,6 +181,59 @@ func TestRemoveDeletesOnlyTheSelectedAgentSessionRecord(t *testing.T) {
 	}
 }
 
+func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
+	service := NewService(t.TempDir(), "")
+	project := domain.Project{Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectInitializing}
+	now := time.Now().UTC()
+
+	session, err := BuildSession(project, "codex", "review", "", "", []string{"codex"}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ID == "" || session.ProjectID != project.ID || session.Provider != "codex" || session.Label != "review" {
+		t.Fatalf("BuildSession() = %+v", session)
+	}
+	if session.TmuxPane != "" || session.PaneCommand != "" || session.PaneStart != "" {
+		t.Fatalf("BuildSession() recorded a pane: %+v", session)
+	}
+	if len(session.ResumeCommand) != 1 || session.ResumeCommand[0] != "codex" {
+		t.Fatalf("BuildSession() resume command = %v", session.ResumeCommand)
+	}
+	if !session.CreatedAt.Equal(now) || !session.UpdatedAt.Equal(now) {
+		t.Fatalf("BuildSession() times = %s and %s", session.CreatedAt, session.UpdatedAt)
+	}
+	agents, err := service.List(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("BuildSession() saved a record: %+v", agents)
+	}
+
+	if _, err := BuildSession(project, "codex", "review", "", "", []string{"codex"}, []domain.AgentSession{session}, now); err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("BuildSession() with a used label error = %v", err)
+	}
+	if _, err := BuildSession(project, "robot", "review", "", "", []string{"robot"}, nil, now); err == nil || !strings.Contains(err.Error(), "unsupported agent provider") {
+		t.Fatalf("BuildSession() with an unsupported provider error = %v", err)
+	}
+	defaulted, err := BuildSession(project, "", "", "", "", []string{"codex", "resume", "session-one"}, []domain.AgentSession{session}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaulted.Provider != "codex" || defaulted.Label != "codex" || defaulted.ProviderSessionID != "session-one" {
+		t.Fatalf("BuildSession() with inference = %+v", defaulted)
+	}
+}
+
+func TestMatchesProvider(t *testing.T) {
+	if !MatchesProvider("codex", "codex resume x", "codex", []string{"codex", "resume", "x"}) {
+		t.Fatal("MatchesProvider() for a direct codex pane = false")
+	}
+	if MatchesProvider("bash", "bash -lc 'codex'", "codex", []string{"codex"}) {
+		t.Fatal("MatchesProvider() for a shell pane = true")
+	}
+}
+
 func activeProject(t *testing.T) (*Service, domain.Project) {
 	t.Helper()
 	stateDir := t.TempDir()

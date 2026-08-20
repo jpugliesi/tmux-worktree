@@ -454,6 +454,7 @@ func (s *Service) projectForEnvironment(name, templateName string, template doma
 	if template.Initialize != nil {
 		project.Steps = append(project.Steps, newStep("project_init", domain.StepProjectInit, ""))
 	}
+	project.Steps = append(project.Steps, agentSteps(template)...)
 	return project
 }
 

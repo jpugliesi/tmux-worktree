@@ -39,13 +39,41 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 	if err := s.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
 		return domain.AgentSession{}, err
 	}
-	provider, providerSessionID, err = inferRegistration(provider, providerSessionID, resumeCommand)
-	if err != nil {
-		return domain.AgentSession{}, err
-	}
 	existing, err := s.store.List(project.ID)
 	if err != nil {
 		return domain.AgentSession{}, err
+	}
+	agent, err := BuildSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, s.now())
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	if pane != "" {
+		agent.PaneCommand, agent.PaneStart, err = s.tmux.PaneProcess(pane, project.ID)
+		if err != nil {
+			return domain.AgentSession{}, err
+		}
+		if err := s.tmux.ClaimAgentPane(pane, project.ID, agent.ID); err != nil {
+			return domain.AgentSession{}, err
+		}
+	}
+	if err := s.store.Save(agent); err != nil {
+		return domain.AgentSession{}, err
+	}
+	return agent, nil
+}
+
+// BuildSession makes one new Agent Session record. It does not take a lock,
+// read tmux, or write the store. Register uses it inside the mutation lock.
+// Project setup also uses it, because the mutation lock is already held
+// there. The caller gives the Agent Sessions that the Project has now, and
+// must record the pane identity and save the record.
+func BuildSession(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
+	provider, providerSessionID, err := inferRegistration(provider, providerSessionID, resumeCommand)
+	if err != nil {
+		return domain.AgentSession{}, err
+	}
+	if !validProvider(provider) {
+		return domain.AgentSession{}, clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
 	}
 	label, err = resolveLabel(label, provider, existing)
 	if err != nil {
@@ -55,23 +83,18 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	now := s.now()
-	paneCommand := ""
-	paneStart := ""
-	if pane != "" {
-		paneCommand, paneStart, err = s.tmux.PaneProcess(pane, project.ID)
-		if err != nil {
-			return domain.AgentSession{}, err
-		}
-		if err := s.tmux.ClaimAgentPane(pane, project.ID, id); err != nil {
-			return domain.AgentSession{}, err
-		}
-	}
-	agent := domain.AgentSession{Version: domain.AgentVersion, ID: id, ProjectID: project.ID, Provider: provider, Label: label, ProviderSessionID: providerSessionID, TmuxPane: pane, PaneCommand: paneCommand, PaneStart: paneStart, ResumeCommand: append([]string(nil), resumeCommand...), CreatedAt: now, UpdatedAt: now}
-	if err := s.store.Save(agent); err != nil {
-		return domain.AgentSession{}, err
-	}
-	return agent, nil
+	return domain.AgentSession{
+		Version: domain.AgentVersion, ID: id, ProjectID: project.ID, Provider: provider, Label: label,
+		ProviderSessionID: providerSessionID, TmuxPane: pane,
+		ResumeCommand: append([]string(nil), resumeCommand...), CreatedAt: now, UpdatedAt: now,
+	}, nil
+}
+
+// MatchesProvider reports whether a pane that runs these commands is a safe
+// direct process for the provider of the Agent Session.
+func MatchesProvider(paneCommand, paneStart, provider string, resumeCommand []string) bool {
+	return commandMatchesProvider(paneCommand, provider, resumeCommand) &&
+		commandMatchesProvider(startCommand(paneStart), provider, resumeCommand)
 }
 
 func (s *Service) ValidateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) error {
@@ -187,7 +210,7 @@ func inferRegistration(provider, providerSessionID string, resumeCommand []strin
 // inferProvider reads the provider from the program name of the resume
 // command. A shell program name gives no provider.
 func inferProvider(resumeCommand []string) string {
-	for _, provider := range []string{"codex", "claude", "cursor", "command"} {
+	for _, provider := range domain.AgentProviders {
 		if commandMatchesProvider(resumeCommand[0], provider, resumeCommand) {
 			return provider
 		}
@@ -431,14 +454,7 @@ func commandMatchesProvider(command, provider string, resumeCommand []string) bo
 	}
 }
 
-func validProvider(provider string) bool {
-	switch provider {
-	case "codex", "claude", "cursor", "command":
-		return true
-	default:
-		return false
-	}
-}
+func validProvider(provider string) bool { return domain.ValidAgentProvider(provider) }
 
 func agentID() (string, error) {
 	data := make([]byte, 12)

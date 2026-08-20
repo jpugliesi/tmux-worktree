@@ -19,6 +19,31 @@ type Template struct {
 	// PoolDepth is the number of ready Prepared Environments to keep for this
 	// Project Template. A value of 0 uses the default depth of 1.
 	PoolDepth int `yaml:"pool_depth,omitempty" json:"poolDepth,omitempty"`
+	// Agents are the Agent Sessions that each new Project gets.
+	Agents []TemplateAgent `yaml:"agents,omitempty" json:"agents,omitempty"`
+}
+
+// TemplateAgent declares one Agent Session that twt2 registers and starts
+// during Project setup.
+type TemplateAgent struct {
+	Label    string `yaml:"label" json:"label"`
+	Provider string `yaml:"provider" json:"provider"`
+	// Start is the command that twt2 runs in a new Project window. It is also
+	// the resume command of the Agent Session.
+	Start []string `yaml:"start" json:"start"`
+}
+
+// AgentProviders are the supported Agent Session provider names.
+var AgentProviders = []string{"codex", "claude", "cursor", "command"}
+
+// ValidAgentProvider reports whether the provider name is supported.
+func ValidAgentProvider(provider string) bool {
+	for _, known := range AgentProviders {
+		if provider == known {
+			return true
+		}
+	}
+	return false
 }
 
 // EffectivePoolDepth returns the number of ready Prepared Environments to keep.
@@ -27,6 +52,15 @@ func (t Template) EffectivePoolDepth() int {
 		return 1
 	}
 	return t.PoolDepth
+}
+
+// Warnings returns the advisory messages for a valid Project Template. A
+// warning does not stop a mutation.
+func (t Template) Warnings() []string {
+	if len(t.Repositories) == 0 {
+		return []string{"The Project Template has no repositories."}
+	}
+	return nil
 }
 
 type RepositorySpec struct {
@@ -104,6 +138,36 @@ func (t Template) Validate() error {
 	}
 	if err := validateInitialize(t.Initialize, true); err != nil {
 		return fmt.Errorf("template initialization: %w", err)
+	}
+	if err := validateTemplateAgents(t.Agents); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateTemplateAgents(agents []TemplateAgent) error {
+	labels := make(map[string]struct{}, len(agents))
+	for _, agent := range agents {
+		label := strings.TrimSpace(agent.Label)
+		if label == "" {
+			return fmt.Errorf("each declared Agent Session must have a label")
+		}
+		if !templateResourceName.MatchString(label) || label == "." || label == ".." {
+			return fmt.Errorf("Agent Session label %q is invalid", label)
+		}
+		if _, exists := labels[label]; exists {
+			return fmt.Errorf("Agent Session label %q is declared more than once", label)
+		}
+		labels[label] = struct{}{}
+		if strings.TrimSpace(agent.Provider) == "" {
+			return fmt.Errorf("Agent Session %q has no provider", label)
+		}
+		if !ValidAgentProvider(agent.Provider) {
+			return fmt.Errorf("Agent Session %q has unsupported provider %q", label, agent.Provider)
+		}
+		if len(agent.Start) == 0 || strings.TrimSpace(agent.Start[0]) == "" {
+			return fmt.Errorf("Agent Session %q has no start command", label)
+		}
 	}
 	return nil
 }
