@@ -28,18 +28,14 @@ type AgentCleanupItem struct {
 	Reason    string `json:"reason"`
 }
 
-func (s *Service) StorageCleanupPlan(templates TemplateDigests) (StorageCleanupPlan, error) {
+func (s *Service) StorageCleanupPlan(templates store.TemplateCatalog) (StorageCleanupPlan, error) {
 	prepared, err := s.PreparedCleanupPlan(templates)
 	if err != nil {
 		return StorageCleanupPlan{}, err
 	}
-	projects, err := s.store.List()
+	active, err := s.activeProjectSet()
 	if err != nil {
 		return StorageCleanupPlan{}, err
-	}
-	active := make(map[string]bool, len(projects))
-	for _, project := range projects {
-		active[project.ID] = true
 	}
 	snapshots, err := s.snapshots.List()
 	if err != nil {
@@ -77,7 +73,7 @@ func (s *Service) StorageCleanupPlan(templates TemplateDigests) (StorageCleanupP
 	return plan, nil
 }
 
-func (s *Service) CleanStorage(templates TemplateDigests) (StorageCleanupPlan, error) {
+func (s *Service) CleanStorage(templates store.TemplateCatalog) (StorageCleanupPlan, error) {
 	plan, err := s.StorageCleanupPlan(templates)
 	if err != nil {
 		return plan, err
@@ -85,65 +81,61 @@ func (s *Service) CleanStorage(templates TemplateDigests) (StorageCleanupPlan, e
 	if _, err := s.CleanPrepared(templates); err != nil {
 		return plan, err
 	}
+	lock, err := store.AcquireMutationLock(s.options.StateDir)
+	if err != nil {
+		return plan, err
+	}
+	defer lock.Release()
+	// One project set serves the whole batch. It is read again inside the
+	// mutation lock, so a Project that appeared after the plan stays safe.
+	active, err := s.activeProjectSet()
+	if err != nil {
+		return plan, err
+	}
 	for _, snapshot := range plan.Snapshots {
-		if err := s.cleanSnapshot(snapshot); err != nil {
+		if snapshot.ProjectID == "" {
+			if err := s.snapshots.DeleteTemporaryFile(snapshot.Root); err != nil {
+				return plan, err
+			}
+			continue
+		}
+		err := withOrphanCheck(active, "Transcript Snapshot", snapshot.ProjectID, snapshot.ProjectID, func() error {
+			return s.snapshots.DeleteProject(snapshot.ProjectID, false)
+		})
+		if err != nil {
 			return plan, err
 		}
 	}
+	agents := store.NewAgentStore(s.options.StateDir)
 	for _, agent := range plan.Agents {
-		if err := s.cleanOrphanAgent(agent); err != nil {
+		err := withOrphanCheck(active, "Agent Session", agent.ID, agent.ProjectID, func() error {
+			return agents.Delete(agent.ID)
+		})
+		if err != nil {
 			return plan, err
 		}
 	}
 	return plan, nil
 }
 
-// cleanOrphanAgent deletes one Agent Session record. It checks again, inside
-// the mutation lock, that the Project record does not exist.
-func (s *Service) cleanOrphanAgent(item AgentCleanupItem) error {
-	lock, err := store.AcquireMutationLock(s.options.StateDir)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
+// activeProjectSet returns the IDs of all recorded Projects.
+func (s *Service) activeProjectSet() (map[string]bool, error) {
 	projects, err := s.store.List()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	active := make(map[string]bool, len(projects))
 	for _, project := range projects {
-		if project.ID == item.ProjectID {
-			return fmt.Errorf("Agent Session %q belongs to an existing Project", item.ID)
-		}
+		active[project.ID] = true
 	}
-	return store.NewAgentStore(s.options.StateDir).Delete(item.ID)
+	return active, nil
 }
 
-func (s *Service) cleanSnapshot(snapshot SnapshotCleanupItem) error {
-	if snapshot.ProjectID == "" {
-		lock, err := store.AcquireMutationLock(s.options.StateDir)
-		if err != nil {
-			return err
-		}
-		defer lock.Release()
-		return s.snapshots.DeleteTemporaryFile(snapshot.Root)
+// withOrphanCheck runs remove only when the active project set does not
+// contain projectID. The caller must hold the mutation lock.
+func withOrphanCheck(active map[string]bool, kind, name, projectID string, remove func() error) error {
+	if active[projectID] {
+		return fmt.Errorf("%s %q belongs to an existing Project", kind, name)
 	}
-	return s.cleanOrphanSnapshot(snapshot.ProjectID)
-}
-
-func (s *Service) cleanOrphanSnapshot(projectID string) error {
-	lock, err := store.AcquireMutationLock(s.options.StateDir)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-	projects, err := s.store.List()
-	if err != nil {
-		return err
-	}
-	for _, project := range projects {
-		if project.ID == projectID {
-			return fmt.Errorf("Transcript Snapshot %q belongs to an existing Project", projectID)
-		}
-	}
-	return s.snapshots.DeleteProject(projectID, false)
+	return remove()
 }

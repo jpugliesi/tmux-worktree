@@ -124,8 +124,7 @@ func (s *Service) cleanPreparedEnvironment(environmentID string, templates Templ
 		} else if err != nil {
 			return fmt.Errorf("inspect Prepared Environment checkout: %w", err)
 		}
-		commonDir, err := output(repository.Path, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if err != nil || !sameDirectory(commonDir, repository.CachePath) {
+		if err := worktreeUsesCache(repository.Path, repository.CachePath); err != nil {
 			return fmt.Errorf("Prepared Environment repository %q does not use its Repository Cache", repository.Name)
 		}
 		cacheLock, err := store.AcquireNamedLockBlocking(s.options.StateDir, "cache", repository.CachePath)

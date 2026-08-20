@@ -338,39 +338,25 @@ func (s *Service) validateOpen(reference string) (domain.Project, error) {
 }
 
 func (s *Service) runPending(p *domain.Project) error {
-	for index := range p.Steps {
-		if p.Steps[index].Status == domain.StepSucceeded {
-			continue
-		}
-		step := &p.Steps[index]
-		s.report("Step %d of %d: %s", index+1, len(p.Steps), step.ID)
-		now := s.now()
-		step.Status = domain.StepRunning
-		step.Attempts++
-		step.StartedAt = &now
-		step.FinishedAt = nil
-		step.Error = ""
-		p.UpdatedAt = now
-		if err := s.store.Save(*p); err != nil {
-			return err
-		}
-		err := s.runStep(p, *step)
-		finished := s.now()
-		step.FinishedAt = &finished
-		p.UpdatedAt = finished
-		if err != nil {
-			step.Status = domain.StepFailed
-			step.Error = err.Error()
+	err := s.runSteps(p.Steps,
+		func(now time.Time) error {
+			p.UpdatedAt = now
+			return s.store.Save(*p)
+		},
+		func(step domain.SetupStep) error {
+			return s.runStep(p, step)
+		},
+		func(now time.Time, cause error) error {
 			p.Status = domain.ProjectSetupFailed
+			p.UpdatedAt = now
 			if saveErr := s.store.Save(*p); saveErr != nil {
-				return fmt.Errorf("%v; also could not save failure: %w", err, saveErr)
+				return fmt.Errorf("%v; also could not save failure: %w", cause, saveErr)
 			}
-			return err
-		}
-		step.Status = domain.StepSucceeded
-		if err := s.store.Save(*p); err != nil {
-			return err
-		}
+			return cause
+		},
+	)
+	if err != nil {
+		return err
 	}
 	p.Status = domain.ProjectActive
 	p.UpdatedAt = s.now()
@@ -382,7 +368,11 @@ func (s *Service) runStep(p *domain.Project, step domain.SetupStep) error {
 	case domain.StepProjectRoot:
 		return s.writeOwnershipMarker(*p)
 	case domain.StepCache:
-		return s.ensureCache(*p, step.Repository)
+		spec, repository, err := repositoryFor(*p, step.Repository)
+		if err != nil {
+			return err
+		}
+		return s.ensureCache(spec, repository.CachePath)
 	case domain.StepCheckout:
 		return s.ensureCheckout(*p, step.Repository)
 	case domain.StepRepositoryInit:

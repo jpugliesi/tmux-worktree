@@ -86,11 +86,14 @@ func TestCreateReplacesAFailedInFlightPreparation(t *testing.T) {
 			mu.Unlock()
 		},
 	})
-	queued, err := service.QueuePreparation(template.Name, template)
+	queued, err := service.TopUpPool(template.Name, template, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	environmentID := queued.Environment.ID
+	if len(queued) != 1 {
+		t.Fatalf("TopUpPool() queued %d Prepared Environments, want 1", len(queued))
+	}
+	environmentID := queued[0].ID
 	lock, err := store.AcquireEnvironmentLock(stateDir, environmentID)
 	if err != nil {
 		t.Fatal(err)

@@ -16,43 +16,35 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func (s *Service) ensureCache(p domain.Project, repositoryName string) error {
-	_, repository, err := repositoryFor(p, repositoryName)
-	if err != nil {
-		return err
-	}
-	return s.withCacheLock(repository.CachePath, func() error {
-		return s.ensureCacheLocked(p, repositoryName)
+func (s *Service) ensureCache(spec domain.RepositorySpec, cachePath string) error {
+	return s.withCacheLock(cachePath, func() error {
+		return s.ensureCacheLocked(spec, cachePath)
 	})
 }
 
-func (s *Service) ensureCacheLocked(p domain.Project, repositoryName string) error {
-	spec, repository, err := repositoryFor(p, repositoryName)
-	if err != nil {
-		return err
-	}
-	if info, statErr := os.Stat(repository.CachePath); statErr == nil && info.IsDir() {
-		if err := validateCacheMarker(repository.CachePath, spec.Clone.URL); err != nil {
+func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string) error {
+	if info, statErr := os.Stat(cachePath); statErr == nil && info.IsDir() {
+		if err := validateCacheMarker(cachePath, spec.Clone.URL); err != nil {
 			return err
 		}
-		origin, err := output(repository.CachePath, "git", "remote", "get-url", "origin")
+		origin, err := output(cachePath, "git", "remote", "get-url", "origin")
 		if err != nil {
-			return fmt.Errorf("read origin for cache %q: %w", repositoryName, err)
+			return fmt.Errorf("read origin for cache %q: %w", spec.Name, err)
 		}
 		if origin != spec.Clone.URL {
-			return fmt.Errorf("cache %q has origin %q, but the Project requires %q", repositoryName, origin, spec.Clone.URL)
+			return fmt.Errorf("cache %q has origin %q, but the Project requires %q", spec.Name, origin, spec.Clone.URL)
 		}
-		if err := s.ensureRemotes(repository.CachePath, spec.Remotes); err != nil {
+		if err := s.ensureRemotes(cachePath, spec.Remotes); err != nil {
 			return err
 		}
-		return fetchOrigin(repository.CachePath, spec.Clone.Depth, spec.DefaultBranch)
+		return refreshCache(cachePath, spec)
 	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("inspect repository cache: %w", statErr)
 	}
-	if err := os.MkdirAll(filepath.Dir(repository.CachePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("create cache directory: %w", err)
 	}
-	temporary, err := os.MkdirTemp(filepath.Dir(repository.CachePath), ".twt2-cache-*")
+	temporary, err := os.MkdirTemp(filepath.Dir(cachePath), ".twt2-cache-*")
 	if err != nil {
 		return fmt.Errorf("create temporary cache path: %w", err)
 	}
@@ -66,19 +58,19 @@ func (s *Service) ensureCacheLocked(p domain.Project, repositoryName string) err
 	}
 	args = append(args, spec.Clone.URL, temporary)
 	if err := run("", "git", args...); err != nil {
-		return fmt.Errorf("clone repository %q: %w", repositoryName, err)
+		return fmt.Errorf("clone repository %q: %w", spec.Name, err)
 	}
 	marker := map[string]string{"owner": "twt2", "url": spec.Clone.URL}
 	if err := writeJSON(filepath.Join(temporary, "twt2-ownership.json"), marker, 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, repository.CachePath); err != nil {
+	if err := os.Rename(temporary, cachePath); err != nil {
 		return fmt.Errorf("publish repository cache: %w", err)
 	}
-	if err := s.ensureRemotes(repository.CachePath, spec.Remotes); err != nil {
+	if err := s.ensureRemotes(cachePath, spec.Remotes); err != nil {
 		return err
 	}
-	return fetchOrigin(repository.CachePath, spec.Clone.Depth, spec.DefaultBranch)
+	return refreshCache(cachePath, spec)
 }
 
 func (s *Service) ensureRemotes(cachePath string, remotes map[string]string) error {
@@ -141,12 +133,8 @@ func (s *Service) ensureCheckoutLocked(p domain.Project, repositoryName string) 
 		return err
 	}
 	if info, statErr := os.Stat(repository.Path); statErr == nil && info.IsDir() {
-		commonDir, err := output(repository.Path, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if err != nil {
-			return fmt.Errorf("checkout path %q exists but is not a Git worktree", repository.Path)
-		}
-		if filepath.Clean(commonDir) != filepath.Clean(repository.CachePath) {
-			return fmt.Errorf("checkout path %q belongs to a different repository cache", repository.Path)
+		if err := worktreeUsesCache(repository.Path, repository.CachePath); err != nil {
+			return err
 		}
 		branch, err := output(repository.Path, "git", "branch", "--show-current")
 		if err != nil || branch != repository.Branch {
@@ -159,15 +147,11 @@ func (s *Service) ensureCheckoutLocked(p domain.Project, repositoryName string) 
 	if err := os.MkdirAll(filepath.Dir(repository.Path), 0o755); err != nil {
 		return fmt.Errorf("create Project directory: %w", err)
 	}
-	startPoint := "HEAD"
-	defaultBranch := spec.DefaultBranch
-	if defaultBranch == "" {
-		defaultBranch, err = output(repository.CachePath, "git", "symbolic-ref", "--short", "HEAD")
-		if err != nil {
-			return fmt.Errorf("find default branch for repository %q: %w", repositoryName, err)
-		}
+	branch, err := defaultBranch(repository.CachePath, spec)
+	if err != nil {
+		return err
 	}
-	startPoint = "refs/remotes/origin/" + defaultBranch
+	startPoint := "refs/remotes/origin/" + branch
 	if err := run(repository.CachePath, "git", "worktree", "add", "-b", repository.Branch, repository.Path, startPoint); err != nil {
 		return fmt.Errorf("create checkout for repository %q: %w", repositoryName, err)
 	}
@@ -183,23 +167,82 @@ func (s *Service) withCacheLock(cachePath string, operation func() error) error 
 	return operation()
 }
 
-func fetchOrigin(cachePath string, depth int, defaultBranch string) error {
-	if defaultBranch == "" {
-		var err error
-		defaultBranch, err = output(cachePath, "git", "symbolic-ref", "--short", "HEAD")
-		if err != nil {
-			return fmt.Errorf("find default branch for repository cache: %w", err)
-		}
+// defaultBranch returns the default branch of one repository. It uses the
+// declared branch of the spec first, then reads HEAD of the Repository Cache
+// at cachePath.
+func defaultBranch(cachePath string, spec domain.RepositorySpec) (string, error) {
+	if spec.DefaultBranch != "" {
+		return spec.DefaultBranch, nil
 	}
+	branch, err := output(cachePath, "git", "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("find default branch for Repository Cache %q: %w", cachePath, err)
+	}
+	return branch, nil
+}
+
+// refreshCache resolves the default branch of the cache and refreshes it
+// from origin.
+func refreshCache(cachePath string, spec domain.RepositorySpec) error {
+	branch, err := defaultBranch(cachePath, spec)
+	if err != nil {
+		return err
+	}
+	return fetchOrigin(cachePath, spec.Clone.Depth, branch)
+}
+
+// fetchOrigin refreshes one branch of the cache from origin. The caller
+// resolves the branch, usually with defaultBranch.
+func fetchOrigin(cachePath string, depth int, branch string) error {
 	args := []string{"fetch", "--prune", "--no-tags"}
 	if depth > 0 {
 		args = append(args, "--depth", fmt.Sprint(depth))
 	}
-	args = append(args, "origin", "+refs/heads/"+defaultBranch+":refs/remotes/origin/"+defaultBranch)
+	args = append(args, "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch)
 	if err := run(cachePath, "git", args...); err != nil {
 		return fmt.Errorf("refresh repository cache from origin: %w", err)
 	}
 	return nil
+}
+
+// worktreeUsesCache checks that the checkout at worktreePath is a Git
+// worktree of the Repository Cache at cachePath.
+func worktreeUsesCache(worktreePath, cachePath string) error {
+	commonDir, err := output(worktreePath, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return fmt.Errorf("checkout path %q is not a Git worktree", worktreePath)
+	}
+	if !sameDirectory(commonDir, cachePath) {
+		return fmt.Errorf("checkout path %q does not use Repository Cache %q", worktreePath, cachePath)
+	}
+	return nil
+}
+
+// sameDirectory reports whether the two paths name the same directory.
+func sameDirectory(first, second string) bool {
+	firstInfo, firstErr := os.Stat(first)
+	secondInfo, secondErr := os.Stat(second)
+	return firstErr == nil && secondErr == nil && os.SameFile(firstInfo, secondInfo)
+}
+
+// isAncestor reports whether ancestor is reachable from descendant.
+func isAncestor(cachePath, ancestor, descendant string) (bool, error) {
+	command := exec.Command("git", "merge-base", "--is-ancestor", ancestor, descendant)
+	command.Dir = cachePath
+	if err := command.Run(); err == nil {
+		return true, nil
+	} else if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("compare commits in Repository Cache %q: %w", cachePath, err)
+	}
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
 }
 
 func (s *Service) cachePath(name, url string) string {

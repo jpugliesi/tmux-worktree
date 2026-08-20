@@ -31,13 +31,39 @@ type RemovalAction struct {
 	Target string `json:"target"`
 }
 
+// BlockerCode identifies one kind of removal blocker.
+type BlockerCode string
+
+const (
+	BlockerNotArchived        BlockerCode = "not_archived"
+	BlockerInsideSession      BlockerCode = "inside_session"
+	BlockerUnsafeSessions     BlockerCode = "unsafe_sessions"
+	BlockerUnsafeSnapshot     BlockerCode = "unsafe_snapshot"
+	BlockerUncommittedChanges BlockerCode = "uncommitted_changes"
+	BlockerUnpublishedBranch  BlockerCode = "unpublished_branch"
+	BlockerUnpublishedUnknown BlockerCode = "unpublished_unknown"
+	BlockerInvalidState       BlockerCode = "invalid_state"
+	BlockerUnsafeState        BlockerCode = "unsafe_state"
+	BlockerProtectedBranch    BlockerCode = "protected_branch"
+	BlockerUnexpectedItem     BlockerCode = "unexpected_item"
+)
+
+// refusalCode returns the error code that a removal refusal with this
+// blocker uses.
+func (code BlockerCode) refusalCode() clierr.Code {
+	if code == BlockerNotArchived || code == BlockerInsideSession {
+		return clierr.PreconditionFailed
+	}
+	return clierr.UnsafeState
+}
+
 // RemovalBlocker is one condition that prevents removal. The plan always
 // renders; blockers tell the operator what to correct first.
 type RemovalBlocker struct {
-	Code    string   `json:"code"`
-	Message string   `json:"message"`
-	Hint    string   `json:"hint,omitempty"`
-	Paths   []string `json:"paths,omitempty"`
+	Code    BlockerCode `json:"code"`
+	Message string      `json:"message"`
+	Hint    string      `json:"hint,omitempty"`
+	Paths   []string    `json:"paths,omitempty"`
 }
 
 type RemovalOptions struct {
@@ -82,7 +108,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 
 	if p.Status != domain.ProjectArchived && p.Status != domain.ProjectRemoving && p.Status != domain.ProjectSetupFailed {
 		plan.Blockers = append(plan.Blockers, RemovalBlocker{
-			Code:    "not_archived",
+			Code:    BlockerNotArchived,
 			Message: fmt.Sprintf("Project %q is not archived", p.Name),
 			Hint:    fmt.Sprintf("Run 'twt2 projects archive %s' before removal.", p.ID),
 		})
@@ -100,7 +126,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		if clierr.CodeOf(snapshotErr) != clierr.UnsafeState {
 			return plan, p, nil, snapshotErr
 		}
-		plan.Blockers = append(plan.Blockers, RemovalBlocker{Code: "unsafe_snapshot", Message: snapshotErr.Error()})
+		plan.Blockers = append(plan.Blockers, RemovalBlocker{Code: BlockerUnsafeSnapshot, Message: snapshotErr.Error()})
 	}
 	if snapshotExists {
 		snapshotDirectory, err := s.snapshots.ProjectDir(p.ID)
@@ -130,7 +156,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 	}
 	if len(sessions) > 1 {
 		plan.Blockers = append(plan.Blockers, RemovalBlocker{
-			Code:    "unsafe_sessions",
+			Code:    BlockerUnsafeSessions,
 			Message: fmt.Sprintf("Project %q owns more than one tmux session", p.Name),
 		})
 	}
@@ -138,7 +164,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		if clierr.CodeOf(err) != clierr.PreconditionFailed {
 			return plan, p, nil, err
 		}
-		plan.Blockers = append(plan.Blockers, RemovalBlocker{Code: "inside_session", Message: err.Error(), Hint: clierr.HintOf(err)})
+		plan.Blockers = append(plan.Blockers, RemovalBlocker{Code: BlockerInsideSession, Message: err.Error(), Hint: clierr.HintOf(err)})
 	}
 
 	if len(stateBlockers) > 0 {
@@ -165,7 +191,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 			}
 			if status != "" {
 				repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
-					Code:    "uncommitted_changes",
+					Code:    BlockerUncommittedChanges,
 					Message: fmt.Sprintf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path),
 					Paths:   dirtyPaths(status, 5),
 				})
@@ -190,14 +216,14 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 			if unknown {
 				origin, _ := output(repository.CachePath, "git", "remote", "get-url", "origin")
 				repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
-					Code:    "unpublished_unknown",
+					Code:    BlockerUnpublishedUnknown,
 					Message: fmt.Sprintf("twt2 could not read the remote \"origin\" (%s) to make sure branch %q is published", origin, repository.Branch),
 					Hint:    fmt.Sprintf("Connect to the remote and run the command again, or run 'twt2 projects remove %s --allow-unpublished --apply'.", reference),
 				})
 				return nil
 			}
 			repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
-				Code:    "unpublished_branch",
+				Code:    BlockerUnpublishedBranch,
 				Message: fmt.Sprintf("branch %q has commits that are not on the remote \"origin\" and not on another declared ref", repository.Branch),
 				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt2 projects remove %s --allow-unpublished --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
 			})
@@ -348,7 +374,7 @@ func removalRefusal(projectName string, blockers []RemovalBlocker) error {
 	messages := make([]string, 0, len(blockers))
 	hint := ""
 	for _, blocker := range blockers {
-		if blocker.Code == "not_archived" || blocker.Code == "inside_session" {
+		if blocker.Code.refusalCode() == clierr.PreconditionFailed {
 			code = clierr.PreconditionFailed
 		}
 		messages = append(messages, blocker.Message)
@@ -367,11 +393,11 @@ func removalRefusal(projectName string, blockers []RemovalBlocker) error {
 // twt2 owns. Policy refusals return as blockers; the error return is only
 // for infrastructure failures.
 func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, error) {
-	blocked := func(code, format string, values ...any) []RemovalBlocker {
+	blocked := func(code BlockerCode, format string, values ...any) []RemovalBlocker {
 		return []RemovalBlocker{{Code: code, Message: fmt.Sprintf(format, values...)}}
 	}
 	if len(p.ID) < 8 {
-		return blocked("invalid_state", "Project %q has an invalid ID", p.Name), nil
+		return blocked(BlockerInvalidState, "Project %q has an invalid ID", p.Name), nil
 	}
 	tolerantStatus := p.Status == domain.ProjectRemoving || p.Status == domain.ProjectSetupFailed
 	expectedRoot := filepath.Join(s.options.DataDir, "projects", p.Name+"-"+p.ID[:8])
@@ -383,44 +409,45 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 		} else if err != nil {
 			return nil, err
 		} else if environment.Status != domain.EnvironmentClaimed || environment.ClaimReservation == nil || environment.ClaimReservation.Project.ID != p.ID {
-			return blocked("invalid_state", "Project %q does not own its Prepared Environment", p.Name), nil
+			return blocked(BlockerInvalidState, "Project %q does not own its Prepared Environment", p.Name), nil
 		}
 	}
 	if filepath.Clean(p.Root) != filepath.Clean(expectedRoot) {
-		return blocked("invalid_state", "Project %q has an invalid root path", p.Name), nil
+		return blocked(BlockerInvalidState, "Project %q has an invalid root path", p.Name), nil
 	}
 	expectedEntries := map[string]bool{".twt2-owned.json": true}
 	for _, repository := range p.Repositories {
 		spec, _, err := repositoryFor(p, repository.Name)
 		if err != nil {
-			return blocked("invalid_state", "%s", err.Error()), nil
+			return blocked(BlockerInvalidState, "%s", err.Error()), nil
 		}
 		if repository.Path != filepath.Join(p.Root, repository.Name) {
-			return blocked("invalid_state", "repository %q has a checkout path outside its Project root", repository.Name), nil
+			return blocked(BlockerInvalidState, "repository %q has a checkout path outside its Project root", repository.Name), nil
 		}
 		if repository.CachePath != s.cachePath(repository.Name, spec.Clone.URL) {
-			return blocked("invalid_state", "repository %q has an invalid cache path", repository.Name), nil
+			return blocked(BlockerInvalidState, "repository %q has an invalid cache path", repository.Name), nil
 		}
 		cacheExists := true
 		if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
 			cacheExists = false
 			if _, checkoutErr := os.Stat(repository.Path); !errors.Is(checkoutErr, os.ErrNotExist) {
-				return blocked("invalid_state", "repository %q has a checkout but no repository cache", repository.Name), nil
+				return blocked(BlockerInvalidState, "repository %q has a checkout but no repository cache", repository.Name), nil
 			}
 		} else if err != nil {
 			return nil, fmt.Errorf("inspect repository cache: %w", err)
 		} else if err := validateCacheMarker(repository.CachePath, spec.Clone.URL); err != nil {
-			return blocked("unsafe_state", "%s", err.Error()), nil
+			return blocked(BlockerUnsafeState, "%s", err.Error()), nil
 		}
 		if repository.Branch == "" {
-			return blocked("protected_branch", "repository %q has no recorded Project branch", repository.Name), nil
+			return blocked(BlockerProtectedBranch, "repository %q has no recorded Project branch", repository.Name), nil
 		}
-		defaultBranch := spec.DefaultBranch
-		if defaultBranch == "" && cacheExists {
-			defaultBranch, _ = output(repository.CachePath, "git", "symbolic-ref", "--short", "HEAD")
+		protected := spec.DefaultBranch
+		if cacheExists {
+			// Deliberate: a cache without a readable HEAD must not block removal.
+			protected, _ = defaultBranch(repository.CachePath, spec)
 		}
-		if defaultBranch != "" && repository.Branch == defaultBranch {
-			return blocked("protected_branch", "repository %q records the default branch %q as its Project branch; removal does not delete the default branch", repository.Name, defaultBranch), nil
+		if protected != "" && repository.Branch == protected {
+			return blocked(BlockerProtectedBranch, "repository %q records the default branch %q as its Project branch; removal does not delete the default branch", repository.Name, protected), nil
 		}
 		expectedEntries[repository.Name] = true
 	}
@@ -435,7 +462,7 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 	for _, entry := range entries {
 		if !expectedEntries[entry.Name()] {
 			return []RemovalBlocker{{
-				Code:    "unexpected_item",
+				Code:    BlockerUnexpectedItem,
 				Message: fmt.Sprintf("Project root %q contains unexpected item %q; move it before removal", p.Root, entry.Name()),
 				Paths:   []string{entry.Name()},
 			}}, nil
@@ -446,12 +473,12 @@ func (s *Service) validateRemovalState(p domain.Project) ([]RemovalBlocker, erro
 	}
 	if markerPresent {
 		if err := ValidateProjectMarker(p.Root, p.ID); err != nil {
-			return blocked("unsafe_state", "%s", err.Error()), nil
+			return blocked(BlockerUnsafeState, "%s", err.Error()), nil
 		}
 		return nil, nil
 	}
 	if !tolerantStatus || len(entries) != 0 {
-		return blocked("unsafe_state", "Project root %q has no twt2 ownership marker", p.Root), nil
+		return blocked(BlockerUnsafeState, "Project root %q has no twt2 ownership marker", p.Root), nil
 	}
 	return nil, nil
 }
