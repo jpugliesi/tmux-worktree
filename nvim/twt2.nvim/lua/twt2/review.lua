@@ -1,6 +1,7 @@
 local agents = require("twt2.agents")
 local client = require("twt2.client")
 local config = require("twt2.config")
+local input = require("twt2.input")
 local M = {}
 
 local namespace = vim.api.nvim_create_namespace("twt2_review")
@@ -123,22 +124,38 @@ function M.clear_current(done)
   end)
 end
 
+function M.delete(id)
+  for index, note in ipairs(notes) do
+    if note.id == id then
+      if vim.api.nvim_buf_is_valid(note.buffer) then
+        pcall(vim.api.nvim_buf_del_extmark, note.buffer, namespace, note.mark)
+      end
+      table.remove(notes, index)
+      return true
+    end
+  end
+  return false
+end
+
 local function clear_ids(ids)
-	local remove = {}
-	for _, id in ipairs(ids) do remove[id] = true end
-	for index = #notes, 1, -1 do
-		local note = notes[index]
-		if remove[note.id] then
-			if vim.api.nvim_buf_is_valid(note.buffer) then
-				pcall(vim.api.nvim_buf_del_extmark, note.buffer, namespace, note.mark)
-			end
-			table.remove(notes, index)
-		end
-	end
+  for _, id in ipairs(ids) do M.delete(id) end
 end
 
 function M.list()
   return vim.deepcopy(notes)
+end
+
+function M.jump(id)
+  for _, note in ipairs(notes) do
+    if note.id == id then
+      local place, err = location(note)
+      if not place then return err end
+      vim.api.nvim_set_current_buf(note.buffer)
+      vim.api.nvim_win_set_cursor(0, { place.line, 0 })
+      return nil
+    end
+  end
+  return "the review note no longer exists"
 end
 
 function M.send(done)
@@ -162,24 +179,48 @@ function M.prompt_add()
     start_line, end_line = vim.fn.line("v"), vim.fn.line(".")
     if start_line > end_line then start_line, end_line = end_line, start_line end
   end
-  local buffer = vim.api.nvim_create_buf(false, true)
-  local width, height = math.min(76, vim.o.columns - 4), 6
-  local window = vim.api.nvim_open_win(buffer, true, {
-    relative = "editor", width = width, height = height,
-    row = math.floor((vim.o.lines - height) / 2), col = math.floor((vim.o.columns - width) / 2),
-    border = "single", title = " Review note ", title_pos = "center",
-  })
-  vim.bo[buffer].filetype = "markdown"
-  local function save()
-    local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n"))
-    vim.api.nvim_win_close(window, true)
+  input.open({ title = "Review note" }, function(text)
     M.add(text, start_line, end_line, function(err)
       vim.notify(err and ("twt2: " .. err) or "twt2: review note added", err and vim.log.levels.ERROR or vim.log.levels.INFO)
     end)
-  end
-  vim.keymap.set({ "n", "i" }, "<C-s>", save, { buffer = buffer })
-  vim.keymap.set("n", "q", function() vim.api.nvim_win_close(window, true) end, { buffer = buffer })
-  vim.cmd("startinsert")
+  end)
+end
+
+local function label(note)
+  local place = location(note)
+  local where = place and string.format("%s:%d", place.path, place.line) or "no valid line"
+  local first = vim.split(note.comment, "\n", { plain = true })[1]
+  return string.format("%s · %s", where, first)
+end
+
+-- Lists the review notes of the current Project, then deletes one or moves to it.
+function M.prompt_notes(done)
+  done = done or function() end
+  local directory = config.get().directory()
+  client.context(directory, function(err, context)
+    if err then done(err); return end
+    local project_notes = {}
+    for _, note in ipairs(M.list()) do
+      if note.project_id == context.project.id then project_notes[#project_notes + 1] = note end
+    end
+    if #project_notes == 0 then done("this Project has no review notes"); return end
+    config.get().select(project_notes, {
+      prompt = "Select a twt2 review note",
+      format_item = label,
+    }, function(note)
+      if not note then done(nil); return end
+      config.get().select({ "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
+        if choice == "Delete" then
+          M.delete(note.id)
+          done(nil, "deleted")
+        elseif choice == "Go to the line" then
+          done(M.jump(note.id), "jumped")
+        else
+          done(nil)
+        end
+      end)
+    end)
+  end)
 end
 
 return M

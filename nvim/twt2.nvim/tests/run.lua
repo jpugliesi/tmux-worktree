@@ -401,6 +401,170 @@ test("uses the same state-directory rules as twt2", function()
   vim.env.XDG_STATE_HOME = old_xdg
 end)
 
+test("registers the commands without the default mappings", function()
+  local commands = vim.api.nvim_get_commands({})
+  for _, name in ipairs({ "Twt2Agents", "Twt2Send", "Twt2Notes", "Twt2Resume", "Twt2Refresh" }) do
+    assert(commands[name], name .. " is missing")
+  end
+  assert(vim.fn.maparg("<leader>ars", "n") == "")
+end)
+
+local function save_keymap(buffer)
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buffer, "n")) do
+    if map.callback and map.lhs:lower():find("c%-s") then return map.callback end
+  end
+end
+
+test("sends free text from the message window", function()
+  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  require("twt2").agents.prompt_send()
+  local buffer = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "please add a test" })
+  local save = save_keymap(buffer)
+  assert(save, "the message window has no save mapping")
+  save()
+  local sent = calls[#calls]
+  assert(table.concat(sent.argv, " "):find("agents send agent%-1"))
+  assert(sent.stdin == "please add a test")
+end)
+
+test("lists a review note and deletes it", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt2.config").get().directory = function() return root .. "/src" end
+  local review = require("twt2").review
+  review.clear("project-1")
+  review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
+  review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
+
+  local labels
+  local choices = { 2, "Go to the line" }
+  require("twt2.config").get().select = function(items, opts, done)
+    local choice = table.remove(choices, 1)
+    if type(choice) == "number" then
+      labels = vim.tbl_map(opts.format_item, items)
+      done(items[choice])
+    else
+      for _, item in ipairs(items) do
+        if item == choice then done(item); return end
+      end
+      done(nil)
+    end
+  end
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  review.prompt_notes(function(err) assert(err == nil, err) end)
+  assert(#labels == 2)
+  assert(labels[1]:find("src/other.go:2 · first note", 1, true), labels[1])
+  assert(vim.api.nvim_win_get_cursor(0)[1] == 3)
+
+  choices = { 1, "Delete" }
+  review.prompt_notes(function(err) assert(err == nil, err) end)
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 1 and left[1] == "second note", table.concat(left, ","))
+  review.clear("project-1")
+  require("twt2.config").get().select = function(items, _, done) done(items[1]) end
+end)
+
+test("writes a new snapshot without the picker", function()
+  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  transcript_by_agent["agent-1"] = "# Project one transcript, again\n"
+  local picks = 0
+  local old_select = require("twt2.config").get().select
+  require("twt2.config").get().select = function(items, _, done)
+    picks = picks + 1
+    done(items[1])
+  end
+  local refreshed
+  require("twt2").agents.refresh(function(agent, err, path)
+    assert(err == nil, err)
+    assert(agent.id == "agent-1")
+    refreshed = path
+  end)
+  require("twt2.config").get().select = old_select
+  assert(picks == 0, "refresh must not open the picker")
+  assert(refreshed == require("twt2.snapshot").path("project-1"))
+  assert(table.concat(vim.fn.readfile(refreshed), "\n") == "# Project one transcript, again")
+  assert(vim.bo.autoread == true)
+end)
+
+test("emits Twt2Refresh after a pick, a send, and a refresh", function()
+  require("twt2.config").get().directory = function() return "/work/app" end
+  local fired = 0
+  local autocmd = vim.api.nvim_create_autocmd("User", {
+    pattern = "Twt2Refresh",
+    callback = function() fired = fired + 1 end,
+  })
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  assert(fired == 1)
+  require("twt2").agents.send("more feedback", function(err) assert(err == nil, err) end)
+  assert(fired == 2)
+  require("twt2").agents.refresh(function(_, err) assert(err == nil, err) end)
+  assert(fired == 3)
+  vim.api.nvim_del_autocmd(autocmd)
+end)
+
+test("offers to resume a stopped Agent Session before a send", function()
+  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  local agent = agents_response.agents[1]
+  local live = false
+  local questions = {}
+  local answer = false
+  require("twt2.config").get().confirm = function(question, done)
+    questions[#questions + 1] = question
+    done(answer)
+  end
+  require("twt2.config").get().runner = function(argv, opts, done)
+    local joined = table.concat(argv, " ")
+    if joined:find(" agents resume ", 1, true) then
+      live = true
+      done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, agentId = agent.id, status = "live" }), stderr = "" })
+      return
+    end
+    agent.status = live and "live" or "stopped"
+    agent.capabilities = { canResume = true, canSend = live, canFocus = live, canReadTranscript = true }
+    runner(argv, opts, done)
+  end
+
+  local refused
+  require("twt2").agents.send("feedback", function(err) refused = err end)
+  assert(refused and refused:find("cannot receive feedback", 1, true))
+  assert(#questions == 1 and questions[1]:find("Resume and send?", 1, true))
+
+  answer = true
+  local sent
+  require("twt2").agents.send("feedback after resume", function(err)
+    assert(err == nil, err)
+    sent = calls[#calls]
+  end)
+  assert(sent and sent.stdin == "feedback after resume")
+  assert(table.concat(sent.argv, " "):find("agents send agent%-1"))
+  assert(#questions == 2)
+
+  agent.status = "live"
+  agent.capabilities = { canResume = true, canSend = true, canFocus = true, canReadTranscript = true }
+  require("twt2.config").get().runner = runner
+  require("twt2.config").get().confirm = function(_, done) done(false) end
+end)
+
+test("reports the selected Agent Session for a statusline", function()
+  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  local status = require("twt2").agents.status()
+  assert(status and status.label == "review", vim.inspect(status))
+  assert(status.live == true)
+end)
+
 if #failures > 0 then
   error(table.concat(failures, "\n"))
 end

@@ -40,6 +40,7 @@ function M.open(project_id, project_directory)
   vim.bo.filetype = "markdown"
   vim.bo.modifiable = false
   vim.bo.readonly = true
+  vim.bo.autoread = true
   vim.b.twt2_project_id = project_id
   vim.b.twt2_project_directory = project_directory
   vim.cmd("normal! G")
