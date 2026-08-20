@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
@@ -152,7 +153,7 @@ func (s *Service) validateRemoval(reference, currentPane string) (domain.Project
 		return p, nil, err
 	}
 	if p.Status != domain.ProjectArchived && p.Status != domain.ProjectRemoving {
-		return p, nil, fmt.Errorf("Project %q is not archived; run twt2 projects archive %s before removal", p.Name, p.ID)
+		return p, nil, clierr.New(clierr.PreconditionFailed, "Project %q is not archived; run twt2 projects archive %s before removal", p.Name, p.ID)
 	}
 	if err := s.validateRemovalState(p); err != nil {
 		return p, nil, err
@@ -182,14 +183,14 @@ func (s *Service) validateRemoval(reference, currentPane string) (domain.Project
 				return fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
 			}
 			if status != "" {
-				return fmt.Errorf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
+				return clierr.New(clierr.UnsafeState, "worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
 			}
 			published, err := branchIsPublished(repository.CachePath, repository.Branch)
 			if err != nil {
 				return err
 			}
 			if !published {
-				return fmt.Errorf("branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
+				return clierr.New(clierr.UnsafeState, "branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
 			}
 			return nil
 		}); err != nil {
@@ -254,7 +255,7 @@ func (s *Service) validateRemovalState(p domain.Project) error {
 	markerPresent := false
 	for _, entry := range entries {
 		if !expectedEntries[entry.Name()] {
-			return fmt.Errorf("Project root %q contains unexpected item %q; move it before removal", p.Root, entry.Name())
+			return clierr.New(clierr.UnsafeState, "Project root %q contains unexpected item %q; move it before removal", p.Root, entry.Name())
 		}
 		if entry.Name() == ".twt2-owned.json" {
 			markerPresent = true
@@ -264,7 +265,7 @@ func (s *Service) validateRemovalState(p domain.Project) error {
 		return validateProjectMarker(p.Root, p.ID)
 	}
 	if p.Status != domain.ProjectRemoving || len(entries) != 0 {
-		return fmt.Errorf("Project root %q has no twt2 ownership marker", p.Root)
+		return clierr.New(clierr.UnsafeState, "Project root %q has no twt2 ownership marker", p.Root)
 	}
 	return nil
 }

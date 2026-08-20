@@ -13,6 +13,13 @@ state, and data directories.
 go build -o ./bin/twt2 ./cmd/twt2
 ```
 
+To stamp the build with a version, set the version variable with `-ldflags`.
+The `twt2 --version` and `twt2 schema` commands show this value:
+
+```sh
+go build -ldflags "-X github.com/jpugliesi/tmux-worktree/internal/version.Version=$(git describe --always)" -o ./bin/twt2 ./cmd/twt2
+```
+
 By default, `twt2` uses these directories:
 
 - Config: `${XDG_CONFIG_HOME:-$HOME/.config}/twt2`

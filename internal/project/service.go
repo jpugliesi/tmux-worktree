@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
@@ -66,7 +67,7 @@ func (s *Service) ValidateCreate(name, templateName string, template domain.Temp
 	}
 	for _, existing := range projects {
 		if existing.Name == name {
-			return fmt.Errorf("Project %q already exists", name)
+			return clierr.New(clierr.AlreadyExists, "Project %q already exists", name)
 		}
 	}
 	return nil
@@ -234,10 +235,10 @@ func (s *Service) validateRetry(reference string) (domain.Project, error) {
 		return p, err
 	}
 	if p.Status == domain.ProjectRemoving {
-		return p, fmt.Errorf("Project %q removal is in progress; run twt2 projects remove %s --apply", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q removal is in progress; run twt2 projects remove %s --apply", p.Name, p.ID)
 	}
 	if p.Status == domain.ProjectArchived {
-		return p, fmt.Errorf("Project %q is archived; run twt2 projects open %s", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q is archived; run twt2 projects open %s", p.Name, p.ID)
 	}
 	return p, nil
 }
@@ -286,7 +287,7 @@ func (s *Service) validateOpen(reference string) (domain.Project, error) {
 		return p, err
 	}
 	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived {
-		return p, fmt.Errorf("Project %q setup is not complete; run twt2 projects setup retry %s", p.Name, p.ID)
+		return p, clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete; run twt2 projects setup retry %s", p.Name, p.ID)
 	}
 	return p, nil
 }

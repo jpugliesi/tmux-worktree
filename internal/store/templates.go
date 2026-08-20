@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"go.yaml.in/yaml/v3"
 )
@@ -40,7 +41,7 @@ func (s TemplateStore) ValidateCreate(template domain.Template) error {
 	}
 	path := s.path(template.Name)
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("Project Template %q already exists", template.Name)
+		return clierr.New(clierr.AlreadyExists, "Project Template %q already exists", template.Name)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect Project Template %q: %w", template.Name, err)
 	}
@@ -73,7 +74,7 @@ func (s TemplateStore) Load(name string) (domain.Template, error) {
 	}
 	file, err := os.Open(s.path(name))
 	if errors.Is(err, os.ErrNotExist) {
-		return template, fmt.Errorf("Project Template %q does not exist", name)
+		return template, clierr.New(clierr.NotFound, "Project Template %q does not exist", name)
 	}
 	if err != nil {
 		return template, fmt.Errorf("open Project Template %q: %w", name, err)
@@ -109,7 +110,7 @@ func (s TemplateStore) Save(template domain.Template) error {
 		return fmt.Errorf("invalid Project Template %q: %w", template.Name, err)
 	}
 	if _, err := os.Stat(s.path(template.Name)); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("Project Template %q does not exist", template.Name)
+		return clierr.New(clierr.NotFound, "Project Template %q does not exist", template.Name)
 	} else if err != nil {
 		return fmt.Errorf("inspect Project Template %q: %w", template.Name, err)
 	}

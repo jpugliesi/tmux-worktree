@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -49,8 +50,9 @@ func DefaultOptions() Options {
 
 func New(options Options) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "twt2",
-		Short: "Manage task-focused Projects with Git worktrees and tmux",
+		Use:     "twt2",
+		Version: version.Version,
+		Short:   "Manage task-focused Projects with Git worktrees and tmux",
 		Long: `Create task-focused Projects from reusable YAML templates.
 
 Each Project can own multiple Git worktrees, one tmux window for each

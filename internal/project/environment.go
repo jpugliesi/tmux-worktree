@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
@@ -172,7 +173,7 @@ func (s *Service) requireProjectNameAvailable(name string) error {
 	}
 	for _, project := range projects {
 		if project.Name == name {
-			return fmt.Errorf("Project %q already exists", name)
+			return clierr.New(clierr.AlreadyExists, "Project %q already exists", name)
 		}
 	}
 	environments, err := s.environments.List()
@@ -181,7 +182,7 @@ func (s *Service) requireProjectNameAvailable(name string) error {
 	}
 	for _, environment := range environments {
 		if environment.ClaimReservation != nil && environment.ClaimReservation.Project.Name == name {
-			return fmt.Errorf("Project %q is already reserved by a Prepared Environment claim", name)
+			return clierr.New(clierr.AlreadyExists, "Project %q is already reserved by a Prepared Environment claim", name)
 		}
 	}
 	return nil

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
 var ErrLockHeld = errors.New("lock is held")
@@ -43,7 +45,7 @@ func acquireMutationLock(stateDir string, blocking bool) (*MutationLock, error) 
 	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
 		file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, fmt.Errorf("another twt2 change is in progress")
+			return nil, clierr.New(clierr.Locked, "another twt2 change is in progress")
 		}
 		return nil, fmt.Errorf("acquire mutation lock: %w", err)
 	}
@@ -160,7 +162,7 @@ func acquireNamedLock(stateDir, namespace, name string, blocking bool) (*NamedLo
 	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
 		file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, fmt.Errorf("%w: %s %q", ErrLockHeld, namespace, name)
+			return nil, clierr.Wrap(clierr.Locked, fmt.Errorf("%w: %s %q", ErrLockHeld, namespace, name))
 		}
 		return nil, fmt.Errorf("acquire named lock: %w", err)
 	}

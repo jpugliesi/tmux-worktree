@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -101,7 +102,7 @@ func (s AgentStore) Find(reference string) (domain.AgentSession, error) {
 	if len(prefixMatches) > 1 {
 		return domain.AgentSession{}, fmt.Errorf("Agent Session ID prefix %q is ambiguous", reference)
 	}
-	return domain.AgentSession{}, fmt.Errorf("Agent Session %q does not exist", reference)
+	return domain.AgentSession{}, clierr.New(clierr.NotFound, "Agent Session %q does not exist", reference)
 }
 
 func (s AgentStore) DeleteProject(projectID string) error {

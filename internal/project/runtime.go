@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -150,14 +151,14 @@ func writeJSON(path string, value any, mode os.FileMode) error {
 func validateProjectMarker(root, expectedProjectID string) error {
 	data, err := os.ReadFile(filepath.Join(root, ".twt2-owned.json"))
 	if err != nil {
-		return fmt.Errorf("Project root %q has no twt2 ownership marker", root)
+		return clierr.New(clierr.UnsafeState, "Project root %q has no twt2 ownership marker", root)
 	}
 	var marker struct {
 		Owner     string `json:"owner"`
 		ProjectID string `json:"projectId"`
 	}
 	if err := json.Unmarshal(data, &marker); err != nil || marker.Owner != "twt2" || marker.ProjectID != expectedProjectID {
-		return fmt.Errorf("Project root %q has a conflicting ownership marker", root)
+		return clierr.New(clierr.UnsafeState, "Project root %q has a conflicting ownership marker", root)
 	}
 	return nil
 }

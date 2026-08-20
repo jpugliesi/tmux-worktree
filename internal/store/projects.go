@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -95,7 +96,7 @@ func (s ProjectStore) Find(reference string) (domain.Project, error) {
 		}
 	}
 	if match == nil {
-		return domain.Project{}, fmt.Errorf("Project %q does not exist", reference)
+		return domain.Project{}, clierr.New(clierr.NotFound, "Project %q does not exist", reference)
 	}
 	return *match, nil
 }

@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/jpugliesi/tmux-worktree/internal/version"
 )
 
 func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
@@ -216,7 +218,138 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil || result.SchemaVersion != 1 || result.Error.Code != "command_failed" || !strings.Contains(result.Error.Message, "does not exist") {
+	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil || result.SchemaVersion != 1 || result.Error.Code != "not_found" || !strings.Contains(result.Error.Message, "does not exist") {
 		t.Fatalf("structured error = %s; decode error = %v", stderr.String(), err)
+	}
+}
+
+func TestErrorCodesMapToExitCodes(t *testing.T) {
+	root := t.TempDir()
+
+	_, err := execute(t, root, "templates", "show", "nope", "--output", "json")
+	if err == nil {
+		t.Fatal("missing template did not return an error")
+	}
+	if clierr.CodeOf(err) != clierr.NotFound || clierr.ExitCode(err) != 3 {
+		t.Fatalf("missing template code = %q, exit = %d; want not_found, 3", clierr.CodeOf(err), clierr.ExitCode(err))
+	}
+
+	_, err = execute(t, root, "templates", "list", "--definitely-not-a-flag")
+	if err == nil {
+		t.Fatal("unknown flag did not return an error")
+	}
+	if clierr.CodeOf(err) != clierr.InvalidUsage || clierr.ExitCode(err) != 2 {
+		t.Fatalf("unknown flag code = %q, exit = %d; want invalid_usage, 2", clierr.CodeOf(err), clierr.ExitCode(err))
+	}
+}
+
+func TestLockedMutationsReportTheLockedCode(t *testing.T) {
+	root := t.TempDir()
+	lock, err := store.AcquireMutationLock(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	var stdout, stderr bytes.Buffer
+	command := cli.New(cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), Stdout: &stdout, Stderr: &stderr})
+	command.SetArgs([]string{"templates", "create", "blocked", "--output", "json"})
+	commandErr := command.Execute()
+	if commandErr == nil {
+		t.Fatal("locked mutation did not return an error")
+	}
+	if clierr.CodeOf(commandErr) != clierr.Locked || clierr.ExitCode(commandErr) != 3 {
+		t.Fatalf("locked code = %q, exit = %d; want locked, 3", clierr.CodeOf(commandErr), clierr.ExitCode(commandErr))
+	}
+	if err := cli.WriteError(command, &stderr, commandErr); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil || result.Error.Code != "locked" {
+		t.Fatalf("locked JSON error = %s; decode error = %v", stderr.String(), err)
+	}
+}
+
+func TestWriteErrorShowsHintsInTextAndJSON(t *testing.T) {
+	hinted := clierr.WithHint(
+		clierr.New(clierr.PreconditionFailed, "Project %q is archived", "fix-auth"),
+		"Run 'twt2 projects open %s' to open the Project.", "fix-auth")
+
+	textCommand := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
+	var text bytes.Buffer
+	if err := cli.WriteError(textCommand, &text, hinted); err != nil {
+		t.Fatal(err)
+	}
+	want := "twt2: Project \"fix-auth\" is archived\nRun 'twt2 projects open fix-auth' to open the Project.\n"
+	if text.String() != want {
+		t.Fatalf("text error:\n%s\nwant:\n%s", text.String(), want)
+	}
+
+	jsonCommand := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
+	if err := jsonCommand.ParseFlags([]string{"--output", "json"}); err != nil {
+		t.Fatal(err)
+	}
+	var encoded bytes.Buffer
+	if err := cli.WriteError(jsonCommand, &encoded, hinted); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error struct {
+			Code string `json:"code"`
+			Hint string `json:"hint"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(encoded.Bytes(), &result); err != nil {
+		t.Fatalf("decode JSON error: %v\n%s", err, encoded.String())
+	}
+	if result.Error.Code != "precondition_failed" || result.Error.Hint != "Run 'twt2 projects open fix-auth' to open the Project." {
+		t.Fatalf("JSON error = %+v", result.Error)
+	}
+}
+
+func TestVersionFlagPrintsTheBuildVersion(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "--version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, version.Version) {
+		t.Fatalf("--version output = %q does not contain %q", output, version.Version)
+	}
+}
+
+func TestSchemaListsVersionErrorCodesAndExitCodes(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Version    string            `json:"version"`
+		ErrorCodes []string          `json:"errorCodes"`
+		ExitCodes  map[string]string `json:"exitCodes"`
+	}
+	if err := json.Unmarshal([]byte(output), &schema); err != nil {
+		t.Fatalf("decode schema: %v", err)
+	}
+	if schema.Version != version.Version {
+		t.Fatalf("schema version = %q, want %q", schema.Version, version.Version)
+	}
+	wantCodes := []string{"already_exists", "internal", "invalid_usage", "locked", "not_found", "precondition_failed", "unsafe_state"}
+	if len(schema.ErrorCodes) != len(wantCodes) {
+		t.Fatalf("schema errorCodes = %v, want %v", schema.ErrorCodes, wantCodes)
+	}
+	for index, code := range wantCodes {
+		if schema.ErrorCodes[index] != code {
+			t.Fatalf("schema errorCodes = %v, want %v", schema.ErrorCodes, wantCodes)
+		}
+	}
+	wantExits := map[string]string{"0": "success", "1": "internal", "2": "invalid_usage", "3": "precondition"}
+	for exit, meaning := range wantExits {
+		if schema.ExitCodes[exit] != meaning {
+			t.Fatalf("schema exitCodes = %v, want %v", schema.ExitCodes, wantExits)
+		}
 	}
 }

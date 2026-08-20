@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
 const (
@@ -113,7 +115,7 @@ func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool,
 		return false, fmt.Errorf("inspect Transcript Snapshot directory: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return false, fmt.Errorf("Transcript Snapshot directory %q is not a safe directory", directory)
+		return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q is not a safe directory", directory)
 	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
@@ -126,19 +128,19 @@ func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool,
 	markerFound := false
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {
-			return false, fmt.Errorf("Transcript Snapshot directory %q contains unexpected item %q", directory, entry.Name())
+			return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q contains unexpected item %q", directory, entry.Name())
 		}
 		entryInfo, err := os.Lstat(filepath.Join(directory, entry.Name()))
 		if err != nil {
 			return false, fmt.Errorf("inspect Transcript Snapshot item %q: %w", entry.Name(), err)
 		}
 		if entryInfo.Mode()&os.ModeSymlink != 0 || !entryInfo.Mode().IsRegular() {
-			return false, fmt.Errorf("Transcript Snapshot item %q is not a safe regular file", entry.Name())
+			return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot item %q is not a safe regular file", entry.Name())
 		}
 		markerFound = markerFound || entry.Name() == snapshotMarkerName
 	}
 	if !markerFound {
-		return false, fmt.Errorf("Transcript Snapshot directory %q has no ownership marker", directory)
+		return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q has no ownership marker", directory)
 	}
 	data, err := os.ReadFile(filepath.Join(directory, snapshotMarkerName))
 	if err != nil {
@@ -146,7 +148,7 @@ func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool,
 	}
 	var marker snapshotMarker
 	if json.Unmarshal(data, &marker) != nil || marker.Version != 1 || marker.Owner != "twt2" || marker.ProjectID != projectID {
-		return false, fmt.Errorf("Transcript Snapshot directory %q has a conflicting ownership marker", directory)
+		return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q has a conflicting ownership marker", directory)
 	}
 	return true, nil
 }

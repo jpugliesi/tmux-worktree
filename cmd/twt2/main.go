@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
 func main() {
@@ -25,6 +26,6 @@ func main() {
 	executed, err := command.ExecuteC()
 	if err != nil {
 		_ = cli.WriteError(executed, os.Stderr, err)
-		os.Exit(1)
+		os.Exit(clierr.ExitCode(err))
 	}
 }

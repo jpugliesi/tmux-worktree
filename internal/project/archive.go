@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
@@ -54,7 +55,7 @@ func (s *Service) validateArchive(reference, currentPane string) (domain.Project
 		return p, nil, err
 	}
 	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived {
-		return p, nil, fmt.Errorf("Project %q has status %q; archive requires status %q or %q", p.Name, p.Status, domain.ProjectActive, domain.ProjectArchived)
+		return p, nil, clierr.New(clierr.PreconditionFailed, "Project %q has status %q; archive requires status %q or %q", p.Name, p.Status, domain.ProjectActive, domain.ProjectArchived)
 	}
 	sessions, err := s.ownedSessions(p.ID)
 	if err != nil {
@@ -82,7 +83,9 @@ func (s *Service) requireOutsideOwnedSessions(projectName, action, currentPane s
 	}
 	for _, sessionID := range sessions {
 		if currentSession == sessionID {
-			return fmt.Errorf("cannot %s Project %q from inside its tmux session; switch to another session first", action, projectName)
+			return clierr.WithHint(
+				clierr.New(clierr.PreconditionFailed, "cannot %s Project %q from inside its tmux session; switch to another session first", action, projectName),
+				"Switch to a different tmux session first.")
 		}
 	}
 	return nil

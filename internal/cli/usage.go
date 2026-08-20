@@ -1,22 +1,24 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
 type usageError struct {
-	message     string
+	err         *clierr.Error
 	helpCommand string
 }
 
-func (e usageError) Error() string { return e.message }
+func (e usageError) Error() string { return e.err.Error() }
+
+func (e usageError) Unwrap() error { return e.err }
 
 func invalidUsage(command *cobra.Command, format string, values ...any) error {
 	return usageError{
-		message:     fmt.Sprintf(format, values...),
+		err:         clierr.New(clierr.InvalidUsage, format, values...),
 		helpCommand: command.CommandPath() + " --help",
 	}
 }

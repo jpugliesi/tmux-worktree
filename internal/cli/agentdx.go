@@ -7,6 +7,8 @@ import (
 	"io"
 	"sort"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -46,8 +48,11 @@ type flagSchema struct {
 
 type schemaOutput struct {
 	SchemaVersion   int                    `json:"schemaVersion"`
+	Version         string                 `json:"version"`
 	Commands        []commandSchema        `json:"commands"`
 	ApplyOperations []applyOperationSchema `json:"applyOperations"`
+	ErrorCodes      []string               `json:"errorCodes"`
+	ExitCodes       map[string]string      `json:"exitCodes"`
 }
 
 type applyOperationSchema struct {
@@ -72,6 +77,7 @@ type commandErrorOutput struct {
 type commandError struct {
 	Code        string `json:"code"`
 	Message     string `json:"message"`
+	Hint        string `json:"hint,omitempty"`
 	HelpCommand string `json:"helpCommand,omitempty"`
 }
 
@@ -99,22 +105,25 @@ func writeMutation(command *cobra.Command, operation, status, id, name string) e
 }
 
 func WriteError(command *cobra.Command, writer io.Writer, err error) error {
-	code := "command_failed"
+	code := clierr.CodeOf(err)
+	hint := clierr.HintOf(err)
 	helpCommand := ""
 	var usage usageError
 	if errors.As(err, &usage) {
-		code = "invalid_usage"
 		helpCommand = usage.helpCommand
 	}
 	if !WantsJSON(command) {
-		if helpCommand != "" {
-			_, writeErr := fmt.Fprintf(writer, "twt2: %v\nRun '%s' for usage and examples.\n", err, helpCommand)
-			return writeErr
+		text := fmt.Sprintf("twt2: %v\n", err)
+		if hint != "" {
+			text += hint + "\n"
 		}
-		_, writeErr := fmt.Fprintf(writer, "twt2: %v\n", err)
+		if helpCommand != "" {
+			text += fmt.Sprintf("Run '%s' for usage and examples.\n", helpCommand)
+		}
+		_, writeErr := io.WriteString(writer, text)
 		return writeErr
 	}
-	return json.NewEncoder(writer).Encode(commandErrorOutput{SchemaVersion: jsonSchemaVersion, Error: commandError{Code: code, Message: err.Error(), HelpCommand: helpCommand}})
+	return json.NewEncoder(writer).Encode(commandErrorOutput{SchemaVersion: jsonSchemaVersion, Error: commandError{Code: string(code), Message: err.Error(), Hint: hint, HelpCommand: helpCommand}})
 }
 
 func newSchemaCommand(root *cobra.Command) *cobra.Command {
@@ -157,7 +166,14 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 					{Path: "agent.resumeCommand", Type: "array[string]", Required: false, Condition: "required when agent.pane is empty"},
 				}},
 			}
-			return writeJSONOutput(command, schemaOutput{SchemaVersion: jsonSchemaVersion, Commands: schemas, ApplyOperations: operations})
+			return writeJSONOutput(command, schemaOutput{
+				SchemaVersion:   jsonSchemaVersion,
+				Version:         version.Version,
+				Commands:        schemas,
+				ApplyOperations: operations,
+				ErrorCodes:      clierr.Codes(),
+				ExitCodes:       map[string]string{"0": "success", "1": "internal", "2": "invalid_usage", "3": "precondition"},
+			})
 		},
 	}
 }
