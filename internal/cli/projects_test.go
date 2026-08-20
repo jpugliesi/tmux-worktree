@@ -137,7 +137,7 @@ func TestProjectsListReturnsTableFlushErrors(t *testing.T) {
 		Stdout:    errorWriter{},
 		Stderr:    &bytes.Buffer{},
 	})
-	command.SetArgs([]string{"projects", "list"})
+	command.SetArgs(forceTextOutput([]string{"projects", "list"}))
 	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "test output failure") {
 		t.Fatalf("projects list output error = %v", err)
 	}
@@ -262,7 +262,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 		t.Fatalf("root archive output = %q", output)
 	}
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "setup", "retry", project.ID})
+	command.SetArgs(forceTextOutput([]string{"projects", "setup", "retry", project.ID}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "archived") || !strings.Contains(err.Error(), "projects open") {
 		t.Fatalf("archived Project retry error = %v", err)
@@ -276,7 +276,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=twt-archive-me", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", pane)
 	command = cli.New(options)
-	command.SetArgs([]string{"projects", "archive", project.ID})
+	command.SetArgs(forceTextOutput([]string{"projects", "archive", project.ID}))
 	err = command.Execute()
 	// Inside the owned session, archive relocates the calling tmux client
 	// first. Without a client, the relocation fails and nothing changes.
@@ -302,7 +302,7 @@ func TestProjectsArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	command = cli.New(options)
-	command.SetArgs([]string{"projects", "remove", project.ID, "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", project.ID, "--apply"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cannot remove") || !strings.Contains(err.Error(), "inside its tmux session") {
 		t.Fatalf("self-removal error = %v", err)
@@ -330,7 +330,7 @@ func TestProjectsArchiveFailsWhenTmuxOwnershipIsNotSafe(t *testing.T) {
 
 	t.Setenv("TMUX_PANE", "%not-a-real-pane")
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "archive", project.ID})
+	command.SetArgs(forceTextOutput([]string{"projects", "archive", project.ID}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "inspect the current tmux pane") {
 		t.Fatalf("archive with an unknown current pane error = %v", err)
@@ -344,7 +344,7 @@ func TestProjectsArchiveFailsWhenTmuxOwnershipIsNotSafe(t *testing.T) {
 	runCommand(t, "", "tmux", "-L", socket, "new-session", "-d", "-s", "duplicate-owner", "sleep", "60")
 	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", "duplicate-owner", "@twt_project_id", project.ID)
 	command = cli.New(options)
-	command.SetArgs([]string{"projects", "archive", project.ID})
+	command.SetArgs(forceTextOutput([]string{"projects", "archive", project.ID}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "more than one tmux session") {
 		t.Fatalf("archive with duplicate owned sessions error = %v", err)
@@ -399,7 +399,7 @@ repositories:
 		Stdout:     &stdout,
 		Stderr:     &stderr,
 	})
-	command.SetArgs([]string{"projects", "create", "auth-refresh", "--template", "example", "--no-open"})
+	command.SetArgs(forceTextOutput([]string{"projects", "create", "auth-refresh", "--template", "example", "--no-open"}))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("projects create returned an error: %v\nstderr: %s", err, stderr.String())
 	}
@@ -498,7 +498,7 @@ repositories:
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"),
 		TmuxSocket: socket, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
 	})
-	command.SetArgs([]string{"projects", "create", "docs-refresh", "--template", "full-stack", "--no-open"})
+	command.SetArgs(forceTextOutput([]string{"projects", "create", "docs-refresh", "--template", "full-stack", "--no-open"}))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("projects create returned an error: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestProjectsSetupRetryUsesSavedTemplateSnapshot(t *testing.T) {
 		TmuxSocket: socket, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
 	}
 	create := cli.New(options)
-	create.SetArgs([]string{"projects", "create", "retry-me", "--template", "example", "--no-open"})
+	create.SetArgs(forceTextOutput([]string{"projects", "create", "retry-me", "--template", "example", "--no-open"}))
 	if err := create.Execute(); err == nil || !strings.Contains(err.Error(), "initialization") {
 		t.Fatalf("first create error = %v, want initialization failure", err)
 	}
@@ -565,7 +565,7 @@ func TestProjectsSetupRetryUsesSavedTemplateSnapshot(t *testing.T) {
 	retryOutput := &bytes.Buffer{}
 	options.Stdout = retryOutput
 	retry := cli.New(options)
-	retry.SetArgs([]string{"projects", "setup", "retry", "retry-me"})
+	retry.SetArgs(forceTextOutput([]string{"projects", "setup", "retry", "retry-me"}))
 	if err := retry.Execute(); err != nil {
 		t.Fatalf("projects setup retry returned an error: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	rejectedOptions := baseOptions
 	rejectedOptions.Stdout, rejectedOptions.Stderr = &rejectedOut, &rejectedErr
 	rejected := cli.New(rejectedOptions)
-	rejected.SetArgs([]string{"agents", "register", "--project", "agent-test", "--provider", "codex", "--pane", shellPane})
+	rejected.SetArgs(forceTextOutput([]string{"agents", "register", "--project", "agent-test", "--provider", "codex", "--pane", shellPane}))
 	if err := rejected.Execute(); err == nil || !strings.Contains(err.Error(), "live direct process") {
 		t.Fatalf("normal shell registration error = %v", err)
 	}
@@ -640,7 +640,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	}
 	wrongProject := cli.New(baseOptions)
 	wrongProject.SetIn(strings.NewReader("must not reach the Agent Session\n"))
-	wrongProject.SetArgs([]string{"agents", "send", agentID, "--project", otherProject.ID, "--stdin"})
+	wrongProject.SetArgs(forceTextOutput([]string{"agents", "send", agentID, "--project", otherProject.ID, "--stdin"}))
 	if err := wrongProject.Execute(); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("cross-Project send error = %v", err)
 	}
@@ -652,7 +652,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	duplicateOptions := baseOptions
 	duplicateOptions.Stdout, duplicateOptions.Stderr = &duplicateOut, &duplicateErr
 	duplicate := cli.New(duplicateOptions)
-	duplicate.SetArgs([]string{"agents", "register", "--project", "agent-test", "--provider", "command", "--pane", pane, "--", "cat"})
+	duplicate.SetArgs(forceTextOutput([]string{"agents", "register", "--project", "agent-test", "--provider", "command", "--pane", pane, "--", "cat"}))
 	if err := duplicate.Execute(); err == nil || !strings.Contains(err.Error(), "already owned by Agent Session") {
 		t.Fatalf("duplicate pane registration error = %v", err)
 	}
@@ -775,7 +775,7 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	rejectedOptions := options
 	rejectedOptions.Stdout, rejectedOptions.Stderr = &rejectedOut, &rejectedErr
 	rejected := cli.New(rejectedOptions)
-	rejected.SetArgs([]string{"projects", "remove", "remove-me", "--apply"})
+	rejected.SetArgs(forceTextOutput([]string{"projects", "remove", "remove-me", "--apply"}))
 	if err := rejected.Execute(); err == nil || !strings.Contains(err.Error(), "conflicting ownership marker") {
 		t.Fatalf("conflicting Transcript Snapshot removal error = %v", err)
 	}
@@ -894,7 +894,7 @@ func TestProjectsRemoveRefusesDirtyWorktree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "remove", "keep-me", "--apply", "--dry-run"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", "keep-me", "--apply", "--dry-run"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--apply") {
 		t.Fatalf("--dry-run with --apply error = %v", err)
@@ -902,7 +902,7 @@ func TestProjectsRemoveRefusesDirtyWorktree(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = cli.New(options)
-	command.SetArgs([]string{"projects", "remove", "keep-me", "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", "keep-me", "--apply"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("dirty removal error = %v", err)
@@ -1067,14 +1067,14 @@ func TestProjectsRemoveCancelReturnsRemovingProjectToArchived(t *testing.T) {
 	repeatOptions := options
 	repeatOptions.Stdout, repeatOptions.Stderr = &stdout, &stderr
 	command := cli.New(repeatOptions)
-	command.SetArgs([]string{"projects", "remove", project.ID, "--cancel"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", project.ID, "--cancel"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cancel requires status") {
 		t.Fatalf("cancel of an archived Project error = %v", err)
 	}
 
 	command = cli.New(repeatOptions)
-	command.SetArgs([]string{"projects", "remove", project.ID, "--cancel", "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", project.ID, "--cancel", "--apply"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--cancel") {
 		t.Fatalf("cancel with apply error = %v", err)
@@ -1137,7 +1137,7 @@ func TestProjectsRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 		usageOptions := options
 		usageOptions.Stdout, usageOptions.Stderr = &stdout, &stderr
 		command := cli.New(usageOptions)
-		command.SetArgs(args)
+		command.SetArgs(forceTextOutput(args))
 		if err := command.Execute(); err == nil {
 			t.Fatalf("%v did not fail", args)
 		}
@@ -1292,7 +1292,7 @@ func executeWithOptions(t *testing.T, options cli.Options, stdin *strings.Reader
 	if stdin != nil {
 		command.SetIn(stdin)
 	}
-	command.SetArgs(args)
+	command.SetArgs(forceTextOutput(args))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("twt %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr.String())
 	}

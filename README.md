@@ -274,11 +274,27 @@ restarts.
 
 ## Agent skill
 
-Install the `twt` skill for Claude Code, Codex, and other compatible agents:
+Install the `twt` skill for Cursor, Claude Code, Codex, and other compatible
+agents. `twt` carries the skill of its own build, so one command installs it
+in all three skill trees:
+
+```sh
+twt skills install
+twt skills show
+```
+
+Run `twt skills install` again after a `twt` upgrade. `twt doctor` warns when
+an installed copy comes from another build.
+
+From the repository instead:
 
 ```sh
 npx skills add jpugliesi/tmux-worktree --skill twt
 ```
+
+`twt` treats its caller as an untrusted operator. Read
+[Security posture](docs/security.md) for the guarantees that a coding agent
+can depend on.
 
 ## Configure (optional)
 

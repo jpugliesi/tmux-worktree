@@ -70,10 +70,14 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	return command
 }
 
+// currentPaneReference is the literal --pane value that selects the tmux pane
+// of the calling terminal.
+const currentPaneReference = "current"
+
 // registerAgent registers one Agent Session with a Project. Both the agents
 // register command and apply use it.
 func registerAgent(command *cobra.Command, agents *agentservice.Service, project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string) error {
-	if pane == "current" {
+	if pane == currentPaneReference {
 		pane = os.Getenv("TMUX_PANE")
 	}
 	return runMutation(command, "agents.register",
@@ -113,7 +117,7 @@ func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Serv
 
 func newAgentsListCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
 	var projectReference string
-	var limit int
+	var limit, offset int
 	var live bool
 	command := &cobra.Command{
 		Use:   "list",
@@ -128,7 +132,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			values, total, truncated, err := applyLimit(values, limit)
+			values, total, truncated, err := applyWindow(values, offset, limit)
 			if err != nil {
 				return err
 			}
@@ -136,11 +140,14 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			for _, value := range values {
 				outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive, live))
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, agentsListOutput{
+			if format := resolvedOutputFormat(command); format != outputText {
+				if format == outputNDJSON {
+					return writeNDJSONList(command, outputs, total, truncated)
+				}
+				return writeReadJSON(command, agentsListOutput{
 					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs,
 					TotalCount: total, Truncated: truncated,
-				})
+				}, "agents")
 			}
 			for _, output := range outputs {
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", output.ID, output.Provider, output.Status, output.Label); err != nil {
@@ -151,7 +158,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	addListReadFlags(command, &limit, &offset, agentOutput{})
 	command.Flags().BoolVar(&live, "live", true, "Probe tmux for live state. Use --live=false to not probe tmux for live state")
 	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
@@ -181,7 +188,7 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 				checks = append(checks, agentCheck{Name: check.Name, OK: check.OK, Advisory: check.Advisory})
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, agentShowOutput{SchemaVersion: jsonSchemaVersion, Agent: output, Liveness: checks})
+				return writeReadJSON(command, agentShowOutput{SchemaVersion: jsonSchemaVersion, Agent: output, Liveness: checks}, "")
 			}
 			writer := command.OutOrStdout()
 			linked := "no"
@@ -221,6 +228,7 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	addFieldsFlag(command, agentShowOutput{})
 	setAgentCommandCompletion(command, agents, projects)
 	return command
 }
@@ -237,19 +245,7 @@ func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservi
 			if err != nil {
 				return err
 			}
-			return runMutation(command, "agents.rm",
-				func() (string, string, error) {
-					agent, err := agents.ValidateRemove(args[0], project.ID)
-					return agent.ID, agent.Label, err
-				},
-				func() (string, string, error) {
-					agent, err := agents.Remove(args[0], project.ID)
-					return agent.ID, agent.Label, err
-				},
-				func(out io.Writer, id, name string) error {
-					_, err := fmt.Fprintf(out, "Removed Agent Session %s (%s)\n", id, name)
-					return err
-				})
+			return removeAgentSession(command, agents, args[0], project.ID)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -257,10 +253,28 @@ func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservi
 	return command
 }
 
+// removeAgentSession deletes one Agent Session record of a Project. Both the
+// agents rm command and apply use it.
+func removeAgentSession(command *cobra.Command, agents *agentservice.Service, agentID, projectID string) error {
+	return runMutation(command, "agents.rm",
+		func() (string, string, error) {
+			agent, err := agents.ValidateRemove(agentID, projectID)
+			return agent.ID, agent.Label, err
+		},
+		func() (string, string, error) {
+			agent, err := agents.Remove(agentID, projectID)
+			return agent.ID, agent.Label, err
+		},
+		func(out io.Writer, id, name string) error {
+			_, err := fmt.Fprintf(out, "Removed Agent Session %s (%s)\n", id, name)
+			return err
+		})
+}
+
 func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	var projectReference string
 	var adopt bool
-	var limit int
+	var limit, offset int
 	command := &cobra.Command{
 		Use:   "discover",
 		Short: "Find provider sessions of a Project that no Agent Session uses",
@@ -282,7 +296,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			if err != nil {
 				return err
 			}
-			found, total, truncated, err := applyLimit(found, limit)
+			found, total, truncated, err := applyWindow(found, offset, limit)
 			if err != nil {
 				return err
 			}
@@ -307,8 +321,11 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 					return err
 				}
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, result)
+			if format := resolvedOutputFormat(command); format != outputText {
+				if format == outputNDJSON {
+					return writeNDJSONList(command, sessions, total, truncated)
+				}
+				return writeReadJSON(command, result, "sessions")
 			}
 			writer := command.OutOrStdout()
 			now := time.Now()
@@ -328,7 +345,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	command.Flags().BoolVar(&adopt, "adopt", false, "Register each discovered provider session as an Agent Session")
-	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	addListReadFlags(command, &limit, &offset, discoveredOutput{})
 	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
 }
@@ -363,33 +380,55 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 		Short: "Resume or focus an Agent Session",
 		Args:  exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
-			agent, err := agents.Find(args[0])
-			if err != nil {
-				return err
-			}
-			project, err := projects.Find(agent.ProjectID)
-			if err != nil {
-				return err
-			}
-			if isDryRun(command) {
-				if err := agents.ValidateResume(agent, project); err != nil {
-					return err
-				}
-				return writeMutation(command, "agents.resume", statusValid, agent.ID, agent.Label)
-			}
-			agent, err = agents.Resume(agent, project)
-			if err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, project.Status == domain.ProjectActive, true)})
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Resumed Agent Session %s\n", agent.ID)
-			return err
+			return resumeAgentSession(command, agents, projects, args[0], "")
 		},
 	}
 	setAgentCommandCompletion(command, agents, projects)
 	return command
+}
+
+// resumeAgentSession resumes or focuses one Agent Session. An empty Project
+// reference uses the Project of the Agent Session record; a set reference
+// must name that same Project. Both the agents resume command and apply use
+// it.
+func resumeAgentSession(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service, agentID, projectReference string) error {
+	agent, err := agents.Find(agentID)
+	if err != nil {
+		return err
+	}
+	project, err := findAgentProject(projects, agent, projectReference)
+	if err != nil {
+		return err
+	}
+	if isDryRun(command) {
+		if err := agents.ValidateResume(agent, project); err != nil {
+			return err
+		}
+		return writeMutation(command, "agents.resume", statusValid, agent.ID, agent.Label)
+	}
+	agent, err = agents.Resume(agent, project)
+	if err != nil {
+		return err
+	}
+	if WantsJSON(command) {
+		return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, project.Status == domain.ProjectActive, true)})
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Resumed Agent Session %s\n", agent.ID)
+	return err
+}
+
+// findAgentProject finds the Project of one Agent Session. An empty
+// reference uses the Project ID of the Agent Session record. Every other
+// reference resolves as a PROJECT value and must name that same Project.
+func findAgentProject(projects *projectservice.Service, agent domain.AgentSession, projectReference string) (domain.Project, error) {
+	if projectReference == "" {
+		return projects.Find(agent.ProjectID)
+	}
+	project, err := resolveProject(projects, projectReference)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return project, requireAgentInProject(agent, project)
 }
 
 func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
@@ -439,34 +478,13 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			data, err := io.ReadAll(command.InOrStdin())
+			// Every twt command that reads standard input reads at most
+			// 1 MiB, so one caller cannot fill memory or a tmux pane.
+			data, err := io.ReadAll(io.LimitReader(command.InOrStdin(), 1024*1024))
 			if err != nil {
 				return fmt.Errorf("read feedback: %w", err)
 			}
-			agent, err := agents.Find(args[0])
-			if err != nil {
-				return err
-			}
-			if err := requireAgentInProject(agent, project); err != nil {
-				return err
-			}
-			if isDryRun(command) {
-				if len(data) == 0 {
-					return clierr.New(clierr.InvalidUsage, "feedback input is empty")
-				}
-				if !agents.IsLive(agent) {
-					return agentservice.NotLiveError(agent.ID)
-				}
-				return writeMutation(command, "agents.send", statusValid, agent.ID, agent.Label)
-			}
-			if err := agents.Send(agent, project.ID, string(data)); err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, agentSendOutput{SchemaVersion: jsonSchemaVersion, AgentID: agent.ID, Status: "sent"})
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Sent feedback to Agent Session %s\n", agent.ID)
-			return err
+			return sendAgentFeedback(command, agents, project, args[0], string(data))
 		},
 	}
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
@@ -474,4 +492,33 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 	_ = command.MarkFlagRequired("stdin")
 	setAgentCommandCompletion(command, agents, projects)
 	return command
+}
+
+// sendAgentFeedback sends one feedback text to the live pane of an Agent
+// Session of the Project. Both the agents send command and apply use it.
+func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, project domain.Project, agentID, text string) error {
+	agent, err := agents.Find(agentID)
+	if err != nil {
+		return err
+	}
+	if err := requireAgentInProject(agent, project); err != nil {
+		return err
+	}
+	if isDryRun(command) {
+		if text == "" {
+			return clierr.New(clierr.InvalidUsage, "feedback input is empty")
+		}
+		if !agents.IsLive(agent) {
+			return agentservice.NotLiveError(agent.ID)
+		}
+		return writeMutation(command, "agents.send", statusValid, agent.ID, agent.Label)
+	}
+	if err := agents.Send(agent, project.ID, text); err != nil {
+		return err
+	}
+	if WantsJSON(command) {
+		return writeJSONOutput(command, agentSendOutput{SchemaVersion: jsonSchemaVersion, AgentID: agent.ID, Status: "sent"})
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Sent feedback to Agent Session %s\n", agent.ID)
+	return err
 }

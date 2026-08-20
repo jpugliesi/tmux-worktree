@@ -42,13 +42,14 @@ func newContextCommand(options Options) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, lookupDirectory)})
+				return writeReadJSON(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, lookupDirectory)}, "")
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Project: %s\n", project.Name)
 			return err
 		},
 	}
 	command.Flags().StringVar(&directory, "directory", "", "Resolve context from this directory before tmux or environment context")
+	addFieldsFlag(command, contextOutput{})
 	return command
 }
 

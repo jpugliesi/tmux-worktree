@@ -21,7 +21,7 @@ func execute(t *testing.T, root string, args ...string) (string, error) {
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
-	command.SetArgs(args)
+	command.SetArgs(forceTextOutput(args))
 	err := command.Execute()
 	if stderr.Len() != 0 {
 		t.Logf("stderr: %s", stderr.String())
@@ -59,7 +59,7 @@ func TestTemplatesCreateWritesEditableYAML(t *testing.T) {
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
-	command.SetArgs([]string{"templates", "create", "everysphere"})
+	command.SetArgs(forceTextOutput([]string{"templates", "create", "everysphere"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("templates create returned an error: %v\nstderr: %s", err, stderr.String())

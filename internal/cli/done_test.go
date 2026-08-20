@@ -113,7 +113,7 @@ func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
 	blockedOptions := options
 	blockedOptions.Stdout, blockedOptions.Stderr = &stdout, &stderr
 	command := cli.New(blockedOptions)
-	command.SetArgs([]string{"done", "block-me"})
+	command.SetArgs(forceTextOutput([]string{"done", "block-me"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("blocked done error = %v", err)
@@ -163,7 +163,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	jsonOptions := options
 	jsonOptions.Stdout, jsonOptions.Stderr = &stdout, &stderr
 	jsonCommand := cli.New(jsonOptions)
-	jsonCommand.SetArgs([]string{"done", "--output", "json"})
+	jsonCommand.SetArgs(forceTextOutput([]string{"done", "--output", "json"}))
 	err = jsonCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "text output") {
 		t.Fatalf("done JSON inside the Project session error = %v", err)
@@ -177,7 +177,7 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	archiveJSONOptions := options
 	archiveJSONOptions.Stdout, archiveJSONOptions.Stderr = &archiveStdout, &archiveStderr
 	archiveJSONCommand := cli.New(archiveJSONOptions)
-	archiveJSONCommand.SetArgs([]string{"archive", "--output", "json"})
+	archiveJSONCommand.SetArgs(forceTextOutput([]string{"archive", "--output", "json"}))
 	err = archiveJSONCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "text output") {
 		t.Fatalf("archive JSON inside the Project session error = %v", err)

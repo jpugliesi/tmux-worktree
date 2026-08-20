@@ -200,7 +200,7 @@ func TestAgentTranscriptRejectsUnsupportedCursorLink(t *testing.T) {
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 	command := cli.New(options)
-	command.SetArgs([]string{"agents", "transcript", "link", agent.ID, "--project", project.ID, "--session", "cursor-session"})
+	command.SetArgs(forceTextOutput([]string{"agents", "transcript", "link", agent.ID, "--project", project.ID, "--session", "cursor-session"}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "does not support verifiable linked transcripts") {
 		t.Fatalf("Cursor transcript link error = %v", err)
 	}
@@ -383,7 +383,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("Agent Sessions after rm = %+v", stored)
 	}
 	command := cli.New(cli.Options{StateDir: stateDir, DataDir: options.DataDir})
-	command.SetArgs([]string{"agents", "rm", codexAgent.ID, "--project", project.ID})
+	command.SetArgs(forceTextOutput([]string{"agents", "rm", codexAgent.ID, "--project", project.ID}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("agents rm of a missing record error = %v", err)
 	}
@@ -421,7 +421,7 @@ func TestAgentsRegisterInfersTheProviderAndSessionFromTheResumeCommand(t *testin
 	}
 
 	command := cli.New(options)
-	command.SetArgs([]string{"agents", "register", "--project", project.ID})
+	command.SetArgs(forceTextOutput([]string{"agents", "register", "--project", project.ID}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "set --provider PROVIDER") {
 		t.Fatalf("register without a provider or resume command error = %v", err)
 	}

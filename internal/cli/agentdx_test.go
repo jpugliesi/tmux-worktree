@@ -46,7 +46,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 12 {
+	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 25 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -82,7 +82,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 				enum     []string
 			}{flag.Required, flag.Enum}
 		}
-		if flags["template"].required || len(flags["output"].enum) != 2 {
+		if flags["template"].required || len(flags["output"].enum) != 3 {
 			t.Fatalf("projects create schema flags = %+v", flags)
 		}
 		if _, ok := flags["branch"]; !ok {
@@ -144,7 +144,7 @@ func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetIn(strings.NewReader(`{"operation":"templates.create","template":{"name":"raw-preview"}}`))
-	command.SetArgs([]string{"apply", "--stdin", "--dry-run", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"apply", "--stdin", "--dry-run", "--output", "json"}))
 	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate raw dry-run error = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestRawApplyArchivesAProject(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetIn(strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me","name":"not-valid"}}`))
-	command.SetArgs([]string{"apply", "--stdin", "--dry-run", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"apply", "--stdin", "--dry-run", "--output", "json"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), `unknown field "name"`) {
 		t.Fatalf("archive request with create fields error = %v", err)
@@ -216,7 +216,7 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := cli.New(cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), Stdout: &stdout, Stderr: &stderr})
-	command.SetArgs([]string{"templates", "show", "missing", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"templates", "show", "missing", "--output", "json"}))
 	commandErr := command.Execute()
 	if commandErr == nil {
 		t.Fatal("missing template did not return an error")
@@ -266,7 +266,7 @@ func TestLockedMutationsReportTheLockedCode(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := cli.New(cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), Stdout: &stdout, Stderr: &stderr})
-	command.SetArgs([]string{"templates", "create", "blocked", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"templates", "create", "blocked", "--output", "json"}))
 	commandErr := command.Execute()
 	if commandErr == nil {
 		t.Fatal("locked mutation did not return an error")

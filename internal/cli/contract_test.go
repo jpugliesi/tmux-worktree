@@ -49,7 +49,7 @@ func executeCollectingInput(t *testing.T, options cli.Options, stdin io.Reader, 
 	if stdin != nil {
 		command.SetIn(stdin)
 	}
-	command.SetArgs(args)
+	command.SetArgs(forceTextOutput(args))
 	err := command.Execute()
 	return stdout.String(), stderr.String(), err
 }
@@ -442,7 +442,7 @@ func TestCompletionFunctionsListStoredNames(t *testing.T) {
 		t.Fatal("--output has no completion function")
 	}
 	names, _ = outputFlag(command, nil, "")
-	if strings.Join(names, ",") != "text,json" {
+	if strings.Join(names, ",") != "text,json,ndjson" {
 		t.Fatalf("--output completion = %v", names)
 	}
 

@@ -20,7 +20,7 @@ func TestMissingTemplateNameGivesActionableHelp(t *testing.T) {
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
-	command.SetArgs([]string{"templates", "create"})
+	command.SetArgs(forceTextOutput([]string{"templates", "create"}))
 	executed, err := command.ExecuteC()
 	if err == nil {
 		t.Fatal("templates create without NAME did not fail")
@@ -37,7 +37,7 @@ func TestMissingTemplateNameGivesActionableHelp(t *testing.T) {
 func TestJSONUsageErrorHasAStableCodeAndHelpCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	command := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir(), Stdout: &stdout, Stderr: &stderr})
-	command.SetArgs([]string{"templates", "create", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"templates", "create", "--output", "json"}))
 	executed, err := command.ExecuteC()
 	if err == nil {
 		t.Fatal("templates create without NAME did not fail")
@@ -83,7 +83,7 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 	for _, group := range groups {
 		var helpStdout, helpStderr bytes.Buffer
 		bare := newCommand(&helpStdout, &helpStderr)
-		bare.SetArgs(group)
+		bare.SetArgs(forceTextOutput(group))
 		if err := bare.Execute(); err != nil {
 			t.Fatalf("%v without a subcommand failed: %v", group, err)
 		}
@@ -94,7 +94,7 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 		args := append(append([]string(nil), group...), "definitely-not-a-command")
 		var stdout, stderr bytes.Buffer
 		command := newCommand(&stdout, &stderr)
-		command.SetArgs(args)
+		command.SetArgs(forceTextOutput(args))
 		if _, err := command.ExecuteC(); err == nil {
 			t.Fatalf("%v did not fail", args)
 		}
@@ -102,7 +102,7 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 		jsonArgs := append(append([]string(nil), args...), "--output", "json")
 		var jsonStdout, jsonStderr bytes.Buffer
 		jsonCommand := newCommand(&jsonStdout, &jsonStderr)
-		jsonCommand.SetArgs(jsonArgs)
+		jsonCommand.SetArgs(forceTextOutput(jsonArgs))
 		executed, err := jsonCommand.ExecuteC()
 		if err == nil {
 			t.Fatalf("%v did not fail", jsonArgs)

@@ -45,7 +45,7 @@ func TestSwitchRefusesJSONOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"switch", "new-active", "--output", "json"})
+	command.SetArgs(forceTextOutput([]string{"switch", "new-active", "--output", "json"}))
 	err := command.Execute()
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "interactive") {
 		t.Fatalf("switch with JSON output = %v (code %q)", err, clierr.CodeOf(err))
@@ -110,7 +110,7 @@ func TestSwitchNumberedPickerReadsTheProjectNumber(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetIn(strings.NewReader("3\n"))
-	command.SetArgs([]string{"switch", "--dry-run"})
+	command.SetArgs(forceTextOutput([]string{"switch", "--dry-run"}))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("switch with the numbered picker: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestSwitchNumberedPickerReadsTheProjectNumber(t *testing.T) {
 	badOptions.Stdout, badOptions.Stderr = &badStdout, &badStderr
 	badCommand := cli.New(badOptions)
 	badCommand.SetIn(strings.NewReader("9\n"))
-	badCommand.SetArgs([]string{"switch", "--dry-run"})
+	badCommand.SetArgs(forceTextOutput([]string{"switch", "--dry-run"}))
 	err := badCommand.Execute()
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "between 1 and 3") {
 		t.Fatalf("numbered picker with an invalid number = %v", err)

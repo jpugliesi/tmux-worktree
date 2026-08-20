@@ -157,25 +157,31 @@ func newTicketsInitCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var result ticketservice.InitResult
-			return runMutation(command, "tickets.init",
-				func() (string, string, error) {
-					preview, err := service.Init(true)
-					return "", preview.Home, err
-				},
-				func() (string, string, error) {
-					var applyErr error
-					result, applyErr = service.Init(false)
-					return "", result.Home, applyErr
-				},
-				func(out io.Writer, _, _ string) error {
-					if err := reportScaffold(out, result.WroteIndex, filepath.Join(result.Home, "index.md")); err != nil {
-						return err
-					}
-					return reportScaffold(out, result.WroteTemplate, filepath.Join(result.Home, "templates", "ticket.md"))
-				})
+			return initializeTicketsHome(command, service)
 		},
 	}
+}
+
+// initializeTicketsHome writes the Tickets home scaffold. Both the tickets
+// init command and apply use it.
+func initializeTicketsHome(command *cobra.Command, service *ticketservice.Service) error {
+	var result ticketservice.InitResult
+	return runMutation(command, "tickets.init",
+		func() (string, string, error) {
+			preview, err := service.Init(true)
+			return "", preview.Home, err
+		},
+		func() (string, string, error) {
+			var applyErr error
+			result, applyErr = service.Init(false)
+			return "", result.Home, applyErr
+		},
+		func(out io.Writer, _, _ string) error {
+			if err := reportScaffold(out, result.WroteIndex, filepath.Join(result.Home, "index.md")); err != nil {
+				return err
+			}
+			return reportScaffold(out, result.WroteTemplate, filepath.Join(result.Home, "templates", "ticket.md"))
+		})
 }
 
 // reportScaffold writes one init result line: Wrote for a new file, Kept for
@@ -384,7 +390,7 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 func newTicketsListCommand(options Options) *cobra.Command {
 	var board, status string
 	var ready bool
-	var limit int
+	var limit, offset int
 	command := &cobra.Command{
 		Use:   "list",
 		Short: "List Tickets",
@@ -403,12 +409,15 @@ func newTicketsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tickets, total, truncated, err := applyLimit(tickets, limit)
+			tickets, total, truncated, err := applyWindow(tickets, offset, limit)
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, ticketsListOutput{SchemaVersion: jsonSchemaVersion, Tickets: tickets, TotalCount: total, Truncated: truncated})
+			if format := resolvedOutputFormat(command); format != outputText {
+				if format == outputNDJSON {
+					return writeNDJSONList(command, tickets, total, truncated)
+				}
+				return writeReadJSON(command, ticketsListOutput{SchemaVersion: jsonSchemaVersion, Tickets: tickets, TotalCount: total, Truncated: truncated}, "tickets")
 			}
 			if total == 0 {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No tickets match. Run 'twt tickets create DESCRIPTION'.")
@@ -433,7 +442,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&board, "board", "", "List one Board; an empty value lists ungrouped Tickets")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
-	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerBoardFlagCompletion(command, options)
 	return command
@@ -454,7 +463,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, ticketShowOutput{
+				return writeReadJSON(command, ticketShowOutput{
 					SchemaVersion: jsonSchemaVersion,
 					Ticket: ticketShowDetail{
 						Ticket:        result.Ticket,
@@ -462,7 +471,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 						Ready:         result.Ready,
 						BlockedByOpen: result.BlockedByOpen,
 					},
-				})
+				}, "ticket")
 			}
 			ticket := result.Ticket
 			if _, err := fmt.Fprintf(command.OutOrStdout(), "Slug: %s\nTitle: %s\nStatus: %s\nPriority: %d\nBoard: %s\nPath: %s\n",
@@ -492,6 +501,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 		},
 	}
 	setArguments(command, requiredArgument("ticket"))
+	addFieldsFlag(command, ticketShowDetail{})
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }
@@ -822,7 +832,7 @@ func createBoard(command *cobra.Command, service *ticketservice.Service, name st
 }
 
 func newTicketsBoardsListCommand(options Options) *cobra.Command {
-	var limit int
+	var limit, offset int
 	command := &cobra.Command{
 		Use:   "list",
 		Short: "List Boards",
@@ -836,12 +846,15 @@ func newTicketsBoardsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			boards, total, truncated, err := applyLimit(boards, limit)
+			boards, total, truncated, err := applyWindow(boards, offset, limit)
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, boardsListOutput{SchemaVersion: jsonSchemaVersion, Boards: boards, TotalCount: total, Truncated: truncated})
+			if format := resolvedOutputFormat(command); format != outputText {
+				if format == outputNDJSON {
+					return writeNDJSONList(command, boards, total, truncated)
+				}
+				return writeReadJSON(command, boardsListOutput{SchemaVersion: jsonSchemaVersion, Boards: boards, TotalCount: total, Truncated: truncated}, "boards")
 			}
 			if total == 0 {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Boards exist. Run 'twt tickets boards create NAME'.")
@@ -859,7 +872,7 @@ func newTicketsBoardsListCommand(options Options) *cobra.Command {
 			return writer.Flush()
 		},
 	}
-	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	addListReadFlags(command, &limit, &offset, domain.Board{})
 	return command
 }
 
@@ -878,13 +891,14 @@ func newTicketsBoardsShowCommand(options Options) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, boardShowOutput{SchemaVersion: jsonSchemaVersion, Board: board})
+				return writeReadJSON(command, boardShowOutput{SchemaVersion: jsonSchemaVersion, Board: board}, "board")
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Board: %s\nPath: %s\nTickets: %d\n", board.Name, board.Path, board.Tickets)
 			return err
 		},
 	}
 	setArguments(command, requiredArgument("name"))
+	addFieldsFlag(command, domain.Board{})
 	command.ValidArgsFunction = ticketBoardNameCompletion(options)
 	return command
 }

@@ -46,7 +46,7 @@ func TestProjectsCreateUsesDeclaredDefaultBranch(t *testing.T) {
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "create", "from-main", "--template", "policy", "--no-open"})
+	command.SetArgs(forceTextOutput([]string{"projects", "create", "from-main", "--template", "policy", "--no-open"}))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("projects create returned an error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestProjectsCreateRefusesConflictingSharedCacheRemote(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "create", "second", "--template", "policy", "--no-open"})
+	command.SetArgs(forceTextOutput([]string{"projects", "create", "second", "--template", "policy", "--no-open"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cache remote") {
 		t.Fatalf("conflicting cache remote error = %v", err)
@@ -163,7 +163,7 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	applyOptions := options
 	applyOptions.Stdout, applyOptions.Stderr = &stdout, &stderr
 	command := cli.New(applyOptions)
-	command.SetArgs([]string{"projects", "remove", "unpublished", "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", "unpublished", "--apply"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "not on the remote") {
 		t.Fatalf("unpublished removal error = %v", err)
@@ -336,7 +336,7 @@ func TestProjectsArchiveAndRemoveWorkFromSetupFailed(t *testing.T) {
 
 	for _, name := range []string{"fail-archive", "fail-remove"} {
 		command := cli.New(options)
-		command.SetArgs([]string{"projects", "create", name, "--template", "policy", "--no-open"})
+		command.SetArgs(forceTextOutput([]string{"projects", "create", name, "--template", "policy", "--no-open"}))
 		if err := command.Execute(); err == nil {
 			t.Fatalf("create %q did not fail", name)
 		}
@@ -424,7 +424,7 @@ func TestProjectsRemoveProtectsTheDefaultBranchPin(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "remove", "pinned", "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", "pinned", "--apply"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "default branch") {
 		t.Fatalf("default-branch removal error = %v", err)
@@ -565,7 +565,7 @@ func TestProjectsRemoveRejectsChangedStatePaths(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "remove", "tampered", "--apply"})
+	command.SetArgs(forceTextOutput([]string{"projects", "remove", "tampered", "--apply"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "outside its Project root") {
 		t.Fatalf("changed state removal error = %v", err)

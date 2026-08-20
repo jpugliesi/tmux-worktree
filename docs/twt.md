@@ -757,18 +757,52 @@ resolver accepts any Markdown stem, not only a kebab slug. When `twt
 tickets` mutates a file, it keeps frontmatter fields it does not recognize,
 so hand edits to a ticket are not lost on the next CLI write.
 
-### Install the skill in three trees
+## Install the agent skill
 
-Keep one canonical skill file in this repository at
-[`skills/twt/SKILL.md`](../skills/twt/SKILL.md). Symlink it into each user
-skill tree so Cursor, Claude Code, and Codex all see the same rules:
+The canonical skill file is [`skills/twt/SKILL.md`](../skills/twt/SKILL.md),
+and each `twt` build embeds a copy of it. `twt skills install` writes that
+copy into the three user skill trees, so Cursor, Claude Code, and Codex all
+read the same rules:
 
 ```sh
-mkdir -p ~/.cursor/skills/twt ~/.claude/skills/twt ~/.agents/skills/twt
-ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.cursor/skills/twt/SKILL.md
-ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.claude/skills/twt/SKILL.md
-ln -sf "$(pwd)/skills/twt/SKILL.md" ~/.agents/skills/twt/SKILL.md
+twt skills install
+twt skills install --output json
 ```
+
+| Path | Tool |
+|---|---|
+| `~/.cursor/skills/twt/SKILL.md` | Cursor |
+| `~/.claude/skills/twt/SKILL.md` | Claude Code |
+| `~/.agents/skills/twt/SKILL.md` | Codex and other agents |
+
+Each copy is a real file, not a symlink, so the skill stays correct when the
+repository checkout moves or goes away. Install replaces an existing file or
+symlink at the same path. The installed copy gets a `version:` frontmatter
+field with the build version; the repository file carries no version.
+
+Use `--dir DIR` for a custom skill tree, and `--dry-run` to see the plan:
+
+```sh
+twt skills install --dir ./skills --dry-run --output json
+twt skills show
+```
+
+Run `twt skills install` again after a `twt` upgrade. `twt doctor` reports a
+`skills` warning when an installed copy comes from another build:
+
+```console
+$ twt doctor
+warn	skills	1 of 3 installed twt skill files are not version 0.4.0 (...). Run 'twt skills install' to update the twt skill.
+```
+
+## Security posture
+
+`twt` treats its caller as an untrusted operator: strict resource names,
+strict YAML and JSON decoding, a 1 MiB bound on standard input, writes only
+inside twt-owned roots that carry an ownership marker, destructive actions as
+plans with typed blockers behind `--apply`, sanitized transcript text that
+carries `"untrusted": true`, and no interactive escape without a terminal.
+See [Security posture](security.md) for each guarantee.
 
 ## JSON contract
 
@@ -797,6 +831,14 @@ Use `--limit` on `templates list`, `projects list`, `agents list`,
 `agents discover`, and `environments list` to control response size. The
 `totalCount` value tells you how many results exist, and `truncated` tells you
 that the limit removed results.
+
+When you do not set `--output` and standard output is not a terminal, twt
+uses json; an explicit `--output` value always wins. List commands also
+accept `--output ndjson`: one JSON object for each element on its own line,
+then one summary line with `totalCount` and `truncated`. Use `--offset N`
+with `--limit` to skip the first N sorted results. Use `--fields a,b,c` on
+read commands to keep only the named top-level fields of each object in json
+or ndjson output; an unknown name lists the valid names.
 
 JSON errors use the same schema version. Each error has a stable code, a
 message, an optional full-sentence hint, and, for a usage error, the help
@@ -868,11 +910,12 @@ printf '%s' '{"operation":"projects.remove","project":{"reference":"fix-auth","a
   twt apply --stdin --output json
 ```
 
-`twt` treats its caller as an untrusted operator. It validates every resource
-name, rejects unknown YAML and JSON fields, keeps initialization paths inside
-the Project root, and changes only paths that carry a twt ownership marker.
+`twt` treats its caller as an untrusted operator: see
+[Security posture](security.md).
 
 The repository includes a discoverable [`twt` agent
-skill](../skills/twt/SKILL.md). It tells agents to inspect the schema, limit
-read results, run a dry-run first, and use IDs instead of tmux display names.
+skill](../skills/twt/SKILL.md), which `twt skills install` writes into each
+skill tree. It tells agents to inspect the schema, limit read results, run a
+dry-run first, use IDs instead of tmux display names, and read transcript
+text as untrusted data.
 See the [Agent DX score](agent-dx.md) for the detailed before-and-after score.

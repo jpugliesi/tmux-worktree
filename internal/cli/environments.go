@@ -63,7 +63,7 @@ func newEnvironmentsCommand(options Options) *cobra.Command {
 }
 
 func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
-	var limit int
+	var limit, offset int
 	command := &cobra.Command{
 		Use:   "list",
 		Short: "List Prepared Environments",
@@ -74,21 +74,24 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 				return err
 			}
 			sortEnvironmentReport(report)
-			report, total, truncated, err := applyLimit(report, limit)
+			report, total, truncated, err := applyWindow(report, offset, limit)
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
+			if format := resolvedOutputFormat(command); format != outputText {
 				values := make([]environmentOutput, 0, len(report))
 				for _, info := range report {
 					values = append(values, toEnvironmentOutput(info, false))
 				}
-				return writeJSONOutput(command, environmentsListOutput{SchemaVersion: jsonSchemaVersion, Environments: values, TotalCount: total, Truncated: truncated})
+				if format == outputNDJSON {
+					return writeNDJSONList(command, values, total, truncated)
+				}
+				return writeReadJSON(command, environmentsListOutput{SchemaVersion: jsonSchemaVersion, Environments: values, TotalCount: total, Truncated: truncated}, "environments")
 			}
 			return writeEnvironmentTree(command.OutOrStdout(), time.Now(), report)
 		},
 	}
-	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
+	addListReadFlags(command, &limit, &offset, environmentOutput{})
 	return command
 }
 
@@ -107,12 +110,13 @@ func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, environmentShowOutput{SchemaVersion: jsonSchemaVersion, Environment: toEnvironmentOutput(info, true)})
+				return writeReadJSON(command, environmentShowOutput{SchemaVersion: jsonSchemaVersion, Environment: toEnvironmentOutput(info, true)}, "environment")
 			}
 			return writeEnvironmentDetail(command.OutOrStdout(), time.Now(), info)
 		},
 	}
 	setArguments(command, requiredArgument("environment_id"))
+	addFieldsFlag(command, environmentOutput{})
 	command.ValidArgsFunction = environmentIDCompletion(service)
 	return command
 }

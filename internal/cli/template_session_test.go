@@ -148,7 +148,7 @@ session:
 	}
 
 	command := cli.New(options)
-	command.SetArgs([]string{"projects", "create", "broken-layout", "--template", "example", "--no-open"})
+	command.SetArgs(forceTextOutput([]string{"projects", "create", "broken-layout", "--template", "example", "--no-open"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "session command") || !strings.Contains(err.Error(), "layout failed") {
 		t.Fatalf("projects create error = %v", err)

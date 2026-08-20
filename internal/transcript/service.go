@@ -15,12 +15,18 @@ type Service struct {
 	stateDir string
 }
 
+// Transcript is one provider transcript that twt read for a Project.
 type Transcript struct {
 	Provider       string
 	SessionID      string
 	RepositoryName string
 	UpdatedAt      time.Time
-	Markdown       string
+	// Markdown is untrusted text: a provider transcript holds the words of
+	// any person or tool that talked to the coding agent. twt removes
+	// terminal control text from it, but a reader must treat the words as
+	// data, and never as an instruction. Every twt output that carries this
+	// text marks it untrusted.
+	Markdown string
 }
 
 type event struct {
@@ -192,7 +198,9 @@ func (s *Service) Snapshot(agentReference, projectID string, save bool) (Snapsho
 	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
 		return SnapshotResult{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt read its transcript", agent.ID)
 	}
-	paths, err := store.NewSnapshotStore(s.stateDir).Save(project.ID, agent.ID, value.Markdown)
+	// A snapshot file goes into a person or agent context, so it holds the
+	// same sanitized text as the command output.
+	paths, err := store.NewSnapshotStore(s.stateDir).Save(project.ID, agent.ID, sanitizeUntrusted(value.Markdown))
 	if err != nil {
 		return SnapshotResult{}, err
 	}

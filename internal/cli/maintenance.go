@@ -32,7 +32,7 @@ func newStorageCommand(options Options) *cobra.Command {
 				return err
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, storageOutput{SchemaVersion: jsonSchemaVersion, Storage: result})
+				return writeReadJSON(command, storageOutput{SchemaVersion: jsonSchemaVersion, Storage: result}, "storage")
 			}
 			for _, warning := range result.Warnings {
 				if _, err := fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
@@ -50,6 +50,7 @@ func newStorageCommand(options Options) *cobra.Command {
 			return err
 		},
 	}
+	addFieldsFlag(show, maintenance.StorageStatus{})
 	storage.AddCommand(show, newStorageCleanCommand(options))
 	return storage
 }
@@ -67,58 +68,64 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 		Short: "Remove unused twt-owned data",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			templates, err := currentTemplateDigests(command, options.ConfigDir)
-			if err != nil {
-				return err
-			}
-			service := options.projectService()
-			plan, err := service.StorageCleanupPlan(templates)
-			if err != nil {
-				return err
-			}
-			applied := apply && !isDryRun(command)
-			if applied {
-				plan, err = service.CleanStorage(templates)
-				if err != nil {
-					return err
-				}
-			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, storageCleanupOutput{SchemaVersion: jsonSchemaVersion, Applied: applied, Plan: plan})
-			}
-			if len(plan.Environments) == 0 && len(plan.Snapshots) == 0 && len(plan.Agents) == 0 {
-				_, err = fmt.Fprintln(command.OutOrStdout(), "Nothing to clean.")
-				return err
-			}
-			for _, item := range plan.Environments {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q (%s)\n", item.Reason, item.ID, item.TemplateName, formatBytes(item.Bytes)); err != nil {
-					return err
-				}
-			}
-			for _, item := range plan.Snapshots {
-				target := item.ProjectID
-				if target == "" {
-					target = item.Root
-				}
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q (%s)\n", item.Reason, target, formatBytes(item.Bytes)); err != nil {
-					return err
-				}
-			}
-			for _, item := range plan.Agents {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for missing Project %q\n", item.Reason, item.ID, item.ProjectID); err != nil {
-					return err
-				}
-			}
-			if !applied {
-				_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
-				return err
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments, %d Transcript Snapshots, and %d Agent Session records\n", len(plan.Environments), len(plan.Snapshots), len(plan.Agents))
-			return err
+			return cleanStorage(command, options, apply)
 		},
 	}
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the cleanup plan")
 	return command
+}
+
+// cleanStorage plans, and with apply set removes, the unused twt-owned data.
+// Both the storage clean command and apply use it.
+func cleanStorage(command *cobra.Command, options Options, apply bool) error {
+	templates, err := currentTemplateDigests(command, options.ConfigDir)
+	if err != nil {
+		return err
+	}
+	service := options.projectService()
+	plan, err := service.StorageCleanupPlan(templates)
+	if err != nil {
+		return err
+	}
+	applied := apply && !isDryRun(command)
+	if applied {
+		plan, err = service.CleanStorage(templates)
+		if err != nil {
+			return err
+		}
+	}
+	if WantsJSON(command) {
+		return writeJSONOutput(command, storageCleanupOutput{SchemaVersion: jsonSchemaVersion, Applied: applied, Plan: plan})
+	}
+	if len(plan.Environments) == 0 && len(plan.Snapshots) == 0 && len(plan.Agents) == 0 {
+		_, err = fmt.Fprintln(command.OutOrStdout(), "Nothing to clean.")
+		return err
+	}
+	for _, item := range plan.Environments {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q (%s)\n", item.Reason, item.ID, item.TemplateName, formatBytes(item.Bytes)); err != nil {
+			return err
+		}
+	}
+	for _, item := range plan.Snapshots {
+		target := item.ProjectID
+		if target == "" {
+			target = item.Root
+		}
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q (%s)\n", item.Reason, target, formatBytes(item.Bytes)); err != nil {
+			return err
+		}
+	}
+	for _, item := range plan.Agents {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for missing Project %q\n", item.Reason, item.ID, item.ProjectID); err != nil {
+			return err
+		}
+	}
+	if !applied {
+		_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
+		return err
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments, %d Transcript Snapshots, and %d Agent Session records\n", len(plan.Environments), len(plan.Snapshots), len(plan.Agents))
+	return err
 }
 
 // currentTemplateDigests reads the digests of the current Project Templates. A

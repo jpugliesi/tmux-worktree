@@ -35,7 +35,7 @@ func runCLI(t *testing.T, options cli.Options, args ...string) (string, string, 
 	options.Stdout = &stdout
 	options.Stderr = &stderr
 	command := cli.New(options)
-	command.SetArgs(args)
+	command.SetArgs(forceTextOutput(args))
 	err := command.Execute()
 	return stdout.String(), stderr.String(), err
 }

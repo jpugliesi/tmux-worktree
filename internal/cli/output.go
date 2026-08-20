@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -15,6 +17,21 @@ import (
 )
 
 const jsonSchemaVersion = 1
+
+// The --output values. When --output is not set and standard output is not a
+// terminal, twt uses json.
+const (
+	outputText   = "text"
+	outputJSON   = "json"
+	outputNDJSON = "ndjson"
+)
+
+// ndjsonAnnotation marks a list command that accepts --output ndjson.
+const ndjsonAnnotation = "twt.ndjson"
+
+// fieldsAnnotation stores the valid --fields names of one read command on its
+// --fields flag.
+const fieldsAnnotation = "twt.fields"
 
 // statusValid and statusApplied are the two mutation result states. A dry
 // run reports valid; a real mutation reports applied.
@@ -119,18 +136,236 @@ func isDryRun(command *cobra.Command) bool {
 	return value
 }
 
-// applyLimit cuts a result list to the requested size. It returns the kept
-// values, the number of results before the cut, and whether the cut removed
-// results. Every list output reports totalCount and truncated.
-func applyLimit[T any](values []T, limit int) ([]T, int, bool, error) {
+// applyWindow cuts a sorted result list to one window: it skips the first
+// offset values, then keeps at most limit values. It returns the kept values,
+// the number of results before the cut, and whether results remain after the
+// window. Every list output reports totalCount and truncated.
+func applyWindow[T any](values []T, offset, limit int) ([]T, int, bool, error) {
 	total := len(values)
 	if limit < 0 {
 		return nil, total, false, clierr.New(clierr.InvalidUsage, "--limit must be zero or greater")
 	}
-	if limit > 0 && total > limit {
+	if offset < 0 {
+		return nil, total, false, clierr.New(clierr.InvalidUsage, "--offset must be zero or greater")
+	}
+	if offset > total {
+		offset = total
+	}
+	values = values[offset:]
+	if limit > 0 && len(values) > limit {
 		return values[:limit], total, true, nil
 	}
 	return values, total, false, nil
+}
+
+// addListReadFlags registers the shared read flags of one list command:
+// --limit, --offset, and --fields. It also permits --output ndjson. The
+// element value gives the valid --fields names.
+func addListReadFlags(command *cobra.Command, limit, offset *int, element any) {
+	command.Flags().IntVar(limit, "limit", 0, "Limit the number of results; zero returns all results")
+	command.Flags().IntVar(offset, "offset", 0, "Skip this number of sorted results before the limit applies")
+	addFieldsFlag(command, element)
+	if command.Annotations == nil {
+		command.Annotations = map[string]string{}
+	}
+	command.Annotations[ndjsonAnnotation] = "true"
+}
+
+// addFieldsFlag registers the --fields flag on one read command. The valid
+// field names come from the json tags of the element struct.
+func addFieldsFlag(command *cobra.Command, element any) {
+	command.Flags().String("fields", "", "Show only these comma-separated fields in json or ndjson output")
+	flag := command.Flags().Lookup("fields")
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[fieldsAnnotation] = jsonFieldNames(element)
+}
+
+// jsonFieldNames reads the top-level JSON field names of one output struct
+// from its json tags. It walks embedded structs. It skips schemaVersion,
+// because schemaVersion always stays in the output.
+func jsonFieldNames(element any) []string {
+	seen := map[string]bool{}
+	names := []string{}
+	var walk func(structType reflect.Type)
+	walk = func(structType reflect.Type) {
+		for structType.Kind() == reflect.Pointer {
+			structType = structType.Elem()
+		}
+		if structType.Kind() != reflect.Struct {
+			return
+		}
+		for index := 0; index < structType.NumField(); index++ {
+			field := structType.Field(index)
+			tag := strings.Split(field.Tag.Get("json"), ",")[0]
+			if field.Anonymous && tag == "" {
+				walk(field.Type)
+				continue
+			}
+			if !field.IsExported() || tag == "-" {
+				continue
+			}
+			name := tag
+			if name == "" {
+				name = field.Name
+			}
+			if name == "schemaVersion" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	walk(reflect.TypeOf(element))
+	sort.Strings(names)
+	return names
+}
+
+// fieldMask reads the validated --fields selection of one read command. It
+// returns nil when the command does not set --fields. An unknown field name
+// is an invalid_usage error that lists the valid names.
+func fieldMask(command *cobra.Command) (map[string]bool, error) {
+	flag := command.Flags().Lookup("fields")
+	if flag == nil || !flag.Changed {
+		return nil, nil
+	}
+	valid := map[string]bool{}
+	for _, name := range flag.Annotations[fieldsAnnotation] {
+		valid[name] = true
+	}
+	mask := map[string]bool{}
+	for _, name := range strings.Split(flag.Value.String(), ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if !valid[name] {
+			return nil, invalidUsage(command, "unknown field %q; valid fields: %s", name, strings.Join(flag.Annotations[fieldsAnnotation], ", "))
+		}
+		mask[name] = true
+	}
+	if len(mask) == 0 {
+		return nil, invalidUsage(command, "give --fields one or more field names; valid fields: %s", strings.Join(flag.Annotations[fieldsAnnotation], ", "))
+	}
+	return mask, nil
+}
+
+// maskObjectKeys keeps only the masked keys of one decoded JSON object. The
+// schemaVersion key always stays.
+func maskObjectKeys(object map[string]json.RawMessage, mask map[string]bool) map[string]json.RawMessage {
+	for key := range object {
+		if key != "schemaVersion" && !mask[key] {
+			delete(object, key)
+		}
+	}
+	return object
+}
+
+// maskMarshaled marshals one value and keeps only the masked top-level keys.
+func maskMarshaled(value any, mask map[string]bool) (map[string]json.RawMessage, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, err
+	}
+	return maskObjectKeys(object, mask), nil
+}
+
+// writeReadJSON writes one read envelope. When the command sets --fields, it
+// filters the value under key: each element of a list, or the one shown
+// object. An empty key filters the top-level keys of the envelope itself.
+// schemaVersion always stays.
+func writeReadJSON(command *cobra.Command, envelope any, key string) error {
+	mask, err := fieldMask(command)
+	if err != nil {
+		return err
+	}
+	if mask == nil {
+		return writeJSONOutput(command, envelope)
+	}
+	object, err := maskEnvelope(envelope, key, mask)
+	if err != nil {
+		return err
+	}
+	return writeJSONOutput(command, object)
+}
+
+// maskEnvelope applies one field mask inside a marshaled envelope.
+func maskEnvelope(envelope any, key string, mask map[string]bool) (map[string]json.RawMessage, error) {
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, err
+	}
+	if key == "" {
+		return maskObjectKeys(object, mask), nil
+	}
+	raw, found := object[key]
+	if !found {
+		return object, nil
+	}
+	if trimmed := strings.TrimSpace(string(raw)); strings.HasPrefix(trimmed, "[") {
+		var elements []map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &elements); err != nil {
+			return nil, err
+		}
+		for index := range elements {
+			elements[index] = maskObjectKeys(elements[index], mask)
+		}
+		masked, err := json.Marshal(elements)
+		if err != nil {
+			return nil, err
+		}
+		object[key] = masked
+		return object, nil
+	}
+	var element map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &element); err != nil {
+		return nil, err
+	}
+	masked, err := json.Marshal(maskObjectKeys(element, mask))
+	if err != nil {
+		return nil, err
+	}
+	object[key] = masked
+	return object, nil
+}
+
+// ndjsonSummary is the final line of one ndjson list result.
+type ndjsonSummary struct {
+	TotalCount int  `json:"totalCount"`
+	Truncated  bool `json:"truncated"`
+}
+
+// writeNDJSONList writes one list as newline-delimited JSON: one element for
+// each line without an envelope, then one summary line with totalCount and
+// truncated. The --fields mask applies to each element line.
+func writeNDJSONList[T any](command *cobra.Command, elements []T, total int, truncated bool) error {
+	mask, err := fieldMask(command)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(command.OutOrStdout())
+	encoder.SetEscapeHTML(false)
+	for _, element := range elements {
+		var value any = element
+		if mask != nil {
+			if value, err = maskMarshaled(element, mask); err != nil {
+				return err
+			}
+		}
+		if err := encoder.Encode(value); err != nil {
+			return err
+		}
+	}
+	return encoder.Encode(ndjsonSummary{TotalCount: total, Truncated: truncated})
 }
 
 func writeMutation(command *cobra.Command, operation, status, id, name string) error {
@@ -178,7 +413,7 @@ func WriteError(command *cobra.Command, writer io.Writer, err error) error {
 	if errors.As(err, &usage) {
 		helpCommand = usage.helpCommand
 	}
-	if !WantsJSON(command) {
+	if resolvedOutputFormat(command) == outputText {
 		text := fmt.Sprintf("twt: %v\n", err)
 		if hint != "" {
 			text += hint + "\n"

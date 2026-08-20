@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/jpugliesi/tmux-worktree/internal/version"
+	skillasset "github.com/jpugliesi/tmux-worktree/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -79,6 +81,11 @@ func (o Options) projectServiceOptions() projectservice.Options {
 	return projectservice.Options{StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket}
 }
 
+// agentService builds the Agent Session service for these Options.
+func (o Options) agentService() *agentservice.Service {
+	return agentservice.NewService(o.StateDir, o.TmuxSocket)
+}
+
 // templateStore builds the Project Template store for these Options.
 func (o Options) templateStore() store.TemplateStore {
 	return store.NewTemplateStore(o.ConfigDir)
@@ -92,7 +99,9 @@ func (o Options) maintenanceService() *maintenance.Service {
 	if err != nil {
 		home = ""
 	}
-	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir, home)
+	userHome, _ := os.UserHomeDir()
+	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir, home).
+		WithSkillCheck(version.Version, skillasset.UserPaths(userHome))
 }
 
 // resolveTicketsHome resolves the Tickets home: the injected Options value,
@@ -219,9 +228,18 @@ repository, and a set of resumable coding Agent Sessions.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(command *cobra.Command, _ []string) error {
-			output, _ := command.Flags().GetString("output")
-			if output != "text" && output != "json" {
-				return invalidUsage(command, "unsupported output %q; use text or json", output)
+			format := resolvedOutputFormat(command)
+			switch format {
+			case outputText, outputJSON:
+			case outputNDJSON:
+				if command.Annotations[ndjsonAnnotation] != "true" {
+					return invalidUsage(command, "this command does not support ndjson output; use ndjson only on list commands")
+				}
+			default:
+				return invalidUsage(command, "unsupported output %q; use text, json, or ndjson", format)
+			}
+			if fields := command.Flags().Lookup("fields"); fields != nil && fields.Changed && format == outputText {
+				return invalidUsage(command, "use --fields with --output json")
 			}
 			return nil
 		},
@@ -231,7 +249,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	root.SetFlagErrorFunc(func(command *cobra.Command, err error) error {
 		return invalidUsage(command, "%v", err)
 	})
-	root.PersistentFlags().String("output", "text", "Set all command output to text or json")
+	root.PersistentFlags().String("output", "text", "Set all command output to text, json, or ndjson. Without a terminal the default is json")
 	root.PersistentFlags().Bool("dry-run", false, "Validate and show a mutation without applying it")
 	setFlagEnum(root, "output", outputFormatNames...)
 	root.AddGroup(
@@ -265,9 +283,11 @@ repository, and a set of resumable coding Agent Sessions.`,
 	doctor.GroupID = "inspect"
 	schema := newSchemaCommand(root)
 	schema.GroupID = "automation"
+	skillsCommand := newSkillsCommand()
+	skillsCommand.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, environments, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, environments, storage, doctor, schema, skillsCommand, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)
@@ -275,8 +295,21 @@ repository, and a set of resumable coding Agent Sessions.`,
 }
 
 func WantsJSON(command *cobra.Command) bool {
-	value, _ := command.Flags().GetString("output")
-	return value == "json"
+	return resolvedOutputFormat(command) == outputJSON
+}
+
+// resolvedOutputFormat resolves the --output value of one command run in one
+// place. When --output is not set and standard output is not a terminal, the
+// format is json. An explicit --output value always wins.
+func resolvedOutputFormat(command *cobra.Command) string {
+	flag := command.Flags().Lookup("output")
+	if flag == nil {
+		return outputText
+	}
+	if !flag.Changed && !terminalWriter(command.OutOrStdout()) {
+		return outputJSON
+	}
+	return flag.Value.String()
 }
 
 func envOr(name, fallback string) string {

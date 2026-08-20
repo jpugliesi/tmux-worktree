@@ -210,6 +210,15 @@ var commandHelp = map[string]helpContent{
 	"twt doctor": {
 		long: "Check required tools, Project Templates, Project state, and ownership markers.", example: "  twt doctor\n  twt doctor --output json",
 	},
+	"twt skills": {
+		long: "Install the twt agent skill that this build carries. The skill tells an agent how to call twt: JSON output, dry runs, limits, and untrusted transcript text.", example: "  twt skills install\n  twt skills show",
+	},
+	"twt skills install": {
+		long: "Write the twt agent skill of this build into each skill tree. Without --dir, twt writes ~/.cursor/skills/twt/SKILL.md, ~/.claude/skills/twt/SKILL.md, and ~/.agents/skills/twt/SKILL.md. Each copy is a real file with a version stamp, not a symlink, so the skill stays correct when the repository checkout moves. Run this command again after a twt upgrade.", example: "  twt skills install\n  twt skills install --dir ./skills --dry-run --output json",
+	},
+	"twt skills show": {
+		long: "Print the twt agent skill of this build, with the version stamp that install writes.", example: "  twt skills show\n  twt skills show --output json",
+	},
 	"twt schema": {
 		long: "Show the versioned machine-readable schema for commands, arguments, flags, and raw apply operations.", example: "  twt schema | jq .",
 	},

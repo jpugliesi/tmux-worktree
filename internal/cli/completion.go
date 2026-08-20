@@ -23,8 +23,9 @@ const noFileCompletion = cobra.ShellCompDirectiveNoFileComp
 // accepts for --provider and in the request schema.
 var agentProviderNames = []string{"codex", "claude", "cursor", "command"}
 
-// outputFormatNames are the values that --output accepts.
-var outputFormatNames = []string{"text", "json"}
+// outputFormatNames are the values that --output accepts. Only list commands
+// accept ndjson.
+var outputFormatNames = []string{"text", "json", "ndjson"}
 
 // matching keeps the candidate values that start with the typed prefix.
 func matching(values []string, toComplete string) []string {
