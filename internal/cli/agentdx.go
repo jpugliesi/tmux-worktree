@@ -80,10 +80,6 @@ func isDryRun(command *cobra.Command) bool {
 	return value
 }
 
-func wantsJSON(command *cobra.Command, localFormat string) bool {
-	return WantsJSON(command) || localFormat == "json"
-}
-
 func applyLimit[T any](values []T, limit int) ([]T, error) {
 	if limit < 0 {
 		return nil, fmt.Errorf("--limit must be zero or greater")
@@ -173,7 +169,6 @@ func schemaForFlag(command *cobra.Command, flag *pflag.Flag) flagSchema {
 	}
 	enums := map[string][]string{
 		"output":   {"text", "json"},
-		"format":   {"text", "json"},
 		"provider": {"codex", "claude", "cursor", "command"},
 	}
 	return flagSchema{Name: flag.Name, Type: flag.Value.Type(), Default: flag.DefValue, Description: flag.Usage, Required: required, Enum: enums[flag.Name]}

@@ -60,6 +60,73 @@ func TestJSONUsageErrorHasAStableCodeAndHelpCommand(t *testing.T) {
 	}
 }
 
+func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
+	root := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
+	var groups [][]string
+	var walk func(command *cobra.Command, path []string)
+	walk = func(command *cobra.Command, path []string) {
+		for _, child := range command.Commands() {
+			childPath := append(append([]string(nil), path...), child.Name())
+			if child.HasSubCommands() {
+				groups = append(groups, childPath)
+				walk(child, childPath)
+			}
+		}
+	}
+	walk(root, nil)
+	if len(groups) < 9 {
+		t.Fatalf("expected at least 9 group commands, found %d: %v", len(groups), groups)
+	}
+	newCommand := func(stdout, stderr *bytes.Buffer) *cobra.Command {
+		return cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir(), Stdout: stdout, Stderr: stderr})
+	}
+	for _, group := range groups {
+		var helpStdout, helpStderr bytes.Buffer
+		bare := newCommand(&helpStdout, &helpStderr)
+		bare.SetArgs(group)
+		if err := bare.Execute(); err != nil {
+			t.Fatalf("%v without a subcommand failed: %v", group, err)
+		}
+		if !strings.Contains(helpStdout.String(), "Available Commands") {
+			t.Fatalf("%v without a subcommand did not show help:\n%s", group, helpStdout.String())
+		}
+
+		args := append(append([]string(nil), group...), "definitely-not-a-command")
+		var stdout, stderr bytes.Buffer
+		command := newCommand(&stdout, &stderr)
+		command.SetArgs(args)
+		if _, err := command.ExecuteC(); err == nil {
+			t.Fatalf("%v did not fail", args)
+		}
+
+		jsonArgs := append(append([]string(nil), args...), "--output", "json")
+		var jsonStdout, jsonStderr bytes.Buffer
+		jsonCommand := newCommand(&jsonStdout, &jsonStderr)
+		jsonCommand.SetArgs(jsonArgs)
+		executed, err := jsonCommand.ExecuteC()
+		if err == nil {
+			t.Fatalf("%v did not fail", jsonArgs)
+		}
+		if writeErr := cli.WriteError(executed, &jsonStderr, err); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		var result struct {
+			Error struct {
+				Code        string `json:"code"`
+				Message     string `json:"message"`
+				HelpCommand string `json:"helpCommand"`
+			} `json:"error"`
+		}
+		if decodeErr := json.Unmarshal(jsonStderr.Bytes(), &result); decodeErr != nil {
+			t.Fatalf("decode JSON error for %v: %v\n%s", jsonArgs, decodeErr, jsonStderr.String())
+		}
+		wantHelp := "twt2 " + strings.Join(group, " ") + " --help"
+		if result.Error.Code != "invalid_usage" || result.Error.HelpCommand != wantHelp {
+			t.Fatalf("JSON error for %v = %+v, want code invalid_usage and helpCommand %q", jsonArgs, result.Error, wantHelp)
+		}
+	}
+}
+
 func TestEveryRunnableCommandHasAnExample(t *testing.T) {
 	root := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
 	var missing []string

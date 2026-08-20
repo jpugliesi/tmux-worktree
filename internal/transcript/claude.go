@@ -2,35 +2,62 @@ package transcript
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
 func (s *Service) readClaude(sessionID string, project domain.Project) (Transcript, error) {
-	for _, repository := range project.Repositories {
-		root := filepath.Join(s.home, ".claude", "projects", encodeClaudeProject(repository.Path))
-		paths, err := matchingFiles(root, sessionID, func(name string) bool { return name == sessionID })
-		if err != nil {
-			return Transcript{}, err
+	root := filepath.Join(s.home, ".claude", "projects")
+	fast := []string{}
+	for _, directory := range append([]string{project.Root}, repositoryPaths(project)...) {
+		if directory == "" {
+			continue
 		}
-		for _, path := range paths {
-			lines, info, err := readJSONLines(path)
-			if err != nil {
-				return Transcript{}, err
-			}
-			repositoryName, events, matched, err := parseClaude(lines, sessionID, project)
-			if err != nil {
-				return Transcript{}, err
-			}
-			if !matched {
-				continue
-			}
-			return makeTranscript("claude", sessionID, repositoryName, info.ModTime(), events)
+		path := filepath.Join(root, encodeClaudeProject(directory), sessionID+".jsonl")
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			fast = append(fast, path)
 		}
 	}
+	if transcript, matched, err := s.readClaudePaths(fast, sessionID, project); err != nil || matched {
+		return transcript, err
+	}
+	paths, err := matchingFiles(root, sessionID, func(name string) bool { return name == sessionID })
+	if err != nil {
+		return Transcript{}, err
+	}
+	if transcript, matched, err := s.readClaudePaths(paths, sessionID, project); err != nil || matched {
+		return transcript, err
+	}
 	return Transcript{}, fmt.Errorf("Claude transcript %q does not exist in Project %q", sessionID, project.Name)
+}
+
+func (s *Service) readClaudePaths(paths []string, sessionID string, project domain.Project) (Transcript, bool, error) {
+	for _, path := range paths {
+		lines, info, err := readJSONLines(path)
+		if err != nil {
+			return Transcript{}, false, err
+		}
+		repositoryName, events, matched, err := parseClaude(lines, sessionID, project)
+		if err != nil {
+			return Transcript{}, false, err
+		}
+		if !matched {
+			continue
+		}
+		transcript, err := makeTranscript("claude", sessionID, repositoryName, info.ModTime(), events)
+		return transcript, true, err
+	}
+	return Transcript{}, false, nil
+}
+
+func repositoryPaths(project domain.Project) []string {
+	paths := []string{}
+	for _, repository := range project.Repositories {
+		paths = append(paths, repository.Path)
+	}
+	return paths
 }
 
 func parseClaude(lines []map[string]any, sessionID string, project domain.Project) (string, []event, bool, error) {
@@ -85,5 +112,11 @@ func claudeEvent(line map[string]any) (string, string) {
 }
 
 func encodeClaudeProject(path string) string {
-	return strings.ReplaceAll(path, string(filepath.Separator), "-")
+	encoded := []rune(path)
+	for index, character := range encoded {
+		if (character < 'A' || character > 'Z') && (character < 'a' || character > 'z') && (character < '0' || character > '9') {
+			encoded[index] = '-'
+		}
+	}
+	return string(encoded)
 }

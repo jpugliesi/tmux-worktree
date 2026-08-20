@@ -612,7 +612,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	if err := duplicate.Execute(); err == nil || !strings.Contains(err.Error(), "already owned by Agent Session") {
 		t.Fatalf("duplicate pane registration error = %v", err)
 	}
-	list := executeWithOptions(t, baseOptions, nil, "agents", "list", "--project", "agent-test", "--format", "json")
+	list := executeWithOptions(t, baseOptions, nil, "agents", "list", "--project", "agent-test", "--output", "json")
 	var result struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Agents        []struct {
@@ -633,7 +633,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	}
 
 	feedback := "review feedback must remain text\n"
-	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--stdin", "--format", "json")
+	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--stdin", "--output", "json")
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		capture := runCommand(t, "", "tmux", "-L", socket, "capture-pane", "-p", "-t", pane)
@@ -655,7 +655,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	if err := store.NewProjectStore(baseOptions.StateDir).Save(project); err != nil {
 		t.Fatal(err)
 	}
-	archivedList := executeWithOptions(t, baseOptions, nil, "agents", "list", "--project", "agent-test", "--format", "json")
+	archivedList := executeWithOptions(t, baseOptions, nil, "agents", "list", "--project", "agent-test", "--output", "json")
 	var archivedResult struct {
 		Agents []struct {
 			Status       string `json:"status"`
@@ -847,7 +847,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 		t.Fatalf("JSON create output = %s", createOutput)
 	}
 
-	list := executeWithOptions(t, options, nil, "projects", "list", "--format", "json")
+	list := executeWithOptions(t, options, nil, "projects", "list", "--output", "json")
 	var projects struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Projects      []struct {
@@ -860,7 +860,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=json-test", "-F", "#{pane_id}")
 	t.Setenv("TWT2_PROJECT_ID", "")
 	t.Setenv("TMUX_PANE", pane)
-	contextOutput := executeWithOptions(t, options, nil, "context", "--format", "json")
+	contextOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
 	if !strings.Contains(contextOutput, `"name":"json-test"`) || strings.Contains(contextOutput, "tmuxSession") || strings.Contains(contextOutput, `"root"`) {
 		t.Fatalf("context JSON has an invalid contract: %s", contextOutput)
 	}
@@ -877,7 +877,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	storageOutput := executeWithOptions(t, options, nil, "storage", "status", "--format", "json")
+	storageOutput := executeWithOptions(t, options, nil, "storage", "status", "--output", "json")
 	var storageResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Storage       struct {
@@ -890,7 +890,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(storageOutput), &storageResult); err != nil || storageResult.SchemaVersion != 1 || storageResult.Storage.TotalBytes <= 0 || storageResult.Storage.SnapshotBytes < int64(len("snapshot bytes\n")) || storageResult.Storage.ProjectCount != 1 || storageResult.Storage.WorktreeCount != 1 {
 		t.Fatalf("storage JSON = %s; decode error = %v", storageOutput, err)
 	}
-	doctorOutput := executeWithOptions(t, options, nil, "doctor", "--format", "json")
+	doctorOutput := executeWithOptions(t, options, nil, "doctor", "--output", "json")
 	if !strings.Contains(doctorOutput, `"healthy":true`) {
 		t.Fatalf("doctor JSON = %s", doctorOutput)
 	}

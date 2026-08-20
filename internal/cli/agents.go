@@ -70,7 +70,7 @@ type agentSnapshotOutput struct {
 func newAgentsCommand(options Options) *cobra.Command {
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
 	projects := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-	command := &cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Projects"}
+	command := groupCommand(&cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Projects"})
 	command.AddCommand(newAgentsRegisterCommand(agents, projects))
 	command.AddCommand(newAgentsListCommand(agents, projects))
 	command.AddCommand(newAgentsResumeCommand(agents, projects))
@@ -136,7 +136,7 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 }
 
 func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	command := &cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"}
+	command := groupCommand(&cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"})
 	command.AddCommand(newAgentTranscriptShowCommand(agents, projects))
 	command.AddCommand(newAgentTranscriptSnapshotCommand(projects, stateDir))
 	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
@@ -262,7 +262,6 @@ func writeAgentTranscript(command *cobra.Command, projectID, agentID string, val
 
 func newAgentsListCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
 	var projectReference string
-	var format string
 	var limit int
 	command := &cobra.Command{
 		Use:   "list",
@@ -285,11 +284,8 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			for _, value := range values {
 				outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive))
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, agentsListOutput{SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			for _, output := range outputs {
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", output.ID, output.Provider, output.Status, output.Label); err != nil {
@@ -300,14 +296,12 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
 	return command
 }
 
 func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
-	var format string
-	command := &cobra.Command{
+	return &cobra.Command{
 		Use:   "resume AGENT_ID",
 		Short: "Resume or focus an Agent Session",
 		Args:  exactArgs("AGENT_ID"),
@@ -330,18 +324,13 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, project.Status == domain.ProjectActive)})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Resumed Agent Session %s\n", agent.ID)
 			return err
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
-	return command
 }
 
 func newAgentsFocusCommand(agents *agentservice.Service) *cobra.Command {
@@ -373,7 +362,6 @@ func newAgentsFocusCommand(agents *agentservice.Service) *cobra.Command {
 
 func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
 	var useStdin bool
-	var format string
 	var projectReference string
 	command := &cobra.Command{
 		Use:   "send AGENT_ID",
@@ -410,18 +398,14 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 			if err := agents.Send(agent, project.ID, string(data)); err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, agentSendOutput{SchemaVersion: jsonSchemaVersion, AgentID: agent.ID, Status: "sent"})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Sent feedback to Agent Session %s\n", agent.ID)
 			return err
 		},
 	}
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	_ = command.MarkFlagRequired("stdin")
 	return command

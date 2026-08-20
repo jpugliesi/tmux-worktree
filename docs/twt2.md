@@ -223,12 +223,12 @@ preview plug-in. It uses the versioned JSON commands. It does not read `twt2`
 state files or store tmux target values.
 
 ```sh
-twt2 context --format json
+twt2 context --output json
 twt2 context --directory /path/to/current/buffer --output json
-twt2 agents list --project current --format json
-twt2 agents resume AGENT_ID --format json
+twt2 agents list --project current --output json
+twt2 agents resume AGENT_ID --output json
 printf '%s' "$REVIEW_TEXT" | \
-  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --format json
+  twt2 agents send AGENT_ID --project PROJECT_ID --stdin --output json
 twt2 agents transcript show AGENT_ID --project PROJECT_ID --output json
 twt2 agents transcript snapshot AGENT_ID --project PROJECT_ID --output json
 ```
@@ -295,7 +295,7 @@ Inspect disk use:
 
 ```sh
 twt2 storage status
-twt2 storage status --format json
+twt2 storage status --output json
 ```
 
 `storage status` reports claimed Project data, unclaimed Prepared Environment

@@ -242,7 +242,7 @@ func TestRenamedProjectSessionRemainsTheImmutableTmuxTarget(t *testing.T) {
 	if len(fields) < 4 {
 		t.Fatalf("registration output = %q", registration)
 	}
-	executeWithOptions(t, options, nil, "agents", "resume", fields[3], "--format", "json")
+	executeWithOptions(t, options, nil, "agents", "resume", fields[3], "--output", "json")
 	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", "display-name", "-F", "#{window_name}")
 	if windows != "app\nsleeper" {
 		t.Fatalf("Agent Session did not resume in the renamed Project session: %q", windows)

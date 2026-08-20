@@ -19,6 +19,12 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 		Use:   "create [NAME]",
 		Short: "Create a new Project and archive the current Project",
 		Args:  optionalArg("NAME"),
+		PreRunE: func(command *cobra.Command, _ []string) error {
+			if WantsJSON(command) {
+				return invalidUsage(command, "quick create uses interactive text output; use 'twt2 projects create' for JSON automation")
+			}
+			return nil
+		},
 		RunE: func(command *cobra.Command, args []string) error {
 			currentPane := os.Getenv("TMUX_PANE")
 			current, err := service.CurrentFromPane(currentPane)
@@ -30,7 +36,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				return fmt.Errorf("quick create test hooks are incomplete")
 			}
 			clientName := ""
-			if !testHooks && !isDryRun(command) && !WantsJSON(command) {
+			if !testHooks && !isDryRun(command) {
 				clientName, err = callingTmuxClient(options, currentPane)
 				if err != nil {
 					return err
@@ -49,9 +55,6 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			}
 			if isDryRun(command) {
 				return writeMutation(command, "projects.quick_create", "valid", "", name)
-			}
-			if WantsJSON(command) {
-				return invalidUsage(command, "quick create uses interactive text output; use 'twt2 projects create' for JSON automation")
 			}
 
 			created, err := service.Create(name, current.TemplateName, template)
@@ -108,7 +111,7 @@ func quickCreateName(command *cobra.Command, args []string) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
 	}
-	if WantsJSON(command) || !interactiveInput(command.InOrStdin()) {
+	if !interactiveInput(command.InOrStdin()) {
 		return "", invalidUsage(command, "missing Project name; use 'twt2 create NAME' in a script")
 	}
 	if _, err := fmt.Fprint(command.ErrOrStderr(), "Project name: "); err != nil {

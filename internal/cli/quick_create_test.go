@@ -67,33 +67,39 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(latestTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dryRun := executeWithOptions(t, options, nil, "create", "dry-project", "--dry-run", "--output", "json")
-	if !strings.Contains(dryRun, `"operation":"projects.quick_create"`) || !strings.Contains(dryRun, `"status":"valid"`) {
+	dryRun := executeWithOptions(t, options, nil, "create", "dry-project", "--dry-run")
+	if !strings.Contains(dryRun, "projects.quick_create: valid") {
 		t.Fatalf("quick create dry-run output = %s", dryRun)
 	}
 	if _, err := store.NewProjectStore(options.StateDir).Find("dry-project"); err == nil {
 		t.Fatal("quick create dry-run created a Project")
 	}
-	var jsonOutput, jsonError bytes.Buffer
-	jsonOptions := options
-	jsonOptions.Stdout, jsonOptions.Stderr = &jsonOutput, &jsonError
-	jsonCommand := cli.New(jsonOptions)
-	jsonCommand.SetArgs([]string{"create", "json-project", "--output", "json"})
-	err = jsonCommand.Execute()
-	if err == nil || !strings.Contains(err.Error(), "use 'twt2 projects create' for JSON automation") {
-		t.Fatalf("quick create JSON error = %v", err)
-	}
-	if _, err := store.NewProjectStore(options.StateDir).Find("json-project"); err == nil {
-		t.Fatal("quick create with JSON output created a Project")
+	for _, jsonArgs := range [][]string{
+		{"create", "json-project", "--output", "json"},
+		{"create", "json-project", "--dry-run", "--output", "json"},
+	} {
+		var jsonOutput, jsonError bytes.Buffer
+		jsonOptions := options
+		jsonOptions.Stdout, jsonOptions.Stderr = &jsonOutput, &jsonError
+		jsonCommand := cli.New(jsonOptions)
+		jsonCommand.SetArgs(jsonArgs)
+		err = jsonCommand.Execute()
+		if err == nil || !strings.Contains(err.Error(), "use 'twt2 projects create' for JSON automation") {
+			t.Fatalf("quick create JSON error for %v = %v", jsonArgs, err)
+		}
+		if _, err := store.NewProjectStore(options.StateDir).Find("json-project"); err == nil {
+			t.Fatalf("quick create with JSON output created a Project for %v", jsonArgs)
+		}
 	}
 	var missingNameOutput, missingNameError bytes.Buffer
 	missingNameOptions := options
 	missingNameOptions.Stdout, missingNameOptions.Stderr = &missingNameOutput, &missingNameError
 	missingName := cli.New(missingNameOptions)
-	missingName.SetArgs([]string{"create", "--dry-run", "--output", "json"})
+	missingName.SetIn(strings.NewReader(""))
+	missingName.SetArgs([]string{"create", "--dry-run"})
 	err = missingName.Execute()
-	if err == nil || !strings.Contains(err.Error(), "missing Project name") || !strings.Contains(err.Error(), "twt2 create NAME") {
-		t.Fatalf("non-interactive quick create error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no Project name was given") {
+		t.Fatalf("quick create without a Project name = %v", err)
 	}
 	var events []string
 	options.QuickCreateSwitch = func(session string) error {

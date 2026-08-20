@@ -22,10 +22,10 @@ type templateShowOutput struct {
 
 func newTemplatesCommand(options Options) *cobra.Command {
 	templateStore := store.NewTemplateStore(options.ConfigDir)
-	templates := &cobra.Command{
+	templates := groupCommand(&cobra.Command{
 		Use:   "templates",
 		Short: "Manage Project Templates",
-	}
+	})
 	templates.AddCommand(newTemplatesCreateCommand(templateStore, options.StateDir))
 	templates.AddCommand(newTemplatesListCommand(templateStore))
 	templates.AddCommand(newTemplatesShowCommand(templateStore))
@@ -171,11 +171,11 @@ func newTemplatesValidateCommand(templateStore store.TemplateStore) *cobra.Comma
 }
 
 func newTemplateRepositoriesCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
-	repositories := &cobra.Command{
+	repositories := groupCommand(&cobra.Command{
 		Use:     "repos",
 		Aliases: []string{"repositories"},
 		Short:   "Manage repository specifications",
-	}
+	})
 	repositories.AddCommand(newTemplateRepositoriesAddCommand(templateStore, stateDir))
 	repositories.AddCommand(newTemplateRepositoryInitializeCommand(templateStore, stateDir))
 	return repositories
@@ -256,10 +256,10 @@ func newTemplateRepositoriesAddCommand(templateStore store.TemplateStore, stateD
 }
 
 func newTemplateRepositoryInitializeCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
-	initialize := &cobra.Command{
+	initialize := groupCommand(&cobra.Command{
 		Use:   "init",
 		Short: "Manage repository initialization",
-	}
+	})
 	initialize.AddCommand(&cobra.Command{
 		Use:   "set TEMPLATE REPO -- COMMAND...",
 		Short: "Set the repository initialization command",
@@ -308,10 +308,10 @@ func newTemplateRepositoryInitializeCommand(templateStore store.TemplateStore, s
 }
 
 func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
-	initialize := &cobra.Command{
+	initialize := groupCommand(&cobra.Command{
 		Use:   "init",
 		Short: "Manage Project Template initialization",
-	}
+	})
 	var workingDirectory string
 	set := &cobra.Command{
 		Use:   "set TEMPLATE --cwd PATH -- COMMAND...",

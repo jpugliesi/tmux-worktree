@@ -56,7 +56,7 @@ func newProjectsCommand(options Options) *cobra.Command {
 		DataDir:    options.DataDir,
 		TmuxSocket: options.TmuxSocket,
 	})
-	projects := &cobra.Command{Use: "projects", Short: "Manage Projects"}
+	projects := groupCommand(&cobra.Command{Use: "projects", Short: "Manage Projects"})
 	projects.AddCommand(newProjectsCreateCommand(options, service))
 	projects.AddCommand(newProjectsListCommand(service))
 	projects.AddCommand(newProjectsShowCommand(service))
@@ -125,7 +125,6 @@ func archiveProject(command *cobra.Command, service *projectservice.Service, ref
 
 func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 	var apply bool
-	var format string
 	command := &cobra.Command{
 		Use:   "remove PROJECT",
 		Short: "Plan or apply safe Project removal",
@@ -144,11 +143,8 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 					return err
 				}
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: apply && !isDryRun(command), Plan: plan})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			if apply && !isDryRun(command) {
 				_, err = fmt.Fprintf(command.OutOrStdout(), "Removed Project %q\n", plan.ProjectName)
@@ -167,7 +163,6 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the removal plan")
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	return command
 }
 
@@ -223,7 +218,6 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 }
 
 func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
-	var format string
 	var limit int
 	command := &cobra.Command{
 		Use:   "list",
@@ -246,15 +240,12 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				values := make([]projectOutput, 0, len(projects))
 				for _, project := range projects {
 					values = append(values, toProjectOutput(project))
 				}
 				return writeJSONOutput(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: values})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			for _, project := range projects {
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status); err != nil {
@@ -264,13 +255,11 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of results; zero returns all results")
 	return command
 }
 
 func newProjectsShowCommand(service *projectservice.Service) *cobra.Command {
-	var format string
 	command := &cobra.Command{
 		Use:   "show PROJECT",
 		Short: "Show a Project",
@@ -280,17 +269,13 @@ func newProjectsShowCommand(service *projectservice.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, toProjectOutput(project))
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\n", project.Name, project.ID, project.TemplateName, project.Status)
 			return err
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	return command
 }
 
@@ -326,7 +311,6 @@ func newProjectsOpenCommand(options Options, service *projectservice.Service) *c
 }
 
 func newProjectsCurrentCommand(service *projectservice.Service) *cobra.Command {
-	var format string
 	command := &cobra.Command{
 		Use:   "current",
 		Short: "Show the current Project",
@@ -340,23 +324,18 @@ func newProjectsCurrentCommand(service *projectservice.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, toProjectOutput(project))
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintln(command.OutOrStdout(), project.Name)
 			return err
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	return command
 }
 
 func newContextCommand(options Options) *cobra.Command {
 	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-	var format string
 	var directory string
 	command := &cobra.Command{
 		Use:   "context",
@@ -380,17 +359,13 @@ func newContextCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, lookupDirectory)})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Project: %s\n", project.Name)
 			return err
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	command.Flags().StringVar(&directory, "directory", "", "Resolve context from this directory before tmux or environment context")
 	return command
 }
@@ -410,7 +385,7 @@ func repositoryForDirectory(project domain.Project, directory string) string {
 }
 
 func newProjectsSetupCommand(service *projectservice.Service) *cobra.Command {
-	setup := &cobra.Command{Use: "setup", Short: "Manage Project setup"}
+	setup := groupCommand(&cobra.Command{Use: "setup", Short: "Manage Project setup"})
 	setup.AddCommand(&cobra.Command{
 		Use:   "retry PROJECT",
 		Short: "Retry incomplete Project setup steps",

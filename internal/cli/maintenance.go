@@ -21,8 +21,7 @@ type doctorOutput struct {
 
 func newStorageCommand(options Options) *cobra.Command {
 	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
-	storage := &cobra.Command{Use: "storage", Short: "Inspect twt2 storage"}
-	var format string
+	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt2 storage"})
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show Project and repository storage use",
@@ -32,17 +31,13 @@ func newStorageCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				return writeJSONOutput(command, storageOutput{SchemaVersion: jsonSchemaVersion, Storage: result})
-			}
-			if format != "text" {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount, formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount, formatBytes(result.SnapshotBytes))
 			return err
 		},
 	}
-	status.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
 	storage.AddCommand(status, newStorageCleanCommand(options))
 	return storage
 }
@@ -126,25 +121,22 @@ func currentTemplateDigests(configDir string) (map[string]string, error) {
 
 func newDoctorCommand(options Options) *cobra.Command {
 	service := maintenance.NewService(options.ConfigDir, options.StateDir, options.DataDir)
-	var format string
-	command := &cobra.Command{
+	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Check twt2 tools and state",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			report := service.Doctor()
-			if wantsJSON(command, format) {
+			if WantsJSON(command) {
 				if err := writeJSONOutput(command, doctorOutput{SchemaVersion: jsonSchemaVersion, Report: report}); err != nil {
 					return err
 				}
-			} else if format == "text" {
+			} else {
 				for _, check := range report.Checks {
 					if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", check.Status, check.Name, check.Message); err != nil {
 						return err
 					}
 				}
-			} else {
-				return fmt.Errorf("unsupported format %q", format)
 			}
 			if !report.Healthy {
 				return fmt.Errorf("doctor found one or more problems")
@@ -152,8 +144,6 @@ func newDoctorCommand(options Options) *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
-	return command
 }
 
 func formatBytes(value int64) string {

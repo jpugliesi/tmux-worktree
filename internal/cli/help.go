@@ -39,6 +39,21 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 templates prepare": {
 			long: "Create and initialize one Prepared Environment for the next Project. Repository initialization does not run again when a Project claims it.", example: "  twt2 templates prepare everysphere",
 		},
+		"twt2 templates repos": {
+			long: "Manage the repository specifications inside one Project Template.", example: "  twt2 templates repos add everysphere app https://example.com/app.git",
+		},
+		"twt2 templates repos init": {
+			long: "Manage the command that runs once when twt2 prepares a new repository worktree.", example: "  twt2 templates repos init set everysphere app -- ./init.sh",
+		},
+		"twt2 templates init": {
+			long: "Manage the Project-level initialization command for a Project Template.", example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh",
+		},
+		"twt2 projects setup": {
+			long: "Manage Project setup steps.", example: "  twt2 projects setup retry fix-auth",
+		},
+		"twt2 agents transcript": {
+			long: "Read, link, and snapshot provider transcripts for Agent Sessions.", example: "  twt2 agents transcript show AGENT_ID --project current",
+		},
 		"twt2 templates repos add": {
 			long:    "Add one repository specification to a Project Template. Flags define clone depth, remotes, default branch, and tmux window name.",
 			example: "  twt2 templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --depth 1 \\\n    --remote github=https://github.com/anysphere/everysphere.git",

@@ -37,7 +37,7 @@ func TestReadReturnsLinkedProviderTranscriptInsideProject(t *testing.T) {
 		},
 		{
 			provider: "claude", session: "claude-session",
-			path: filepath.Join(home, ".claude", "projects", encodeClaudeProject(repository), "claude-session.jsonl"),
+			path: filepath.Join(home, ".claude", "projects", "-Users-alex-code-app", "claude-session.jsonl"),
 			lines: []string{
 				`{"sessionId":"claude-session","cwd":` + quoted(repository) + `,"type":"user","message":{"role":"user","content":"Claude question"}}`,
 				`{"sessionId":"claude-session","cwd":` + quoted(repository) + `,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Claude answer"}]}}`,
@@ -62,6 +62,28 @@ func TestReadReturnsLinkedProviderTranscriptInsideProject(t *testing.T) {
 	}
 }
 
+func TestReadFindsClaudeTranscriptLaunchedFromRepositorySubdirectory(t *testing.T) {
+	home := t.TempDir()
+	repository := filepath.Join(t.TempDir(), "app")
+	subdirectory := filepath.Join(repository, "internal", "cli")
+	if err := os.MkdirAll(subdirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
+	path := filepath.Join(home, ".claude", "projects", "-Users-alex-code-app-internal-cli", "claude-subdir-session.jsonl")
+	writeLines(t, path, []string{
+		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"user","message":{"role":"user","content":"Claude question"}}`,
+		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Claude answer"}]}}`,
+	})
+	got, err := transcript.New(home).Read("claude", "claude-subdir-session", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RepositoryName != "app" {
+		t.Fatalf("Read() RepositoryName = %q", got.RepositoryName)
+	}
+}
+
 func TestReadRejectsClaudePathEncodingCollisionAndUnverifiableCursorTranscript(t *testing.T) {
 	home := t.TempDir()
 	firstRepository := filepath.Join(t.TempDir(), "a-b", "c")
@@ -71,10 +93,7 @@ func TestReadRejectsClaudePathEncodingCollisionAndUnverifiableCursorTranscript(t
 			t.Fatal(err)
 		}
 	}
-	if encodeClaudeProject(firstRepository) != encodeClaudeProject(secondRepository) {
-		t.Fatalf("test paths do not create an encoded collision")
-	}
-	path := filepath.Join(home, ".claude", "projects", encodeClaudeProject(firstRepository), "shared-session.jsonl")
+	path := filepath.Join(home, ".claude", "projects", "-Users-alex-code-a-b-c", "shared-session.jsonl")
 	writeLines(t, path, []string{
 		`{"sessionId":"shared-session","cwd":` + quoted(firstRepository) + `,"type":"user","message":{"role":"user","content":"private"}}`,
 	})
@@ -125,7 +144,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 		t.Fatalf("mixed Codex transcript error = %v", err)
 	}
 
-	claudePath := filepath.Join(home, ".claude", "projects", encodeClaudeProject(repository), "claude-mixed.jsonl")
+	claudePath := filepath.Join(home, ".claude", "projects", "-Users-alex-code-app", "claude-mixed.jsonl")
 	writeLines(t, claudePath, []string{
 		`{"sessionId":"claude-mixed","cwd":` + quoted(repository) + `,"type":"user","message":{"role":"user","content":"allowed"}}`,
 		`{"sessionId":"another-session","cwd":` + quoted(otherRepository) + `,"type":"assistant","message":{"role":"assistant","content":"private"}}`,
@@ -239,10 +258,6 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 
 func quoted(value string) string {
 	return `"` + strings.ReplaceAll(value, `\`, `\\`) + `"`
-}
-
-func encodeClaudeProject(path string) string {
-	return strings.ReplaceAll(path, string(filepath.Separator), "-")
 }
 
 func writeLines(t *testing.T, path string, lines []string) {

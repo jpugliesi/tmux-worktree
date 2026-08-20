@@ -3,6 +3,7 @@ package tmux
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -11,6 +12,9 @@ import (
 
 type Client struct {
 	Socket string
+
+	// run overrides the tmux exec for tests; nil means real tmux.
+	run func(stdin io.Reader, args ...string) (string, error)
 }
 
 func (c Client) PaneBelongsToProject(pane, projectID string) bool {
@@ -108,7 +112,7 @@ func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text stri
 	if _, err := c.output(strings.NewReader(text), "load-buffer", "-b", buffer, "-"); err != nil {
 		return fmt.Errorf("load Agent Session feedback: %w", err)
 	}
-	if _, err := c.output(nil, "paste-buffer", "-d", "-b", buffer, "-t", pane); err != nil {
+	if _, err := c.output(nil, "paste-buffer", "-d", "-p", "-b", buffer, "-t", pane); err != nil {
 		return fmt.Errorf("paste Agent Session feedback: %w", err)
 	}
 	if _, err := c.output(nil, "send-keys", "-t", pane, "Enter"); err != nil {
@@ -132,7 +136,10 @@ func (c Client) projectSession(project domain.Project) (string, error) {
 	return "", fmt.Errorf("Project %q does not have a live owned tmux session", project.Name)
 }
 
-func (c Client) output(stdin *strings.Reader, args ...string) (string, error) {
+func (c Client) output(stdin io.Reader, args ...string) (string, error) {
+	if c.run != nil {
+		return c.run(stdin, args...)
+	}
 	allArgs := args
 	if c.Socket != "" {
 		allArgs = append([]string{"-L", c.Socket, "-f", "/dev/null"}, args...)

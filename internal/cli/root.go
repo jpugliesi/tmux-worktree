@@ -110,11 +110,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 
 func WantsJSON(command *cobra.Command) bool {
 	value, _ := command.Flags().GetString("output")
-	if value == "json" {
-		return true
-	}
-	format, err := command.Flags().GetString("format")
-	return err == nil && format == "json"
+	return value == "json"
 }
 
 func envOr(name, fallback string) string {
