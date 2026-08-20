@@ -92,10 +92,10 @@ local repository_one = root .. "/project-one/app"
 local repository_two = root .. "/project-two/app"
 make_project("project-one", "project-one", repository_one)
 make_project("project-two", "project-two", repository_two)
-local pane_one, command_one, start_one = start_agent_pane("project-one", "project-one", "agent-one")
-local pane_two, command_two, start_two = start_agent_pane("project-two", "project-two", "agent-two")
-make_agent("agent-one", "project-one", "session-one", pane_one, command_one, start_one)
-make_agent("agent-two", "project-two", "session-two", pane_two, command_two, start_two)
+local pane_one, command_one, start_one = start_agent_pane("project-one", "project-one", "a1a1a1a1b2b2c3c3d4d4e5e5")
+local pane_two, command_two, start_two = start_agent_pane("project-two", "project-two", "f6f6f6f6a7a7b8b8c9c9d0d0")
+make_agent("a1a1a1a1b2b2c3c3d4d4e5e5", "project-one", "session-one", pane_one, command_one, start_one)
+make_agent("f6f6f6f6a7a7b8b8c9c9d0d0", "project-two", "session-two", pane_two, command_two, start_two)
 make_transcript("session-one", repository_one, "Project one transcript")
 make_transcript("session-two", repository_two, "Project two transcript")
 
@@ -119,9 +119,9 @@ local function pick(expected_agent)
   assert(result_error == nil, result_error)
 end
 
-pick("agent-one")
+pick("a1a1a1a1b2b2c3c3d4d4e5e5")
 directory = repository_two
-pick("agent-two")
+pick("f6f6f6f6a7a7b8b8c9c9d0d0")
 
 local first = snapshots .. "/project-one/latest.md"
 local second = snapshots .. "/project-two/latest.md"

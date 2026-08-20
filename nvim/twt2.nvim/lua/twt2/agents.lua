@@ -78,6 +78,16 @@ function M.list(done)
   end)
 end
 
+-- Resolves the file a snapshot response should open: the per-agent path
+-- twt2 reports directly, or (only when an older twt2 omits it) the shared
+-- latest.md fallback derived the way twt2 used to lay it out.
+local function snapshot_path(transcript, project_id)
+  if transcript.path and transcript.path ~= "" then
+    return transcript.path
+  end
+  return snapshot.fallback_path(project_id)
+end
+
 -- Writes a new transcript snapshot for one Agent Session and opens the file.
 local function take_snapshot(agent, project_id, directory, done)
   done = done or function() end
@@ -104,12 +114,12 @@ local function take_snapshot(agent, project_id, directory, done)
       fail("twt2 returned a transcript for a different Project or Agent Session")
       return
     end
-    local path, path_err = snapshot.path(project_id)
+    local path, path_err = snapshot_path(transcript, project_id)
     if not path then
       fail(path_err)
       return
     end
-    local _, open_err = snapshot.open(project_id, directory)
+    local _, open_err = snapshot.open(path, project_id, directory)
     if open_err then
       fail(open_err)
       return

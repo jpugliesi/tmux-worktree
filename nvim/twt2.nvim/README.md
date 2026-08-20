@@ -86,10 +86,14 @@ send keeps the batch. The plug-in does not retry a send.
 
 `twt2` reads the linked provider transcript, checks its Project, and writes
 the private Markdown snapshot to
-`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/latest.md`. The plug-in only
-opens that file. It uses a different file for each Project. Archive keeps the
-file. Applied Project removal deletes it. Register a new Agent Session with `--session
-SESSION_ID`, or use `twt2 agents transcript link` for an existing record.
+`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/agents/AGENT_ID.md`. The
+plug-in opens the exact file that the `path` field of the snapshot response
+names, so each Agent Session keeps its own file. If an older `twt2` returns no
+`path`, the plug-in falls back to the shared
+`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/latest.md` file. Archive keeps
+the files. Applied Project removal deletes them. Register a new Agent Session
+with `--session SESSION_ID`, or use `twt2 agents transcript link` for an
+existing record.
 Transcript loading supports Codex and Claude. Cursor transcript loading stays
 off because its local records do not contain a safe, exact Project directory.
 

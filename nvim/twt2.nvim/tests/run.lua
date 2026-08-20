@@ -65,12 +65,18 @@ local transcript_by_agent = {
   ["agent-2"] = "# Project two transcript\n",
 }
 
-local function save_snapshot(project_id, markdown)
-  local path = vim.env.TWT2_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/latest.md"
+-- Mirrors twt2's real layout: $STATE/snapshots/projects/<projectID>/agents/<agentID>.md
+local function agent_snapshot_path(project_id, agent_id)
+  return vim.env.TWT2_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/agents/" .. agent_id .. ".md"
+end
+
+local function save_snapshot(project_id, agent_id, markdown)
+  local path = agent_snapshot_path(project_id, agent_id)
   vim.fn.mkdir(vim.fs.dirname(path), "p")
   assert(vim.uv.fs_chmod(vim.fs.dirname(path), 448))
   assert(vim.fn.writefile(vim.split(markdown, "\n", { plain = true }), path, "b") == 0)
   assert(vim.uv.fs_chmod(path, 384))
+  return path
 end
 
 local function runner(argv, opts, done)
@@ -90,7 +96,7 @@ local function runner(argv, opts, done)
     }
     or { schemaVersion = 1, status = "sent", agentId = "agent-1" }
   if joined:find(" agents transcript snapshot ", 1, true) then
-		save_snapshot(value.projectId, transcript_by_agent[snapshot_agent])
+		value.path = save_snapshot(value.projectId, snapshot_agent, transcript_by_agent[snapshot_agent])
   end
   if before_finish then before_finish(joined) end
   done({ code = 0, stdout = vim.json.encode(value), stderr = "" })
@@ -201,8 +207,8 @@ test("writes and reopens a private latest transcript for each Project", function
     second_path = path
   end)
 
-  assert(first_path == snapshot_root .. "/project-1/latest.md")
-  assert(second_path == snapshot_root .. "/project-2/latest.md")
+  assert(first_path == snapshot_root .. "/project-1/agents/agent-1.md")
+  assert(second_path == snapshot_root .. "/project-2/agents/agent-2.md")
   assert(first_path ~= second_path)
   assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Project one transcript")
   assert(table.concat(vim.fn.readfile(second_path), "\n") == "# Project two transcript")
@@ -217,7 +223,7 @@ test("writes and reopens a private latest transcript for each Project", function
   assert(vim.bo.modifiable == false)
   assert(vim.bo.readonly == true)
 
-  require("twt2.snapshot").open("project-1")
+  require("twt2.snapshot").open(first_path, "project-1")
   assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(first_path))
 end)
 
@@ -247,13 +253,13 @@ test("serializes transcript snapshots for one Project", function()
   require("twt2").agents.pick(function(_, err) blocked_error = err end)
   assert(blocked_error and blocked_error:find("already in progress", 1, true))
   assert(#pending == 1)
-  save_snapshot("project-2", "# First selection\n")
+  local agent2_path = save_snapshot("project-2", "agent-2", "# First selection\n")
   pending[1].done({
     code = 0,
     stdout = vim.json.encode({
       schemaVersion = 1, projectId = "project-2", agentId = "agent-2",
       provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
-		status = "applied",
+		status = "applied", path = agent2_path,
     }),
     stderr = "",
   })
@@ -266,19 +272,19 @@ test("serializes transcript snapshots for one Project", function()
 		second_done = true
 	end)
 	assert(#pending == 2)
-	save_snapshot("project-2", "# Second selection\n")
+	local agent3_path = save_snapshot("project-2", "agent-3", "# Second selection\n")
 	pending[2].done({
     code = 0,
     stdout = vim.json.encode({
       schemaVersion = 1, projectId = "project-2", agentId = "agent-3",
       provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
-		status = "applied",
+		status = "applied", path = agent3_path,
     }),
     stderr = "",
   })
   assert(second_done)
-  local path = require("twt2.snapshot").path("project-2")
-  assert(table.concat(vim.fn.readfile(path), "\n") == "# Second selection")
+  assert(agent3_path == agent_snapshot_path("project-2", "agent-3"))
+  assert(table.concat(vim.fn.readfile(agent3_path), "\n") == "# Second selection")
 
   require("twt2.config").get().runner = runner
   require("twt2.config").get().select = function(items, _, done) done(items[1]) end
@@ -296,7 +302,7 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
   local old_runner = require("twt2.config").get().runner
   require("twt2.config").get().runner = function(argv, opts, done)
     if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
-      save_snapshot("project-1", "# New file\n")
+      local open_fails_path = save_snapshot("project-1", "agent-open-fails", "# New file\n")
       done({ code = 0, stdout = vim.json.encode({
         schemaVersion = 1,
         projectId = "project-1",
@@ -304,7 +310,7 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
         provider = "codex",
         repositoryName = "app",
         updatedAt = "2026-08-20T00:00:00Z",
-		status = "applied",
+		status = "applied", path = open_fails_path,
       }), stderr = "" })
     else
       runner(argv, opts, done)
@@ -387,18 +393,52 @@ test("rejects an unsupported JSON schema", function()
   assert(received and received:find("schema version", 1, true))
 end)
 
-test("uses the same state-directory rules as twt2", function()
+test("falls back to the shared latest.md when a snapshot response has no path", function()
   local old_state = vim.env.TWT2_STATE_DIR
   local old_xdg = vim.env.XDG_STATE_HOME
   vim.env.TWT2_STATE_DIR = "/explicit/state/twt2"
-  local explicit = require("twt2.snapshot").path("project-1")
+  local explicit = require("twt2.snapshot").fallback_path("project-1")
   assert(explicit == "/explicit/state/twt2/snapshots/projects/project-1/latest.md")
   vim.env.TWT2_STATE_DIR = nil
   vim.env.XDG_STATE_HOME = "/xdg/state"
-  local xdg = require("twt2.snapshot").path("project-1")
+  local xdg = require("twt2.snapshot").fallback_path("project-1")
   assert(xdg == "/xdg/state/twt2/snapshots/projects/project-1/latest.md")
   vim.env.TWT2_STATE_DIR = old_state
   vim.env.XDG_STATE_HOME = old_xdg
+
+  local old_directory = require("twt2.config").get().directory
+  require("twt2.config").get().directory = function() return "/work/app" end
+  local old_runner = require("twt2.config").get().runner
+  require("twt2.config").get().runner = function(argv, opts, done)
+    if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
+      local fallback = require("twt2.snapshot").fallback_path("project-1")
+      vim.fn.mkdir(vim.fs.dirname(fallback), "p")
+      assert(vim.fn.writefile({ "# Legacy transcript" }, fallback, "b") == 0)
+      done({ code = 0, stdout = vim.json.encode({
+        schemaVersion = 1,
+        projectId = "project-1",
+        agentId = "agent-1",
+        provider = "codex",
+        repositoryName = "app",
+        updatedAt = "2026-08-20T00:00:00Z",
+        status = "applied",
+        -- no `path`: simulates an older twt2 binary
+      }), stderr = "" })
+    else
+      runner(argv, opts, done)
+    end
+  end
+
+  local fallback_opened
+  require("twt2").agents.pick(function(_, err, path)
+    assert(err == nil, err)
+    fallback_opened = path
+  end)
+  assert(fallback_opened == require("twt2.snapshot").fallback_path("project-1"))
+  assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(fallback_opened))
+
+  require("twt2.config").get().runner = old_runner
+  require("twt2.config").get().directory = old_directory
 end)
 
 test("registers the commands without the default mappings", function()
@@ -492,9 +532,25 @@ test("writes a new snapshot without the picker", function()
   end)
   require("twt2.config").get().select = old_select
   assert(picks == 0, "refresh must not open the picker")
-  assert(refreshed == require("twt2.snapshot").path("project-1"))
+  assert(refreshed == agent_snapshot_path("project-1", "agent-1"))
   assert(table.concat(vim.fn.readfile(refreshed), "\n") == "# Project one transcript, again")
   assert(vim.bo.autoread == true)
+end)
+
+test("reuses the visible window for the same snapshot instead of splitting again", function()
+  local old_split = require("twt2.config").get().snapshot_split
+  require("twt2.config").get().snapshot_split = "split"
+  require("twt2.config").get().directory = function() return "/work/app" end
+  require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
+  local windows_after_first = #vim.api.nvim_tabpage_list_wins(0)
+  require("twt2").agents.refresh(function(_, err) assert(err == nil, err) end)
+  local windows_after_second = #vim.api.nvim_tabpage_list_wins(0)
+  assert(
+    windows_after_second == windows_after_first,
+    "refresh must reuse the existing window instead of opening another split"
+  )
+  vim.cmd("only")
+  require("twt2.config").get().snapshot_split = old_split
 end)
 
 test("emits Twt2Refresh after a pick, a send, and a refresh", function()
