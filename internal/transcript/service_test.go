@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
@@ -167,6 +169,71 @@ func TestReadRejectsUnsafeTranscriptSourcesAndSessionIDs(t *testing.T) {
 	}
 	if _, err := service.Read("codex", "large-session", project); err == nil || !strings.Contains(err.Error(), "safe regular file") {
 		t.Fatalf("large transcript error = %v", err)
+	}
+}
+
+func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
+	home := t.TempDir()
+	stateDir := t.TempDir()
+	repository := filepath.Join(t.TempDir(), "app")
+	if err := os.MkdirAll(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project := domain.Project{
+		Version: domain.ProjectVersion, ID: "project-concurrent", Name: "concurrent",
+		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}, CreatedAt: time.Now().UTC(),
+	}
+	agent := domain.AgentSession{
+		Version: domain.AgentVersion, ID: "agent-concurrent", ProjectID: project.ID,
+		Provider: "codex", ProviderSessionID: "session-concurrent", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	writeLines(t, filepath.Join(home, ".codex", "sessions", "rollout-session-concurrent.jsonl"), []string{
+		`{"type":"session_meta","payload":{"id":"session-concurrent","cwd":` + quoted(repository) + `}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"private"}]}}`,
+	})
+	projects := store.NewProjectStore(stateDir)
+	if err := projects.Save(project); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
+		t.Fatal(err)
+	}
+	removalLock, err := store.AcquireMutationLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := transcript.New(home).Snapshot(stateDir, agent.ID, project.ID, true)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		removalLock.Release()
+		t.Fatalf("snapshot returned while Project removal held the mutation lock: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := projects.Delete(project.ID); err != nil {
+		removalLock.Release()
+		t.Fatal(err)
+	}
+	if err := removalLock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Fatalf("snapshot after Project removal error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("snapshot did not finish after Project removal released the mutation lock")
+	}
+	directory, err := store.NewSnapshotStore(stateDir).ProjectDir(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(directory); !os.IsNotExist(err) {
+		t.Fatalf("snapshot was committed after Project removal: %v", err)
 	}
 }
 

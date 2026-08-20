@@ -20,6 +20,7 @@ type Service struct {
 	options      Options
 	store        store.ProjectStore
 	environments store.EnvironmentStore
+	snapshots    store.SnapshotStore
 	now          func() time.Time
 }
 
@@ -28,6 +29,7 @@ func NewService(options Options) *Service {
 		options:      options,
 		store:        store.NewProjectStore(options.StateDir),
 		environments: store.NewEnvironmentStore(options.StateDir),
+		snapshots:    store.NewSnapshotStore(options.StateDir),
 		now:          func() time.Time { return time.Now().UTC() },
 	}
 }

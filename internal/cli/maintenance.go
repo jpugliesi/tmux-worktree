@@ -38,7 +38,7 @@ func newStorageCommand(options Options) *cobra.Command {
 			if format != "text" {
 				return fmt.Errorf("unsupported format %q", format)
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount, formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount)
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount, formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount, formatBytes(result.SnapshotBytes))
 			return err
 		},
 	}
@@ -47,16 +47,16 @@ func newStorageCommand(options Options) *cobra.Command {
 	return storage
 }
 
-type preparedCleanupOutput struct {
-	SchemaVersion int                                   `json:"schemaVersion"`
-	Plan          projectservice.EnvironmentCleanupPlan `json:"plan"`
+type storageCleanupOutput struct {
+	SchemaVersion int                               `json:"schemaVersion"`
+	Plan          projectservice.StorageCleanupPlan `json:"plan"`
 }
 
 func newStorageCleanCommand(options Options) *cobra.Command {
 	var apply bool
 	command := &cobra.Command{
 		Use:   "clean",
-		Short: "Remove failed and obsolete Prepared Environments",
+		Short: "Remove unused twt2-owned data",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			digests, err := currentTemplateDigests(options.ConfigDir)
@@ -64,21 +64,30 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 				return err
 			}
 			service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-			plan, err := service.PreparedCleanupPlan(digests)
+			plan, err := service.StorageCleanupPlan(digests)
 			if err != nil {
 				return err
 			}
 			if apply && !isDryRun(command) {
-				plan, err = service.CleanPrepared(digests)
+				plan, err = service.CleanStorage(digests)
 				if err != nil {
 					return err
 				}
 			}
 			if WantsJSON(command) {
-				return writeJSONOutput(command, preparedCleanupOutput{SchemaVersion: jsonSchemaVersion, Plan: plan})
+				return writeJSONOutput(command, storageCleanupOutput{SchemaVersion: jsonSchemaVersion, Plan: plan})
 			}
 			for _, item := range plan.Environments {
 				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q\n", item.Reason, item.ID, item.TemplateName); err != nil {
+					return err
+				}
+			}
+			for _, item := range plan.Snapshots {
+				target := item.ProjectID
+				if target == "" {
+					target = item.Root
+				}
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q (%s)\n", item.Reason, target, formatBytes(item.Bytes)); err != nil {
 					return err
 				}
 			}
@@ -86,7 +95,7 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 				_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
 				return err
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments\n", len(plan.Environments))
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments and %d Transcript Snapshots\n", len(plan.Environments), len(plan.Snapshots))
 			return err
 		},
 	}

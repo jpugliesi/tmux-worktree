@@ -5,7 +5,6 @@ local defaults = {
   default_keymaps = true,
   max_agents = 40,
   clear_after_send = true,
-  snapshot_root = nil,
   snapshot_split = "tab drop",
   runner = nil,
   select = function(items, opts, done)

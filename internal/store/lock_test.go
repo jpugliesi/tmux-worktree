@@ -34,6 +34,40 @@ func TestMutationLockRefusesConcurrentWriter(t *testing.T) {
 	}
 }
 
+func TestBlockingMutationLockWaitsForRelease(t *testing.T) {
+	stateDir := t.TempDir()
+	first, err := AcquireMutationLock(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	var second *MutationLock
+	go func() {
+		var err error
+		second, err = AcquireMutationLockBlocking(stateDir)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("blocking mutation lock returned before release: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking mutation lock did not return after release")
+	}
+	if err := second.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNamedLockRejectsConcurrentUseAndKeepsNamesInsideTheStateDirectory(t *testing.T) {
 	stateDir := t.TempDir()
 	first, err := AcquireNamedLock(stateDir, "environment", "../../outside")

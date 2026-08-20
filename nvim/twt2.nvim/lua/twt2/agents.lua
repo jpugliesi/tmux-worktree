@@ -4,11 +4,11 @@ local snapshot = require("twt2.snapshot")
 local M = {}
 
 local selected = {}
-local selection_generation = {}
+local snapshotting = {}
 local sending = {}
 
 local function current(done, fixed_directory)
-	local directory = fixed_directory or config.get().directory()
+  local directory = fixed_directory or config.get().directory()
   client.context(directory, function(err, context)
     if err then
       done(err)
@@ -72,19 +72,21 @@ function M.pick(done)
         return
       end
       local project_id = context.project.id
-      local generation = (selection_generation[project_id] or 0) + 1
-      selection_generation[project_id] = generation
       if not agent.capabilities or not agent.capabilities.canReadTranscript then
         local message = "the selected Agent Session has no linked transcript"
         vim.notify("twt2: " .. message, vim.log.levels.WARN)
         if done then done(agent, message) end
         return
       end
-      client.request({ "agents", "transcript", "show", agent.id, "--project", context.project.id }, { cwd = directory }, function(transcript_err, transcript)
-        if selection_generation[project_id] ~= generation then
-          if done then done(agent, "a newer Agent Session selection replaced this request") end
-          return
-        end
+      if snapshotting[project_id] then
+        local message = "a transcript snapshot is already in progress for this Project"
+        vim.notify("twt2: " .. message, vim.log.levels.WARN)
+        if done then done(agent, message) end
+        return
+      end
+      snapshotting[project_id] = true
+      client.request({ "agents", "transcript", "snapshot", agent.id, "--project", context.project.id }, { cwd = directory }, function(transcript_err, transcript)
+        snapshotting[project_id] = nil
         if transcript_err then
           vim.notify("twt2: " .. transcript_err, vim.log.levels.ERROR)
           if done then done(agent, transcript_err) end
@@ -96,19 +98,19 @@ function M.pick(done)
           if done then done(agent, message) end
           return
         end
-        local path, write_err = snapshot.write(context.project.id, transcript.markdown)
+        local path, path_err = snapshot.path(context.project.id)
         if not path then
-          vim.notify("twt2: " .. write_err, vim.log.levels.ERROR)
-          if done then done(agent, write_err) end
+          vim.notify("twt2: " .. path_err, vim.log.levels.ERROR)
+          if done then done(agent, path_err) end
           return
         end
-		selected[project_id] = agent.id
         local _, open_err = snapshot.open(context.project.id, directory)
         if open_err then
           vim.notify("twt2: " .. open_err, vim.log.levels.ERROR)
           if done then done(agent, open_err) end
           return
         end
+        selected[project_id] = agent.id
         if done then done(agent, nil, path) end
       end)
     end)
@@ -116,15 +118,15 @@ function M.pick(done)
 end
 
 local function with_selected(done, expected)
-	current(function(err, context, directory)
-		if err then
+  current(function(err, context, directory)
+    if err then
       done(err)
-			return
-		end
-		if expected and context.project.id ~= expected.project_id then
-			done("the current buffer changed to a different Project")
-			return
-		end
+      return
+    end
+    if expected and context.project.id ~= expected.project_id then
+      done("the current buffer changed to a different Project")
+      return
+    end
     list_for(context, directory, function(list_err, agents)
       if list_err then
         done(list_err)
@@ -139,7 +141,7 @@ local function with_selected(done, expected)
       end
       done("select an Agent Session for this Project first")
     end)
-	end, expected and expected.directory or nil)
+  end, expected and expected.directory or nil)
 end
 
 function M.send(text, done, expected)
@@ -148,7 +150,7 @@ function M.send(text, done, expected)
     done("review text is empty")
     return
   end
-	with_selected(function(err, agent, context, directory)
+  with_selected(function(err, agent, context, directory)
     if err then
       done(err)
       return
@@ -157,17 +159,17 @@ function M.send(text, done, expected)
       done("the selected Agent Session cannot receive feedback")
       return
     end
-		local project_id = context.project.id
-		if sending[project_id] then
-			done("a review send is already in progress for this Project")
-			return
-		end
-		sending[project_id] = true
-		client.request({ "agents", "send", agent.id, "--project", context.project.id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
-			sending[project_id] = nil
-			done(send_err, result)
-		end)
-	end, expected)
+    local project_id = context.project.id
+    if sending[project_id] then
+      done("a review send is already in progress for this Project")
+      return
+    end
+    sending[project_id] = true
+    client.request({ "agents", "send", agent.id, "--project", context.project.id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
+      sending[project_id] = nil
+      done(send_err, result)
+    end)
+  end, expected)
 end
 
 local function action(name, capability, done)

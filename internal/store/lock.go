@@ -21,6 +21,14 @@ type MutationLock struct {
 }
 
 func AcquireMutationLock(stateDir string) (*MutationLock, error) {
+	return acquireMutationLock(stateDir, false)
+}
+
+func AcquireMutationLockBlocking(stateDir string) (*MutationLock, error) {
+	return acquireMutationLock(stateDir, true)
+}
+
+func acquireMutationLock(stateDir string, blocking bool) (*MutationLock, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
@@ -28,7 +36,11 @@ func AcquireMutationLock(stateDir string) (*MutationLock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open mutation lock: %w", err)
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	operation := syscall.LOCK_EX
+	if !blocking {
+		operation |= syscall.LOCK_NB
+	}
+	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
 		file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			return nil, fmt.Errorf("another twt2 change is in progress")

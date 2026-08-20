@@ -94,6 +94,9 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 agents transcript show": {
 			long: "Read the provider transcript linked to one Agent Session. twt2 checks that the transcript belongs to the selected Project and does not return its source path.", example: "  twt2 agents transcript show AGENT_ID --project current --output json",
 		},
+		"twt2 agents transcript snapshot": {
+			long: "Read a linked provider transcript and save a private Project-owned Markdown snapshot. Project removal deletes this snapshot.", example: "  twt2 agents transcript snapshot AGENT_ID --project current --output json",
+		},
 		"twt2 agents transcript link": {
 			long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt2 agents transcript link AGENT_ID --project current --session SESSION_ID",
 		},
@@ -104,7 +107,7 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Show the disk space used by Projects, worktrees, and shared repository caches.", example: "  twt2 storage status\n  twt2 storage status --output json",
 		},
 		"twt2 storage clean": {
-			long: "Show a safe cleanup plan for failed and obsolete Prepared Environments. Add --apply to remove only unclaimed twt2-owned worktrees.", example: "  twt2 storage clean\n  twt2 storage clean --apply",
+			long: "Show a safe cleanup plan for failed and obsolete Prepared Environments and orphan Transcript Snapshots. Add --apply to remove only twt2-owned data.", example: "  twt2 storage clean\n  twt2 storage clean --apply",
 		},
 		"twt2 doctor": {
 			long: "Check required tools, Project Templates, Project state, and ownership markers.", example: "  twt2 doctor\n  twt2 doctor --output json",

@@ -46,6 +46,7 @@ _Avoid_: Log file, latest.md
 
 **Transcript Snapshot**:
 A Project-scoped Markdown copy of an Agent Transcript for review and display.
+Archive keeps it. Project removal deletes it.
 _Avoid_: Agent Transcript, global latest.md
 
 **Initialization**:

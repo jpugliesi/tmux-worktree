@@ -35,13 +35,18 @@ also contains the repository name. Extmarks keep note lines current after file
 edits. A successful send completes and clears the batch. A failed or uncertain
 send keeps the batch. The plug-in does not retry a send.
 
-`twt2` reads the linked provider transcript and checks its Project. The plug-in
-writes only the returned Markdown to
-`stdpath("state")/twt2/projects/PROJECT_ID/latest.md`. It uses a different
-private file for each Project. Register a new Agent Session with `--session
+`twt2` reads the linked provider transcript, checks its Project, and writes
+the private Markdown snapshot to
+`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/latest.md`. The plug-in only
+opens that file. It uses a different file for each Project. Archive keeps the
+file. Applied Project removal deletes it. Register a new Agent Session with `--session
 SESSION_ID`, or use `twt2 agents transcript link` for an existing record.
 Transcript loading supports Codex and Claude. Cursor transcript loading stays
 off because its local records do not contain a safe, exact Project directory.
+
+Older preview versions used the Neovim state directory. twt2 cannot reliably
+find that path when `NVIM_APPNAME` changes. You can remove those old preview
+files manually after you confirm that the new snapshot exists.
 
 ## Lua interface
 

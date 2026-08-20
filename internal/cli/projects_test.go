@@ -704,10 +704,46 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 		t.Fatalf("read Project roots: entries=%v error=%v", entries, err)
 	}
 	projectRoot := filepath.Join(root, "data", "projects", entries[0].Name())
+	project, err := store.NewProjectStore(options.StateDir).Find("remove-me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotRoot := filepath.Join(options.StateDir, "snapshots", "projects", project.ID)
+	if err := os.MkdirAll(snapshotRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := fmt.Sprintf("{\"version\":1,\"owner\":\"twt2\",\"projectId\":%q}\n", project.ID)
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotRoot, "latest.md"), []byte("Project transcript\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	executeWithOptions(t, options, nil, "projects", "archive", "remove-me")
+	if _, err := os.Stat(filepath.Join(snapshotRoot, "latest.md")); err != nil {
+		t.Fatalf("archive removed the Transcript Snapshot: %v", err)
+	}
+	wrongMarker := "{\"version\":1,\"owner\":\"twt2\",\"projectId\":\"another-project\"}\n"
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(wrongMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var rejectedOut, rejectedErr bytes.Buffer
+	rejectedOptions := options
+	rejectedOptions.Stdout, rejectedOptions.Stderr = &rejectedOut, &rejectedErr
+	rejected := cli.New(rejectedOptions)
+	rejected.SetArgs([]string{"projects", "remove", "remove-me", "--apply"})
+	if err := rejected.Execute(); err == nil || !strings.Contains(err.Error(), "conflicting ownership marker") {
+		t.Fatalf("conflicting Transcript Snapshot removal error = %v", err)
+	}
+	if _, err := os.Stat(projectRoot); err != nil {
+		t.Fatalf("rejected removal changed Project data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotRoot, ".twt2-snapshot.json"), []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := executeWithOptions(t, options, nil, "projects", "remove", "remove-me")
-	for _, want := range []string{"stop_tmux_session", "remove_worktree", "delete_branch", "delete_ownership_marker", "remove_project_root", "delete_project_state", "Run again with --apply"} {
+	for _, want := range []string{"stop_tmux_session", "remove_worktree", "delete_branch", "delete_ownership_marker", "remove_project_root", "delete_transcript_snapshot", "delete_project_state", "Run again with --apply"} {
 		if !strings.Contains(plan, want) {
 			t.Fatalf("removal plan does not contain %q: %s", want, plan)
 		}
@@ -715,12 +751,18 @@ func TestProjectsRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if _, err := os.Stat(projectRoot); err != nil {
 		t.Fatalf("plan changed Project data: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(snapshotRoot, "latest.md")); err != nil {
+		t.Fatalf("plan changed the Transcript Snapshot: %v", err)
+	}
 	executeWithOptions(t, options, nil, "projects", "remove", "remove-me", "--apply")
 	if _, err := os.Stat(projectRoot); !os.IsNotExist(err) {
 		t.Fatalf("Project root still exists after removal: %v", err)
 	}
 	if output := executeWithOptions(t, options, nil, "projects", "list"); output != "" {
 		t.Fatalf("projects list after removal = %q", output)
+	}
+	if _, err := os.Stat(snapshotRoot); !os.IsNotExist(err) {
+		t.Fatalf("Transcript Snapshot still exists after removal: %v", err)
 	}
 	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=remove-me").Run(); err == nil {
 		t.Fatal("Project tmux session still exists after removal")
@@ -831,22 +873,79 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	if !strings.Contains(explicitContext, `"name":"json-test"`) || !strings.Contains(explicitContext, `"repositoryName":"app"`) {
 		t.Fatalf("explicit directory context JSON = %s", explicitContext)
 	}
+	if err := store.NewSnapshotStore(options.StateDir).Save(projects.Projects[0].ID, "snapshot bytes\n"); err != nil {
+		t.Fatal(err)
+	}
 
 	storageOutput := executeWithOptions(t, options, nil, "storage", "status", "--format", "json")
 	var storageResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Storage       struct {
 			TotalBytes    int64 `json:"totalBytes"`
+			SnapshotBytes int64 `json:"snapshotBytes"`
 			ProjectCount  int   `json:"projectCount"`
 			WorktreeCount int   `json:"worktreeCount"`
 		} `json:"storage"`
 	}
-	if err := json.Unmarshal([]byte(storageOutput), &storageResult); err != nil || storageResult.SchemaVersion != 1 || storageResult.Storage.TotalBytes <= 0 || storageResult.Storage.ProjectCount != 1 || storageResult.Storage.WorktreeCount != 1 {
+	if err := json.Unmarshal([]byte(storageOutput), &storageResult); err != nil || storageResult.SchemaVersion != 1 || storageResult.Storage.TotalBytes <= 0 || storageResult.Storage.SnapshotBytes < int64(len("snapshot bytes\n")) || storageResult.Storage.ProjectCount != 1 || storageResult.Storage.WorktreeCount != 1 {
 		t.Fatalf("storage JSON = %s; decode error = %v", storageOutput, err)
 	}
 	doctorOutput := executeWithOptions(t, options, nil, "doctor", "--format", "json")
 	if !strings.Contains(doctorOutput, `"healthy":true`) {
 		t.Fatalf("doctor JSON = %s", doctorOutput)
+	}
+}
+
+func TestStorageCleanPlansAndRemovesOnlyOrphanTranscriptSnapshots(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
+	now := time.Now().UTC()
+	project := domain.Project{
+		Version: domain.ProjectVersion, ID: "active-project", Name: "active-project",
+		Status: domain.ProjectActive, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+		t.Fatal(err)
+	}
+	snapshots := store.NewSnapshotStore(stateDir)
+	if err := snapshots.Save(project.ID, "active\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshots.Save("orphan-project", "orphan\n"); err != nil {
+		t.Fatal(err)
+	}
+	temporarySnapshot := filepath.Join(stateDir, "snapshots", "projects", ".twt2-snapshot-interrupted")
+	if err := os.WriteFile(temporarySnapshot, []byte("incomplete\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: stateDir, DataDir: filepath.Join(root, "data")}
+	plan := executeWithOptions(t, options, nil, "storage", "clean")
+	if !strings.Contains(plan, "orphan Transcript Snapshot \"orphan-project\"") || !strings.Contains(plan, "incomplete Transcript Snapshot write") || strings.Contains(plan, "active-project") {
+		t.Fatalf("snapshot cleanup plan = %q", plan)
+	}
+	orphanDirectory, err := snapshots.ProjectDir("orphan-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphanDirectory); err != nil {
+		t.Fatalf("cleanup preview changed orphan snapshot: %v", err)
+	}
+	if _, err := os.Stat(temporarySnapshot); err != nil {
+		t.Fatalf("cleanup preview changed incomplete snapshot write: %v", err)
+	}
+	executeWithOptions(t, options, nil, "storage", "clean", "--apply")
+	if _, err := os.Stat(orphanDirectory); !os.IsNotExist(err) {
+		t.Fatalf("orphan Transcript Snapshot still exists: %v", err)
+	}
+	if _, err := os.Stat(temporarySnapshot); !os.IsNotExist(err) {
+		t.Fatalf("incomplete Transcript Snapshot write still exists: %v", err)
+	}
+	activeDirectory, err := snapshots.ProjectDir(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(activeDirectory); err != nil {
+		t.Fatalf("cleanup changed active Project snapshot: %v", err)
 	}
 }
 

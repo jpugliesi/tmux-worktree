@@ -68,6 +68,7 @@ with `<leader>arp`. The plug-in opens that transcript in a private
 Project-specific `latest.md`. Add review notes with `<leader>an`, and send the
 note batch with `<leader>arr`. One Neovim process can safely work across
 different Projects. Linked transcript loading supports Codex and Claude.
+Archive keeps the snapshot. Applied Project removal deletes it.
 
 Archive the current Project when you finish its work. This keeps its worktrees,
 branches, and Agent Session records:

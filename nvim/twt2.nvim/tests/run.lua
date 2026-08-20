@@ -2,6 +2,8 @@ local plugin = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 vim.opt.runtimepath:prepend(plugin)
 
 local failures = {}
+local initial_state = vim.fn.tempname()
+vim.env.TWT2_STATE_DIR = initial_state
 local function test(name, body)
   local ok, err = pcall(body)
   if not ok then
@@ -63,21 +65,33 @@ local transcript_by_agent = {
   ["agent-2"] = "# Project two transcript\n",
 }
 
+local function save_snapshot(project_id, markdown)
+  local path = vim.env.TWT2_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/latest.md"
+  vim.fn.mkdir(vim.fs.dirname(path), "p")
+  assert(vim.uv.fs_chmod(vim.fs.dirname(path), 448))
+  assert(vim.fn.writefile(vim.split(markdown, "\n", { plain = true }), path, "b") == 0)
+  assert(vim.uv.fs_chmod(path, 384))
+end
+
 local function runner(argv, opts, done)
   calls[#calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin, cwd = opts.cwd }
   local joined = table.concat(argv, " ")
+	local snapshot_agent = opts.cwd == "/work/other" and "agent-2" or "agent-1"
   local value = joined:find(" context ", 1, true) and (opts.cwd == "/work/other" and other_context or context)
     or joined:find(" agents list ", 1, true) and (opts.cwd == "/work/other" and other_agents_response or agents_response)
-    or joined:find(" agents transcript show ", 1, true) and {
+    or joined:find(" agents transcript snapshot ", 1, true) and {
       schemaVersion = 1,
       projectId = opts.cwd == "/work/other" and "project-2" or "project-1",
-      agentId = opts.cwd == "/work/other" and "agent-2" or "agent-1",
+		agentId = snapshot_agent,
       provider = "codex",
       repositoryName = "app",
       updatedAt = "2026-08-20T00:00:00Z",
-      markdown = transcript_by_agent[opts.cwd == "/work/other" and "agent-2" or "agent-1"],
+		status = "applied",
     }
     or { schemaVersion = 1, status = "sent", agentId = "agent-1" }
+  if joined:find(" agents transcript snapshot ", 1, true) then
+		save_snapshot(value.projectId, transcript_by_agent[snapshot_agent])
+  end
   if before_finish then before_finish(joined) end
   done({ code = 0, stdout = vim.json.encode(value), stderr = "" })
 end
@@ -89,7 +103,6 @@ require("twt2").setup({
   directory = function()
     return "/work/app"
   end,
-  snapshot_root = vim.fn.tempname(),
   select = function(items, _, done)
     done(items[1])
   end,
@@ -168,9 +181,10 @@ test("keeps a review send in its captured Project when the current buffer change
 end)
 
 test("writes and reopens a private latest transcript for each Project", function()
-  local snapshot_root = vim.fn.tempname()
+  local state_root = vim.fn.tempname()
+  local snapshot_root = state_root .. "/snapshots/projects"
   local directory = "/work/app"
-  require("twt2.config").get().snapshot_root = snapshot_root
+  vim.env.TWT2_STATE_DIR = state_root
   require("twt2.config").get().directory = function() return directory end
 
   local first_path
@@ -207,7 +221,7 @@ test("writes and reopens a private latest transcript for each Project", function
   assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(first_path))
 end)
 
-test("commits only the newest successful Agent Session selection", function()
+test("serializes transcript snapshots for one Project", function()
   other_agents_response.agents[2] = third_agent
   local directory = "/work/other"
   local choice = 1
@@ -216,51 +230,61 @@ test("commits only the newest successful Agent Session selection", function()
   local pending = {}
   require("twt2.config").get().runner = function(argv, opts, done)
     local joined = table.concat(argv, " ")
-    if joined:find(" agents transcript show ", 1, true) then
+    if joined:find(" agents transcript snapshot ", 1, true) then
       pending[#pending + 1] = { argv = argv, opts = opts, done = done }
     else
       runner(argv, opts, done)
     end
   end
 
-  local first_error
-  require("twt2").agents.pick(function(_, err) first_error = err end)
+  local first_done = false
+  require("twt2").agents.pick(function(_, err)
+	assert(err == nil, err)
+	first_done = true
+	end)
   choice = 2
-  local second_done = false
-  require("twt2").agents.pick(function(agent, err)
-    assert(err == nil, err)
-    assert(agent.id == "agent-3")
-    second_done = true
-  end)
-  assert(#pending == 2)
-  pending[2].done({
-    code = 0,
-    stdout = vim.json.encode({
-      schemaVersion = 1, projectId = "project-2", agentId = "agent-3",
-      provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
-      markdown = "# Newest selection\n",
-    }),
-    stderr = "",
-  })
+  local blocked_error
+  require("twt2").agents.pick(function(_, err) blocked_error = err end)
+  assert(blocked_error and blocked_error:find("already in progress", 1, true))
+  assert(#pending == 1)
+  save_snapshot("project-2", "# First selection\n")
   pending[1].done({
     code = 0,
     stdout = vim.json.encode({
       schemaVersion = 1, projectId = "project-2", agentId = "agent-2",
       provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
-      markdown = "# Stale selection\n",
+		status = "applied",
+    }),
+    stderr = "",
+  })
+	assert(first_done)
+
+	local second_done = false
+	require("twt2").agents.pick(function(agent, err)
+		assert(err == nil, err)
+		assert(agent.id == "agent-3")
+		second_done = true
+	end)
+	assert(#pending == 2)
+	save_snapshot("project-2", "# Second selection\n")
+	pending[2].done({
+    code = 0,
+    stdout = vim.json.encode({
+      schemaVersion = 1, projectId = "project-2", agentId = "agent-3",
+      provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
+		status = "applied",
     }),
     stderr = "",
   })
   assert(second_done)
-  assert(first_error and first_error:find("newer Agent Session selection", 1, true))
   local path = require("twt2.snapshot").path("project-2")
-  assert(table.concat(vim.fn.readfile(path), "\n") == "# Newest selection")
+  assert(table.concat(vim.fn.readfile(path), "\n") == "# Second selection")
 
   require("twt2.config").get().runner = runner
   require("twt2.config").get().select = function(items, _, done) done(items[1]) end
 end)
 
-test("keeps the new Agent selection when its snapshot cannot open", function()
+test("keeps the old Agent selection when a new snapshot cannot open", function()
 	local old_directory = require("twt2.config").get().directory
 	require("twt2.config").get().directory = function() return "/work/app" end
   local added = vim.deepcopy(agents_response.agents[1])
@@ -271,7 +295,8 @@ test("keeps the new Agent selection when its snapshot cannot open", function()
   require("twt2.config").get().select = function(items, _, done) done(items[#items]) end
   local old_runner = require("twt2.config").get().runner
   require("twt2.config").get().runner = function(argv, opts, done)
-    if table.concat(argv, " "):find(" agents transcript show ", 1, true) then
+    if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
+      save_snapshot("project-1", "# New file\n")
       done({ code = 0, stdout = vim.json.encode({
         schemaVersion = 1,
         projectId = "project-1",
@@ -279,7 +304,7 @@ test("keeps the new Agent selection when its snapshot cannot open", function()
         provider = "codex",
         repositoryName = "app",
         updatedAt = "2026-08-20T00:00:00Z",
-        markdown = "# New file\n",
+		status = "applied",
       }), stderr = "" })
     else
       runner(argv, opts, done)
@@ -299,13 +324,13 @@ test("keeps the new Agent selection when its snapshot cannot open", function()
   require("twt2.config").get().runner = function(argv, opts, done)
     if table.concat(argv, " "):find(" agents send ", 1, true) then
       send_argv = table.concat(argv, " ")
-      done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, status = "sent", agentId = "agent-open-fails" }), stderr = "" })
+      done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, status = "sent", agentId = "agent-1" }), stderr = "" })
     else
       runner(argv, opts, done)
     end
   end
   require("twt2").agents.send("review", function(err) assert(err == nil, err) end)
-  assert(send_argv and send_argv:find("agents send agent%-open%-fails"))
+  assert(send_argv and send_argv:find("agents send agent%-1"))
   require("twt2.config").get().runner = old_runner
 	require("twt2.config").get().select = function(items, _, done) done(items[1]) end
 	require("twt2").agents.pick(function(_, err) assert(err == nil, err) end)
@@ -360,6 +385,20 @@ test("rejects an unsupported JSON schema", function()
   end)
   context.schemaVersion = old
   assert(received and received:find("schema version", 1, true))
+end)
+
+test("uses the same state-directory rules as twt2", function()
+  local old_state = vim.env.TWT2_STATE_DIR
+  local old_xdg = vim.env.XDG_STATE_HOME
+  vim.env.TWT2_STATE_DIR = "/explicit/state/twt2"
+  local explicit = require("twt2.snapshot").path("project-1")
+  assert(explicit == "/explicit/state/twt2/snapshots/projects/project-1/latest.md")
+  vim.env.TWT2_STATE_DIR = nil
+  vim.env.XDG_STATE_HOME = "/xdg/state"
+  local xdg = require("twt2.snapshot").path("project-1")
+  assert(xdg == "/xdg/state/twt2/snapshots/projects/project-1/latest.md")
+  vim.env.TWT2_STATE_DIR = old_state
+  vim.env.XDG_STATE_HOME = old_xdg
 end)
 
 if #failures > 0 then

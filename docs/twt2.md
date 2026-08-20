@@ -230,6 +230,7 @@ twt2 agents resume AGENT_ID --format json
 printf '%s' "$REVIEW_TEXT" | \
   twt2 agents send AGENT_ID --project PROJECT_ID --stdin --format json
 twt2 agents transcript show AGENT_ID --project PROJECT_ID --output json
+twt2 agents transcript snapshot AGENT_ID --project PROJECT_ID --output json
 ```
 
 An explicit context directory takes priority over tmux and environment
@@ -237,19 +238,22 @@ context. This lets one Neovim process edit buffers from different Projects.
 The JSON context also identifies the current repository in a multi-repository
 Project.
 
-The plug-in owns the picker, mappings, selected review text, Project-specific
-`latest.md` snapshots, and messages. `twt2` owns Project lookup, Agent Session
-records, provider transcript reading, resume behavior, and safe feedback
-transport. Provider transcript paths and tmux targets do not enter the JSON
-interface.
+The plug-in owns the picker, mappings, selected review text, and messages.
+`twt2` owns Project-specific `latest.md` Transcript Snapshots, Project lookup,
+Agent Session records, provider transcript reading, resume behavior, and safe
+feedback transport. Provider transcript paths and tmux targets do not enter
+the JSON interface.
 
 Linked transcript reading supports Codex and Claude. twt2 does not read Cursor
 transcripts because the local Cursor records do not give an exact Project
 directory that twt2 can verify.
 
-`<leader>arp` selects a linked Agent Session and writes its transcript to
-`stdpath("state")/twt2/projects/PROJECT_ID/latest.md`. Different Projects use
-different private files. For an older Agent Session, add the provider link:
+`<leader>arp` selects a linked Agent Session. twt2 writes its transcript to
+`$TWT2_STATE_DIR/snapshots/projects/PROJECT_ID/latest.md`. If
+`TWT2_STATE_DIR` is not set, twt2 uses the normal XDG state directory.
+Different Projects use different private files. Archive keeps these files.
+`twt2 projects remove PROJECT --apply` deletes the matching owned snapshot.
+For an older Agent Session, add the provider link:
 
 ```sh
 twt2 agents transcript link AGENT_ID \
@@ -294,9 +298,10 @@ twt2 storage status
 twt2 storage status --format json
 ```
 
-`storage status` reports claimed Project data and unclaimed Prepared
-Environment data separately. Preview cleanup of failed or obsolete unclaimed
-environments, then apply it:
+`storage status` reports claimed Project data, unclaimed Prepared Environment
+data, and Transcript Snapshot data separately. `storage clean` finds failed or
+obsolete unclaimed environments and owned snapshots whose Project record no
+longer exists. Preview the cleanup, then apply it:
 
 ```sh
 twt2 storage clean

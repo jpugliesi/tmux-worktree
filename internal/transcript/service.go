@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
 type Service struct{ home string }
@@ -52,6 +53,43 @@ func (s *Service) ReadLinked(agent domain.AgentSession, project domain.Project) 
 		return Transcript{}, fmt.Errorf("Agent Session %q has no linked provider session ID; register it with --session", agent.ID)
 	}
 	return s.Read(agent.Provider, agent.ProviderSessionID, project)
+}
+
+func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool) (Transcript, domain.AgentSession, error) {
+	project, err := store.NewProjectStore(stateDir).Find(projectID)
+	if err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	agent, err := store.NewAgentStore(stateDir).Find(agentReference)
+	if err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	value, err := s.ReadLinked(agent, project)
+	if err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	if !save {
+		return value, agent, nil
+	}
+	lock, err := store.AcquireMutationLockBlocking(stateDir)
+	if err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	defer lock.Release()
+	if _, err := store.NewProjectStore(stateDir).Find(project.ID); err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	currentAgent, err := store.NewAgentStore(stateDir).Find(agent.ID)
+	if err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
+		return Transcript{}, domain.AgentSession{}, fmt.Errorf("Agent Session %q changed while twt2 read its transcript", agent.ID)
+	}
+	if err := store.NewSnapshotStore(stateDir).Save(project.ID, value.Markdown); err != nil {
+		return Transcript{}, domain.AgentSession{}, err
+	}
+	return value, agent, nil
 }
 
 func ValidateSessionID(value string) error {

@@ -17,6 +17,7 @@ type StorageStatus struct {
 	CacheBytes                int64 `json:"cacheBytes"`
 	ProjectBytes              int64 `json:"projectBytes"`
 	PreparedBytes             int64 `json:"preparedBytes"`
+	SnapshotBytes             int64 `json:"snapshotBytes"`
 	CacheCount                int   `json:"cacheCount"`
 	ProjectCount              int   `json:"projectCount"`
 	WorktreeCount             int   `json:"worktreeCount"`
@@ -56,6 +57,10 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 		return StorageStatus{}, err
 	}
 	projectBytes, err := directoryBytes(projectRoot)
+	if err != nil {
+		return StorageStatus{}, err
+	}
+	snapshotBytes, err := directoryBytes(filepath.Join(s.stateDir, "snapshots"))
 	if err != nil {
 		return StorageStatus{}, err
 	}
@@ -102,7 +107,7 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 		claimedProjectBytes = 0
 	}
 	return StorageStatus{
-		TotalBytes: cacheBytes + projectBytes, CacheBytes: cacheBytes, ProjectBytes: claimedProjectBytes, PreparedBytes: preparedBytes,
+		TotalBytes: cacheBytes + projectBytes + snapshotBytes, CacheBytes: cacheBytes, ProjectBytes: claimedProjectBytes, PreparedBytes: preparedBytes, SnapshotBytes: snapshotBytes,
 		CacheCount: cacheCount, ProjectCount: len(projects), WorktreeCount: worktrees,
 		PreparedEnvironmentCount: preparedCount, ReadyEnvironmentCount: readyCount,
 		PreparingEnvironmentCount: preparingCount, FailedEnvironmentCount: failedCount, PreparedWorktreeCount: preparedWorktrees,

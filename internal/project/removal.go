@@ -48,6 +48,17 @@ func (s *Service) RemovalPlan(reference string) (RemovalPlan, error) {
 		RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt2-owned.json")},
 		RemovalAction{Kind: "remove_project_root", Target: p.Root},
 	)
+	snapshotExists, err := s.snapshots.ValidateProject(p.ID, p.Status == domain.ProjectRemoving)
+	if err != nil {
+		return RemovalPlan{}, err
+	}
+	if snapshotExists {
+		snapshotDirectory, err := s.snapshots.ProjectDir(p.ID)
+		if err != nil {
+			return RemovalPlan{}, err
+		}
+		actions = append(actions, RemovalAction{Kind: "delete_transcript_snapshot", Target: snapshotDirectory})
+	}
 	for _, agent := range agents {
 		actions = append(actions, RemovalAction{Kind: "delete_agent_state", Target: agent.ID})
 	}
@@ -113,16 +124,19 @@ func (s *Service) Remove(reference, currentPane string) (RemovalPlan, error) {
 	if err := os.Remove(p.Root); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return plan, fmt.Errorf("remove Project root %q: %w", p.Root, err)
 	}
+	if err := s.snapshots.DeleteProject(p.ID, true); err != nil {
+		return plan, err
+	}
 	if err := store.NewAgentStore(s.options.StateDir).DeleteProject(p.ID); err != nil {
 		return plan, err
 	}
-	if err := s.store.Delete(p.ID); err != nil {
-		return plan, err
-	}
 	if p.EnvironmentID != "" {
-		if err := s.environments.Delete(p.EnvironmentID); err != nil {
+		if err := s.environments.Delete(p.EnvironmentID); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return plan, err
 		}
+	}
+	if err := s.store.Delete(p.ID); err != nil {
+		return plan, err
 	}
 	return plan, nil
 }
@@ -141,6 +155,9 @@ func (s *Service) validateRemoval(reference, currentPane string) (domain.Project
 		return p, nil, fmt.Errorf("Project %q is not archived; run twt2 projects archive %s before removal", p.Name, p.ID)
 	}
 	if err := s.validateRemovalState(p); err != nil {
+		return p, nil, err
+	}
+	if _, err := s.snapshots.ValidateProject(p.ID, p.Status == domain.ProjectRemoving); err != nil {
 		return p, nil, err
 	}
 	sessions, err := s.ownedSessions(p.ID)
@@ -190,10 +207,11 @@ func (s *Service) validateRemovalState(p domain.Project) error {
 	if p.EnvironmentID != "" {
 		expectedRoot = filepath.Join(s.options.DataDir, "projects", p.EnvironmentID)
 		environment, err := s.environments.Find(p.EnvironmentID)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) && p.Status == domain.ProjectRemoving {
+			// A retry can continue after the Prepared Environment record was deleted.
+		} else if err != nil {
 			return err
-		}
-		if environment.Status != domain.EnvironmentClaimed || environment.ClaimReservation == nil || environment.ClaimReservation.Project.ID != p.ID {
+		} else if environment.Status != domain.EnvironmentClaimed || environment.ClaimReservation == nil || environment.ClaimReservation.Project.ID != p.ID {
 			return fmt.Errorf("Project %q does not own its Prepared Environment", p.Name)
 		}
 	}

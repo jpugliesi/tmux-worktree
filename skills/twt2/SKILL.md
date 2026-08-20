@@ -120,6 +120,10 @@ twt2 agents transcript link AGENT_ID \
 twt2 agents transcript show AGENT_ID \
   --project PROJECT_ID \
   --output json
+
+twt2 agents transcript snapshot AGENT_ID \
+  --project PROJECT_ID \
+  --output json
 ```
 
 ## Completion

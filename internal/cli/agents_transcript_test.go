@@ -88,6 +88,34 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if result.SchemaVersion != 1 || result.ProjectID != project.ID || result.AgentID != agentID || !strings.Contains(result.Markdown, "Project question") {
 		t.Fatalf("transcript show = %+v", result)
 	}
+
+	snapshotDirectory := filepath.Join(stateDir, "snapshots", "projects", project.ID)
+	drySnapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID, "--dry-run", "--output", "json")
+	if !strings.Contains(drySnapshot, `"status":"valid"`) || strings.Contains(drySnapshot, "Project question") {
+		t.Fatalf("dry-run transcript snapshot output = %s", drySnapshot)
+	}
+	if _, err := os.Stat(snapshotDirectory); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created a Transcript Snapshot: %v", err)
+	}
+
+	snapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID, "--output", "json")
+	if !strings.Contains(snapshot, `"status":"applied"`) || strings.Contains(snapshot, "Project question") {
+		t.Fatalf("transcript snapshot output = %s", snapshot)
+	}
+	saved, err := os.ReadFile(filepath.Join(snapshotDirectory, "latest.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), "Project question") {
+		t.Fatalf("saved Transcript Snapshot = %q", saved)
+	}
+	marker, err := os.ReadFile(filepath.Join(snapshotDirectory, ".twt2-snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(marker), `"projectId":"project-one"`) {
+		t.Fatalf("Transcript Snapshot marker = %s", marker)
+	}
 }
 
 func TestAgentTranscriptLinkUpdatesAnExistingAgentSession(t *testing.T) {

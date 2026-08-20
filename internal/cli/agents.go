@@ -57,6 +57,16 @@ type agentTranscriptOutput struct {
 	Markdown       string `json:"markdown"`
 }
 
+type agentSnapshotOutput struct {
+	SchemaVersion  int    `json:"schemaVersion"`
+	ProjectID      string `json:"projectId"`
+	AgentID        string `json:"agentId"`
+	Provider       string `json:"provider"`
+	RepositoryName string `json:"repositoryName"`
+	UpdatedAt      string `json:"updatedAt"`
+	Status         string `json:"status"`
+}
+
 func newAgentsCommand(options Options) *cobra.Command {
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
 	projects := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
@@ -66,7 +76,7 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsResumeCommand(agents, projects))
 	command.AddCommand(newAgentsFocusCommand(agents))
 	command.AddCommand(newAgentsSendCommand(agents, projects))
-	command.AddCommand(newAgentTranscriptCommand(agents, projects))
+	command.AddCommand(newAgentTranscriptCommand(agents, projects, options.StateDir))
 	return command
 }
 
@@ -125,10 +135,49 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	return command
 }
 
-func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	command := &cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"}
 	command.AddCommand(newAgentTranscriptShowCommand(agents, projects))
+	command.AddCommand(newAgentTranscriptSnapshotCommand(projects, stateDir))
 	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
+	return command
+}
+
+func newAgentTranscriptSnapshotCommand(projects *projectservice.Service, stateDir string) *cobra.Command {
+	var projectReference string
+	command := &cobra.Command{
+		Use:   "snapshot AGENT_ID",
+		Short: "Save a Project-owned Agent Session transcript snapshot",
+		Args:  exactArgs("AGENT_ID"),
+		RunE: func(command *cobra.Command, args []string) error {
+			project, err := resolveProject(projects, projectReference)
+			if err != nil {
+				return err
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("find home directory: %w", err)
+			}
+			value, agent, err := transcriptservice.New(home).Snapshot(stateDir, args[0], project.ID, !isDryRun(command))
+			if err != nil {
+				return err
+			}
+			status := "applied"
+			if isDryRun(command) {
+				status = "valid"
+			}
+			if WantsJSON(command) {
+				return writeJSONOutput(command, agentSnapshotOutput{
+					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, AgentID: agent.ID,
+					Provider: value.Provider, RepositoryName: value.RepositoryName,
+					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Status: status,
+				})
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Transcript Snapshot %s for Agent Session %s\n", status, agent.ID)
+			return err
+		},
+	}
+	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	return command
 }
 
@@ -192,19 +241,23 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *proje
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeJSONOutput(command, agentTranscriptOutput{
-					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, AgentID: agent.ID,
-					Provider: value.Provider, RepositoryName: value.RepositoryName,
-					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Markdown: value.Markdown,
-				})
-			}
-			_, err = io.WriteString(command.OutOrStdout(), value.Markdown)
-			return err
+			return writeAgentTranscript(command, project.ID, agent.ID, value)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	return command
+}
+
+func writeAgentTranscript(command *cobra.Command, projectID, agentID string, value transcriptservice.Transcript) error {
+	if WantsJSON(command) {
+		return writeJSONOutput(command, agentTranscriptOutput{
+			SchemaVersion: jsonSchemaVersion, ProjectID: projectID, AgentID: agentID,
+			Provider: value.Provider, RepositoryName: value.RepositoryName,
+			UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Markdown: value.Markdown,
+		})
+	}
+	_, err := io.WriteString(command.OutOrStdout(), value.Markdown)
+	return err
 }
 
 func newAgentsListCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {

@@ -202,7 +202,7 @@ func argumentsForCommand(path string) []argumentSchema {
 		return []argumentSchema{stringArgument("project")}
 	case "twt2 agents register":
 		return []argumentSchema{{Name: "resume_command", Type: "array[string]", Variadic: true, Condition: "required when --pane is empty"}}
-	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send", "twt2 agents transcript show", "twt2 agents transcript link":
+	case "twt2 agents resume", "twt2 agents focus", "twt2 agents send", "twt2 agents transcript show", "twt2 agents transcript snapshot", "twt2 agents transcript link":
 		return []argumentSchema{stringArgument("agent_id")}
 	default:
 		return []argumentSchema{}

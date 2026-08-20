@@ -351,6 +351,12 @@ func TestProjectsRemoveRetriesAfterPartialDataRemoval(t *testing.T) {
 	if err := os.WriteFile(statePath, changed, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if project.EnvironmentID == "" {
+		t.Fatal("created Project has no Prepared Environment ID")
+	}
+	if err := store.NewEnvironmentStore(stateDir).Delete(project.EnvironmentID); err != nil {
+		t.Fatal(err)
+	}
 
 	executeWithOptions(t, options, nil, "projects", "remove", "partial", "--apply")
 	if _, err := os.Stat(project.Root); !os.IsNotExist(err) {

@@ -106,7 +106,7 @@ func (s EnvironmentStore) Find(id string) (domain.PreparedEnvironment, error) {
 	}
 	environment, err := s.loadPath(filepath.Join(s.dir, id+".json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment %q does not exist", id)
+		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment %q does not exist: %w", id, os.ErrNotExist)
 	}
 	return environment, err
 }
@@ -116,7 +116,7 @@ func (s EnvironmentStore) Delete(id string) error {
 		return fmt.Errorf("invalid Prepared Environment ID: %w", err)
 	}
 	if err := os.Remove(filepath.Join(s.dir, id+".json")); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("Prepared Environment %q does not exist", id)
+		return fmt.Errorf("Prepared Environment %q does not exist: %w", id, os.ErrNotExist)
 	} else if err != nil {
 		return fmt.Errorf("delete Prepared Environment %q: %w", id, err)
 	}

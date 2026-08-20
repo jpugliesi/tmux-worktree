@@ -7,7 +7,7 @@ local state = root .. "/state"
 local data = root .. "/data"
 local config = root .. "/config"
 local home = root .. "/home"
-local snapshots = root .. "/snapshots"
+local snapshots = state .. "/snapshots/projects"
 
 for _, directory in ipairs({ state .. "/projects", state .. "/agents", data, config, home }) do
   assert(vim.fn.mkdir(directory, "p") == 1 or vim.fn.isdirectory(directory) == 1)
@@ -103,7 +103,6 @@ local directory = repository_one
 require("twt2").setup({
   command = binary,
   default_keymaps = false,
-  snapshot_root = snapshots,
   directory = function() return directory end,
   select = function(items, _, done) done(items[1]) end,
 })
