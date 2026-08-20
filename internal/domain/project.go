@@ -38,6 +38,7 @@ const (
 type Project struct {
 	Version          int                 `json:"version"`
 	ID               string              `json:"id"`
+	EnvironmentID    string              `json:"environmentId,omitempty"`
 	Name             string              `json:"name"`
 	TemplateName     string              `json:"templateName"`
 	TemplateSnapshot Template            `json:"templateSnapshot"`

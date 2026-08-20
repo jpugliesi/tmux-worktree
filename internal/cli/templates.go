@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -29,9 +30,40 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	templates.AddCommand(newTemplatesListCommand(templateStore))
 	templates.AddCommand(newTemplatesShowCommand(templateStore))
 	templates.AddCommand(newTemplatesValidateCommand(templateStore))
+	templates.AddCommand(newTemplatePrepareCommand(options, templateStore))
 	templates.AddCommand(newTemplateRepositoriesCommand(templateStore, options.StateDir))
 	templates.AddCommand(newTemplateInitializeCommand(templateStore, options.StateDir))
 	return templates
+}
+
+func newTemplatePrepareCommand(options Options, templateStore store.TemplateStore) *cobra.Command {
+	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	return &cobra.Command{
+		Use:   "prepare TEMPLATE",
+		Short: "Prepare the next initialized environment",
+		Args:  exactArgs("TEMPLATE"),
+		RunE: func(command *cobra.Command, args []string) error {
+			template, err := templateStore.Load(args[0])
+			if err != nil {
+				return err
+			}
+			if isDryRun(command) {
+				if err := template.Validate(); err != nil {
+					return err
+				}
+				return writeMutation(command, "templates.prepare", "valid", "", args[0])
+			}
+			environment, err := service.Prepare(args[0], template)
+			if err != nil {
+				return err
+			}
+			if WantsJSON(command) {
+				return writeMutation(command, "templates.prepare", "applied", environment.ID, environment.TemplateName)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Prepared Environment %q for Project Template %q\n", environment.ID, environment.TemplateName)
+			return err
+		},
+	}
 }
 
 func newTemplatesCreateCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {

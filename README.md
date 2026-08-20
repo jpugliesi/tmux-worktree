@@ -24,6 +24,7 @@ twt2 templates create product
 twt2 templates repos add product web git@github.com:acme/web.git
 twt2 templates repos add product api git@github.com:acme/api.git
 twt2 templates repos init set product web -- ./init.sh
+twt2 templates prepare product
 ```
 
 Create a Project for one change:
@@ -32,9 +33,10 @@ Create a Project for one change:
 twt2 projects create fix-auth --template product
 ```
 
-`twt2` checks out both worktrees, runs first-use setup, and opens one tmux
-session with `web` and `api` windows. The Project keeps its identity even if
-you rename the tmux session.
+`templates prepare` creates both worktrees and runs repository initialization
+once. Project creation claims that ready environment and opens one tmux session
+with `web` and `api` windows. twt2 prepares the next environment in the
+background.
 
 From that Project tmux session, create the next Project with one short
 command:
@@ -77,6 +79,8 @@ Inspect disk use and preview cleanup before you remove archived data:
 
 ```sh
 twt2 storage status
+twt2 storage clean
+twt2 storage clean --apply
 twt2 projects remove fix-auth
 twt2 projects remove fix-auth --apply
 ```

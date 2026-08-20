@@ -25,6 +25,17 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			testHooks := options.QuickCreateSwitch != nil || options.QuickCreateArchive != nil
+			if testHooks && (options.QuickCreateSwitch == nil || options.QuickCreateArchive == nil) {
+				return fmt.Errorf("quick create test hooks are incomplete")
+			}
+			clientName := ""
+			if !testHooks && !isDryRun(command) && !WantsJSON(command) {
+				clientName, err = callingTmuxClient(options, currentPane)
+				if err != nil {
+					return err
+				}
+			}
 			template, err := store.NewTemplateStore(options.ConfigDir).Load(current.TemplateName)
 			if err != nil {
 				return err
@@ -44,16 +55,18 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			}
 
 			created, err := service.Create(name, current.TemplateName, template)
+			if created.EnvironmentID != "" {
+				if refillErr := startPreparationRefill(options, current.TemplateName, template); refillErr != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: the next Prepared Environment was not started: %v\n", refillErr)
+				}
+			}
 			if err != nil {
 				if created.ID != "" {
 					return fmt.Errorf("new Project %q (%s) is incomplete: %w", created.Name, created.ID, err)
 				}
 				return err
 			}
-			if options.QuickCreateSwitch != nil || options.QuickCreateArchive != nil {
-				if options.QuickCreateSwitch == nil || options.QuickCreateArchive == nil {
-					return fmt.Errorf("quick create test hooks are incomplete")
-				}
+			if testHooks {
 				if err := options.QuickCreateSwitch(created.TmuxSession); err != nil {
 					return archiveNewAfterQuickCreateFailure(service, created.ID, created.Name, currentPane, fmt.Errorf("switch to new Project: %w", err))
 				}
@@ -64,10 +77,6 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				return err
 			}
 
-			clientName, err := callingTmuxClient(options, currentPane)
-			if err != nil {
-				return archiveNewAfterQuickCreateFailure(service, created.ID, created.Name, currentPane, err)
-			}
 			helper, err := startQuickCreateHelper(options, service, current.ID, created.ID, clientName)
 			if err != nil {
 				return archiveNewAfterQuickCreateFailure(service, created.ID, created.Name, currentPane, fmt.Errorf("prepare old Project archive: %w", err))

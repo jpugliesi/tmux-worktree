@@ -20,6 +20,7 @@ type Options struct {
 	QuickCreateArchive     func(projectID string) error
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
+	PreparationExecutable  string
 }
 
 func DefaultOptions() Options {

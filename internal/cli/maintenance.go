@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
+	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +38,81 @@ func newStorageCommand(options Options) *cobra.Command {
 			if format != "text" {
 				return fmt.Errorf("unsupported format %q", format)
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount)
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects: %s (%d Projects, %d worktrees)\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\n", formatBytes(result.TotalBytes), formatBytes(result.CacheBytes), result.CacheCount, formatBytes(result.ProjectBytes), result.ProjectCount, result.WorktreeCount, formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount)
 			return err
 		},
 	}
 	status.Flags().StringVar(&format, "format", "text", "Set the output format: text or json")
-	storage.AddCommand(status)
+	storage.AddCommand(status, newStorageCleanCommand(options))
 	return storage
+}
+
+type preparedCleanupOutput struct {
+	SchemaVersion int                                   `json:"schemaVersion"`
+	Plan          projectservice.EnvironmentCleanupPlan `json:"plan"`
+}
+
+func newStorageCleanCommand(options Options) *cobra.Command {
+	var apply bool
+	command := &cobra.Command{
+		Use:   "clean",
+		Short: "Remove failed and obsolete Prepared Environments",
+		Args:  noArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			digests, err := currentTemplateDigests(options.ConfigDir)
+			if err != nil {
+				return err
+			}
+			service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+			plan, err := service.PreparedCleanupPlan(digests)
+			if err != nil {
+				return err
+			}
+			if apply && !isDryRun(command) {
+				plan, err = service.CleanPrepared(digests)
+				if err != nil {
+					return err
+				}
+			}
+			if WantsJSON(command) {
+				return writeJSONOutput(command, preparedCleanupOutput{SchemaVersion: jsonSchemaVersion, Plan: plan})
+			}
+			for _, item := range plan.Environments {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q\n", item.Reason, item.ID, item.TemplateName); err != nil {
+					return err
+				}
+			}
+			if !apply || isDryRun(command) {
+				_, err = fmt.Fprintln(command.OutOrStdout(), "Run again with --apply to remove these items.")
+				return err
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Removed %d Prepared Environments\n", len(plan.Environments))
+			return err
+		},
+	}
+	command.Flags().BoolVar(&apply, "apply", false, "Apply the cleanup plan")
+	return command
+}
+
+func currentTemplateDigests(configDir string) (map[string]string, error) {
+	templates := store.NewTemplateStore(configDir)
+	names, err := templates.List()
+	if err != nil {
+		return nil, err
+	}
+	digests := make(map[string]string, len(names))
+	for _, name := range names {
+		template, err := templates.Load(name)
+		if err != nil {
+			return nil, err
+		}
+		digest, err := store.TemplateDigest(template)
+		if err != nil {
+			return nil, err
+		}
+		digests[name] = digest
+	}
+	return digests, nil
 }
 
 func newDoctorCommand(options Options) *cobra.Command {

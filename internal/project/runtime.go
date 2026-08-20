@@ -1,14 +1,17 @@
 package project
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
@@ -25,6 +28,43 @@ func (s *Service) runInitialize(p domain.Project, directory string, init *domain
 		return fmt.Errorf("run initialization in %q: %w: %s", directory, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func runInitializationProcess(directory string, argv, environment []string, activityFile *os.File) error {
+	if len(argv) == 0 {
+		return fmt.Errorf("initialization command is empty")
+	}
+	command := exec.Command(argv[0], argv[1:]...)
+	command.Dir = directory
+	command.Env = environment
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if activityFile != nil {
+		command.ExtraFiles = []*os.File{activityFile}
+	}
+	var output bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &output
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("start initialization in %q: %w", directory, err)
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("run initialization in %q: %w: %s", directory, err, strings.TrimSpace(output.String()))
+		}
+		return nil
+	case received := <-signals:
+		if value, ok := received.(syscall.Signal); ok {
+			_ = syscall.Kill(-command.Process.Pid, value)
+		}
+		err := <-done
+		return fmt.Errorf("initialization in %q stopped after signal %s: %w: %s", directory, received, err, strings.TrimSpace(output.String()))
+	}
 }
 
 func (s *Service) writeOwnershipMarker(p domain.Project) error {

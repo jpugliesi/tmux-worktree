@@ -17,90 +17,35 @@ type Options struct {
 }
 
 type Service struct {
-	options Options
-	store   store.ProjectStore
-	now     func() time.Time
+	options      Options
+	store        store.ProjectStore
+	environments store.EnvironmentStore
+	now          func() time.Time
 }
 
 func NewService(options Options) *Service {
 	return &Service{
-		options: options,
-		store:   store.NewProjectStore(options.StateDir),
-		now:     func() time.Time { return time.Now().UTC() },
+		options:      options,
+		store:        store.NewProjectStore(options.StateDir),
+		environments: store.NewEnvironmentStore(options.StateDir),
+		now:          func() time.Time { return time.Now().UTC() },
 	}
 }
 
 func (s *Service) Create(name, templateName string, template domain.Template) (domain.Project, error) {
+	if reserved, found, err := s.restoreReservedProject(name); err != nil {
+		return domain.Project{}, err
+	} else if found {
+		return s.completeEnvironmentClaim(reserved.EnvironmentID, reserved.ID)
+	}
 	if err := s.ValidateCreate(name, templateName, template); err != nil {
 		return domain.Project{}, err
 	}
-	lock, err := store.AcquireMutationLock(s.options.StateDir)
+	environment, err := s.Prepare(templateName, template)
 	if err != nil {
 		return domain.Project{}, err
 	}
-	defer lock.Release()
-
-	projects, err := s.store.List()
-	if err != nil {
-		return domain.Project{}, err
-	}
-	for _, existing := range projects {
-		if existing.Name == name {
-			return domain.Project{}, fmt.Errorf("Project %q already exists", name)
-		}
-	}
-	id, err := newID()
-	if err != nil {
-		return domain.Project{}, err
-	}
-	now := s.now()
-	root := filepath.Join(s.options.DataDir, "projects", name+"-"+id[:8])
-	p := domain.Project{
-		Version:          domain.ProjectVersion,
-		ID:               id,
-		Name:             name,
-		TemplateName:     templateName,
-		TemplateSnapshot: template,
-		Status:           domain.ProjectInitializing,
-		Root:             root,
-		TmuxSession:      name,
-		Repositories:     make([]domain.ProjectRepository, 0, len(template.Repositories)),
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-	p.Steps = append(p.Steps, newStep("project_root", domain.StepProjectRoot, ""))
-	for _, spec := range template.Repositories {
-		windowName := spec.WindowName
-		if windowName == "" {
-			windowName = spec.Name
-		}
-		repository := domain.ProjectRepository{
-			Name:       spec.Name,
-			CachePath:  s.cachePath(spec.Name, spec.Clone.URL),
-			Path:       filepath.Join(root, spec.Name),
-			Branch:     "twt2/" + name + "-" + id[:8],
-			WindowName: windowName,
-		}
-		p.Repositories = append(p.Repositories, repository)
-		p.Steps = append(p.Steps,
-			newStep("cache:"+spec.Name, domain.StepCache, spec.Name),
-			newStep("checkout:"+spec.Name, domain.StepCheckout, spec.Name),
-		)
-		if spec.Initialize != nil {
-			p.Steps = append(p.Steps, newStep("repository_init:"+spec.Name, domain.StepRepositoryInit, spec.Name))
-		}
-	}
-	p.Steps = append(p.Steps, newStep("tmux", domain.StepTmux, ""))
-	if template.Initialize != nil {
-		p.Steps = append(p.Steps, newStep("project_init", domain.StepProjectInit, ""))
-	}
-	if err := s.store.Save(p); err != nil {
-		return domain.Project{}, err
-	}
-	if err := s.runPending(&p); err != nil {
-		return p, err
-	}
-	return p, nil
+	return s.claimPreparedEnvironment(name, templateName, template, environment.ID)
 }
 
 func (s *Service) ValidateCreate(name, templateName string, template domain.Template) error {
@@ -192,6 +137,24 @@ func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project
 }
 
 func (s *Service) Retry(reference string) (domain.Project, error) {
+	reserved, findErr := s.store.Find(reference)
+	if findErr != nil {
+		var restored bool
+		var restoreErr error
+		reserved, restored, restoreErr = s.restoreReservedProject(reference)
+		if restoreErr != nil {
+			return domain.Project{}, restoreErr
+		}
+		if restored {
+			findErr = nil
+		}
+	}
+	if findErr == nil && reserved.EnvironmentID != "" {
+		environment, environmentErr := s.environments.Find(reserved.EnvironmentID)
+		if environmentErr == nil && environment.Status == domain.EnvironmentClaiming {
+			return s.completeEnvironmentClaim(environment.ID, reserved.ID)
+		}
+	}
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return domain.Project{}, err
@@ -219,6 +182,43 @@ func (s *Service) Retry(reference string) (domain.Project, error) {
 		return p, err
 	}
 	return p, nil
+}
+
+// restoreReservedProject repairs the durable boundary between an Environment
+// claim reservation and its Project record. The reservation is the journal of
+// record and contains the complete immutable Project.
+func (s *Service) restoreReservedProject(reference string) (domain.Project, bool, error) {
+	lock, err := store.AcquireMutationLock(s.options.StateDir)
+	if err != nil {
+		return domain.Project{}, false, err
+	}
+	defer lock.Release()
+	environments, err := s.environments.List()
+	if err != nil {
+		return domain.Project{}, false, err
+	}
+	var match *domain.Project
+	for _, environment := range environments {
+		if environment.Status != domain.EnvironmentClaiming || environment.ClaimReservation == nil {
+			continue
+		}
+		project := environment.ClaimReservation.Project
+		if project.ID != reference && project.Name != reference {
+			continue
+		}
+		if match != nil {
+			return domain.Project{}, false, fmt.Errorf("Project claim %q is ambiguous; use a Project ID", reference)
+		}
+		copy := project
+		match = &copy
+	}
+	if match == nil {
+		return domain.Project{}, false, nil
+	}
+	if err := s.store.Save(*match); err != nil {
+		return domain.Project{}, false, fmt.Errorf("restore Project %q from its Prepared Environment claim: %w", match.Name, err)
+	}
+	return *match, true, nil
 }
 
 func (s *Service) ValidateRetry(reference string) error {

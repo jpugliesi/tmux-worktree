@@ -13,6 +13,7 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
 func TestProjectsCreateUsesDeclaredDefaultBranch(t *testing.T) {
@@ -195,17 +196,13 @@ func TestProjectsCreateRefreshesReusedRepositoryCache(t *testing.T) {
 	runCommand(t, source, "git", "add", "new-source-commit.txt")
 	runCommand(t, source, "git", "commit", "-qm", "new source commit")
 	executeWithOptions(t, options, nil, "projects", "create", "second", "--template", "policy", "--no-open")
-	entries, _ := os.ReadDir(filepath.Join(root, "data", "projects"))
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), "second-") {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(root, "data", "projects", entry.Name(), "app", "new-source-commit.txt")); err != nil {
-			t.Fatalf("second Project did not use the refreshed cache: %v", err)
-		}
-		return
+	second, err := store.NewProjectStore(options.StateDir).Find("second")
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("second Project root does not exist")
+	if _, err := os.Stat(filepath.Join(second.Repositories[0].Path, "new-source-commit.txt")); err != nil {
+		t.Fatalf("second Project did not use the refreshed cache: %v", err)
+	}
 }
 
 func TestRenamedProjectSessionRemainsTheImmutableTmuxTarget(t *testing.T) {

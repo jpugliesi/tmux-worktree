@@ -13,9 +13,20 @@ import (
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
 func (s *Service) ensureCache(p domain.Project, repositoryName string) error {
+	_, repository, err := repositoryFor(p, repositoryName)
+	if err != nil {
+		return err
+	}
+	return s.withCacheLock(repository.CachePath, func() error {
+		return s.ensureCacheLocked(p, repositoryName)
+	})
+}
+
+func (s *Service) ensureCacheLocked(p domain.Project, repositoryName string) error {
 	spec, repository, err := repositoryFor(p, repositoryName)
 	if err != nil {
 		return err
@@ -93,6 +104,16 @@ func (s *Service) ensureRemotes(cachePath string, remotes map[string]string) err
 }
 
 func (s *Service) ensureCheckout(p domain.Project, repositoryName string) error {
+	_, repository, err := repositoryFor(p, repositoryName)
+	if err != nil {
+		return err
+	}
+	return s.withCacheLock(repository.CachePath, func() error {
+		return s.ensureCheckoutLocked(p, repositoryName)
+	})
+}
+
+func (s *Service) ensureCheckoutLocked(p domain.Project, repositoryName string) error {
 	spec, repository, err := repositoryFor(p, repositoryName)
 	if err != nil {
 		return err
@@ -129,6 +150,15 @@ func (s *Service) ensureCheckout(p domain.Project, repositoryName string) error 
 		return fmt.Errorf("create checkout for repository %q: %w", repositoryName, err)
 	}
 	return nil
+}
+
+func (s *Service) withCacheLock(cachePath string, operation func() error) error {
+	lock, err := store.AcquireNamedLockBlocking(s.options.StateDir, "cache", cachePath)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	return operation()
 }
 
 func fetchOrigin(cachePath string, depth int, defaultBranch string) error {

@@ -498,7 +498,7 @@ func TestProjectsSetupRetryUsesSavedTemplateSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	templatePath := filepath.Join(configDir, "templates", "example.yaml")
-	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n    initialize:\n      command: [\"./init.sh\"]\n", source)
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\ninitialize:\n  working_directory: app\n  command: [\"./init.sh\"]\n", source)
 	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}

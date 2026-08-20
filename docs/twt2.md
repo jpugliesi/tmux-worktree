@@ -75,6 +75,22 @@ Check an edited file with this command:
 twt2 templates validate everysphere
 ```
 
+Prepare the next environment before you need it:
+
+```sh
+twt2 templates prepare everysphere
+```
+
+This command creates one worktree for each repository and runs repository
+initialization once on each new physical worktree. A Project later claims the
+complete Prepared Environment. After each claim, twt2 prepares one replacement
+in the background.
+
+Repository initialization runs before a Project name exists. It receives
+`TWT2_ENVIRONMENT_ID`, `TWT2_ENVIRONMENT_ROOT`, `TWT2_TEMPLATE_NAME`,
+`TWT2_REPOSITORY_NAME`, and `TWT2_REPOSITORY_PATH`. Use Project initialization
+when setup needs a Project ID or name.
+
 To run one command after all repository worktrees exist, set a Project
 initialization command. You must set its working directory relative to the
 Project root:
@@ -115,9 +131,9 @@ Project name: fix-logout
 ```
 
 The command uses the latest saved version of the same Project Template. It
-first creates and initializes `fix-logout`. It then switches the calling tmux
-client to the new Project and archives `fix-auth`. Other tmux clients do not
-switch.
+claims a matching Prepared Environment, switches the calling tmux client to
+the new Project, and archives `fix-auth`. Other tmux clients do not switch.
+Preparation of the replacement environment continues in the background.
 
 If creation or setup fails, the current Project stays active. `twt2` keeps a
 Project that has a setup failure. You can inspect it and run
@@ -264,6 +280,15 @@ Inspect disk use:
 ```sh
 twt2 storage status
 twt2 storage status --format json
+```
+
+`storage status` reports claimed Project data and unclaimed Prepared
+Environment data separately. Preview cleanup of failed or obsolete unclaimed
+environments, then apply it:
+
+```sh
+twt2 storage clean
+twt2 storage clean --apply
 ```
 
 Project removal shows a plan by default. Archive the Project before you apply

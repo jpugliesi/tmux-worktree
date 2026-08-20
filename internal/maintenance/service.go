@@ -13,12 +13,18 @@ import (
 )
 
 type StorageStatus struct {
-	TotalBytes    int64 `json:"totalBytes"`
-	CacheBytes    int64 `json:"cacheBytes"`
-	ProjectBytes  int64 `json:"projectBytes"`
-	CacheCount    int   `json:"cacheCount"`
-	ProjectCount  int   `json:"projectCount"`
-	WorktreeCount int   `json:"worktreeCount"`
+	TotalBytes                int64 `json:"totalBytes"`
+	CacheBytes                int64 `json:"cacheBytes"`
+	ProjectBytes              int64 `json:"projectBytes"`
+	PreparedBytes             int64 `json:"preparedBytes"`
+	CacheCount                int   `json:"cacheCount"`
+	ProjectCount              int   `json:"projectCount"`
+	WorktreeCount             int   `json:"worktreeCount"`
+	PreparedEnvironmentCount  int   `json:"preparedEnvironmentCount"`
+	ReadyEnvironmentCount     int   `json:"readyEnvironmentCount"`
+	PreparingEnvironmentCount int   `json:"preparingEnvironmentCount"`
+	FailedEnvironmentCount    int   `json:"failedEnvironmentCount"`
+	PreparedWorktreeCount     int   `json:"preparedWorktreeCount"`
 }
 
 type Check struct {
@@ -65,9 +71,41 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	for _, project := range projects {
 		worktrees += len(project.Repositories)
 	}
+	environments, err := store.NewEnvironmentStore(s.stateDir).List()
+	if err != nil {
+		return StorageStatus{}, err
+	}
+	var preparedBytes int64
+	preparedCount, readyCount, preparingCount, failedCount, preparedWorktrees := 0, 0, 0, 0, 0
+	for _, environment := range environments {
+		if environment.Status == "claimed" || environment.Status == "claiming" {
+			continue
+		}
+		bytes, err := directoryBytes(environment.Root)
+		if err != nil {
+			return StorageStatus{}, err
+		}
+		preparedBytes += bytes
+		preparedCount++
+		preparedWorktrees += len(environment.Repositories)
+		switch environment.Status {
+		case "ready":
+			readyCount++
+		case "queued", "preparing":
+			preparingCount++
+		case "failed":
+			failedCount++
+		}
+	}
+	claimedProjectBytes := projectBytes - preparedBytes
+	if claimedProjectBytes < 0 {
+		claimedProjectBytes = 0
+	}
 	return StorageStatus{
-		TotalBytes: cacheBytes + projectBytes, CacheBytes: cacheBytes, ProjectBytes: projectBytes,
+		TotalBytes: cacheBytes + projectBytes, CacheBytes: cacheBytes, ProjectBytes: claimedProjectBytes, PreparedBytes: preparedBytes,
 		CacheCount: cacheCount, ProjectCount: len(projects), WorktreeCount: worktrees,
+		PreparedEnvironmentCount: preparedCount, ReadyEnvironmentCount: readyCount,
+		PreparingEnvironmentCount: preparingCount, FailedEnvironmentCount: failedCount, PreparedWorktreeCount: preparedWorktrees,
 	}, nil
 }
 
@@ -114,6 +152,31 @@ func (s *Service) Doctor() DoctorReport {
 		}
 		if valid {
 			report.addPass("projects", fmt.Sprintf("%d Project records are valid", len(projects)))
+		}
+	}
+	environments, err := store.NewEnvironmentStore(s.stateDir).List()
+	if err != nil {
+		report.addFailure("prepared-environments", err.Error())
+	} else {
+		valid := true
+		for _, environment := range environments {
+			if environment.Status == "queued" {
+				continue
+			}
+			markerName := ".twt2-environment.json"
+			if environment.Status == "claiming" || environment.Status == "claimed" {
+				markerName = ".twt2-owned.json"
+			}
+			if _, err := os.Stat(filepath.Join(environment.Root, markerName)); err != nil {
+				if (environment.Status == "preparing" || environment.Status == "failed") && os.IsNotExist(err) {
+					continue
+				}
+				report.addFailure("environment:"+environment.ID, "Prepared Environment ownership marker is missing")
+				valid = false
+			}
+		}
+		if valid {
+			report.addPass("prepared-environments", fmt.Sprintf("%d Prepared Environment records are valid", len(environments)))
 		}
 	}
 	return report

@@ -183,7 +183,7 @@ func argumentsForCommand(path string) []argumentSchema {
 		return argumentSchema{Name: name, Type: "string", Required: true}
 	}
 	switch path {
-	case "twt2 templates create", "twt2 templates show", "twt2 templates validate":
+	case "twt2 templates create", "twt2 templates show", "twt2 templates validate", "twt2 templates prepare":
 		return []argumentSchema{stringArgument("name")}
 	case "twt2 templates repos add":
 		return []argumentSchema{stringArgument("template"), stringArgument("repository"), stringArgument("url")}

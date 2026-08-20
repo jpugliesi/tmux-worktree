@@ -66,21 +66,37 @@ func (h quickCreateHelper) cancel() {
 }
 
 func callingTmuxClient(options Options, pane string) (string, error) {
-	rows, err := commandOutput("tmux", tmuxCommandArgs(options, "list-clients", "-F", "#{client_name}\t#{pane_id}")...)
+	sourceSession, err := commandOutput("tmux", tmuxCommandArgs(options, "display-message", "-p", "-t", pane, "#{session_id}")...)
+	if err != nil {
+		return "", fmt.Errorf("find the source Project session: %w", err)
+	}
+	rows, err := commandOutput("tmux", tmuxCommandArgs(options, "list-clients", "-F", "#{client_name}\t#{pane_id}\t#{session_id}")...)
 	if err != nil {
 		return "", fmt.Errorf("find the calling tmux client: %w", err)
 	}
-	var matches []string
+	var paneMatches, sessionMatches []string
 	for _, row := range strings.Split(rows, "\n") {
-		parts := strings.SplitN(row, "\t", 2)
-		if len(parts) == 2 && parts[1] == pane {
-			matches = append(matches, parts[0])
+		parts := strings.SplitN(row, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		if parts[1] == pane {
+			paneMatches = append(paneMatches, parts[0])
+		}
+		if parts[2] == sourceSession {
+			sessionMatches = append(sessionMatches, parts[0])
 		}
 	}
-	if len(matches) != 1 {
-		return "", fmt.Errorf("tmux pane %q is visible in %d clients; quick create requires exactly 1", pane, len(matches))
+	if len(paneMatches) == 1 {
+		return paneMatches[0], nil
 	}
-	return matches[0], nil
+	if len(paneMatches) > 1 {
+		return "", fmt.Errorf("tmux pane %q is visible in %d clients; quick create requires exactly 1", pane, len(paneMatches))
+	}
+	if len(sessionMatches) == 1 {
+		return sessionMatches[0], nil
+	}
+	return "", fmt.Errorf("tmux pane %q is not active in a client, and %d clients are attached to its Project session; quick create requires exactly 1", pane, len(sessionMatches))
 }
 
 func switchTmuxClient(options Options, clientName, sessionID string) error {

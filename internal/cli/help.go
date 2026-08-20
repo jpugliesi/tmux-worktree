@@ -36,6 +36,9 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 templates validate": {
 			long: "Validate the YAML and all fields in one Project Template.", example: "  twt2 templates validate everysphere",
 		},
+		"twt2 templates prepare": {
+			long: "Create and initialize one Prepared Environment for the next Project. Repository initialization does not run again when a Project claims it.", example: "  twt2 templates prepare everysphere",
+		},
 		"twt2 templates repos add": {
 			long:    "Add one repository specification to a Project Template. Flags define clone depth, remotes, default branch, and tmux window name.",
 			example: "  twt2 templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --depth 1 \\\n    --remote github=https://github.com/anysphere/everysphere.git",
@@ -49,7 +52,7 @@ func configureCommandHelp(root *cobra.Command) {
 			example: "  twt2 templates init set product --cwd web -- ./scripts/init-project.sh",
 		},
 		"twt2 projects create": {
-			long:    "Create a Project from a saved Project Template. twt2 creates the required worktrees, runs initialization, and creates the tmux session.",
+			long:    "Create a Project from a saved Project Template. twt2 claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session.",
 			example: "  twt2 projects create fix-auth --template everysphere\n  twt2 projects create fix-auth --template everysphere --dry-run --output json",
 		},
 		"twt2 projects list": {
@@ -93,6 +96,9 @@ func configureCommandHelp(root *cobra.Command) {
 		},
 		"twt2 storage status": {
 			long: "Show the disk space used by Projects, worktrees, and shared repository caches.", example: "  twt2 storage status\n  twt2 storage status --output json",
+		},
+		"twt2 storage clean": {
+			long: "Show a safe cleanup plan for failed and obsolete Prepared Environments. Add --apply to remove only unclaimed twt2-owned worktrees.", example: "  twt2 storage clean\n  twt2 storage clean --apply",
 		},
 		"twt2 doctor": {
 			long: "Check required tools, Project Templates, Project state, and ownership markers.", example: "  twt2 doctor\n  twt2 doctor --output json",

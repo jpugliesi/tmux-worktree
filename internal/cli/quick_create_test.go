@@ -176,12 +176,24 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	command = cli.New(options)
 	command.SetArgs([]string{"create", "setup-fails"})
 	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "is incomplete") {
+	if err == nil || !strings.Contains(err.Error(), "initialization") {
 		t.Fatalf("quick create setup failure = %v", err)
 	}
-	setupFailed, findErr := store.NewProjectStore(options.StateDir).Find("setup-fails")
-	if findErr != nil || setupFailed.Status != domain.ProjectSetupFailed {
-		t.Fatalf("new Project after setup failure: status=%q error=%v", setupFailed.Status, findErr)
+	if _, findErr := store.NewProjectStore(options.StateDir).Find("setup-fails"); findErr == nil {
+		t.Fatal("repository initialization failure created a Project")
+	}
+	environments, findErr := store.NewEnvironmentStore(options.StateDir).List()
+	if findErr != nil {
+		t.Fatal(findErr)
+	}
+	failedEnvironments := 0
+	for _, environment := range environments {
+		if environment.Status == domain.EnvironmentFailed {
+			failedEnvironments++
+		}
+	}
+	if failedEnvironments == 0 {
+		t.Fatal("repository initialization failure did not keep a failed Prepared Environment record")
 	}
 	currentAfterFailure, findErr = store.NewProjectStore(options.StateDir).Find(newProject.ID)
 	if findErr != nil || currentAfterFailure.Status != domain.ProjectActive {
@@ -212,6 +224,57 @@ func TestQuickCreateRequiresAProjectTmuxSession(t *testing.T) {
 	}
 	if len(projects) != 0 {
 		t.Fatalf("quick create outside tmux made Projects: %+v", projects)
+	}
+}
+
+func TestQuickCreateChecksTheTmuxClientBeforeProjectSetup(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	templatePath := filepath.Join(configDir, "templates", "example.yaml")
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt2-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "projects", "create", "old-project", "--template", "example", "--no-open")
+	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	t.Setenv("TMUX_PANE", oldPane)
+	initLog := filepath.Join(root, "init.log")
+	t.Setenv("TWT2_TEST_INIT_LOG", initLog)
+	slowTemplate := template + "    initialize:\n      command: [\"sh\", \"-c\", \"sleep 1.2; printf initialized > \\\"$TWT2_TEST_INIT_LOG\\\"\"]\n"
+	if err := os.WriteFile(templatePath, []byte(slowTemplate), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	command := cli.New(options)
+	command.SetArgs([]string{"create", "must-not-exist"})
+	started := time.Now()
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "clients are attached to its Project session") {
+		t.Fatalf("quick create client preflight error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Fatalf("quick create client preflight took %s", elapsed)
+	}
+	if _, err := os.Stat(initLog); !os.IsNotExist(err) {
+		t.Fatalf("quick create ran initialization before client preflight: %v", err)
+	}
+	if _, err := store.NewProjectStore(options.StateDir).Find("must-not-exist"); err == nil {
+		t.Fatal("quick create made a Project before client preflight")
 	}
 }
 
@@ -328,6 +391,8 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=old-project", "-F", "#{pane_id}")
+	otherPane := runCommand(t, "", "tmux", "-L", socket, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", oldPane)
+	runCommand(t, "", "tmux", "-L", socket, "select-pane", "-t", otherPane)
 
 	client := exec.Command("tmux", "-L", socket, "-C", "attach-session", "-t", "old-project")
 	clientInput, err := client.StdinPipe()
@@ -348,8 +413,8 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	})
 	waitFor(t, 2*time.Second, func() bool {
 		data, err := exec.Command("tmux", "-L", socket, "list-clients", "-F", "#{pane_id}").CombinedOutput()
-		return err == nil && strings.TrimSpace(string(data)) == oldPane
-	}, "control client did not attach to the old Project")
+		return err == nil && strings.TrimSpace(string(data)) == otherPane
+	}, "control client did not attach to the other pane in the old Project")
 
 	t.Setenv("TMUX_PANE", oldPane)
 	t.Setenv("TWT2_PROJECT_ID", "stale-project-id")

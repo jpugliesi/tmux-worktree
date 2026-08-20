@@ -29,11 +29,17 @@ _Avoid_: Project repository, worktree
 A Git worktree assigned to one Project for one repository.
 _Avoid_: Workspace, repository clone
 
+**Prepared Environment**:
+An unclaimed set of initialized Git worktrees for one exact Project Template
+revision. A Project claims the complete set as its checkout leases.
+_Avoid_: Warm Project, spare worktree, checkout pool item
+
 **Agent Session**:
 A resumable coding-agent conversation associated with one Project and,
 optionally, one checkout lease.
 _Avoid_: Agent process, tmux pane
 
 **Initialization**:
-A declared setup action that prepares a new checkout lease or Project for use.
+A declared setup action that prepares a new physical Git worktree or Project
+for use. Repository initialization runs at most once on each physical worktree.
 _Avoid_: Bootstrap magic, implicit setup

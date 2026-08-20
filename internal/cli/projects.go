@@ -196,6 +196,11 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 				return writeMutation(command, "projects.create", "valid", "", args[0])
 			}
 			project, err := service.Create(args[0], templateName, template)
+			if project.EnvironmentID != "" {
+				if refillErr := startPreparationRefill(options, templateName, template); refillErr != nil && !WantsJSON(command) {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: the next Prepared Environment was not started: %v\n", refillErr)
+				}
+			}
 			if err != nil {
 				return err
 			}

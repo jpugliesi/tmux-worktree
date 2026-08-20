@@ -82,24 +82,29 @@ func (s *Service) Remove(reference, currentPane string) (RemovalPlan, error) {
 		}
 	}
 	for _, repository := range p.Repositories {
-		if _, err := os.Stat(repository.Path); err == nil {
-			if err := run(repository.CachePath, "git", "worktree", "remove", repository.Path); err != nil {
-				return plan, fmt.Errorf("remove worktree %q: %w", repository.Path, err)
+		if err := s.withCacheLock(repository.CachePath, func() error {
+			if _, err := os.Stat(repository.Path); err == nil {
+				if err := run(repository.CachePath, "git", "worktree", "remove", repository.Path); err != nil {
+					return fmt.Errorf("remove worktree %q: %w", repository.Path, err)
+				}
 			}
-		}
-		if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return plan, fmt.Errorf("inspect repository cache: %w", err)
-		}
-		exists, err := refExists(repository.CachePath, "refs/heads/"+repository.Branch)
-		if err != nil {
+			if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
+				return nil
+			} else if err != nil {
+				return fmt.Errorf("inspect repository cache: %w", err)
+			}
+			exists, err := refExists(repository.CachePath, "refs/heads/"+repository.Branch)
+			if err != nil {
+				return err
+			}
+			if exists {
+				if err := run(repository.CachePath, "git", "branch", "-D", repository.Branch); err != nil {
+					return fmt.Errorf("remove Project branch %q: %w", repository.Branch, err)
+				}
+			}
+			return nil
+		}); err != nil {
 			return plan, err
-		}
-		if exists {
-			if err := run(repository.CachePath, "git", "branch", "-D", repository.Branch); err != nil {
-				return plan, fmt.Errorf("remove Project branch %q: %w", repository.Branch, err)
-			}
 		}
 	}
 	if err := os.Remove(filepath.Join(p.Root, ".twt2-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -113,6 +118,11 @@ func (s *Service) Remove(reference, currentPane string) (RemovalPlan, error) {
 	}
 	if err := s.store.Delete(p.ID); err != nil {
 		return plan, err
+	}
+	if p.EnvironmentID != "" {
+		if err := s.environments.Delete(p.EnvironmentID); err != nil {
+			return plan, err
+		}
 	}
 	return plan, nil
 }
@@ -149,19 +159,24 @@ func (s *Service) validateRemoval(reference, currentPane string) (domain.Project
 		} else if err != nil {
 			return p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
 		}
-		status, err := output(repository.Path, "git", "status", "--porcelain")
-		if err != nil {
-			return p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
-		}
-		if status != "" {
-			return p, nil, fmt.Errorf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
-		}
-		published, err := branchIsPublished(repository.CachePath, repository.Branch)
-		if err != nil {
+		if err := s.withCacheLock(repository.CachePath, func() error {
+			status, err := output(repository.Path, "git", "status", "--porcelain")
+			if err != nil {
+				return fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+			}
+			if status != "" {
+				return fmt.Errorf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
+			}
+			published, err := branchIsPublished(repository.CachePath, repository.Branch)
+			if err != nil {
+				return err
+			}
+			if !published {
+				return fmt.Errorf("branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
+			}
+			return nil
+		}); err != nil {
 			return p, nil, err
-		}
-		if !published {
-			return p, nil, fmt.Errorf("branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
 		}
 	}
 	return p, sessions, nil
@@ -172,6 +187,16 @@ func (s *Service) validateRemovalState(p domain.Project) error {
 		return fmt.Errorf("Project %q has an invalid ID", p.Name)
 	}
 	expectedRoot := filepath.Join(s.options.DataDir, "projects", p.Name+"-"+p.ID[:8])
+	if p.EnvironmentID != "" {
+		expectedRoot = filepath.Join(s.options.DataDir, "projects", p.EnvironmentID)
+		environment, err := s.environments.Find(p.EnvironmentID)
+		if err != nil {
+			return err
+		}
+		if environment.Status != domain.EnvironmentClaimed || environment.ClaimReservation == nil || environment.ClaimReservation.Project.ID != p.ID {
+			return fmt.Errorf("Project %q does not own its Prepared Environment", p.Name)
+		}
+	}
 	if filepath.Clean(p.Root) != filepath.Clean(expectedRoot) {
 		return fmt.Errorf("Project %q has an invalid root path", p.Name)
 	}
