@@ -225,6 +225,41 @@ func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 	}
 }
 
+func TestUserFacingErrorsCarryConsistentCodes(t *testing.T) {
+	service, project := activeProject(t)
+	agent, err := service.Register(project, "", "", "", "", []string{"codex", "resume", "session-one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ValidateRemove(agent.ID, "other-project"); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("remove outside the Project code = %q", clierr.CodeOf(err))
+	}
+	if err := service.Send(agent, "other-project", "text"); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("send outside the Project code = %q", clierr.CodeOf(err))
+	}
+	if err := service.ValidateResume(agent, domain.Project{ID: "other-project", Name: "other"}); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("resume outside the Project code = %q", clierr.CodeOf(err))
+	}
+	other := domain.Project{Version: domain.ProjectVersion, ID: "other-project", Name: "other", Status: domain.ProjectActive}
+	if err := store.NewProjectStore(service.stateDir).Save(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ValidateTranscriptLink(agent.ID, other.ID, "session-two"); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("link outside the Project code = %q", clierr.CodeOf(err))
+	}
+	if err := service.Send(agent, project.ID, ""); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("empty feedback code = %q", clierr.CodeOf(err))
+	}
+	err = service.ValidateRegistration(project, "cursor", "", "cursor-session", []string{"cursor-agent", "resume"})
+	if clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("unsupported transcript link code = %q", clierr.CodeOf(err))
+	}
+	live, err := service.Live(project.ID)
+	if err != nil || len(live) != 0 {
+		t.Fatalf("Live() = %+v, %v", live, err)
+	}
+}
+
 func TestMatchesProvider(t *testing.T) {
 	if !MatchesProvider("codex", "codex resume x", "codex", []string{"codex", "resume", "x"}) {
 		t.Fatal("MatchesProvider() for a direct codex pane = false")

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
@@ -108,7 +109,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			}
 
 			if !keepCurrent {
-				if liveAgents, liveErr := service.LiveAgents(current.ID); liveErr == nil {
+				if liveAgents, liveErr := agentservice.NewService(options.StateDir, options.TmuxSocket).Live(current.ID); liveErr == nil {
 					if err := printStoppedAgents(command.OutOrStdout(), liveAgents); err != nil {
 						return err
 					}

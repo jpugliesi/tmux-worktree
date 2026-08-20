@@ -1,14 +1,24 @@
 package transcript
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
 func (s *Service) codexRoot() string { return filepath.Join(s.home, ".codex", "sessions") }
+
+// discoverCodex reads the session ID and the repository name of one Codex
+// provider file for discovery.
+func discoverCodex(_ string, lines []map[string]any, project domain.Project) (string, string, bool) {
+	id, cwd, err := codexMetadata(lines)
+	if err != nil || ValidateSessionID(id) != nil {
+		return "", "", false
+	}
+	return id, repositoryForDirectory(project, cwd), true
+}
 
 func (s *Service) readCodex(sessionID string, project domain.Project) (Transcript, error) {
 	paths, err := matchingFiles(s.codexRoot(), sessionID, func(name string) bool { return strings.HasSuffix(name, sessionID) })
@@ -29,11 +39,11 @@ func (s *Service) readCodex(sessionID string, project domain.Project) (Transcrip
 		}
 		repositoryName := repositoryForDirectory(project, cwd)
 		if repositoryName == "" {
-			return Transcript{}, fmt.Errorf("Codex transcript %q does not belong to Project %q", sessionID, project.Name)
+			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Codex transcript %q does not belong to Project %q", sessionID, project.Name)
 		}
 		return makeTranscript("codex", sessionID, repositoryName, info.ModTime(), codexEvents(lines))
 	}
-	return Transcript{}, fmt.Errorf("Codex transcript %q does not exist", sessionID)
+	return Transcript{}, clierr.New(clierr.NotFound, "Codex transcript %q does not exist", sessionID)
 }
 
 func codexMetadata(lines []map[string]any) (string, string, error) {
@@ -47,7 +57,7 @@ func codexMetadata(lines []map[string]any) (string, string, error) {
 		lineID := stringValue(payload["id"])
 		lineCWD := stringValue(payload["cwd"])
 		if id != "" && (lineID != id || lineCWD != cwd) {
-			return "", "", fmt.Errorf("Codex transcript has conflicting session metadata")
+			return "", "", clierr.New(clierr.PreconditionFailed, "Codex transcript has conflicting session metadata")
 		}
 		id, cwd = lineID, lineCWD
 	}

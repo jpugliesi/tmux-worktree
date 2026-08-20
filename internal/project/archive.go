@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
-	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
 )
 
 // ArchiveResult reports the archived Project and the Agent Sessions that had
@@ -28,7 +28,7 @@ func (s *Service) Archive(reference, currentPane string) (ArchiveResult, error) 
 	if err != nil {
 		return ArchiveResult{Project: p}, err
 	}
-	stopped, err := s.LiveAgents(p.ID)
+	stopped, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).Live(p.ID)
 	if err != nil {
 		return ArchiveResult{Project: p}, err
 	}
@@ -60,23 +60,6 @@ func (s *Service) Archive(reference, currentPane string) (ArchiveResult, error) 
 		return ArchiveResult{Project: p, StoppedAgents: stopped}, fmt.Errorf("Project %q still has an owned tmux session", p.Name)
 	}
 	return ArchiveResult{Project: p, StoppedAgents: stopped}, nil
-}
-
-// LiveAgents returns the Project's Agent Sessions that run live in their
-// owned tmux panes.
-func (s *Service) LiveAgents(projectID string) ([]domain.AgentSession, error) {
-	agents, err := store.NewAgentStore(s.options.StateDir).List(projectID)
-	if err != nil {
-		return nil, err
-	}
-	client := tmuxclient.Client{Socket: s.options.TmuxSocket}
-	live := []domain.AgentSession{}
-	for _, agent := range agents {
-		if client.PaneBelongsToAgent(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart) {
-			live = append(live, agent)
-		}
-	}
-	return live, nil
 }
 
 // clearAgentPanes blanks the recorded pane identity on the Project's Agent

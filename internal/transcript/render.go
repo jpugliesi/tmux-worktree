@@ -1,9 +1,10 @@
 package transcript
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 )
 
 func makeTranscript(provider, sessionID, repository string, updatedAt time.Time, events []event) (Transcript, error) {
@@ -28,7 +29,7 @@ func makeTranscript(provider, sessionID, repository string, updatedAt time.Time,
 		parts = append(parts, text)
 	}
 	if len(parts) == 0 {
-		return Transcript{}, fmt.Errorf("%s transcript %q has no user-visible text", providerName(provider), sessionID)
+		return Transcript{}, clierr.New(clierr.PreconditionFailed, "%s transcript %q has no user-visible text", providerName(provider), sessionID)
 	}
 	return Transcript{
 		Provider: provider, SessionID: sessionID, RepositoryName: repository,

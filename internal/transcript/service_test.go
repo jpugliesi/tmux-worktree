@@ -48,7 +48,7 @@ func TestReadReturnsLinkedProviderTranscriptInsideProject(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.provider, func(t *testing.T) {
 			writeLines(t, test.path, test.lines)
-			got, err := transcript.New(home).Read(test.provider, test.session, project)
+			got, err := transcript.New(home, "").Read(test.provider, test.session, project)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +75,7 @@ func TestReadFindsClaudeTranscriptLaunchedFromRepositorySubdirectory(t *testing.
 		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"user","message":{"role":"user","content":"Claude question"}}`,
 		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Claude answer"}]}}`,
 	})
-	got, err := transcript.New(home).Read("claude", "claude-subdir-session", project)
+	got, err := transcript.New(home, "").Read("claude", "claude-subdir-session", project)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,10 +98,10 @@ func TestReadRejectsClaudePathEncodingCollisionAndUnverifiableCursorTranscript(t
 		`{"sessionId":"shared-session","cwd":` + quoted(firstRepository) + `,"type":"user","message":{"role":"user","content":"private"}}`,
 	})
 	secondProject := domain.Project{ID: "project-two", Name: "project-two", Repositories: []domain.ProjectRepository{{Name: "app", Path: secondRepository}}}
-	if _, err := transcript.New(home).Read("claude", "shared-session", secondProject); err == nil || !strings.Contains(err.Error(), "does not belong") {
+	if _, err := transcript.New(home, "").Read("claude", "shared-session", secondProject); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("Claude collision error = %v", err)
 	}
-	if _, err := transcript.New(home).Read("cursor", "cursor-session", secondProject); err == nil || !strings.Contains(err.Error(), "cannot verify") {
+	if _, err := transcript.New(home, "").Read("cursor", "cursor-session", secondProject); err == nil || !strings.Contains(err.Error(), "cannot verify") {
 		t.Fatalf("Cursor ownership error = %v", err)
 	}
 }
@@ -118,7 +118,7 @@ func TestReadRejectsCodexTranscriptFromAnotherProject(t *testing.T) {
 		`{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"secret"}]}}`,
 	})
 	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
-	if _, err := transcript.New(home).Read("codex", "wrong-project", project); err == nil || !strings.Contains(err.Error(), "does not belong") {
+	if _, err := transcript.New(home, "").Read("codex", "wrong-project", project); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("Read() error = %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 		`{"type":"session_meta","payload":{"id":"another-session","cwd":` + quoted(otherRepository) + `}}`,
 		`{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"private"}]}}`,
 	})
-	if _, err := transcript.New(home).Read("codex", "codex-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
+	if _, err := transcript.New(home, "").Read("codex", "codex-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("mixed Codex transcript error = %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 		`{"sessionId":"claude-mixed","cwd":` + quoted(repository) + `,"type":"user","message":{"role":"user","content":"allowed"}}`,
 		`{"sessionId":"another-session","cwd":` + quoted(otherRepository) + `,"type":"assistant","message":{"role":"assistant","content":"private"}}`,
 	})
-	if _, err := transcript.New(home).Read("claude", "claude-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
+	if _, err := transcript.New(home, "").Read("claude", "claude-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("mixed Claude transcript error = %v", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestReadRejectsUnsafeTranscriptSourcesAndSessionIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
-	service := transcript.New(home)
+	service := transcript.New(home, "")
 	if _, err := service.Read("codex", "../outside", project); err == nil || !strings.Contains(err.Error(), "invalid") {
 		t.Fatalf("traversal session ID error = %v", err)
 	}
@@ -223,7 +223,7 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		_, err := transcript.New(home).Snapshot(stateDir, agent.ID, project.ID, true)
+		_, err := transcript.New(home, stateDir).Snapshot(agent.ID, project.ID, true)
 		result <- err
 	}()
 	select {
@@ -294,12 +294,12 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 		})
 	}
 
-	service := transcript.New(home)
-	first, err := service.Snapshot(stateDir, sessions[0].agentID, project.ID, true)
+	service := transcript.New(home, stateDir)
+	first, err := service.Snapshot(sessions[0].agentID, project.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Snapshot(stateDir, sessions[1].agentID, project.ID, true)
+	second, err := service.Snapshot(sessions[1].agentID, project.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 		t.Fatalf("latest Transcript Snapshot = %q", saved[second.LatestPath])
 	}
 
-	read, err := service.Snapshot(stateDir, sessions[0].agentID, project.ID, false)
+	read, err := service.Snapshot(sessions[0].agentID, project.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

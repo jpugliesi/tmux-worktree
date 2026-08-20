@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -40,7 +39,7 @@ type DiscoverOptions struct {
 // Project. The result is sorted from the newest last activity to the oldest.
 func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]DiscoveredSession, error) {
 	sessions := []DiscoveredSession{}
-	for _, provider := range []string{"codex", "claude"} {
+	for _, provider := range providerNames() {
 		if options.Provider != "" && options.Provider != provider {
 			continue
 		}
@@ -71,17 +70,14 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 }
 
 func (s *Service) discoverProvider(provider string, project domain.Project) ([]DiscoveredSession, error) {
-	root := s.codexRoot()
-	if provider == "claude" {
-		root = s.claudeRoot()
-	}
-	files, err := newestTranscriptFiles(root)
+	descriptor := providers[provider]
+	files, err := newestTranscriptFiles(descriptor.root(s))
 	if err != nil {
 		return nil, err
 	}
 	sessions := []DiscoveredSession{}
 	for _, file := range files {
-		session, ok := s.readDiscovered(provider, file, project)
+		session, ok := readDiscovered(provider, descriptor, file, project)
 		if !ok {
 			continue
 		}
@@ -92,31 +88,13 @@ func (s *Service) discoverProvider(provider string, project domain.Project) ([]D
 
 // readDiscovered reads one provider file. A file that twt2 cannot verify
 // against the Project is not an error: discovery drops it.
-func (s *Service) readDiscovered(provider string, file transcriptFile, project domain.Project) (DiscoveredSession, bool) {
+func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, project domain.Project) (DiscoveredSession, bool) {
 	lines, info, err := readJSONLines(file.path)
 	if err != nil {
 		return DiscoveredSession{}, false
 	}
-	sessionID, repositoryName := "", ""
-	switch provider {
-	case "codex":
-		id, cwd, err := codexMetadata(lines)
-		if err != nil || ValidateSessionID(id) != nil {
-			return DiscoveredSession{}, false
-		}
-		sessionID, repositoryName = id, repositoryForDirectory(project, cwd)
-	case "claude":
-		id := strings.TrimSuffix(filepath.Base(file.path), ".jsonl")
-		if ValidateSessionID(id) != nil {
-			return DiscoveredSession{}, false
-		}
-		name, _, matched, err := parseClaude(lines, id, project)
-		if err != nil || !matched {
-			return DiscoveredSession{}, false
-		}
-		sessionID, repositoryName = id, name
-	}
-	if sessionID == "" || repositoryName == "" {
+	sessionID, repositoryName, ok := descriptor.discover(file.path, lines, project)
+	if !ok || sessionID == "" || repositoryName == "" {
 		return DiscoveredSession{}, false
 	}
 	return DiscoveredSession{
@@ -175,17 +153,4 @@ func linkedSessions(agents []domain.AgentSession) map[string]bool {
 		}
 	}
 	return linked
-}
-
-// ResumeCommand returns the command that starts a discovered provider session
-// again. An unsupported provider returns no command.
-func ResumeCommand(provider, sessionID string) []string {
-	switch provider {
-	case "codex":
-		return []string{"codex", "resume", sessionID}
-	case "claude":
-		return []string{"claude", "--resume", sessionID}
-	default:
-		return nil
-	}
 }

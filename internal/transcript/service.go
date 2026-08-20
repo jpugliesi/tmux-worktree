@@ -1,7 +1,6 @@
 package transcript
 
 import (
-	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -12,9 +11,7 @@ import (
 )
 
 type Service struct {
-	home string
-	// stateDir enables the lazy provider session link. An empty value keeps
-	// the Service read-only.
+	home     string
 	stateDir string
 }
 
@@ -31,34 +28,25 @@ type event struct {
 	text string
 }
 
-func New(home string) *Service { return &Service{home: home} }
+func New(home, stateDir string) *Service { return &Service{home: home, stateDir: stateDir} }
 
-// NewWithState builds a Service that can also save a discovered provider
-// session ID to the Agent Session record.
-func NewWithState(home, stateDir string) *Service { return &Service{home: home, stateDir: stateDir} }
-
-func (s *Service) withState(stateDir string) *Service {
-	other := *s
-	other.stateDir = stateDir
-	return &other
+// NotInProjectError reports that an Agent Session does not belong to the
+// given Project. Every call path returns this one code and message.
+func NotInProjectError(agentID, projectRef string) error {
+	return clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agentID, projectRef)
 }
-
-func SupportsProvider(provider string) bool { return provider == "codex" || provider == "claude" }
 
 func (s *Service) Read(provider, sessionID string, project domain.Project) (Transcript, error) {
 	if err := ValidateSessionID(sessionID); err != nil {
 		return Transcript{}, err
 	}
-	switch provider {
-	case "codex":
-		return s.readCodex(sessionID, project)
-	case "claude":
-		return s.readClaude(sessionID, project)
-	case "cursor":
-		return Transcript{}, fmt.Errorf("Cursor transcripts cannot verify an exact Project directory")
-	default:
-		return Transcript{}, fmt.Errorf("provider %q does not support transcripts", provider)
+	if descriptor, ok := providers[provider]; ok {
+		return descriptor.read(s, sessionID, project)
 	}
+	if provider == "cursor" {
+		return Transcript{}, clierr.New(clierr.InvalidUsage, "Cursor transcripts cannot verify an exact Project directory")
+	}
+	return Transcript{}, clierr.New(clierr.InvalidUsage, "provider %q does not support transcripts", provider)
 }
 
 func (s *Service) ReadLinked(agent domain.AgentSession, project domain.Project) (Transcript, error) {
@@ -74,12 +62,12 @@ func (s *Service) ReadLinked(agent domain.AgentSession, project domain.Project) 
 // saves the link when exactly one new provider session matches.
 func (s *Service) LinkedAgent(agent domain.AgentSession, project domain.Project) (domain.AgentSession, error) {
 	if agent.ProjectID != project.ID {
-		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agent.ID, project.Name)
+		return domain.AgentSession{}, NotInProjectError(agent.ID, project.Name)
 	}
 	if agent.ProviderSessionID != "" {
 		return agent, nil
 	}
-	if s.stateDir == "" || !SupportsProvider(agent.Provider) {
+	if !SupportsProvider(agent.Provider) {
 		return domain.AgentSession{}, notLinkedError(agent, project)
 	}
 	agents, err := store.NewAgentStore(s.stateDir).List(project.ID)
@@ -169,16 +157,16 @@ type SnapshotResult struct {
 	LatestPath string
 }
 
-func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool) (SnapshotResult, error) {
-	project, err := store.NewProjectStore(stateDir).Find(projectID)
+func (s *Service) Snapshot(agentReference, projectID string, save bool) (SnapshotResult, error) {
+	project, err := store.NewProjectStore(s.stateDir).Find(projectID)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	agent, err := store.NewAgentStore(stateDir).Find(agentReference)
+	agent, err := store.NewAgentStore(s.stateDir).Find(agentReference)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	agent, err = s.withState(stateDir).LinkedAgent(agent, project)
+	agent, err = s.LinkedAgent(agent, project)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
@@ -189,22 +177,22 @@ func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool
 	if !save {
 		return SnapshotResult{Transcript: value, Agent: agent}, nil
 	}
-	lock, err := store.AcquireMutationLockBlocking(stateDir)
+	lock, err := store.AcquireMutationLockBlocking(s.stateDir)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
 	defer lock.Release()
-	if _, err := store.NewProjectStore(stateDir).Find(project.ID); err != nil {
+	if _, err := store.NewProjectStore(s.stateDir).Find(project.ID); err != nil {
 		return SnapshotResult{}, err
 	}
-	currentAgent, err := store.NewAgentStore(stateDir).Find(agent.ID)
+	currentAgent, err := store.NewAgentStore(s.stateDir).Find(agent.ID)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
 	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
-		return SnapshotResult{}, fmt.Errorf("Agent Session %q changed while twt2 read its transcript", agent.ID)
+		return SnapshotResult{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt2 read its transcript", agent.ID)
 	}
-	paths, err := store.NewSnapshotStore(stateDir).Save(project.ID, agent.ID, value.Markdown)
+	paths, err := store.NewSnapshotStore(s.stateDir).Save(project.ID, agent.ID, value.Markdown)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
@@ -213,11 +201,11 @@ func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool
 
 func ValidateSessionID(value string) error {
 	if len(value) < 3 || len(value) > 256 || strings.Contains(value, "..") || strings.ContainsAny(value, `/\`) {
-		return fmt.Errorf("invalid provider session ID")
+		return clierr.New(clierr.InvalidUsage, "invalid provider session ID")
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) {
-			return fmt.Errorf("invalid provider session ID")
+			return clierr.New(clierr.InvalidUsage, "invalid provider session ID")
 		}
 	}
 	return nil

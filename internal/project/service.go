@@ -11,7 +11,6 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
-	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
 )
 
 type Options struct {
@@ -422,8 +421,9 @@ func agentSteps(template domain.Template) []domain.SetupStep {
 // ensureTemplateAgent registers one declared Agent Session and starts it in
 // its own Project window. The step is idempotent: a saved record with the
 // same label makes it succeed again, so a setup retry does not make a second
-// Agent Session. It writes the record with the Agent Session store, because
-// the mutation lock is already held on the create and the retry path.
+// Agent Session. The caller already holds the mutation lock, so this step
+// delegates to the lock-free BuildSession and StartDeclared of the Agent
+// Session service.
 //
 // A Project without a live owned tmux session gets a record with no pane and
 // with the declared start command as its resume command. The Agent Session
@@ -457,23 +457,11 @@ func (s *Service) ensureTemplateAgent(p domain.Project, label string) error {
 	if err != nil {
 		return err
 	}
-	client := tmuxclient.Client{Socket: s.options.TmuxSocket}
-	if exists && ownerID == p.ID {
-		pane, startErr := client.StartAgent(p, declared.Label, declared.Start)
-		if startErr != nil {
-			return fmt.Errorf("start Agent Session %q: %w", label, startErr)
-		}
-		session.TmuxPane = pane
-		session.PaneCommand, session.PaneStart, err = client.PaneProcess(pane, p.ID)
-		if err != nil {
-			return fmt.Errorf("read the pane of Agent Session %q: %w", label, err)
-		}
-		if !agent.MatchesProvider(session.PaneCommand, session.PaneStart, session.Provider, session.ResumeCommand) {
-			return fmt.Errorf("the started pane command %q of Agent Session %q does not match provider %q", session.PaneCommand, label, session.Provider)
-		}
-		if err := client.ClaimAgentPane(pane, p.ID, session.ID); err != nil {
-			return fmt.Errorf("mark the pane of Agent Session %q: %w", label, err)
-		}
+	if !exists || ownerID != p.ID {
+		return agents.Save(session)
 	}
-	return agents.Save(session)
+	if _, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).StartDeclared(p, session, declared.Start); err != nil {
+		return fmt.Errorf("start Agent Session %q: %w", label, err)
+	}
+	return nil
 }

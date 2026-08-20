@@ -1,14 +1,29 @@
 package transcript
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
 func (s *Service) claudeRoot() string { return filepath.Join(s.home, ".claude", "projects") }
+
+// discoverClaude reads the session ID and the repository name of one Claude
+// provider file for discovery.
+func discoverClaude(path string, lines []map[string]any, project domain.Project) (string, string, bool) {
+	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if ValidateSessionID(id) != nil {
+		return "", "", false
+	}
+	name, _, matched, err := parseClaude(lines, id, project)
+	if err != nil || !matched {
+		return "", "", false
+	}
+	return id, name, true
+}
 
 func (s *Service) readClaude(sessionID string, project domain.Project) (Transcript, error) {
 	root := s.claudeRoot()
@@ -32,7 +47,7 @@ func (s *Service) readClaude(sessionID string, project domain.Project) (Transcri
 	if transcript, matched, err := s.readClaudePaths(paths, sessionID, project); err != nil || matched {
 		return transcript, err
 	}
-	return Transcript{}, fmt.Errorf("Claude transcript %q does not exist in Project %q", sessionID, project.Name)
+	return Transcript{}, clierr.New(clierr.NotFound, "Claude transcript %q does not exist in Project %q", sessionID, project.Name)
 }
 
 func (s *Service) readClaudePaths(paths []string, sessionID string, project domain.Project) (Transcript, bool, error) {
@@ -70,16 +85,16 @@ func parseClaude(lines []map[string]any, sessionID string, project domain.Projec
 		lineID := stringValue(line["sessionId"])
 		lineCWD := stringValue(line["cwd"])
 		if lineID != "" && lineID != sessionID {
-			return "", nil, false, fmt.Errorf("Claude transcript has conflicting session metadata")
+			return "", nil, false, clierr.New(clierr.PreconditionFailed, "Claude transcript has conflicting session metadata")
 		}
 		lineRepository := ""
 		if lineCWD != "" {
 			lineRepository = repositoryForDirectory(project, lineCWD)
 			if lineRepository == "" {
-				return "", nil, false, fmt.Errorf("Claude transcript %q does not belong to Project %q", sessionID, project.Name)
+				return "", nil, false, clierr.New(clierr.PreconditionFailed, "Claude transcript %q does not belong to Project %q", sessionID, project.Name)
 			}
 			if repositoryName != "" && lineRepository != repositoryName {
-				return "", nil, false, fmt.Errorf("Claude transcript has conflicting Project directories")
+				return "", nil, false, clierr.New(clierr.PreconditionFailed, "Claude transcript has conflicting Project directories")
 			}
 			repositoryName = lineRepository
 		}
@@ -89,7 +104,7 @@ func parseClaude(lines []map[string]any, sessionID string, project domain.Projec
 		role, text := claudeEvent(line)
 		if role != "" {
 			if lineID != sessionID || lineRepository == "" {
-				return "", nil, false, fmt.Errorf("Claude transcript has an event without exact session metadata")
+				return "", nil, false, clierr.New(clierr.PreconditionFailed, "Claude transcript has an event without exact session metadata")
 			}
 			result = append(result, event{role: role, text: text})
 		}

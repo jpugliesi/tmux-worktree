@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -34,7 +35,7 @@ func matchingFiles(root, sessionID string, matches func(string) bool) ([]string,
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".jsonl" && matches(strings.TrimSuffix(entry.Name(), ".jsonl")) {
 			paths = append(paths, path)
 			if len(paths) > maxCandidateFiles {
-				return fmt.Errorf("too many transcript candidates for provider session %q", sessionID)
+				return clierr.New(clierr.PreconditionFailed, "too many transcript candidates for provider session %q", sessionID)
 			}
 		}
 		return nil
@@ -51,7 +52,7 @@ func readJSONLines(path string) ([]map[string]any, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() || info.Size() > maxTranscriptBytes {
-		return nil, nil, fmt.Errorf("transcript source is not a safe regular file")
+		return nil, nil, clierr.New(clierr.UnsafeState, "transcript source is not a safe regular file")
 	}
 	file, err := os.Open(path)
 	if err != nil {

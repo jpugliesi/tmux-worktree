@@ -36,23 +36,16 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	if err := s.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
-		return domain.AgentSession{}, err
-	}
-	existing, err := s.store.List(project.ID)
+	provider, providerSessionID, existing, err := s.validateRegistration(project, provider, pane, providerSessionID, resumeCommand)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	agent, err := BuildSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, s.now())
+	agent, err := newSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, s.now())
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	if pane != "" {
-		agent.PaneCommand, agent.PaneStart, err = s.tmux.PaneProcess(pane, project.ID)
-		if err != nil {
-			return domain.AgentSession{}, err
-		}
-		if err := s.tmux.ClaimAgentPane(pane, project.ID, agent.ID); err != nil {
+		if err := s.attachPane(project, &agent, pane); err != nil {
 			return domain.AgentSession{}, err
 		}
 	}
@@ -75,7 +68,13 @@ func BuildSession(project domain.Project, provider, label, pane, providerSession
 	if !validProvider(provider) {
 		return domain.AgentSession{}, clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
 	}
-	label, err = resolveLabel(label, provider, existing)
+	return newSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, now)
+}
+
+// newSession makes the Agent Session record from a normalized provider and
+// provider session ID.
+func newSession(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
+	label, err := resolveLabel(label, provider, existing)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
@@ -98,46 +97,92 @@ func MatchesProvider(paneCommand, paneStart, provider string, resumeCommand []st
 }
 
 func (s *Service) ValidateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) error {
-	if project.Status != domain.ProjectActive {
-		return projectNotActiveError(project)
-	}
-	if pane == "" && len(resumeCommand) == 0 {
-		return clierr.New(clierr.InvalidUsage, "set a live --pane or give a resume command after --")
-	}
-	provider, providerSessionID, err := inferRegistration(provider, providerSessionID, resumeCommand)
+	provider, _, _, err := s.validateRegistration(project, provider, pane, providerSessionID, resumeCommand)
 	if err != nil {
 		return err
 	}
+	if pane == "" {
+		return nil
+	}
+	command, start, err := s.tmux.PaneProcess(pane, project.ID)
+	if err != nil {
+		return clierr.Wrap(clierr.PreconditionFailed, fmt.Errorf("tmux pane %q cannot be registered for Project %q: %w", pane, project.Name, err))
+	}
+	if !MatchesProvider(command, start, provider, resumeCommand) {
+		return clierr.New(clierr.PreconditionFailed, "pane command %q does not match provider %q", command, provider)
+	}
+	return nil
+}
+
+// validateRegistration checks one registration and returns the normalized
+// provider and provider session ID with the Agent Sessions that the Project
+// has now. Inference and validation run once; Register consumes the result.
+func (s *Service) validateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) (string, string, []domain.AgentSession, error) {
+	if project.Status != domain.ProjectActive {
+		return "", "", nil, projectNotActiveError(project)
+	}
+	if pane == "" && len(resumeCommand) == 0 {
+		return "", "", nil, clierr.New(clierr.InvalidUsage, "set a live --pane or give a resume command after --")
+	}
+	provider, providerSessionID, err := inferRegistration(provider, providerSessionID, resumeCommand)
+	if err != nil {
+		return "", "", nil, err
+	}
 	if !validProvider(provider) {
-		return clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
+		return "", "", nil, clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
+	}
+	existing, err := s.store.List(project.ID)
+	if err != nil {
+		return "", "", nil, err
 	}
 	if providerSessionID != "" {
 		if !transcript.SupportsProvider(provider) {
-			return fmt.Errorf("provider %q does not support verifiable linked transcripts", provider)
+			return "", "", nil, clierr.New(clierr.InvalidUsage, "provider %q does not support verifiable linked transcripts", provider)
 		}
 		if err := transcript.ValidateSessionID(providerSessionID); err != nil {
-			return err
-		}
-		existing, err := s.store.List(project.ID)
-		if err != nil {
-			return err
+			return "", "", nil, err
 		}
 		for _, agent := range existing {
 			if agent.Provider == provider && agent.ProviderSessionID == providerSessionID {
-				return clierr.New(clierr.AlreadyExists, "provider session %q is already linked to Agent Session %q", providerSessionID, agent.ID)
+				return "", "", nil, clierr.New(clierr.AlreadyExists, "provider session %q is already linked to Agent Session %q", providerSessionID, agent.ID)
 			}
 		}
 	}
-	if pane != "" {
-		command, start, err := s.tmux.PaneProcess(pane, project.ID)
-		if err != nil {
-			return fmt.Errorf("tmux pane %q cannot be registered for Project %q: %w", pane, project.Name, err)
-		}
-		if !commandMatchesProvider(command, provider, resumeCommand) || !commandMatchesProvider(startCommand(start), provider, resumeCommand) {
-			return fmt.Errorf("pane command %q does not match provider %q", command, provider)
-		}
+	return provider, providerSessionID, existing, nil
+}
+
+// attachPane records the pane process identity on the Agent Session and
+// claims the pane, after it verifies that the pane runs the provider.
+func (s *Service) attachPane(project domain.Project, session *domain.AgentSession, pane string) error {
+	command, start, err := s.tmux.PaneProcess(pane, project.ID)
+	if err != nil {
+		return err
 	}
-	return nil
+	if !MatchesProvider(command, start, session.Provider, session.ResumeCommand) {
+		return clierr.New(clierr.PreconditionFailed, "pane command %q does not match provider %q", command, session.Provider)
+	}
+	session.TmuxPane = pane
+	session.PaneCommand, session.PaneStart = command, start
+	return s.tmux.ClaimAgentPane(pane, project.ID, session.ID)
+}
+
+// StartDeclared starts the Agent Session process in its own Project window,
+// verifies and claims the new pane, and saves the record. Like BuildSession,
+// it takes no mutation lock: Project setup calls it while the caller already
+// holds the global mutation lock, so a lock here would deadlock.
+func (s *Service) StartDeclared(project domain.Project, session domain.AgentSession, start []string) (domain.AgentSession, error) {
+	pane, err := s.tmux.StartAgent(project, session.Label, start)
+	if err != nil {
+		return session, err
+	}
+	if err := s.attachPane(project, &session, pane); err != nil {
+		return session, err
+	}
+	session.UpdatedAt = s.now()
+	if err := s.store.Save(session); err != nil {
+		return session, err
+	}
+	return session, nil
 }
 
 // ValidateLabel checks that the display label is free inside the Project. An
@@ -291,10 +336,10 @@ func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID s
 		return domain.AgentSession{}, err
 	}
 	if agent.ProjectID != projectID {
-		return domain.AgentSession{}, fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, projectID)
+		return domain.AgentSession{}, transcript.NotInProjectError(agent.ID, projectID)
 	}
 	if !transcript.SupportsProvider(agent.Provider) {
-		return domain.AgentSession{}, fmt.Errorf("provider %q does not support verifiable linked transcripts", agent.Provider)
+		return domain.AgentSession{}, clierr.New(clierr.InvalidUsage, "provider %q does not support verifiable linked transcripts", agent.Provider)
 	}
 	if err := transcript.ValidateSessionID(providerSessionID); err != nil {
 		return domain.AgentSession{}, err
@@ -305,7 +350,7 @@ func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID s
 	}
 	for _, existing := range agents {
 		if existing.ID != agent.ID && existing.Provider == agent.Provider && existing.ProviderSessionID == providerSessionID {
-			return domain.AgentSession{}, fmt.Errorf("provider session %q is already linked to Agent Session %q", providerSessionID, existing.ID)
+			return domain.AgentSession{}, clierr.New(clierr.AlreadyExists, "provider session %q is already linked to Agent Session %q", providerSessionID, existing.ID)
 		}
 	}
 	return agent, nil
@@ -336,31 +381,28 @@ func (s *Service) Resume(agent domain.AgentSession, project domain.Project) (dom
 	if s.IsLive(agent) {
 		return agent, s.tmux.Focus(agent.TmuxPane, project.ID, agent.ID, agent.PaneCommand, agent.PaneStart)
 	}
-	pane, err := s.tmux.StartAgent(project, agent.Label, agent.ResumeCommand)
+	return s.StartDeclared(project, agent, agent.ResumeCommand)
+}
+
+// Live returns the Agent Sessions of the Project that run live in their
+// owned tmux panes.
+func (s *Service) Live(projectID string) ([]domain.AgentSession, error) {
+	agents, err := s.store.List(projectID)
 	if err != nil {
-		return agent, err
+		return nil, err
 	}
-	agent.TmuxPane = pane
-	agent.PaneCommand, agent.PaneStart, err = s.tmux.PaneProcess(pane, project.ID)
-	if err != nil {
-		return agent, err
+	live := []domain.AgentSession{}
+	for _, agent := range agents {
+		if s.IsLive(agent) {
+			live = append(live, agent)
+		}
 	}
-	if !commandMatchesProvider(agent.PaneCommand, agent.Provider, agent.ResumeCommand) || !commandMatchesProvider(startCommand(agent.PaneStart), agent.Provider, agent.ResumeCommand) {
-		return agent, fmt.Errorf("started pane command %q does not match provider %q", agent.PaneCommand, agent.Provider)
-	}
-	if err := s.tmux.ClaimAgentPane(pane, project.ID, agent.ID); err != nil {
-		return agent, err
-	}
-	agent.UpdatedAt = s.now()
-	if err := s.store.Save(agent); err != nil {
-		return agent, err
-	}
-	return agent, nil
+	return live, nil
 }
 
 func (s *Service) ValidateResume(agent domain.AgentSession, project domain.Project) error {
 	if project.ID != agent.ProjectID {
-		return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, project.Name)
+		return transcript.NotInProjectError(agent.ID, project.Name)
 	}
 	if project.Status != domain.ProjectActive {
 		return projectNotActiveError(project)
@@ -403,7 +445,7 @@ func (s *Service) ValidateRemove(reference, projectID string) (domain.AgentSessi
 		return domain.AgentSession{}, err
 	}
 	if projectID != "" && agent.ProjectID != projectID {
-		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agent.ID, projectID)
+		return domain.AgentSession{}, transcript.NotInProjectError(agent.ID, projectID)
 	}
 	return agent, nil
 }
@@ -414,10 +456,10 @@ func (s *Service) Focus(agent domain.AgentSession) error {
 
 func (s *Service) Send(agent domain.AgentSession, projectID, text string) error {
 	if agent.ProjectID != projectID {
-		return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, projectID)
+		return transcript.NotInProjectError(agent.ID, projectID)
 	}
 	if text == "" {
-		return fmt.Errorf("feedback input is empty")
+		return clierr.New(clierr.InvalidUsage, "feedback input is empty")
 	}
 	return s.tmux.Send(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart, text)
 }

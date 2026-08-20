@@ -182,6 +182,14 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 	return command
 }
 
+// requireAgentInProject checks that the Agent Session belongs to the Project.
+func requireAgentInProject(agent domain.AgentSession, project domain.Project) error {
+	if agent.ProjectID != project.ID {
+		return transcriptservice.NotInProjectError(agent.ID, project.Name)
+	}
+	return nil
+}
+
 // setAgentCommandCompletion declares the AGENT_ID argument of one Agent
 // Session command with its completion and the --project flag completion.
 func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service) {
@@ -215,7 +223,7 @@ func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *p
 			if err != nil {
 				return fmt.Errorf("find home directory: %w", err)
 			}
-			result, err := transcriptservice.New(home).Snapshot(stateDir, args[0], project.ID, !isDryRun(command))
+			result, err := transcriptservice.New(home, stateDir).Snapshot(args[0], project.ID, !isDryRun(command))
 			if err != nil {
 				return err
 			}
@@ -303,7 +311,7 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *proje
 			if err != nil {
 				return fmt.Errorf("find home directory: %w", err)
 			}
-			value, err := transcriptservice.NewWithState(home, stateDir).ReadLinked(agent, project)
+			value, err := transcriptservice.New(home, stateDir).ReadLinked(agent, project)
 			if err != nil {
 				return err
 			}
@@ -388,8 +396,8 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			if agent.ProjectID != project.ID {
-				return clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agent.ID, project.Name)
+			if err := requireAgentInProject(agent, project); err != nil {
+				return err
 			}
 			output := toAgentOutput(agents, agent, project.Status == domain.ProjectActive, true)
 			checks := []agentCheck{}
@@ -497,7 +505,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			if err != nil {
 				return err
 			}
-			found, err := transcriptservice.NewWithState(home, stateDir).Discover(project, transcriptservice.DiscoverOptions{Linked: registered})
+			found, err := transcriptservice.New(home, stateDir).Discover(project, transcriptservice.DiscoverOptions{Linked: registered})
 			if err != nil {
 				return err
 			}
@@ -687,8 +695,8 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			if agent.ProjectID != project.ID {
-				return fmt.Errorf("Agent Session %q does not belong to Project %q", agent.ID, project.Name)
+			if err := requireAgentInProject(agent, project); err != nil {
+				return err
 			}
 			if isDryRun(command) {
 				if len(data) == 0 {

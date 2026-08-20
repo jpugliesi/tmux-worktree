@@ -27,7 +27,7 @@ func TestDiscoverFindsProjectSessionsFromTheNewestToTheOldest(t *testing.T) {
 	setModTime(t, claudePath, time.Now().Add(-1*time.Hour))
 	setModTime(t, outsidePath, time.Now())
 
-	found, err := transcript.New(home).Discover(project, transcript.DiscoverOptions{})
+	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestDiscoverSkipsLinkedSessionsAndOtherProviders(t *testing.T) {
 	writeClaudeSession(t, home, "claude-free", repository)
 	linked := []domain.AgentSession{{ID: "agent-one", ProjectID: project.ID, Provider: "codex", ProviderSessionID: "codex-linked"}}
 
-	found, err := transcript.New(home).Discover(project, transcript.DiscoverOptions{Provider: "codex", Linked: linked})
+	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{Provider: "codex", Linked: linked})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestReadLinkedSavesTheOnlyNewProviderSession(t *testing.T) {
 	}
 	writeCodexSession(t, home, "codex-one", repository)
 
-	value, err := transcript.NewWithState(home, stateDir).ReadLinked(agent, project)
+	value, err := transcript.New(home, stateDir).ReadLinked(agent, project)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
 		t.Fatal(err)
 	}
-	service := transcript.NewWithState(home, stateDir)
+	service := transcript.New(home, stateDir)
 
 	_, err := service.ReadLinked(agent, project)
 	if err == nil || !strings.Contains(err.Error(), "has no linked provider session ID") {
