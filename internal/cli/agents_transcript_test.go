@@ -94,6 +94,9 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if !strings.Contains(drySnapshot, `"status":"valid"`) || strings.Contains(drySnapshot, "Project question") {
 		t.Fatalf("dry-run transcript snapshot output = %s", drySnapshot)
 	}
+	if strings.Contains(drySnapshot, `"path"`) {
+		t.Fatalf("dry-run transcript snapshot gave a file path: %s", drySnapshot)
+	}
 	if _, err := os.Stat(snapshotDirectory); !os.IsNotExist(err) {
 		t.Fatalf("dry-run created a Transcript Snapshot: %v", err)
 	}
@@ -102,12 +105,40 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if !strings.Contains(snapshot, `"status":"applied"`) || strings.Contains(snapshot, "Project question") {
 		t.Fatalf("transcript snapshot output = %s", snapshot)
 	}
+	if strings.Contains(snapshot, filepath.Join(home, ".codex")) || strings.Contains(snapshot, filepath.Join(home, ".claude")) {
+		t.Fatalf("transcript snapshot JSON exposes a provider path: %s", snapshot)
+	}
+	var snapshotResult struct {
+		AgentID string `json:"agentId"`
+		Path    string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(snapshot), &snapshotResult); err != nil {
+		t.Fatal(err)
+	}
+	agentSnapshotPath := filepath.Join(snapshotDirectory, "agents", agentID+".md")
+	if snapshotResult.AgentID != agentID || snapshotResult.Path != agentSnapshotPath {
+		t.Fatalf("transcript snapshot path = %q; want %q", snapshotResult.Path, agentSnapshotPath)
+	}
+	perAgent, err := os.ReadFile(snapshotResult.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(perAgent), "Project question") {
+		t.Fatalf("Agent Session Transcript Snapshot = %q", perAgent)
+	}
 	saved, err := os.ReadFile(filepath.Join(snapshotDirectory, "latest.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(saved), "Project question") {
 		t.Fatalf("saved Transcript Snapshot = %q", saved)
+	}
+	if string(saved) != string(perAgent) {
+		t.Fatalf("latest Transcript Snapshot is not a copy of the Agent Session file: %q", saved)
+	}
+	text := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID)
+	if !strings.Contains(text, "Snapshot: "+agentSnapshotPath) {
+		t.Fatalf("transcript snapshot text = %q", text)
 	}
 	marker, err := os.ReadFile(filepath.Join(snapshotDirectory, ".twt2-snapshot.json"))
 	if err != nil {

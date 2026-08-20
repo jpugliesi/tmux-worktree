@@ -99,6 +99,9 @@ type agentSnapshotOutput struct {
 	RepositoryName string `json:"repositoryName"`
 	UpdatedAt      string `json:"updatedAt"`
 	Status         string `json:"status"`
+	// Path is the private Project-owned file of the Agent Session snapshot.
+	// It is empty for a dry run, because a dry run writes no file.
+	Path string `json:"path,omitempty"`
 }
 
 func newAgentsCommand(options Options) *cobra.Command {
@@ -197,10 +200,11 @@ func newAgentTranscriptSnapshotCommand(projects *projectservice.Service, stateDi
 			if err != nil {
 				return fmt.Errorf("find home directory: %w", err)
 			}
-			value, agent, err := transcriptservice.New(home).Snapshot(stateDir, args[0], project.ID, !isDryRun(command))
+			result, err := transcriptservice.New(home).Snapshot(stateDir, args[0], project.ID, !isDryRun(command))
 			if err != nil {
 				return err
 			}
+			value, agent := result.Transcript, result.Agent
 			status := "applied"
 			if isDryRun(command) {
 				status = "valid"
@@ -209,10 +213,16 @@ func newAgentTranscriptSnapshotCommand(projects *projectservice.Service, stateDi
 				return writeJSONOutput(command, agentSnapshotOutput{
 					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, AgentID: agent.ID,
 					Provider: value.Provider, RepositoryName: value.RepositoryName,
-					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Status: status,
+					UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Status: status, Path: result.Path,
 				})
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Transcript Snapshot %s for Agent Session %s\n", status, agent.ID)
+			if _, err := fmt.Fprintf(command.OutOrStdout(), "Transcript Snapshot %s for Agent Session %s\n", status, agent.ID); err != nil {
+				return err
+			}
+			if result.Path == "" {
+				return nil
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Snapshot: %s\n", result.Path)
 			return err
 		},
 	}

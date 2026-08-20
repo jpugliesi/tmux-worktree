@@ -223,7 +223,7 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		_, _, err := transcript.New(home).Snapshot(stateDir, agent.ID, project.ID, true)
+		_, err := transcript.New(home).Snapshot(stateDir, agent.ID, project.ID, true)
 		result <- err
 	}()
 	select {
@@ -253,6 +253,93 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {
 		t.Fatalf("snapshot was committed after Project removal: %v", err)
+	}
+}
+
+func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
+	home := t.TempDir()
+	stateDir := t.TempDir()
+	repository := filepath.Join(t.TempDir(), "app")
+	if err := os.MkdirAll(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	project := domain.Project{
+		Version: domain.ProjectVersion, ID: "project-two-agents", Name: "two-agents",
+		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+		t.Fatal(err)
+	}
+	agents := store.NewAgentStore(stateDir)
+	sessions := []struct {
+		agentID   string
+		sessionID string
+		question  string
+	}{
+		{agentID: "aa11bb22", sessionID: "session-first", question: "first question"},
+		{agentID: "cc33dd44", sessionID: "session-second", question: "second question"},
+	}
+	for _, session := range sessions {
+		record := domain.AgentSession{
+			Version: domain.AgentVersion, ID: session.agentID, ProjectID: project.ID, Provider: "codex",
+			ProviderSessionID: session.sessionID, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := agents.Save(record); err != nil {
+			t.Fatal(err)
+		}
+		writeLines(t, filepath.Join(home, ".codex", "sessions", "rollout-"+session.sessionID+".jsonl"), []string{
+			`{"type":"session_meta","payload":{"id":` + quoted(session.sessionID) + `,"cwd":` + quoted(repository) + `}}`,
+			`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":` + quoted(session.question) + `}]}}`,
+		})
+	}
+
+	service := transcript.New(home)
+	first, err := service.Snapshot(stateDir, sessions[0].agentID, project.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Snapshot(stateDir, sessions[1].agentID, project.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, err := store.NewSnapshotStore(stateDir).ProjectDir(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Path != filepath.Join(directory, "agents", "aa11bb22.md") {
+		t.Fatalf("first Agent Session snapshot path = %q", first.Path)
+	}
+	if second.Path != filepath.Join(directory, "agents", "cc33dd44.md") {
+		t.Fatalf("second Agent Session snapshot path = %q", second.Path)
+	}
+	if second.LatestPath != filepath.Join(directory, "latest.md") {
+		t.Fatalf("latest Transcript Snapshot path = %q", second.LatestPath)
+	}
+	saved := map[string]string{}
+	for _, path := range []string{first.Path, second.Path, second.LatestPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved[path] = string(data)
+	}
+	if !strings.Contains(saved[first.Path], "first question") || strings.Contains(saved[first.Path], "second question") {
+		t.Fatalf("first Agent Session snapshot = %q", saved[first.Path])
+	}
+	if !strings.Contains(saved[second.Path], "second question") || strings.Contains(saved[second.Path], "first question") {
+		t.Fatalf("second Agent Session snapshot = %q", saved[second.Path])
+	}
+	if saved[second.LatestPath] != saved[second.Path] {
+		t.Fatalf("latest Transcript Snapshot = %q", saved[second.LatestPath])
+	}
+
+	read, err := service.Snapshot(stateDir, sessions[0].agentID, project.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Path != "" || read.LatestPath != "" {
+		t.Fatalf("read without save gave paths %q and %q", read.Path, read.LatestPath)
 	}
 }
 

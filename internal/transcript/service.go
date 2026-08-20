@@ -158,45 +158,57 @@ func sessionIDs(sessions []DiscoveredSession) []string {
 	return ids
 }
 
-func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool) (Transcript, domain.AgentSession, error) {
+// SnapshotResult gives the transcript, its Agent Session, and the files that
+// twt2 wrote. Path is the private file of the Agent Session. LatestPath is a
+// plain copy of this most recent Project snapshot. Both paths are empty when
+// twt2 does not save.
+type SnapshotResult struct {
+	Transcript Transcript
+	Agent      domain.AgentSession
+	Path       string
+	LatestPath string
+}
+
+func (s *Service) Snapshot(stateDir, agentReference, projectID string, save bool) (SnapshotResult, error) {
 	project, err := store.NewProjectStore(stateDir).Find(projectID)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	agent, err := store.NewAgentStore(stateDir).Find(agentReference)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	agent, err = s.withState(stateDir).LinkedAgent(agent, project)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	value, err := s.Read(agent.Provider, agent.ProviderSessionID, project)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	if !save {
-		return value, agent, nil
+		return SnapshotResult{Transcript: value, Agent: agent}, nil
 	}
 	lock, err := store.AcquireMutationLockBlocking(stateDir)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	defer lock.Release()
 	if _, err := store.NewProjectStore(stateDir).Find(project.ID); err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	currentAgent, err := store.NewAgentStore(stateDir).Find(agent.ID)
 	if err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+		return SnapshotResult{}, err
 	}
 	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
-		return Transcript{}, domain.AgentSession{}, fmt.Errorf("Agent Session %q changed while twt2 read its transcript", agent.ID)
+		return SnapshotResult{}, fmt.Errorf("Agent Session %q changed while twt2 read its transcript", agent.ID)
 	}
-	if err := store.NewSnapshotStore(stateDir).Save(project.ID, value.Markdown); err != nil {
-		return Transcript{}, domain.AgentSession{}, err
+	paths, err := store.NewSnapshotStore(stateDir).Save(project.ID, agent.ID, value.Markdown)
+	if err != nil {
+		return SnapshotResult{}, err
 	}
-	return value, agent, nil
+	return SnapshotResult{Transcript: value, Agent: agent, Path: paths.Agent, LatestPath: paths.Latest}, nil
 }
 
 func ValidateSessionID(value string) error {
