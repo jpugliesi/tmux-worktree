@@ -36,6 +36,18 @@ twt2 projects create fix-auth --template product
 session with `web` and `api` windows. The Project keeps its identity even if
 you rename the tmux session.
 
+From that Project tmux session, create the next Project with one short
+command:
+
+```sh
+twt2 create fix-logout
+# Or run `twt2 create` and enter the name at the prompt.
+```
+
+`twt2` uses the latest saved `product` template. It completes setup, switches
+your tmux client to `fix-logout`, and archives `fix-auth`. If creation or setup
+fails, `fix-auth` stays active.
+
 Register a coding-agent conversation and resume it in its own safe window:
 
 ```sh

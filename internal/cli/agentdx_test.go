@@ -48,8 +48,15 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
+	foundQuickCreate := false
 	foundArchive := false
 	for _, command := range schema.Commands {
+		if command.Path == "twt2 create" {
+			foundQuickCreate = true
+			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
+				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
+			}
+		}
 		if command.Path == "twt2 archive" {
 			foundArchive = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "project" || command.Arguments[0].Required {
@@ -79,6 +86,9 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	}
 	if !foundCreate {
 		t.Fatal("schema does not contain twt2 projects create")
+	}
+	if !foundQuickCreate {
+		t.Fatal("schema does not contain twt2 create")
 	}
 	if !foundArchive {
 		t.Fatal("schema does not contain twt2 archive")

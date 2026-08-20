@@ -105,3 +105,14 @@ func (s *Service) ownedSessions(projectID string) ([]string, error) {
 	}
 	return sessions, nil
 }
+
+func (s *Service) OwnedSessionID(projectID string) (string, error) {
+	sessions, err := s.ownedSessions(projectID)
+	if err != nil {
+		return "", err
+	}
+	if len(sessions) != 1 {
+		return "", fmt.Errorf("Project %q owns %d tmux sessions; expected 1", projectID, len(sessions))
+	}
+	return sessions[0], nil
+}

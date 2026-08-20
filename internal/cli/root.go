@@ -4,17 +4,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 type Options struct {
-	ConfigDir  string
-	StateDir   string
-	DataDir    string
-	TmuxSocket string
-	Stdout     io.Writer
-	Stderr     io.Writer
+	ConfigDir              string
+	StateDir               string
+	DataDir                string
+	TmuxSocket             string
+	Stdout                 io.Writer
+	Stderr                 io.Writer
+	QuickCreateSwitch      func(session string) error
+	QuickCreateArchive     func(projectID string) error
+	QuickCreateExecutable  string
+	QuickCreateWaitTimeout time.Duration
 }
 
 func DefaultOptions() Options {
@@ -51,6 +56,7 @@ Each Project can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
 		Example: `  twt2 templates list
   twt2 projects create fix-auth --template everysphere
+  twt2 create fix-logout
   twt2 agents list --project current`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -78,6 +84,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	templates.GroupID = "workflows"
 	projects := newProjectsCommand(options)
 	projects.GroupID = "workflows"
+	create := newQuickCreateCommand(options)
+	create.GroupID = "workflows"
 	archive := newArchiveCommand(options)
 	archive.GroupID = "workflows"
 	agents := newAgentsCommand(options)
@@ -92,7 +100,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	schema.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, archive, agents, context, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, create, archive, agents, context, storage, doctor, schema, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

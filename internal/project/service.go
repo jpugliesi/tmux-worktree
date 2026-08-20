@@ -129,6 +129,38 @@ func (s *Service) List() ([]domain.Project, error) { return s.store.List() }
 
 func (s *Service) Find(reference string) (domain.Project, error) { return s.store.Find(reference) }
 
+func (s *Service) CurrentFromPane(tmuxPane string) (domain.Project, error) {
+	if tmuxPane == "" {
+		return domain.Project{}, fmt.Errorf("run this command inside a twt2 Project tmux session")
+	}
+	sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
+	if err != nil || sessionID == "" {
+		return domain.Project{}, fmt.Errorf("find the Project tmux session for pane %q", tmuxPane)
+	}
+	projectID, err := output("", "tmux", s.tmuxArgs("show-options", "-t", sessionID, "-v", "@twt2_project_id")...)
+	if err != nil || projectID == "" {
+		return domain.Project{}, fmt.Errorf("tmux pane %q is not in a twt2 Project", tmuxPane)
+	}
+	p, err := s.store.Find(projectID)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if p.ID != projectID {
+		return domain.Project{}, fmt.Errorf("tmux session %q does not contain an immutable Project ID", sessionID)
+	}
+	if p.Status != domain.ProjectActive {
+		return domain.Project{}, fmt.Errorf("Project %q has status %q; quick create requires status %q", p.Name, p.Status, domain.ProjectActive)
+	}
+	sessions, err := s.ownedSessions(p.ID)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if len(sessions) != 1 || sessions[0] != sessionID {
+		return domain.Project{}, fmt.Errorf("tmux session %q is not the unique session for Project %q", sessionID, p.Name)
+	}
+	return p, nil
+}
+
 func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project, error) {
 	if projectID != "" {
 		return s.store.Find(projectID)

@@ -100,6 +100,41 @@ Create and open a Project:
 twt2 projects create fix-auth --template everysphere
 ```
 
+From the Project tmux session, create the next Project and archive the current
+Project:
+
+```sh
+twt2 create fix-logout
+```
+
+For an interactive prompt, omit the name:
+
+```sh
+twt2 create
+Project name: fix-logout
+```
+
+The command uses the latest saved version of the same Project Template. It
+first creates and initializes `fix-logout`. It then switches the calling tmux
+client to the new Project and archives `fix-auth`. Other tmux clients do not
+switch.
+
+If creation or setup fails, the current Project stays active. `twt2` keeps a
+Project that has a setup failure. You can inspect it and run
+`twt2 projects setup retry PROJECT`. If the tmux switch fails, `twt2` archives
+the new Project and keeps the current Project active.
+
+The short command is for a person in tmux. For a script or coding agent, use
+the explicit JSON commands:
+
+```sh
+twt2 projects create fix-logout \
+  --template everysphere \
+  --no-open \
+  --dry-run \
+  --output json
+```
+
 Use `--no-open` when you do not want to attach or switch to its tmux session.
 
 ```sh

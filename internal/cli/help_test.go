@@ -110,3 +110,21 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 		}
 	}
 }
+
+func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "create", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"latest saved version of the current Project Template",
+		"switches the calling client",
+		"archives the old Project",
+		"twt2 create fix-auth",
+		"twt2 projects create",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("quick create help does not contain %q:\n%s", want, output)
+		}
+	}
+}

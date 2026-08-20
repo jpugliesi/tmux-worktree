@@ -15,6 +15,9 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 projects": {
 			long: "Create and manage change-focused Projects. Each Project owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt2 projects create fix-auth --template everysphere\n  twt2 projects open fix-auth",
 		},
+		"twt2 create": {
+			long: "Create a new Project from the latest saved version of the current Project Template. twt2 switches the calling client to the new Project, then archives the old Project. If NAME is absent, twt2 asks for it in an interactive terminal. Use 'twt2 projects create' for automation.", example: "  twt2 create fix-auth\n  twt2 create",
+		},
 		"twt2 archive": {
 			long: "Archive the current Project or a Project that you specify. twt2 keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt2 archive\n  twt2 archive fix-auth",
 		},

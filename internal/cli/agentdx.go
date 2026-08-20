@@ -193,6 +193,8 @@ func argumentsForCommand(path string) []argumentSchema {
 		return []argumentSchema{stringArgument("template"), {Name: "command", Type: "array[string]", Required: true, Variadic: true}}
 	case "twt2 projects create":
 		return []argumentSchema{stringArgument("name")}
+	case "twt2 create":
+		return []argumentSchema{{Name: "name", Type: "string", Required: false}}
 	case "twt2 archive":
 		return []argumentSchema{{Name: "project", Type: "string", Required: false}}
 	case "twt2 projects show", "twt2 projects open", "twt2 projects archive", "twt2 projects remove", "twt2 projects setup retry":

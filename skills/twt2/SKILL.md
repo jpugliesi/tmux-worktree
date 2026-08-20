@@ -51,6 +51,10 @@ the current request schema with `twt2 schema`.
 Create a Project from an existing Project Template. Let `twt2` create the Git
 worktrees and tmux windows.
 
+`twt2 create` is an interactive command for a person in the current Project
+tmux session. For agent work, use `twt2 projects create` and `twt2 projects
+archive` with explicit names, dry-runs, and JSON output.
+
 If setup fails, inspect the Project and retry the saved Template snapshot:
 
 ```sh
