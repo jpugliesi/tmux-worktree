@@ -78,6 +78,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	templates.GroupID = "workflows"
 	projects := newProjectsCommand(options)
 	projects.GroupID = "workflows"
+	archive := newArchiveCommand(options)
+	archive.GroupID = "workflows"
 	agents := newAgentsCommand(options)
 	agents.GroupID = "workflows"
 	context := newContextCommand(options)
@@ -90,7 +92,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	schema.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, agents, context, storage, doctor, schema, apply)
+	root.AddCommand(templates, projects, archive, agents, context, storage, doctor, schema, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

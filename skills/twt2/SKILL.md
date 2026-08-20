@@ -1,6 +1,6 @@
 ---
 name: twt2
-description: Manage twt2 Project Templates, Projects, repository worktrees, tmux windows, and Project Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt2.
+description: Manage twt2 Project Templates, Project creation and archive, repository worktrees, tmux windows, and Project Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt2.
 ---
 
 # twt2
@@ -59,9 +59,23 @@ twt2 projects setup retry PROJECT --dry-run --output json
 twt2 projects setup retry PROJECT --output json
 ```
 
-Project removal is a plan by default. Read every action in the plan. Use
-`--apply` only when the user authorized removal. `twt2` refuses dirty
+Archive a completed Project from outside its tmux session. Archive stops live
+processes. It keeps worktrees, branches, Template snapshots, and Agent Session
+records.
+
+```sh
+twt2 projects archive PROJECT --dry-run --output json
+twt2 projects archive PROJECT --output json
+```
+
+Use removal only for authorized disk cleanup. The Project must be archived.
+Read every action in the plan before you apply it. `twt2` refuses dirty
 worktrees and unpublished Project commits.
+
+```sh
+twt2 projects remove PROJECT --output json
+twt2 projects remove PROJECT --apply --output json
+```
 
 ## Work with Agent Sessions
 

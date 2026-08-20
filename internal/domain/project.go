@@ -9,6 +9,7 @@ type ProjectStatus string
 const (
 	ProjectInitializing ProjectStatus = "initializing"
 	ProjectActive       ProjectStatus = "active"
+	ProjectArchived     ProjectStatus = "archived"
 	ProjectSetupFailed  ProjectStatus = "setup_failed"
 	ProjectRemoving     ProjectStatus = "removing"
 )
@@ -47,6 +48,7 @@ type Project struct {
 	Steps            []SetupStep         `json:"steps"`
 	CreatedAt        time.Time           `json:"createdAt"`
 	UpdatedAt        time.Time           `json:"updatedAt"`
+	ArchivedAt       *time.Time          `json:"archivedAt,omitempty"`
 }
 
 type ProjectRepository struct {

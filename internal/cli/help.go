@@ -15,6 +15,9 @@ func configureCommandHelp(root *cobra.Command) {
 		"twt2 projects": {
 			long: "Create and manage change-focused Projects. Each Project owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt2 projects create fix-auth --template everysphere\n  twt2 projects open fix-auth",
 		},
+		"twt2 archive": {
+			long: "Archive the current Project or a Project that you specify. twt2 keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt2 archive\n  twt2 archive fix-auth",
+		},
 		"twt2 agents": {
 			long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt2 agents list --project current\n  twt2 agents resume AGENT_ID",
 		},
@@ -56,13 +59,16 @@ func configureCommandHelp(root *cobra.Command) {
 			long: "Find the Project for the current directory or tmux pane.", example: "  twt2 projects current",
 		},
 		"twt2 projects open": {
-			long: "Open a Project tmux session. If managed windows are missing, twt2 repairs them first.", example: "  twt2 projects open fix-auth\n  twt2 projects open fix-auth --no-attach",
+			long: "Open a Project tmux session. twt2 makes an archived Project active. It also repairs missing managed windows.", example: "  twt2 projects open fix-auth\n  twt2 projects open fix-auth --no-attach",
+		},
+		"twt2 projects archive": {
+			long: "Archive a Project and stop its owned tmux session. twt2 keeps the Project data so that you can open it again.", example: "  twt2 projects archive fix-auth\n  twt2 projects open fix-auth",
 		},
 		"twt2 projects setup retry": {
 			long: "Retry failed or interrupted setup steps from the saved Project Template snapshot.", example: "  twt2 projects setup retry fix-auth",
 		},
 		"twt2 projects remove": {
-			long: "Show a safe removal plan. Add --apply to remove clean, published Project worktrees and state.", example: "  twt2 projects remove fix-auth\n  twt2 projects remove fix-auth --apply",
+			long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state.", example: "  twt2 projects archive fix-auth\n  twt2 projects remove fix-auth --apply",
 		},
 		"twt2 agents register": {
 			long: "Register a resumable coding Agent Session with a Project. Put the resume command after --.", example: "  twt2 agents register --project fix-auth --provider codex --label review -- codex resume SESSION_ID",

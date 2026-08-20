@@ -149,6 +149,9 @@ func newSchemaCommand(root *cobra.Command) *cobra.Command {
 					{Path: "project.name", Type: "string", Required: true},
 					{Path: "project.template", Type: "string", Required: true},
 				}},
+				{Operation: "projects.archive", Payload: "project", Fields: []requestFieldSchema{
+					{Path: "project.reference", Type: "string", Required: true},
+				}},
 				{Operation: "agents.register", Payload: "agent", Fields: []requestFieldSchema{
 					{Path: "agent.project", Type: "string", Required: true},
 					{Path: "agent.provider", Type: "string", Required: true, Enum: []string{"codex", "claude", "cursor", "command"}},
@@ -190,7 +193,9 @@ func argumentsForCommand(path string) []argumentSchema {
 		return []argumentSchema{stringArgument("template"), {Name: "command", Type: "array[string]", Required: true, Variadic: true}}
 	case "twt2 projects create":
 		return []argumentSchema{stringArgument("name")}
-	case "twt2 projects show", "twt2 projects open", "twt2 projects remove", "twt2 projects setup retry":
+	case "twt2 archive":
+		return []argumentSchema{{Name: "project", Type: "string", Required: false}}
+	case "twt2 projects show", "twt2 projects open", "twt2 projects archive", "twt2 projects remove", "twt2 projects setup retry":
 		return []argumentSchema{stringArgument("project")}
 	case "twt2 agents register":
 		return []argumentSchema{{Name: "resume_command", Type: "array[string]", Variadic: true, Condition: "required when --pane is empty"}}

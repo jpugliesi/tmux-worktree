@@ -25,8 +25,9 @@ type applyTemplateRequest struct {
 }
 
 type applyProjectRequest struct {
-	Name     string `json:"name"`
-	Template string `json:"template"`
+	Name      *string `json:"name,omitempty"`
+	Template  *string `json:"template,omitempty"`
+	Reference *string `json:"reference,omitempty"`
 }
 
 type applyAgentRequest struct {
@@ -92,22 +93,47 @@ func applyJSONRequest(command *cobra.Command, options Options, request applyRequ
 		}
 		return writeMutation(command, request.Operation, "applied", "", request.Template.Name)
 	case "projects.create":
-		if request.Project == nil || request.Project.Name == "" || request.Project.Template == "" {
+		if request.Project == nil || request.Project.Name == nil || *request.Project.Name == "" || request.Project.Template == nil || *request.Project.Template == "" {
 			return fmt.Errorf("project.name and project.template are required for projects.create")
 		}
-		template, err := store.NewTemplateStore(options.ConfigDir).Load(request.Project.Template)
+		if request.Project.Reference != nil {
+			return fmt.Errorf("projects.create accepts only project.name and project.template")
+		}
+		name := *request.Project.Name
+		templateName := *request.Project.Template
+		template, err := store.NewTemplateStore(options.ConfigDir).Load(templateName)
 		if err != nil {
 			return err
 		}
 		if isDryRun(command) {
 			service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-			if err := service.ValidateCreate(request.Project.Name, request.Project.Template, template); err != nil {
+			if err := service.ValidateCreate(name, templateName, template); err != nil {
 				return err
 			}
-			return writeMutation(command, request.Operation, "valid", "", request.Project.Name)
+			return writeMutation(command, request.Operation, "valid", "", name)
 		}
 		service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-		project, err := service.Create(request.Project.Name, request.Project.Template, template)
+		project, err := service.Create(name, templateName, template)
+		if err != nil {
+			return err
+		}
+		return writeMutation(command, request.Operation, "applied", project.ID, project.Name)
+	case "projects.archive":
+		if request.Project == nil || request.Project.Reference == nil || *request.Project.Reference == "" {
+			return fmt.Errorf("project.reference is required for projects.archive")
+		}
+		if request.Project.Name != nil || request.Project.Template != nil {
+			return fmt.Errorf("projects.archive accepts only project.reference")
+		}
+		reference := *request.Project.Reference
+		service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+		if isDryRun(command) {
+			if err := service.ValidateArchive(reference, os.Getenv("TMUX_PANE")); err != nil {
+				return err
+			}
+			return writeMutation(command, request.Operation, "valid", "", reference)
+		}
+		project, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
 		if err != nil {
 			return err
 		}

@@ -194,6 +194,34 @@ This preview selects Agent Sessions and sends review-note batches. It does not
 read Agent transcript files. The earlier transcript plug-in can remain active
 until twt2 has a provider-neutral transcript command.
 
+## Archive and reopen a Project
+
+Archive the current Project with the short command:
+
+```sh
+twt2 archive
+```
+
+You can also name a Project:
+
+```sh
+twt2 archive fix-auth
+twt2 projects archive fix-auth
+```
+
+Archive stops the owned tmux session and live Agent processes. It keeps the
+Project record, worktrees, branches, Project Template snapshot, repository
+caches, and Agent Session records. An Agent Session can start again only if it
+has a saved resume command.
+
+You cannot archive a Project from inside its own tmux session. Switch to a
+different session first. Open an archived Project to make it active and create
+its tmux session again:
+
+```sh
+twt2 projects open fix-auth
+```
+
 ## Storage and safe removal
 
 Inspect disk use:
@@ -203,10 +231,11 @@ twt2 storage status
 twt2 storage status --format json
 ```
 
-Project removal shows a plan by default. It does not remove data until you
-use `--apply`:
+Project removal shows a plan by default. Archive the Project before you apply
+the plan. Removal does not remove data until you use `--apply`:
 
 ```sh
+twt2 projects archive fix-auth
 twt2 projects remove fix-auth
 twt2 projects remove fix-auth --apply
 ```

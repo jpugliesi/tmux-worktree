@@ -39,3 +39,12 @@ func noArgs(command *cobra.Command, args []string) error {
 	}
 	return nil
 }
+
+func optionalArg(name string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			return invalidUsage(command, "unexpected argument %q; expected [%s]", args[1], name)
+		}
+		return nil
+	}
+}

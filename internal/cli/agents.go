@@ -132,7 +132,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			}
 			outputs := make([]agentOutput, 0, len(values))
 			for _, value := range values {
-				outputs = append(outputs, toAgentOutput(agents, value))
+				outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive))
 			}
 			if wantsJSON(command, format) {
 				return writeJSONOutput(command, agentsListOutput{SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs})
@@ -180,7 +180,7 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 				return err
 			}
 			if wantsJSON(command, format) {
-				return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent)})
+				return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, project.Status == domain.ProjectActive)})
 			}
 			if format != "text" {
 				return fmt.Errorf("unsupported format %q", format)
@@ -278,7 +278,7 @@ func resolveProject(projects *projectservice.Service, reference string) (domain.
 	return projects.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
 }
 
-func toAgentOutput(service *agentservice.Service, agent domain.AgentSession) agentOutput {
+func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, projectActive bool) agentOutput {
 	live := service.IsLive(agent)
 	status := "stopped"
 	if live {
@@ -287,6 +287,6 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession) age
 	return agentOutput{
 		ID: agent.ID, ProjectID: agent.ProjectID, Provider: agent.Provider, Label: agent.Label,
 		Status: status, UpdatedAt: agent.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Capabilities: agentCapabilities{CanResume: live || len(agent.ResumeCommand) > 0, CanSend: live, CanFocus: live},
+		Capabilities: agentCapabilities{CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live},
 	}
 }

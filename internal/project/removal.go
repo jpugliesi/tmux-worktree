@@ -55,13 +55,13 @@ func (s *Service) RemovalPlan(reference string) (RemovalPlan, error) {
 	return RemovalPlan{ProjectID: p.ID, ProjectName: p.Name, Worktrees: worktrees, TmuxSession: p.TmuxSession, StateRecords: 1 + len(agents), Actions: actions}, nil
 }
 
-func (s *Service) Remove(reference string) (RemovalPlan, error) {
+func (s *Service) Remove(reference, currentPane string) (RemovalPlan, error) {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return RemovalPlan{}, err
 	}
 	defer lock.Release()
-	p, sessionID, exists, err := s.validateRemoval(reference)
+	p, sessions, err := s.validateRemoval(reference, currentPane)
 	if err != nil {
 		return RemovalPlan{}, err
 	}
@@ -76,7 +76,7 @@ func (s *Service) Remove(reference string) (RemovalPlan, error) {
 			return plan, err
 		}
 	}
-	if exists {
+	for _, sessionID := range sessions {
 		if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
 			return plan, fmt.Errorf("stop Project tmux session: %w", err)
 		}
@@ -117,48 +117,54 @@ func (s *Service) Remove(reference string) (RemovalPlan, error) {
 	return plan, nil
 }
 
-func (s *Service) ValidateRemoval(reference string) error {
-	_, _, _, err := s.validateRemoval(reference)
+func (s *Service) ValidateRemoval(reference, currentPane string) error {
+	_, _, err := s.validateRemoval(reference, currentPane)
 	return err
 }
 
-func (s *Service) validateRemoval(reference string) (domain.Project, string, bool, error) {
+func (s *Service) validateRemoval(reference, currentPane string) (domain.Project, []string, error) {
 	p, err := s.store.Find(reference)
 	if err != nil {
-		return p, "", false, err
+		return p, nil, err
+	}
+	if p.Status != domain.ProjectArchived && p.Status != domain.ProjectRemoving {
+		return p, nil, fmt.Errorf("Project %q is not archived; run twt2 projects archive %s before removal", p.Name, p.ID)
 	}
 	if err := s.validateRemovalState(p); err != nil {
-		return p, "", false, err
+		return p, nil, err
 	}
-	sessionID, projectID, exists, err := s.findSession(p.ID, p.TmuxSession)
+	sessions, err := s.ownedSessions(p.ID)
 	if err != nil {
-		return p, "", false, err
+		return p, nil, err
 	}
-	if exists && projectID != p.ID {
-		return p, sessionID, exists, fmt.Errorf("tmux session %q is not owned by Project %q", p.TmuxSession, p.Name)
+	if len(sessions) > 1 {
+		return p, nil, fmt.Errorf("Project %q owns more than one tmux session", p.Name)
+	}
+	if err := s.requireOutsideOwnedSessions(p.Name, "remove", currentPane, sessions); err != nil {
+		return p, nil, err
 	}
 	for _, repository := range p.Repositories {
 		if _, err := os.Stat(repository.Path); errors.Is(err, os.ErrNotExist) {
 			continue
 		} else if err != nil {
-			return p, sessionID, exists, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+			return p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
 		}
 		status, err := output(repository.Path, "git", "status", "--porcelain")
 		if err != nil {
-			return p, sessionID, exists, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+			return p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
 		}
 		if status != "" {
-			return p, sessionID, exists, fmt.Errorf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
+			return p, nil, fmt.Errorf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path)
 		}
 		published, err := branchIsPublished(repository.CachePath, repository.Branch)
 		if err != nil {
-			return p, sessionID, exists, err
+			return p, nil, err
 		}
 		if !published {
-			return p, sessionID, exists, fmt.Errorf("branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
+			return p, nil, fmt.Errorf("branch %q has commits that are not on another declared ref; publish or save them before removal", repository.Branch)
 		}
 	}
-	return p, sessionID, exists, nil
+	return p, sessions, nil
 }
 
 func (s *Service) validateRemovalState(p domain.Project) error {

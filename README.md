@@ -53,7 +53,15 @@ with `<leader>arp`, add review notes with `<leader>an`, and send the note batch
 with `<leader>arr`. The plug-in resolves the Project from the current buffer,
 so one Neovim process can safely work across different Projects.
 
-Inspect disk use and preview cleanup before you remove data:
+Archive the current Project when you finish its work. This keeps its worktrees,
+branches, and Agent Session records:
+
+```sh
+twt2 archive
+twt2 projects open fix-auth
+```
+
+Inspect disk use and preview cleanup before you remove archived data:
 
 ```sh
 twt2 storage status

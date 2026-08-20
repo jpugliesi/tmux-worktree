@@ -202,6 +202,9 @@ func (s *Service) validateRetry(reference string) (domain.Project, error) {
 	if p.Status == domain.ProjectRemoving {
 		return p, fmt.Errorf("Project %q removal is in progress; run twt2 projects remove %s --apply", p.Name, p.ID)
 	}
+	if p.Status == domain.ProjectArchived {
+		return p, fmt.Errorf("Project %q is archived; run twt2 projects open %s", p.Name, p.ID)
+	}
 	return p, nil
 }
 
@@ -227,6 +230,14 @@ func (s *Service) Open(reference string) (domain.Project, error) {
 		return p, fmt.Errorf("find tmux session name for Project %q: %w", p.Name, err)
 	}
 	p.TmuxSession = liveName
+	if p.Status == domain.ProjectArchived {
+		p.Status = domain.ProjectActive
+		p.ArchivedAt = nil
+		p.UpdatedAt = s.now()
+		if err := s.store.Save(p); err != nil {
+			return p, err
+		}
+	}
 	return p, nil
 }
 
@@ -240,7 +251,7 @@ func (s *Service) validateOpen(reference string) (domain.Project, error) {
 	if err != nil {
 		return p, err
 	}
-	if p.Status != domain.ProjectActive {
+	if p.Status != domain.ProjectActive && p.Status != domain.ProjectArchived {
 		return p, fmt.Errorf("Project %q setup is not complete; run twt2 projects setup retry %s", p.Name, p.ID)
 	}
 	return p, nil

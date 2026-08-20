@@ -125,6 +125,7 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
 	}
+	t.Setenv("TMUX_PANE", "")
 
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
@@ -150,6 +151,7 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	}
 	runCommand(t, checkout, "git", "add", "new-work.txt")
 	runCommand(t, checkout, "git", "commit", "-qm", "unpublished work")
+	executeWithOptions(t, options, nil, "projects", "archive", "unpublished")
 
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
@@ -161,9 +163,6 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(checkout, "new-work.txt")); err != nil {
 		t.Fatalf("unpublished removal changed the checkout: %v", err)
-	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "unpublished").Run(); err != nil {
-		t.Fatal("unpublished removal stopped the Project tmux session")
 	}
 }
 
@@ -260,6 +259,7 @@ func TestProjectsRemoveRejectsChangedStatePaths(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
 	}
+	t.Setenv("TMUX_PANE", "")
 
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
@@ -277,6 +277,7 @@ func TestProjectsRemoveRejectsChangedStatePaths(t *testing.T) {
 	stateDir := filepath.Join(root, "state")
 	options := cli.Options{ConfigDir: configDir, StateDir: stateDir, DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "tampered", "--template", "policy", "--no-open")
+	executeWithOptions(t, options, nil, "projects", "archive", "tampered")
 	stateEntries, _ := os.ReadDir(filepath.Join(stateDir, "projects"))
 	statePath := filepath.Join(stateDir, "projects", stateEntries[0].Name())
 	data, err := os.ReadFile(statePath)
@@ -317,6 +318,7 @@ func TestProjectsRemoveRetriesAfterPartialDataRemoval(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
 	}
+	t.Setenv("TMUX_PANE", "")
 
 	root := t.TempDir()
 	source := filepath.Join(root, "source")

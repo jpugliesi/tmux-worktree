@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -23,6 +24,7 @@ type projectOutput struct {
 	Template      string               `json:"template"`
 	Status        domain.ProjectStatus `json:"status"`
 	CreatedAt     string               `json:"createdAt"`
+	ArchivedAt    string               `json:"archivedAt,omitempty"`
 	Repositories  []repositoryOutput   `json:"repositories"`
 }
 
@@ -60,9 +62,65 @@ func newProjectsCommand(options Options) *cobra.Command {
 	projects.AddCommand(newProjectsShowCommand(service))
 	projects.AddCommand(newProjectsCurrentCommand(service))
 	projects.AddCommand(newProjectsOpenCommand(options, service))
+	projects.AddCommand(newProjectsArchiveCommand(service))
 	projects.AddCommand(newProjectsSetupCommand(service))
 	projects.AddCommand(newProjectsRemoveCommand(service))
 	return projects
+}
+
+func newProjectsArchiveCommand(service *projectservice.Service) *cobra.Command {
+	return &cobra.Command{
+		Use:   "archive PROJECT",
+		Short: "Archive a Project without removing its data",
+		Args:  exactArgs("PROJECT"),
+		RunE: func(command *cobra.Command, args []string) error {
+			return archiveProject(command, service, args[0])
+		},
+	}
+}
+
+func newArchiveCommand(options Options) *cobra.Command {
+	service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+	return &cobra.Command{
+		Use:   "archive [PROJECT]",
+		Short: "Archive the current Project or a specified Project",
+		Args:  optionalArg("PROJECT"),
+		RunE: func(command *cobra.Command, args []string) error {
+			reference := ""
+			if len(args) == 1 {
+				reference = args[0]
+			} else {
+				directory, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				current, err := service.Current(directory, os.Getenv("TWT2_PROJECT_ID"), os.Getenv("TMUX_PANE"))
+				if err != nil {
+					return err
+				}
+				reference = current.ID
+			}
+			return archiveProject(command, service, reference)
+		},
+	}
+}
+
+func archiveProject(command *cobra.Command, service *projectservice.Service, reference string) error {
+	if isDryRun(command) {
+		if err := service.ValidateArchive(reference, os.Getenv("TMUX_PANE")); err != nil {
+			return err
+		}
+		return writeMutation(command, "projects.archive", "valid", "", reference)
+	}
+	project, err := service.Archive(reference, os.Getenv("TMUX_PANE"))
+	if err != nil {
+		return err
+	}
+	if WantsJSON(command) {
+		return writeMutation(command, "projects.archive", "applied", project.ID, project.Name)
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Archived Project %q\n", project.Name)
+	return err
 }
 
 func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
@@ -73,16 +131,15 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 		Short: "Plan or apply safe Project removal",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := service.ValidateRemoval(args[0], os.Getenv("TMUX_PANE")); err != nil {
+				return err
+			}
 			plan, err := service.RemovalPlan(args[0])
 			if err != nil {
 				return err
 			}
-			if isDryRun(command) {
-				if err := service.ValidateRemoval(args[0]); err != nil {
-					return err
-				}
-			} else if apply {
-				plan, err = service.Remove(args[0])
+			if !isDryRun(command) && apply {
+				plan, err = service.Remove(args[0], os.Getenv("TMUX_PANE"))
 				if err != nil {
 					return err
 				}
@@ -172,6 +229,14 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			sort.SliceStable(projects, func(i, j int) bool {
+				iArchived := projects[i].Status == domain.ProjectArchived
+				jArchived := projects[j].Status == domain.ProjectArchived
+				if iArchived != jArchived {
+					return !iArchived
+				}
+				return projects[i].CreatedAt.After(projects[j].CreatedAt)
+			})
 			projects, err = applyLimit(projects, limit)
 			if err != nil {
 				return err
@@ -371,7 +436,7 @@ func toProjectOutput(project domain.Project) projectOutput {
 	for _, repository := range project.Repositories {
 		repositories = append(repositories, repositoryOutput{Name: repository.Name, WindowName: repository.WindowName})
 	}
-	return projectOutput{
+	result := projectOutput{
 		SchemaVersion: jsonSchemaVersion,
 		ID:            project.ID,
 		Name:          project.Name,
@@ -380,6 +445,10 @@ func toProjectOutput(project domain.Project) projectOutput {
 		CreatedAt:     project.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Repositories:  repositories,
 	}
+	if project.ArchivedAt != nil {
+		result.ArchivedAt = project.ArchivedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	return result
 }
 
 func writeJSONOutput(command *cobra.Command, value any) error {

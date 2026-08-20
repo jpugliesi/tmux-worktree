@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
 func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
@@ -42,11 +44,18 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 3 {
+	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 4 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
+	foundArchive := false
 	for _, command := range schema.Commands {
+		if command.Path == "twt2 archive" {
+			foundArchive = true
+			if len(command.Arguments) != 1 || command.Arguments[0].Name != "project" || command.Arguments[0].Required {
+				t.Fatalf("archive schema arguments = %+v", command.Arguments)
+			}
+		}
 		if command.Path != "twt2 projects create" {
 			continue
 		}
@@ -71,10 +80,20 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if !foundCreate {
 		t.Fatal("schema does not contain twt2 projects create")
 	}
+	if !foundArchive {
+		t.Fatal("schema does not contain twt2 archive")
+	}
+	foundArchiveOperation := false
 	for _, operation := range schema.ApplyOperations {
 		if operation.Operation == "agents.register" && len(operation.Fields) != 5 {
 			t.Fatalf("agents.register fields = %+v", operation.Fields)
 		}
+		if operation.Operation == "projects.archive" {
+			foundArchiveOperation = len(operation.Fields) == 1 && operation.Fields[0].Path == "project.reference"
+		}
+	}
+	if !foundArchiveOperation {
+		t.Fatal("schema does not contain projects.archive")
 	}
 }
 
@@ -110,6 +129,44 @@ func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {
 	command.SetArgs([]string{"apply", "--stdin", "--dry-run", "--output", "json"})
 	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate raw dry-run error = %v", err)
+	}
+}
+
+func TestRawApplyArchivesAProject(t *testing.T) {
+	root := t.TempDir()
+	options := cli.Options{
+		ConfigDir: filepath.Join(root, "config"),
+		StateDir:  filepath.Join(root, "state"),
+		DataDir:   filepath.Join(root, "data"),
+	}
+	project := domain.Project{
+		Version:      domain.ProjectVersion,
+		ID:           "project-archive-id",
+		Name:         "archive-me",
+		TemplateName: "example",
+		Status:       domain.ProjectActive,
+	}
+	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	options.Stdout, options.Stderr = &stdout, &stderr
+	command := cli.New(options)
+	command.SetIn(strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me","name":"not-valid"}}`))
+	command.SetArgs([]string{"apply", "--stdin", "--dry-run", "--output", "json"})
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "only project.reference") {
+		t.Fatalf("archive request with create fields error = %v", err)
+	}
+	options.Stdout, options.Stderr = nil, nil
+	request := strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me"}}`)
+	output := executeWithOptions(t, options, request, "apply", "--stdin", "--output", "json")
+	if !strings.Contains(output, `"operation":"projects.archive"`) || !strings.Contains(output, `"status":"applied"`) {
+		t.Fatalf("raw archive output = %s", output)
+	}
+	archived, err := store.NewProjectStore(options.StateDir).Find(project.ID)
+	if err != nil || archived.Status != domain.ProjectArchived || archived.ArchivedAt == nil {
+		t.Fatalf("raw archive Project = %#v, error = %v", archived, err)
 	}
 }
 
