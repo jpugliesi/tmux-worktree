@@ -122,6 +122,7 @@ Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
 `twt start` and `twt switch` are interactive commands for a person in tmux.
+`twt start` with no name opens a Ticket picker when open Tickets exist.
 For agent work, use `twt projects create` and `twt projects archive` with
 explicit names, dry-runs, and JSON output.
 
@@ -213,8 +214,9 @@ twt agents list --project current --registered --output json
 
 `twt agents open` is interactive. It shows an fzf Agent Session picker when
 fzf is installed, or a numbered list. The fzf preview shows the same
-transcript text as `twt agents transcript show`. A selection resumes the
-Agent Session. The preview never registers a discovered session.
+transcript text as `twt agents transcript show`. A selection starts the
+provider resume command in the current pane. The preview never registers a
+discovered session.
 
 ```sh
 twt agents open

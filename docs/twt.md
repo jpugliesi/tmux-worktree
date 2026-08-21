@@ -319,11 +319,12 @@ Project:
 twt start fix-logout
 ```
 
-For an interactive prompt, omit the name:
+Omit the name to pick an open Ticket. twt uses `fzf` when `fzf` is
+installed, or a numbered list. A Ticket slug claims that Ticket and links
+the new Project to it. If no Tickets exist, twt asks for a Project name:
 
 ```sh
 twt start
-Project name: fix-logout
 ```
 
 The command uses the latest saved version of the same Project Template. It
@@ -464,9 +465,11 @@ printf '%s\n' 'Please fix the selected review note.' | \
 `agents open` shows an interactive Agent Session picker when AGENT_ID is
 absent. It uses `fzf` when `fzf` is installed, or a numbered list. The fzf
 preview shows the same transcript text as `twt agents transcript show`. A
-selection resumes the Agent Session. `--preview` writes that transcript as
-markdown. That path never registers a discovered session and never writes a
-snapshot.
+selection starts the provider resume command in the current pane:
+`codex resume`, `claude --resume`, or `grok --resume`. twt replaces this
+process with that command. It does not start a new tmux window.
+`--preview` writes that transcript as markdown. That path never registers a
+discovered session and never writes a snapshot.
 
 `agents list` also scans the Codex, Claude, and Grok stores. A provider
 session that ran inside a repository of the Project, and that no Agent
@@ -856,15 +859,17 @@ twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 
-`tickets start` is the one-step daily loop for a person in a terminal. It
-refuses a closed ticket, claims the ticket first with the same claimant
-resolution as `claim`, then runs the same flow as `twt start`. The Project
-name is `--name`, or the ticket slug. The Project record carries the ticket
-slug, `twt projects show` reports it, and `twt done` then offers to close the
-ticket. On success, `tickets start` appends a start comment to the ticket. A
-create failure keeps the claim, and the error tells how to retry the setup.
-Like `twt start`, the command is interactive: it refuses `--output json` and
-has no apply operation.
+`twt start` with no name is the daily loop in a terminal. It opens a Ticket
+picker when open Tickets exist, then claims the selected Ticket and starts
+its Project. `tickets start TICKET` is the same claim flow with a slug. Both
+refuse a closed ticket, claim the ticket first with the same claimant
+resolution as `claim`, then create the Project. The Project name is `--name`,
+or the ticket slug. The Project record carries the ticket slug,
+`twt projects show` reports it, and `twt done` then offers to close the
+ticket. On success, twt appends a start comment to the ticket. A create
+failure keeps the claim, and the error tells how to retry the setup. Both
+commands are interactive: they refuse `--output json` and have no apply
+operation.
 
 ```sh
 twt tickets start fix-auth-tokens

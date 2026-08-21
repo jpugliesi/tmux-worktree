@@ -591,43 +591,11 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if ticket.Status == domain.TicketDone || ticket.Status == domain.TicketWontfix {
-				return clierr.WithHint(
-					clierr.New(clierr.PreconditionFailed, "the Ticket is closed"),
-					"Select a Ticket from 'twt tickets list --ready'.")
-			}
-			claimant, err := resolveClaimant(command, as)
-			if err != nil {
-				return err
-			}
-			// The claim comes first: a Ticket that a different claimant
-			// holds aborts before any Project work.
-			if err := claimTicket(command, service, ticket.Slug, claimant); err != nil {
-				return err
-			}
-			projectName := strings.TrimSpace(name)
-			if projectName == "" {
-				projectName = ticket.Slug
-			}
-			// A create failure keeps the claim: the create error already
-			// tells how to retry the setup.
-			if err := runQuickCreate(command, options, quickCreateRequest{
-				Name:         projectName,
+			return startFromTicket(command, options, ticket, quickCreateRequest{
+				Name:         name,
 				TemplateName: templateName,
 				KeepCurrent:  keepCurrent,
-				Ticket:       ticket.Slug,
-			}); err != nil {
-				return err
-			}
-			if isDryRun(command) {
-				return nil
-			}
-			// The start comment is best-effort: a comment failure must not
-			// fail the start.
-			if err := commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Project %s.", projectName)); err != nil {
-				_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not add the start comment to Ticket %q: %v\n", ticket.Slug, err)
-			}
-			return nil
+			}, as)
 		},
 	}
 	command.Flags().StringVar(&name, "name", "", "Set the Project name; empty uses the Ticket slug")
@@ -638,6 +606,49 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
+}
+
+// startFromTicket claims one Ticket, then runs the quick-create flow and
+// links the new Project to that Ticket.
+func startFromTicket(command *cobra.Command, options Options, ticket domain.Ticket, request quickCreateRequest, as string) error {
+	if ticket.Status == domain.TicketDone || ticket.Status == domain.TicketWontfix {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "the Ticket is closed"),
+			"Select a Ticket from 'twt tickets list --ready'.")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	claimant, err := resolveClaimant(command, as)
+	if err != nil {
+		return err
+	}
+	// The claim comes first: a Ticket that a different claimant
+	// holds aborts before any Project work.
+	if err := claimTicket(command, service, ticket.Slug, claimant); err != nil {
+		return err
+	}
+	projectName := strings.TrimSpace(request.Name)
+	if projectName == "" {
+		projectName = ticket.Slug
+	}
+	request.Name = projectName
+	request.Ticket = ticket.Slug
+	// A create failure keeps the claim: the create error already
+	// tells how to retry the setup.
+	if err := runQuickCreate(command, options, request); err != nil {
+		return err
+	}
+	if isDryRun(command) {
+		return nil
+	}
+	// The start comment is best-effort: a comment failure must not
+	// fail the start.
+	if err := commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Project %s.", projectName)); err != nil {
+		_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not add the start comment to Ticket %q: %v\n", ticket.Slug, err)
+	}
+	return nil
 }
 
 func newTicketsUnclaimCommand(options Options) *cobra.Command {

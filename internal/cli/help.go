@@ -17,7 +17,7 @@ var commandHelp = map[string]helpContent{
 		long: "Create and manage change-focused Projects. Each Project owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt projects create fix-auth --template everysphere\n  twt projects open fix-auth",
 	},
 	"twt start": {
-		long: "Create a new Project from the latest saved version of the current Project Template. twt switches the calling client to the new Project, then archives the old Project. If NAME is absent, twt asks for it in an interactive terminal. Use 'twt projects create' for automation.", example: "  twt start fix-auth\n  twt start",
+		long: "Create a new Project from the latest saved version of the current Project Template. twt switches the calling client to the new Project, then archives the old Project. If NAME is a Ticket slug, twt claims that Ticket and links the new Project to it. If NAME is absent and open Tickets exist, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Project name. Use 'twt projects create' for automation.", example: "  twt start\n  twt start fix-auth",
 	},
 	"twt switch": {
 		long: "Switch the calling tmux client to the session of a Project. An archived Project opens first. Without PROJECT, twt shows an interactive Project picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
@@ -142,7 +142,7 @@ var commandHelp = map[string]helpContent{
 		long: "Focus the tmux pane for a live Agent Session.", example: "  twt agents focus AGENT_ID",
 	},
 	"twt agents open": {
-		long: "Resume an Agent Session of the selected Project. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection resumes the Agent Session. --preview writes that transcript as markdown, never registers a discovered session, and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --project current",
+		long: "Resume an Agent Session of the selected Project in the current pane. twt replaces this process with the provider resume command: 'codex resume', 'claude --resume', or 'grok --resume'. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection starts that resume command. --preview writes that transcript as markdown, never registers a discovered session, and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --project current",
 	},
 	"twt agents send": {
 		long: "Send standard-input text to a live, owned Agent Session in the selected Project. twt never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --project current --stdin",

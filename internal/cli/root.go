@@ -79,6 +79,12 @@ type Options struct {
 	// AgentPick selects one line index from the agents open picker. New uses
 	// the real fzf or numbered-list implementation when it is nil.
 	AgentPick func(command *cobra.Command, lines []string) (int, error)
+	// AgentOpenExec replaces the current process with the provider resume
+	// command. New installs the real exec implementation when it is nil.
+	AgentOpenExec func(name string, argv []string, env []string) error
+	// TicketPick selects one line index from the start Ticket picker. New
+	// uses the real fzf or numbered-list implementation when it is nil.
+	TicketPick func(command *cobra.Command, lines []string) (int, error)
 	// PickTicketBoard selects one Board picker line. The result is "(none)",
 	// an existing Board name, or a typed new name. New installs the real fzf
 	// or numbered-list implementation when it is nil.

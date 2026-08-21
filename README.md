@@ -39,16 +39,14 @@ gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 
 ### 2. Start a Project
 
-Claim a Ticket and start its Project in one step:
+Pick an open Ticket and start its Project:
 
 ```sh
-twt tickets start fix-auth-tokens
+twt start
 ```
 
-This claims the Ticket, creates the Project, links the two, and appends a
-start comment. `twt done` then offers to close that Ticket.
-
-Or claim first, then start by name:
+A Ticket slug claims that Ticket, creates the Project, links the two, and
+appends a start comment. `twt done` then offers to close that Ticket.
 
 ```sh
 twt start fix-auth-tokens
@@ -60,7 +58,7 @@ template declares. Then they switch your tmux client to the new session.
 A warm start to a working session takes about six seconds. The replacement
 environment prepares itself in the background.
 
-Run `twt start` with no name to get a prompt. Run it from anywhere. Inside
+Run `twt start` with no name to pick an open Ticket. Run it from anywhere. Inside
 another Project it archives that Project after the switch. Outside one it
 uses your last template.
 
@@ -79,13 +77,13 @@ is provider, ID, and age:
 
 ```sh
 twt agents ls
-twt agents open            # fzf preview is the transcript. Enter resumes.
+twt agents open            # fzf preview is the transcript. Enter resumes in this pane.
 twt agents open AGENT_ID   # skip the picker
 ```
 
 The preview shows the same markdown as `twt agents transcript show`. Preview
 of a discovered session does not register it. A selection registers it,
-then resumes.
+then starts the provider resume command in this pane.
 
 Attach coding agents that already ran in the Project directories.
 Registration infers the provider and session ID from the resume command.
@@ -159,7 +157,7 @@ twt doctor                            # end-to-end health check
 | Command | Job |
 | --- | --- |
 | `twt tickets` | Create, list, claim, start, comment, and close Markdown Tickets |
-| `twt start` | Create a Project and switch to it |
+| `twt start` | Pick a Ticket or name, create a Project, and switch to it |
 | `twt tickets start` | Claim a Ticket and start its Project |
 | `twt switch` | Move the tmux client to a Project |
 | `twt agents` | List, open, resume, send, and read Agent Sessions |

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
 	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
@@ -61,7 +64,7 @@ func newAgentsOpenCommand(options Options, agents *agentservice.Service, project
 					return err
 				}
 			}
-			return resumeAgentSession(command, agents, projects, stateDir, reference, project.ID)
+			return openAgentSession(command, options, agents, projects, stateDir, reference, project.ID)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -70,6 +73,59 @@ func newAgentsOpenCommand(options Options, agents *agentservice.Service, project
 	command.ValidArgsFunction = agentReferenceCompletion(agents, projects, stateDir)
 	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
+}
+
+// openAgentSession adopts a discovered session when needed, then replaces
+// this process with the provider resume command. The command runs in the
+// current pane. It does not start a new tmux window.
+func openAgentSession(command *cobra.Command, options Options, agents *agentservice.Service, projects *projectservice.Service, stateDir, agentID, projectReference string) error {
+	agent, err := agents.Find(agentID)
+	if err != nil {
+		agent, err = adoptForResume(command, agents, projects, stateDir, agentID, projectReference, err)
+		if err != nil {
+			return err
+		}
+	}
+	if _, err := findAgentProject(projects, agent, projectReference); err != nil {
+		return err
+	}
+	resumeCommand := agentResumeCommand(agent)
+	if len(resumeCommand) == 0 {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Agent Session %q has no resume command", agent.ID),
+			"Register the session with a resume command after --.",
+		)
+	}
+	if isDryRun(command) {
+		return writeMutation(command, "agents.open", statusValid, agent.ID, strings.Join(resumeCommand, " "))
+	}
+	execFn := options.AgentOpenExec
+	if execFn == nil {
+		execFn = realAgentOpenExec
+	}
+	return execFn(resumeCommand[0], resumeCommand, os.Environ())
+}
+
+// agentResumeCommand is the command that starts the Agent Session again in
+// this pane. A saved resume command wins. A linked provider session uses the
+// provider CLI.
+func agentResumeCommand(agent domain.AgentSession) []string {
+	if len(agent.ResumeCommand) > 0 {
+		return append([]string(nil), agent.ResumeCommand...)
+	}
+	return transcriptservice.ResumeCommand(agent.Provider, agent.ProviderSessionID)
+}
+
+// realAgentOpenExec replaces this process with the provider resume command.
+func realAgentOpenExec(name string, argv []string, env []string) error {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "cannot find %q on PATH", name),
+			"Install the provider CLI, then run the resume command in this pane.",
+		)
+	}
+	return syscall.Exec(path, argv, env)
 }
 
 // pickOpenAgent shows the interactive Agent Session picker and returns the

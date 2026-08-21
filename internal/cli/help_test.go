@@ -191,6 +191,7 @@ func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
 		"latest saved version of the current Project Template",
 		"switches the calling client",
 		"archives the old Project",
+		"interactive Ticket picker",
 		"twt start fix-auth",
 		"twt projects create",
 	} {

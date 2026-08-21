@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +40,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 	var keepCurrent bool
 	var noFetch bool
 	var branch string
+	var as string
 	command := &cobra.Command{
 		Use:     "start [NAME]",
 		Short:   "Create a new Project and archive the current Project",
@@ -48,23 +51,137 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			if len(args) == 1 {
 				name = args[0]
 			}
-			return runQuickCreate(command, options, quickCreateRequest{
+			return runStart(command, options, quickCreateRequest{
 				Name:         name,
 				TemplateName: templateName,
 				KeepCurrent:  keepCurrent,
 				NoFetch:      noFetch,
 				Branch:       branch,
-			})
+			}, as)
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Project Template instead of the current Project's template")
 	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
-	setArguments(command, optionalArgument("name", "the interactive prompt asks for it when absent. TAB offers Ticket slugs"))
+	command.Flags().StringVar(&as, "as", "", "Set the claimant name when start claims a Ticket")
+	setArguments(command, optionalArgument("name", "the Ticket picker asks for it when absent. A Ticket slug claims that Ticket. TAB offers Ticket slugs"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
+}
+
+// runStart starts a Project. A Ticket slug claims that Ticket first. With no
+// name and at least one open Ticket, it shows the Ticket picker. With no
+// Tickets it asks for a Project name.
+func runStart(command *cobra.Command, options Options, request quickCreateRequest, as string) error {
+	name := strings.TrimSpace(request.Name)
+	if name != "" {
+		ticket, ok, err := resolveStartTicket(options, name)
+		if err != nil {
+			return err
+		}
+		if ok {
+			request.Name = ""
+			return startFromTicket(command, options, ticket, request, as)
+		}
+		return runQuickCreate(command, options, request)
+	}
+	tickets, err := listOpenStartTickets(options)
+	if err != nil {
+		return err
+	}
+	if len(tickets) == 0 {
+		return runQuickCreate(command, options, request)
+	}
+	ticket, err := pickStartTicket(command, options, tickets)
+	if err != nil {
+		return err
+	}
+	return startFromTicket(command, options, ticket, request, as)
+}
+
+// resolveStartTicket maps NAME to a Ticket when a Tickets home is set and
+// the name matches. A missing home or an unknown name is not an error.
+func resolveStartTicket(options Options, name string) (domain.Ticket, bool, error) {
+	service, err := options.ticketService()
+	if err != nil {
+		if clierr.CodeOf(err) == clierr.PreconditionFailed {
+			return domain.Ticket{}, false, nil
+		}
+		return domain.Ticket{}, false, err
+	}
+	ticket, err := service.Resolve(name)
+	if err != nil {
+		if clierr.CodeOf(err) == clierr.NotFound {
+			return domain.Ticket{}, false, nil
+		}
+		return domain.Ticket{}, false, err
+	}
+	return ticket, true, nil
+}
+
+// listOpenStartTickets lists open Tickets for the start picker. A missing
+// Tickets home returns no Tickets so start can still ask for a Project name.
+func listOpenStartTickets(options Options) ([]domain.Ticket, error) {
+	service, err := options.ticketService()
+	if err != nil {
+		if clierr.CodeOf(err) == clierr.PreconditionFailed {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return service.List(ticketservice.ListFilter{})
+}
+
+// pickStartTicket shows the interactive Ticket picker and returns the
+// selected Ticket.
+func pickStartTicket(command *cobra.Command, options Options, tickets []domain.Ticket) (domain.Ticket, error) {
+	lines := make([]string, 0, len(tickets))
+	for _, ticket := range tickets {
+		boardName := ticket.Board
+		if boardName == "" {
+			boardName = "-"
+		}
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%d\t%s\t%s", ticket.Slug, ticket.Status, ticket.Priority, boardName, ticket.Title))
+	}
+	pick := options.TicketPick
+	if pick == nil {
+		pick = realTicketPick
+	}
+	index, err := pick(command, lines)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	if index < 0 || index >= len(tickets) {
+		return domain.Ticket{}, fmt.Errorf("the Ticket picker returned an invalid selection")
+	}
+	return tickets[index], nil
+}
+
+// realTicketPick selects one picker line with fzf when it is installed, or
+// with a numbered list on the terminal. The fzf preview writes the Ticket
+// show text.
+func realTicketPick(command *cobra.Command, lines []string) (int, error) {
+	return pickLine(command, lines, pickOptions{
+		Noun:        "Ticket",
+		MissingHint: "missing Ticket; use 'twt start NAME' or 'twt tickets start TICKET' in a script",
+		FzfArgs: []string{
+			"--delimiter", "\t",
+			"--preview", ticketStartPreviewCommand(),
+			"--preview-window", "right:60%:wrap",
+		},
+	})
+}
+
+// ticketStartPreviewCommand is the fzf --preview command. fzf runs it with a
+// shell and replaces {1} with the Ticket slug of the highlighted line.
+func ticketStartPreviewCommand() string {
+	executable, err := os.Executable()
+	if err != nil {
+		executable = os.Args[0]
+	}
+	return fmt.Sprintf("%s tickets show --output text %s", shellQuote(executable), "'{1}'")
 }
 
 // refuseJSONQuickCreate refuses --output json before the quick-create flow

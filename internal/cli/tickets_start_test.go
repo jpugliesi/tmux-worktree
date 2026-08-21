@@ -13,6 +13,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/spf13/cobra"
 )
 
 // ticketsStartFixture builds options with the "example" template, a private
@@ -195,5 +196,84 @@ func TestStartCompletesTicketSlugs(t *testing.T) {
 	candidates := completeArgs(t, options, "start", "")
 	if len(candidates) != 1 || candidates[0] != "fix-auth-tokens" {
 		t.Fatalf("start completion = %q", candidates)
+	}
+}
+
+func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_PROJECT_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "tickets", "create", "Second thing")
+	executeWithOptions(t, options, nil, "tickets", "close", "second-thing", "--as", "tester")
+	var pickedLines []string
+	options.TicketPick = func(_ *cobra.Command, lines []string) (int, error) {
+		pickedLines = append([]string(nil), lines...)
+		return 0, nil
+	}
+	var switched []string
+	options.QuickCreateSwitch = func(_ string, session string) error {
+		switched = append(switched, session)
+		return nil
+	}
+
+	output := executeWithOptions(t, options, nil, "start", "--as", "tester")
+	if len(pickedLines) != 1 {
+		t.Fatalf("start picker lines = %v", pickedLines)
+	}
+	if !strings.HasPrefix(pickedLines[0], "fix-auth-tokens\t") {
+		t.Fatalf("start picker line = %q", pickedLines[0])
+	}
+	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
+		t.Fatalf("start picker output has no claim: %q", output)
+	}
+	if !strings.Contains(output, `Created Project "fix-auth-tokens"`) {
+		t.Fatalf("start picker output has no create: %q", output)
+	}
+	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens")
+	if err != nil || project.Ticket != "fix-auth-tokens" {
+		t.Fatalf("Project after start picker: %+v error=%v", project, err)
+	}
+	if len(switched) != 1 || switched[0] != project.TmuxSession {
+		t.Fatalf("start picker switch events = %v", switched)
+	}
+	content := readTicketFile(t, filepath.Join(home, "fix-auth-tokens.md"))
+	if !strings.Contains(content, "tester") {
+		t.Fatalf("picked ticket is not claimed:\n%s", content)
+	}
+}
+
+func TestStartNumberedPickerReadsTheTicketNumber(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("PATH", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_PROJECT_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	output := executeWithOptions(t, options, strings.NewReader("1\n"), "start", "--as", "tester", "--dry-run")
+	if !strings.Contains(output, "tickets.claim: valid") || !strings.Contains(output, "projects.quick_create: valid") {
+		t.Fatalf("start numbered picker dry-run output = %q", output)
+	}
+	if _, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens"); err == nil {
+		t.Fatal("start numbered picker dry-run created a Project")
+	}
+}
+
+func TestStartWithATicketSlugClaimsTheTicket(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_PROJECT_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	options.QuickCreateSwitch = func(_ string, _ string) error { return nil }
+
+	output := executeWithOptions(t, options, nil, "start", "fix-auth-tokens", "--as", "tester")
+	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
+		t.Fatalf("start with a Ticket slug has no claim: %q", output)
+	}
+	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens")
+	if err != nil || project.Ticket != "fix-auth-tokens" {
+		t.Fatalf("Project after start with a Ticket slug: %+v error=%v", project, err)
 	}
 }

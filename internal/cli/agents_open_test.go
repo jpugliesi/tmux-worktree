@@ -93,7 +93,7 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 	if !strings.HasPrefix(pickedLines[1], "claude\tclaude-one\t") {
 		t.Fatalf("discovered picker line = %q", pickedLines[1])
 	}
-	if !strings.Contains(output, "agents.resume: valid") {
+	if !strings.Contains(output, "agents.open: valid") {
 		t.Fatalf("agents open picker dry-run output = %q", output)
 	}
 }
@@ -108,7 +108,7 @@ func TestAgentsOpenPickerResumesTheSelectedDiscoveredSessionWithoutAdoptingOnDry
 		return 1, nil
 	}
 	output := executeWithOptions(t, options, nil, "agents", "open", "--dry-run")
-	if !strings.Contains(output, "agents.resume: valid") {
+	if !strings.Contains(output, "agents.open: valid") {
 		t.Fatalf("discovered picker dry-run output = %q", output)
 	}
 	after, err := store.NewAgentStore(options.StateDir).List(project.ID)
@@ -131,7 +131,7 @@ func TestAgentsOpenNumberedPickerReadsTheAgentNumber(t *testing.T) {
 	if !strings.Contains(stderr.String(), "1) codex\t"+agentID) || !strings.Contains(stderr.String(), "Agent Session number: ") {
 		t.Fatalf("numbered picker prompt = %q", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "agents.resume: valid") {
+	if !strings.Contains(stdout.String(), "agents.open: valid") {
 		t.Fatalf("numbered picker dry-run output = %q", stdout.String())
 	}
 
@@ -187,6 +187,33 @@ func TestAgentsOpenPreviewWritesMarkdownWithoutATerminal(t *testing.T) {
 	}
 }
 
+func TestAgentsOpenRunsTheProviderResumeCommand(t *testing.T) {
+	options, project, agentID := agentsOpenFixture(t)
+	var ran []string
+	options.AgentOpenExec = func(_ string, argv []string, _ []string) error {
+		ran = append([]string(nil), argv...)
+		return nil
+	}
+
+	output := executeWithOptions(t, options, nil, "agents", "open", agentID)
+	if strings.Join(ran, " ") != "codex resume session-one" {
+		t.Fatalf("registered open command = %v, output = %q", ran, output)
+	}
+
+	ran = nil
+	options.AgentPick = func(_ *cobra.Command, _ []string) (int, error) {
+		return 1, nil
+	}
+	output = executeWithOptions(t, options, nil, "agents", "open", "--project", project.ID)
+	if strings.Join(ran, " ") != "claude --resume claude-one" {
+		t.Fatalf("discovered open command = %v, output = %q", ran, output)
+	}
+	listed, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("open did not adopt the discovered session: %+v, %v", listed, err)
+	}
+}
+
 func TestAgentsOpenWithAgentIDResumesWithoutAPicker(t *testing.T) {
 	options, _, agentID := agentsOpenFixture(t)
 	called := false
@@ -198,7 +225,7 @@ func TestAgentsOpenWithAgentIDResumesWithoutAPicker(t *testing.T) {
 	if called {
 		t.Fatal("agents open AGENT_ID opened the picker")
 	}
-	if !strings.Contains(output, "agents.resume: valid") {
+	if !strings.Contains(output, "agents.open: valid") {
 		t.Fatalf("agents open AGENT_ID dry-run output = %q", output)
 	}
 }
