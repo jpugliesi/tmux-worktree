@@ -200,21 +200,24 @@ An ambiguous prefix is `invalid_usage`. Put the candidate slugs in `hint`.
 
 | Input | Behavior |
 |---|---|
-| No args, stdout is a TTY, stdin is a TTY | Open `$VISUAL` or `$EDITOR` on a temp copy of `templates/ticket.md`. Parse the saved file. An empty save is `invalid_usage`. |
+| No args, stdout is a TTY, stdin is a TTY | Ask `Title: `. Then pick a Board with fzf when `fzf` is installed, or a numbered list. The first row is `(none)` for an ungrouped Ticket. A typed name that is not a Board asks `Board "NAME" does not exist. Create it? [Y/n]`. Enter means yes. Then open `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. An empty title or an empty save is `invalid_usage`. `--title` skips the title prompt. `--board` skips the picker. |
 | No args, not a TTY | Exit 2. Hint: pass DESCRIPTION, `--title`, or `--stdin`. |
-| DESCRIPTION args | Join as the body. Derive `title` from the first line if `--title` is absent. Derive the slug from the title. |
-| `--stdin` | Read the body from stdin. Require `--title`. |
+| DESCRIPTION args | Join as the body. Derive `title` from the first line if `--title` is absent. Derive the slug from the title. Never open the wizard, even on a TTY. |
+| `--stdin` | Read the body from stdin. Require `--title`. Never open the wizard. |
 
 Default status is `needs-triage`. `--status ready-for-agent` is allowed.
 `--dry-run` prints the file that would be written and does not write it.
+When the wizard would create a Board, text dry-run prints that Board first,
+then the Ticket file. JSON dry-run stays one `tickets.create` envelope.
 
 Slug rule: lowercase, hyphenate, strip characters that are not ASCII letters
 or digits, cap at 60 characters. If the slug exists anywhere under Tickets
 home, return `already_exists` and hint `--slug`.
 
 If `--board` names a missing Board, return `not_found` and hint
-`twt tickets boards create NAME`. Do not create a Board as a side effect of
-ticket create.
+`twt tickets boards create NAME`. `--board` never creates a Board. The
+interactive picker may create a Board after confirm. Apply `tickets.create`
+still requires an existing Board.
 
 ### `tickets list --ready`
 
@@ -356,6 +359,7 @@ Skill rules:
 4. Pass `--dry-run` before every mutation.
 5. Pass `--limit` on list commands.
 6. Create with a DESCRIPTION or `--stdin`. Do not rely on `$EDITOR`.
+   `--board` does not create a Board.
 7. Claim before work with `--as NAME`. Resolve with `set --status done`
    and `unclaim --as NAME`.
 8. Link tickets with `[[slug]]`.
@@ -425,8 +429,9 @@ Do not edit everysphere. Do not rename `projects` commands. Do not add MCP.
 
 - `twt tickets create "fix the vfs tools" --board change-monitor --output json`
   writes one Obsidian-valid note under the configured home.
-- `twt tickets create` with no args in a terminal opens the editor. The same
-  command in a pipe exits 2 with a hint.
+- `twt tickets create` with no args in a terminal asks for a title and a
+  Board, then opens the editor on an empty description. The same command in
+  a pipe exits 2 with a hint.
 - `twt tickets list --ready --output json` returns only unblocked,
   unclaimed, `ready-for-agent` tickets.
 - `twt schema` includes the new commands and apply operations.

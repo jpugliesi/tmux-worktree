@@ -730,13 +730,14 @@ the Board directory and writes `index.md` only when that file is missing.
 
 | Input | Behavior |
 |---|---|
-| No args, stdout is a terminal, stdin is a terminal | Opens `$VISUAL` or `$EDITOR` on a temp copy of `templates/ticket.md`, then parses the saved file. An empty save is `invalid_usage`. |
+| No args, stdout is a terminal, stdin is a terminal | Asks for a title, then a Board (`fzf` or a numbered list, with `(none)` for ungrouped). A new Board name is created only after confirm. Then opens `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. |
 | No args, not a terminal | Exits 2, with a hint to pass DESCRIPTION, `--title`, or `--stdin`. |
-| DESCRIPTION args | Joins the args as the body. Derives `title` from the first line when `--title` is absent, and derives the slug from the title. |
-| `--stdin` | Reads the body from standard input. Requires `--title`. |
+| DESCRIPTION args | Joins the args as the body. Derives `title` from the first line when `--title` is absent, and derives the slug from the title. Never opens the wizard. |
+| `--stdin` | Reads the body from standard input. Requires `--title`. Never opens the wizard. |
 
 The default status is `needs-triage`. `--dry-run` prints the file that would
-be written and writes nothing.
+be written and writes nothing. `--board` never creates a Board. The
+interactive picker may create a Board after confirm.
 
 ```sh
 twt tickets create "fix the vfs tools" --board change-monitor --dry-run --output json

@@ -21,7 +21,10 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 `done`, `templates edit`, `agents focus`, `agents register --pane current`)
 have no apply operation by design — they move a tmux client or need a
 terminal. The axis's 3 asks for raw payloads as a first-class peer on every
-mutation; the exclusions are deliberate, so the score stays at 2.
+mutation; the exclusions are deliberate, so the score stays at 2. The
+`tickets create` wizard (title, Board picker, `$EDITOR`) is TTY-only and is
+not an apply operation. Agents pass DESCRIPTION or `--stdin`. `--board`
+never creates a Board.
 
 **Context discipline: pagination is offset-based.** There is no cursor. At
 personal-vault and per-machine scale, offset windows are stable enough; a

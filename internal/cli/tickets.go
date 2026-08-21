@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -15,39 +14,6 @@ import (
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
-
-// defaultTicketTemplate seeds the interactive create editor when the Tickets
-// home has no templates/ticket.md. It mirrors the init scaffold.
-const defaultTicketTemplate = `---
-title: "<title>"
-aliases:
-  - <title>
-tags:
-  - tickets
-status: needs-triage
-priority: 2
-board:
-blocked_by: []
-claimed_by:
-claimed_at:
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
----
-
-# <title>
-
-## What to build
-
-## Acceptance criteria
-
-- [ ]
-
-## Blocked by
-
-None - can start immediately
-
-## Comments
-`
 
 type ticketsListOutput struct {
 	SchemaVersion int             `json:"schemaVersion"`
@@ -225,7 +191,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 					return err
 				}
 				request.Body = body
-			case len(args) > 0 || strings.TrimSpace(title) != "":
+			case len(args) > 0:
 				description := strings.Join(args, " ")
 				if title == "" {
 					first, rest, _ := strings.Cut(description, "\n")
@@ -234,23 +200,18 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 				} else {
 					request.Body = description
 				}
-			default:
-				if !interactiveTicketSession(command) {
-					return invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or --stdin.",
-						"twt tickets create has no input and no terminal")
-				}
-				editorRequest, err := createTicketInEditor(command, options)
+			case interactiveTicketSession(command):
+				wizardRequest, err := createTicketWizard(command, options, service, request)
 				if err != nil {
 					return err
 				}
-				editorRequest.Slug = slug
-				if board != "" {
-					editorRequest.Board = board
-				}
-				if status != "" {
-					editorRequest.Status = domain.TicketStatus(status)
-				}
-				request = editorRequest
+				request = wizardRequest
+			case strings.TrimSpace(title) != "":
+				// --title without DESCRIPTION outside a terminal keeps the
+				// skeleton body. The wizard is TTY-only.
+			default:
+				return invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or --stdin.",
+					"twt tickets create has no input and no terminal")
 			}
 			return createTicket(command, service, request)
 		},
@@ -266,102 +227,6 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 	return command
 }
 
-// createTicketInEditor opens the editor on a temporary copy of the create
-// template and parses the saved file into one CreateRequest.
-func createTicketInEditor(command *cobra.Command, options Options) (ticketservice.CreateRequest, error) {
-	var request ticketservice.CreateRequest
-	home, err := options.resolveTicketsHome()
-	if err != nil {
-		return request, err
-	}
-	seed, err := os.ReadFile(filepath.Join(home, "templates", "ticket.md"))
-	if err != nil {
-		seed = []byte(defaultTicketTemplate)
-	}
-	temp, err := os.CreateTemp("", "twt-ticket-*.md")
-	if err != nil {
-		return request, fmt.Errorf("create the ticket draft file: %w", err)
-	}
-	path := temp.Name()
-	defer os.Remove(path)
-	if _, err := temp.Write(seed); err != nil {
-		temp.Close()
-		return request, fmt.Errorf("write the ticket draft file: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return request, fmt.Errorf("write the ticket draft file: %w", err)
-	}
-	if err := options.OpenEditor(path); err != nil {
-		return request, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return request, fmt.Errorf("read the ticket draft file: %w", err)
-	}
-	if strings.TrimSpace(string(data)) == "" {
-		return request, invalidUsageWithHint(command, "Write the ticket and save the file, or pass DESCRIPTION.",
-			"the editor saved an empty ticket")
-	}
-	if bytes.Equal(data, seed) {
-		return request, invalidUsageWithHint(command, "Set the title and save the file, or pass DESCRIPTION.",
-			"the editor saved the ticket template unchanged")
-	}
-	return parseTicketDraft(command, path, data)
-}
-
-// parseTicketDraft maps one saved editor draft to a CreateRequest.
-func parseTicketDraft(command *cobra.Command, path string, data []byte) (ticketservice.CreateRequest, error) {
-	var request ticketservice.CreateRequest
-	file, err := ticketservice.ParseTicketFile(path, data)
-	if err != nil {
-		return request, err
-	}
-	parsed := domain.Ticket{Priority: -1}
-	if mapping := file.Mapping(); mapping != nil {
-		if err := mapping.Decode(&parsed); err != nil {
-			return request, invalidUsageWithHint(command, "Fix the YAML frontmatter of the draft.",
-				"the ticket draft has invalid frontmatter: %v", err)
-		}
-	}
-	bodyTitle, body := splitLeadingTitle(file.Body)
-	title := strings.TrimSpace(parsed.Title)
-	if title == "" || title == "<title>" {
-		title = bodyTitle
-	}
-	if bodyTitle == "" {
-		body = file.Body
-	}
-	if title == "" || title == "<title>" {
-		return request, invalidUsageWithHint(command, "Set the title line and save the file.",
-			"the ticket draft has no title")
-	}
-	return ticketservice.CreateRequest{
-		Title:    title,
-		Board:    parsed.Board,
-		Body:     body,
-		Status:   parsed.Status,
-		Priority: parsed.Priority,
-	}, nil
-}
-
-// splitLeadingTitle removes the leading H1 line from body and returns that
-// title and the remaining body. A body that does not start with an H1 returns
-// an empty title and the full body.
-func splitLeadingTitle(body string) (string, string) {
-	lines := strings.Split(body, "\n")
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "# ") {
-			return strings.TrimSpace(trimmed[2:]), strings.Join(lines[index+1:], "\n")
-		}
-		break
-	}
-	return "", body
-}
-
 // createTicket writes one Ticket. Both the tickets create command and apply
 // use it. A text dry run prints the file that twt would write.
 func createTicket(command *cobra.Command, service *ticketservice.Service, request ticketservice.CreateRequest) error {
@@ -373,7 +238,13 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 		if WantsJSON(command) {
 			return writeMutation(command, "tickets.create", statusValid, result.Ticket.Slug, result.Ticket.Title)
 		}
-		_, err = command.OutOrStdout().Write(result.Content)
+		out := command.OutOrStdout()
+		if request.EnsureBoard && request.Board != "" {
+			if _, err := fmt.Fprintf(out, "Would create Board %q\n", request.Board); err != nil {
+				return err
+			}
+		}
+		_, err = out.Write(result.Content)
 		return err
 	}
 	result, err := service.Create(request, false)
@@ -383,7 +254,13 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 	if WantsJSON(command) {
 		return writeMutation(command, "tickets.create", statusApplied, result.Ticket.Slug, result.Ticket.Title)
 	}
-	_, err = fmt.Fprintf(command.OutOrStdout(), "Created ticket %q at %q\n", result.Ticket.Slug, result.Ticket.Path)
+	out := command.OutOrStdout()
+	if request.EnsureBoard && request.Board != "" {
+		if _, err := fmt.Fprintf(out, "Created Board %q\n", request.Board); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(out, "Created ticket %q at %q\n", result.Ticket.Slug, result.Ticket.Path)
 	return err
 }
 

@@ -72,11 +72,14 @@ text.
 
 An interactive path opens only for a person at a terminal:
 
-- `twt templates edit`, `twt tickets edit`, and the editor draft of
+- `twt templates edit`, `twt tickets edit`, and the create wizard of
   `twt tickets create` start `VISUAL` or `EDITOR` only when standard input is
-  a terminal. With a pipe, each one reports `invalid_usage` with the
+  a terminal. The create wizard also asks for a title and a Board on that
+  terminal. With a pipe, each one reports `invalid_usage` with the
   non-interactive form in the hint. The tickets commands also require a
-  terminal on standard output, and they reject the null device.
+  terminal on standard output, and they reject the null device. `--board`
+  never creates a Board. A new Board from the wizard is created only after
+  confirm, and only for a name that passes resource-name rules.
 - `twt projects create` and `twt projects open` attach the tmux session only
   when standard output is a terminal. `--no-open` and `--no-attach` state
   the same intention for a script.

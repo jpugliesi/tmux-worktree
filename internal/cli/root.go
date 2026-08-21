@@ -70,7 +70,11 @@ type Options struct {
 	DoneRelocate func(request RelocationRequest) error
 	// SwitchPick selects one line index from the switch Project picker. New
 	// installs the real fzf or numbered-list implementation when it is nil.
-	SwitchPick             func(command *cobra.Command, lines []string) (int, error)
+	SwitchPick func(command *cobra.Command, lines []string) (int, error)
+	// PickTicketBoard selects one Board picker line. The result is "(none)",
+	// an existing Board name, or a typed new name. New installs the real fzf
+	// or numbered-list implementation when it is nil.
+	PickTicketBoard        func(command *cobra.Command, lines []string) (string, error)
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
@@ -197,6 +201,9 @@ func withRealWorkflows(options Options) Options {
 	}
 	if options.SwitchPick == nil {
 		options.SwitchPick = realSwitchPick
+	}
+	if options.PickTicketBoard == nil {
+		options.PickTicketBoard = realPickTicketBoard
 	}
 	if options.OpenEditor == nil {
 		options.OpenEditor = realOpenEditor(options)

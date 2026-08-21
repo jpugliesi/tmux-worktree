@@ -654,6 +654,25 @@ func TestCreateErrors(t *testing.T) {
 		t.Fatalf("missing board = %v, want not_found", err)
 	}
 
+	_, err = service.Create(CreateRequest{Title: "Ensure me", Board: "nowhere", Priority: -1, EnsureBoard: true}, true)
+	if err != nil {
+		t.Fatalf("EnsureBoard dry-run = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "nowhere")); !os.IsNotExist(err) {
+		t.Fatal("EnsureBoard dry-run created the Board")
+	}
+
+	result, err := service.Create(CreateRequest{Title: "Ensure me", Board: "nowhere", Priority: -1, EnsureBoard: true}, false)
+	if err != nil {
+		t.Fatalf("EnsureBoard create = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "nowhere", "index.md")); err != nil {
+		t.Fatalf("EnsureBoard did not create the Board: %v", err)
+	}
+	if result.Ticket.Board != "nowhere" {
+		t.Fatalf("EnsureBoard ticket board = %q", result.Ticket.Board)
+	}
+
 	if _, err := service.Create(CreateRequest{Title: "Bad status", Status: "open", Priority: -1}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("bad status = %v, want invalid_usage", err)
 	}

@@ -203,6 +203,9 @@ type CreateRequest struct {
 	Body     string
 	Status   domain.TicketStatus
 	Priority int
+	// EnsureBoard creates Board when it is missing. The interactive create
+	// wizard sets this after confirm. --board and apply never set it.
+	EnsureBoard bool
 }
 
 // CreateResult is the created Ticket plus the rendered file content. A dry
@@ -266,11 +269,21 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 	}
 	directory := home
 	if req.Board != "" {
+		if req.EnsureBoard {
+			if _, err := s.CreateBoard(req.Board, dryRun); err != nil {
+				return CreateResult{}, err
+			}
+		}
 		info, statErr := os.Stat(filepath.Join(home, req.Board))
 		if statErr != nil || !info.IsDir() {
-			return CreateResult{}, boardMissing(req.Board)
+			if dryRun && req.EnsureBoard {
+				directory = filepath.Join(home, req.Board)
+			} else {
+				return CreateResult{}, boardMissing(req.Board)
+			}
+		} else {
+			directory = filepath.Join(home, req.Board)
 		}
-		directory = filepath.Join(home, req.Board)
 	}
 	path := filepath.Join(directory, slug+".md")
 	lock, err := store.AcquireNamedLock(s.options.StateDir, "ticket", slug)
@@ -347,16 +360,25 @@ None - can start immediately
 }
 
 // ListFilter selects Tickets. BoardSet with an empty Board selects only
-// ungrouped Tickets.
+// ungrouped Tickets. All includes the closed Tickets that the default list
+// hides.
 type ListFilter struct {
 	Board    string
 	BoardSet bool
 	Status   string
 	Ready    bool
+	All      bool
+}
+
+// closedStatus reports whether a status resolves a Ticket. The default list
+// hides these Tickets, because a closed Ticket is not open work.
+func closedStatus(status domain.TicketStatus) bool {
+	return status == domain.TicketDone || status == domain.TicketWontfix
 }
 
 // List returns the Tickets that match the filter, sorted by priority then by
-// slug. Files that fail to parse are not listed.
+// slug. Files that fail to parse are not listed. By default the list holds
+// only open Tickets: All and an explicit Status both turn that default off.
 func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 	if filter.Ready && filter.Status != "" {
 		return nil, clierr.WithHint(
@@ -371,12 +393,16 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 	if err != nil {
 		return nil, err
 	}
+	hideClosed := !filter.All && filter.Status == ""
 	tickets := []domain.Ticket{}
 	for _, ticket := range idx.tickets {
 		if filter.BoardSet && ticket.Board != filter.Board {
 			continue
 		}
 		if filter.Status != "" && string(ticket.Status) != filter.Status {
+			continue
+		}
+		if hideClosed && closedStatus(ticket.Status) {
 			continue
 		}
 		if filter.Ready && !idx.ready(ticket) {

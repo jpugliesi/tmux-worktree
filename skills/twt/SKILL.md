@@ -265,6 +265,8 @@ Follow these rules for every ticket command:
 5. Pass `--limit` on list commands.
 6. Create a ticket with a DESCRIPTION argument or `--stdin`. Do not rely on
    `$EDITOR`; that path only opens for a person at an interactive terminal.
+   `--board` does not create a Board. Create the Board first with
+   `twt tickets boards create NAME`.
 7. Claim a ticket before starting work, and resolve it when the work ships.
 8. Link related tickets and Topic notes with `[[slug]]`, the Obsidian
    wiki-link form.
