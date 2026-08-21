@@ -7,6 +7,7 @@ import (
 	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	transcriptservice "github.com/jpugliesi/tmux-worktree/internal/transcript"
 	"github.com/spf13/cobra"
@@ -47,7 +48,7 @@ func newAgentTranscriptCommand(agents *agentservice.Service, projects *projectse
 	command := groupCommand(&cobra.Command{Use: "transcript", Short: "Read linked Agent Session transcripts"})
 	command.AddCommand(newAgentTranscriptShowCommand(agents, projects, stateDir))
 	command.AddCommand(newAgentTranscriptSnapshotCommand(agents, projects, stateDir))
-	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects))
+	command.AddCommand(newAgentTranscriptLinkCommand(agents, projects, stateDir))
 	return command
 }
 
@@ -62,12 +63,25 @@ func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *p
 			if err != nil {
 				return err
 			}
+			resolved, adopted, err := findOrAdoptAgent(command, agents, project, stateDir, args[0])
+			if err != nil {
+				return err
+			}
 			home, err := os.UserHomeDir()
 			if err != nil {
 				return fmt.Errorf("find home directory: %w", err)
 			}
-			result, err := transcriptservice.New(home, stateDir).Snapshot(args[0], project.ID, !isDryRun(command))
-			if err != nil {
+			service := transcriptservice.New(home, stateDir)
+			var result transcriptservice.SnapshotResult
+			if adopted && isDryRun(command) {
+				// The dry run adopted nothing, so no record exists to read
+				// through. Read the provider transcript directly.
+				value, err := service.Read(resolved.Provider, resolved.ProviderSessionID, project)
+				if err != nil {
+					return err
+				}
+				result = transcriptservice.SnapshotResult{Transcript: value, Agent: resolved}
+			} else if result, err = service.Snapshot(resolved.ID, project.ID, !isDryRun(command)); err != nil {
 				return err
 			}
 			value, agent := result.Transcript, result.Agent
@@ -97,7 +111,7 @@ func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *p
 	return command
 }
 
-func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	var projectReference string
 	var providerSessionID string
 	command := &cobra.Command{
@@ -115,7 +129,7 @@ func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *proje
 			if err != nil {
 				return err
 			}
-			return linkAgentTranscript(command, agents, args[0], project.ID, providerSessionID)
+			return linkAgentTranscript(command, agents, project, stateDir, args[0], providerSessionID)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -126,15 +140,25 @@ func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *proje
 }
 
 // linkAgentTranscript links one Agent Session of a Project to its provider
-// session. Both the agents transcript link command and apply use it.
-func linkAgentTranscript(command *cobra.Command, agents *agentservice.Service, agentID, projectID, providerSessionID string) error {
+// session. Both the agents transcript link command and apply use it. A
+// reference that names a discovered provider session adopts it first.
+func linkAgentTranscript(command *cobra.Command, agents *agentservice.Service, project domain.Project, stateDir, agentID, providerSessionID string) error {
+	agent, adopted, err := findOrAdoptAgent(command, agents, project, stateDir, agentID)
+	if err != nil {
+		return err
+	}
 	return runMutation(command, "agents.transcript.link",
 		func() (string, string, error) {
-			return agentID, providerSessionID, agents.ValidateTranscriptLink(agentID, projectID, providerSessionID)
+			if adopted {
+				// The dry run adopted nothing, so no record exists to check.
+				// Validate the link as a registration of the new session ID.
+				return agent.ID, providerSessionID, agents.ValidateRegistration(project, agent.Provider, "", providerSessionID, agent.ResumeCommand)
+			}
+			return agent.ID, providerSessionID, agents.ValidateTranscriptLink(agent.ID, project.ID, providerSessionID)
 		},
 		func() (string, string, error) {
-			agent, err := agents.LinkTranscript(agentID, projectID, providerSessionID)
-			return agent.ID, agent.Label, err
+			linked, err := agents.LinkTranscript(agent.ID, project.ID, providerSessionID)
+			return linked.ID, linked.Label, err
 		},
 		nil)
 }
@@ -150,7 +174,7 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *proje
 			if err != nil {
 				return err
 			}
-			agent, err := agents.Find(args[0])
+			agent, _, err := findOrAdoptAgent(command, agents, project, stateDir, args[0])
 			if err != nil {
 				return err
 			}

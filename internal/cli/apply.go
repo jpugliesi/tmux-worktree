@@ -596,7 +596,7 @@ func applyAgentsSend(command *cobra.Command, options Options, request applyReque
 	if err != nil {
 		return err
 	}
-	return sendAgentFeedback(command, options.agentService(), project, payload.Reference, payload.Text)
+	return sendAgentFeedback(command, options.agentService(), project, options.StateDir, payload.Reference, payload.Text)
 }
 
 func applyAgentsResume(command *cobra.Command, options Options, request applyRequest) error {
@@ -604,7 +604,7 @@ func applyAgentsResume(command *cobra.Command, options Options, request applyReq
 	if err != nil {
 		return err
 	}
-	return resumeAgentSession(command, options.agentService(), options.projectService(), payload.Reference, strings.TrimSpace(payload.Project))
+	return resumeAgentSession(command, options.agentService(), options.projectService(), options.StateDir, payload.Reference, strings.TrimSpace(payload.Project))
 }
 
 func applyAgentsRemove(command *cobra.Command, options Options, request applyRequest) error {
@@ -616,7 +616,7 @@ func applyAgentsRemove(command *cobra.Command, options Options, request applyReq
 	if err != nil {
 		return err
 	}
-	return removeAgentSession(command, options.agentService(), payload.Reference, project.ID)
+	return removeAgentSession(command, options.agentService(), payload.Reference, project, options.StateDir)
 }
 
 func applyAgentsTranscriptLink(command *cobra.Command, options Options, request applyRequest) error {
@@ -631,7 +631,7 @@ func applyAgentsTranscriptLink(command *cobra.Command, options Options, request 
 	if err != nil {
 		return err
 	}
-	return linkAgentTranscript(command, options.agentService(), payload.Reference, project.ID, payload.Session)
+	return linkAgentTranscript(command, options.agentService(), project, options.StateDir, payload.Reference, payload.Session)
 }
 
 func applyStorageClean(command *cobra.Command, options Options, request applyRequest) error {

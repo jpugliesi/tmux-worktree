@@ -183,8 +183,22 @@ Project ID. When `agents send` fails, read the liveness checks:
 twt agents show AGENT_ID --project PROJECT_ID --output json
 ```
 
-To find Codex and Claude sessions of the Project that no Agent Session uses,
-use discovery. Read the result first, then adopt:
+`twt agents list` shows discovered Codex and Claude sessions of the Project
+automatically: an unregistered provider session appears with the status
+`discovered` and its provider session ID as `id`. Do not register it by hand.
+The first action on it adopts it: pass the session ID (or a unique prefix) to
+`resume`, `show`, `send`, or a `transcript` command, and twt registers the
+session before it proceeds. Use `--registered` when a scan of the provider
+stores is unwanted, and `--live=false` for the cheap statusline read.
+
+```sh
+twt agents list --project current --output json
+twt agents resume PROVIDER_SESSION_ID --output json
+twt agents list --project current --registered --output json
+```
+
+For bulk adoption of many sessions at one time, `agents discover` remains
+available:
 
 ```sh
 twt agents discover --project current --limit 10 --output json

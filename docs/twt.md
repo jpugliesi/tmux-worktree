@@ -417,6 +417,19 @@ printf '%s\n' 'Please fix the selected review note.' | \
   twt agents send AGENT_ID --project current --stdin
 ```
 
+`agents list` also scans the Codex and Claude stores. A provider session that
+ran inside a repository of the Project, and that no Agent Session uses,
+appears after the registered Agent Sessions with the status `discovered`. Its
+`id` is the provider session ID. The list writes nothing. The first action on
+a discovered session adopts it: `resume`, `show`, `send`, and the
+`transcript` commands accept the provider session ID or a unique prefix, and
+register the session before they proceed. A manually started Codex or Claude
+session in a Project directory therefore needs no manual registration step.
+
+Use `--registered` in a script that must not scan the provider stores. Use
+`--live=false` for the cheap statusline path: it does not probe tmux and does
+not scan the provider stores.
+
 `agents show` gives each liveness check with its result. A failed check tells
 you why `twt` does not send feedback. The current command of the pane is an
 advisory check only.
@@ -426,8 +439,8 @@ the Project and still runs the registered direct Agent process. `resume`
 focuses a live pane. If the pane stopped, `resume` starts the saved command in
 a new Project window.
 
-Find the provider sessions that ran inside a repository of the Project and
-that no Agent Session uses:
+To read the discovered sessions alone, or to adopt many sessions at one time,
+use discovery:
 
 ```sh
 twt agents discover --project current
@@ -444,6 +457,8 @@ twt agents rm AGENT_ID --project current
 ```
 
 Removal keeps the provider transcript and does not stop a live Agent process.
+`rm` does not adopt: a reference that names a discovered but unregistered
+session is invalid usage.
 
 ## Neovim integration
 

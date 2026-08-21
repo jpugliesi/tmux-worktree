@@ -12,14 +12,17 @@ type agentOutput struct {
 	ID string `json:"id"`
 	// ProviderSessionID is the raw provider session ID. twt never returns
 	// the provider file path.
-	ProviderSessionID string            `json:"providerSessionId,omitempty"`
-	ProjectID         string            `json:"projectId"`
-	Provider          string            `json:"provider"`
-	Label             string            `json:"label"`
-	Status            string            `json:"status"`
-	CreatedAt         string            `json:"createdAt"`
-	UpdatedAt         string            `json:"updatedAt"`
-	Capabilities      agentCapabilities `json:"capabilities"`
+	ProviderSessionID string `json:"providerSessionId,omitempty"`
+	ProjectID         string `json:"projectId"`
+	Provider          string `json:"provider"`
+	Label             string `json:"label"`
+	Status            string `json:"status"`
+	CreatedAt         string `json:"createdAt,omitempty"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
+	// LastActivity is set for a discovered provider session only. It is the
+	// last write time of the provider transcript.
+	LastActivity string            `json:"lastActivity,omitempty"`
+	Capabilities agentCapabilities `json:"capabilities"`
 }
 
 type agentCapabilities struct {
@@ -98,6 +101,20 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, pro
 		Capabilities: agentCapabilities{
 			CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
 			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
+		},
+	}
+}
+
+// discoveredAgentOutput describes one discovered provider session in the
+// Agent Session list. The session is not registered yet: its ID is the
+// provider session ID, and the first action on it adopts it.
+func discoveredAgentOutput(project domain.Project, session transcriptservice.DiscoveredSession) agentOutput {
+	return agentOutput{
+		ID: session.SessionID, ProviderSessionID: session.SessionID, ProjectID: project.ID,
+		Provider: session.Provider, Label: session.Provider, Status: "discovered",
+		LastActivity: session.LastActivity.UTC().Format(time.RFC3339),
+		Capabilities: agentCapabilities{
+			CanResume: project.Status == domain.ProjectActive, CanSend: false, CanFocus: false, CanReadTranscript: true,
 		},
 	}
 }

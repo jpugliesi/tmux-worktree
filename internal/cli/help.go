@@ -121,19 +121,19 @@ var commandHelp = map[string]helpContent{
 		long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --project fix-auth --label review -- claude --resume SESSION_ID",
 	},
 	"twt agents list": {
-		long: "List Agent Sessions for one Project, including status and capabilities. twt asks tmux for the live state of each pane. Use --live=false to not probe tmux.", example: "  twt agents list --project current --output json\n  twt agents list --project current --live=false",
+		long: "List Agent Sessions for one Project, including status and capabilities. twt asks tmux for the live state of each pane, and scans the Codex and Claude stores for discovered sessions of the Project. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --project current --output json\n  twt agents list --project current --registered\n  twt agents list --project current --live=false",
 	},
 	"twt agents show": {
 		long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --project current --output json",
 	},
 	"twt agents discover": {
-		long: "Find the Codex and Claude sessions that ran inside a repository of the Project and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command.", example: "  twt agents discover --project current\n  twt agents discover --project current --adopt --limit 3",
+		long: "Find the Codex and Claude sessions that ran inside a repository of the Project and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command. 'twt agents list' also shows these sessions, and the first action on one adopts it; use discover --adopt for bulk adoption.", example: "  twt agents discover --project current\n  twt agents discover --project current --adopt --limit 3",
 	},
 	"twt agents rm": {
 		long: "Delete an Agent Session record. twt keeps the provider transcript and does not stop a live Agent process.", example: "  twt agents rm AGENT_ID\n  twt agents rm AGENT_ID --dry-run --output json",
 	},
 	"twt agents resume": {
-		long: "Focus a live Agent Session or start its saved resume command in a new Project window.", example: "  twt agents resume AGENT_ID",
+		long: "Focus a live Agent Session or start its saved resume command in a new Project window. A discovered provider session ID also resumes: twt registers it first.", example: "  twt agents resume AGENT_ID\n  twt agents resume PROVIDER_SESSION_ID",
 	},
 	"twt agents focus": {
 		long: "Focus the tmux pane for a live Agent Session.", example: "  twt agents focus AGENT_ID",
