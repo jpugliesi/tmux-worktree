@@ -54,6 +54,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 		Short: "Manage Markdown tickets",
 	})
 	tickets.AddCommand(newTicketsInitCommand(options))
+	tickets.AddCommand(newTicketsHomeCommand(options))
 	tickets.AddCommand(newTicketsCreateCommand(options))
 	tickets.AddCommand(newTicketsListCommand(options))
 	tickets.AddCommand(newTicketsShowCommand(options))
@@ -161,6 +162,47 @@ func reportScaffold(out io.Writer, wrote bool, path string) error {
 	}
 	_, err := fmt.Fprintf(out, "%s %q\n", verb, path)
 	return err
+}
+
+func newTicketsHomeCommand(options Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "home",
+		Short: "Open the Tickets home in your editor",
+		Args:  noArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			// The editor is an interactive escape: it opens only for a person
+			// at a terminal, so a piped call never blocks in an editor.
+			if !interactiveTicketSession(command) {
+				return invalidUsageWithHint(command,
+					"Run 'twt tickets home' in a terminal.",
+					"twt tickets home has no terminal")
+			}
+			home, err := options.resolveTicketsHome()
+			if err != nil {
+				return err
+			}
+			if home == "" {
+				return clierr.WithHint(
+					clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
+					"Set ticketsHome in ~/.config/twt/config.yaml or TWT_TICKETS_HOME.")
+			}
+			home = filepath.Clean(home)
+			return runMutation(command, "tickets.home",
+				func() (string, string, error) {
+					return "", home, nil
+				},
+				func() (string, string, error) {
+					if err := options.OpenEditor(home); err != nil {
+						return "", "", err
+					}
+					return "", home, nil
+				},
+				func(out io.Writer, _, path string) error {
+					_, err := fmt.Fprintf(out, "Opened Tickets home %q\n", path)
+					return err
+				})
+		},
+	}
 }
 
 func newTicketsCreateCommand(options Options) *cobra.Command {

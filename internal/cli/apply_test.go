@@ -340,7 +340,7 @@ func TestApplyRefusesInteractiveOperations(t *testing.T) {
 		}
 	}
 	hint := clierr.HintOf(err)
-	for _, excluded := range []string{"twt start", "twt tickets start", "twt switch", "twt done", "twt archive", "twt templates edit", "twt agents focus", "twt agents register --pane current"} {
+	for _, excluded := range []string{"twt start", "twt tickets start", "twt tickets home", "twt switch", "twt done", "twt archive", "twt templates edit", "twt agents focus", "twt agents register --pane current"} {
 		if !strings.Contains(hint, excluded) {
 			t.Fatalf("the unsupported operation hint does not name %q: %s", excluded, hint)
 		}

@@ -159,6 +159,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets init": {
 		long: "Create the Tickets home directory with its hub index.md and its create template. twt writes each file only when that file is missing. It never overwrites notes.", example: "  twt tickets init\n  twt tickets init --dry-run --output json",
 	},
+	"twt tickets home": {
+		long: "Open the Tickets home directory in VISUAL or EDITOR. Tickets home is the ticketsHome value of config.yaml, or TWT_TICKETS_HOME.", example: "  twt tickets home",
+	},
 	"twt tickets create": {
 		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt reads the body from standard input and --title is required. With no DESCRIPTION and no --stdin in an interactive terminal, twt asks for a title, then a Board, then opens VISUAL or EDITOR on an empty file for the description. A typed Board name that does not exist is created only after confirm. --board never creates a missing Board.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --board change-monitor --output json\n  printf '%s\\n' 'Steps...' | twt tickets create --title \"Fix auth\" --stdin",
 	},

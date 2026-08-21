@@ -168,6 +168,7 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 
 ```
 twt tickets init
+twt tickets home
 twt tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
 twt tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
 twt tickets show TICKET
@@ -184,6 +185,9 @@ twt tickets boards show NAME
 Register the group under Workflows in `internal/cli/root.go`. Declare
 `setArguments` for every placeholder. Complete Board names and Ticket slugs
 from the store.
+
+`twt tickets home` opens the Tickets home directory in `$VISUAL` or
+`$EDITOR`. It is TTY-only and has no apply operation.
 
 `TICKET` resolves in this order:
 

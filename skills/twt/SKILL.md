@@ -97,8 +97,8 @@ supports every non-interactive mutation. Read the current operation names and
 payload shapes from `twt schema`; this skill does not repeat them.
 
 An interactive command has no apply operation by design: `twt start`,
-`twt tickets start`, `twt switch`, `twt done`, the tmux client move of an
-archive, `twt templates edit`, `twt agents focus`, and
+`twt tickets start`, `twt tickets home`, `twt switch`, `twt done`, the tmux
+client move of an archive, `twt templates edit`, `twt agents focus`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Projects

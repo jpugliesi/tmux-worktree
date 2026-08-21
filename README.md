@@ -173,6 +173,7 @@ Point twt at the directory in your Obsidian vault that holds tickets:
 ```sh
 echo 'ticketsHome: ~/Vaults/yourvault/tickets' > ~/.config/twt/config.yaml
 twt tickets init
+twt tickets home
 ```
 
 `init` scaffolds the vault hub with Bases views (Recent, Ready, Blocked,

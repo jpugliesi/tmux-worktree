@@ -965,6 +965,50 @@ func TestTicketsEditAndComment(t *testing.T) {
 	}
 }
 
+func TestTicketsHomeOpensTheConfiguredDirectory(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "home")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("tickets home without a terminal = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "terminal") {
+		t.Fatalf("tickets home hint = %q", hint)
+	}
+
+	var opened string
+	options.OpenEditor = func(path string) error {
+		opened = path
+		return nil
+	}
+	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != home {
+		t.Fatalf("tickets home opened %q, want %q", opened, home)
+	}
+	if !strings.Contains(stdout, home) {
+		t.Fatalf("tickets home stdout = %q", stdout)
+	}
+
+	opened = "should-not-open"
+	jsonOut, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "home", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != "should-not-open" {
+		t.Fatalf("tickets home dry-run opened %q", opened)
+	}
+	result := decodeTicketMutation(t, jsonOut)
+	if result.Operation != "tickets.home" || result.Status != "valid" || result.Name != home {
+		t.Fatalf("tickets home dry-run envelope = %+v", result)
+	}
+}
+
 func TestTicketsNeedAConfiguredHome(t *testing.T) {
 	t.Setenv("TWT_TICKETS_HOME", "")
 	root := t.TempDir()
@@ -1113,7 +1157,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, command := range []string{
-		`"twt tickets init"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
+		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets boards create"`,
 		`"twt tickets boards list"`, `"twt tickets boards show"`,

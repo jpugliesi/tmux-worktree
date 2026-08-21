@@ -716,6 +716,7 @@ and more than one document, the same as Project Template loading.
 
 ```sh
 twt tickets init
+twt tickets home
 twt tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
 twt tickets list [--board BOARD] [--status STATUS] [--ready] [--all] [--limit N]
 twt tickets show TICKET
@@ -733,8 +734,10 @@ twt tickets boards show NAME
 
 `twt tickets init` creates Tickets home if it is missing, and writes
 `index.md` and `templates/ticket.md` only when those files are missing. It
-never overwrites an existing note. `twt tickets boards create NAME` creates
-the Board directory and writes `index.md` only when that file is missing.
+never overwrites an existing note. `twt tickets home` opens that directory
+in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
+`twt tickets boards create NAME` creates the Board directory and writes
+`index.md` only when that file is missing.
 
 ### Create a ticket
 
