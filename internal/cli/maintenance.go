@@ -39,15 +39,17 @@ func newStorageCommand(options Options) *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Total: %s\nCaches: %s (%d)\nProjects (active): %s (%d)\nProjects (archived): %s (%d)\nWorktrees: %d\nPrepared: %s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)\nSnapshots: %s\n",
-				formatBytes(result.TotalBytes),
-				formatBytes(result.CacheBytes), result.CacheCount,
-				formatBytes(result.ActiveProjectBytes), result.ActiveProjectCount,
-				formatBytes(result.ArchivedProjectBytes), result.ArchivedProjectCount,
-				result.WorktreeCount,
-				formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount,
-				formatBytes(result.SnapshotBytes))
-			return err
+			prepared := fmt.Sprintf("%s (%d environments: %d ready, %d preparing, %d failed; %d worktrees)",
+				formatBytes(result.PreparedBytes), result.PreparedEnvironmentCount, result.ReadyEnvironmentCount, result.PreparingEnvironmentCount, result.FailedEnvironmentCount, result.PreparedWorktreeCount)
+			return writeFields(command.OutOrStdout(), [][2]string{
+				{"Total", formatBytes(result.TotalBytes)},
+				{"Caches", fmt.Sprintf("%s (%d)", formatBytes(result.CacheBytes), result.CacheCount)},
+				{"Projects (active)", fmt.Sprintf("%s (%d)", formatBytes(result.ActiveProjectBytes), result.ActiveProjectCount)},
+				{"Projects (archived)", fmt.Sprintf("%s (%d)", formatBytes(result.ArchivedProjectBytes), result.ArchivedProjectCount)},
+				{"Worktrees", fmt.Sprintf("%d", result.WorktreeCount)},
+				{"Prepared", prepared},
+				{"Snapshots", formatBytes(result.SnapshotBytes)},
+			})
 		},
 	}
 	addFieldsFlag(show, maintenance.StorageStatus{})
@@ -157,10 +159,12 @@ func newDoctorCommand(options Options) *cobra.Command {
 					return err
 				}
 			} else {
+				rows := make([][]string, 0, len(report.Checks))
 				for _, check := range report.Checks {
-					if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", check.Status, check.Name, check.Message); err != nil {
-						return err
-					}
+					rows = append(rows, []string{check.Status, check.Name, check.Message})
+				}
+				if err := writeTable(command.OutOrStdout(), []string{"STATUS", "NAME", "MESSAGE"}, rows); err != nil {
+					return err
 				}
 			}
 			if !report.Healthy {

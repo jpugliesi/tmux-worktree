@@ -149,12 +149,11 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 				}, "agents")
 			}
 			now := time.Now()
+			rows := make([][]string, 0, len(outputs))
 			for _, output := range outputs {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\n", agentListLine(output, now)); err != nil {
-					return err
-				}
+				rows = append(rows, []string{output.Provider, output.ID, formatAge(now.Sub(output.recency))})
 			}
-			return nil
+			return writeTable(command.OutOrStdout(), []string{"PROVIDER", "ID", "AGE"}, rows)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -216,28 +215,31 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 			if WantsJSON(command) {
 				return writeReadJSON(command, agentShowOutput{SchemaVersion: jsonSchemaVersion, Agent: output, Liveness: checks}, "")
 			}
-			writer := command.OutOrStdout()
 			linked := "no"
 			if output.ProviderSessionID != "" {
 				linked = output.ProviderSessionID
 			}
-			rows := [][2]string{
-				{"id", output.ID},
-				{"provider", output.Provider},
-				{"label", output.Label},
-				{"status", output.Status},
-				{"created", output.CreatedAt},
-				{"provider session", linked},
-				{"can resume", boolText(output.Capabilities.CanResume)},
-				{"can send", boolText(output.Capabilities.CanSend)},
-				{"can focus", boolText(output.Capabilities.CanFocus)},
-				{"can read transcript", boolText(output.Capabilities.CanReadTranscript)},
+			if err := writeFields(command.OutOrStdout(), [][2]string{
+				{"ID", output.ID},
+				{"Provider", output.Provider},
+				{"Label", output.Label},
+				{"Status", output.Status},
+				{"Created", output.CreatedAt},
+				{"Provider session", linked},
+				{"Can resume", boolText(output.Capabilities.CanResume)},
+				{"Can send", boolText(output.Capabilities.CanSend)},
+				{"Can focus", boolText(output.Capabilities.CanFocus)},
+				{"Can read transcript", boolText(output.Capabilities.CanReadTranscript)},
+			}); err != nil {
+				return err
 			}
-			for _, row := range rows {
-				if _, err := fmt.Fprintf(writer, "%s\t%s\n", row[0], row[1]); err != nil {
-					return err
-				}
+			if len(checks) == 0 {
+				return nil
 			}
+			if _, err := fmt.Fprintln(command.OutOrStdout()); err != nil {
+				return err
+			}
+			rows := make([][]string, 0, len(checks))
 			for _, check := range checks {
 				state := "fail"
 				if check.OK {
@@ -246,11 +248,9 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 				if check.Advisory {
 					state += " (advisory)"
 				}
-				if _, err := fmt.Fprintf(writer, "%s\t%s\n", check.Name, state); err != nil {
-					return err
-				}
+				rows = append(rows, []string{check.Name, state})
 			}
-			return nil
+			return writeTable(command.OutOrStdout(), []string{"CHECK", "RESULT"}, rows)
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
@@ -350,16 +350,16 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 				}
 				return writeReadJSON(command, result, "sessions")
 			}
-			writer := command.OutOrStdout()
 			now := time.Now()
+			rows := make([][]string, 0, len(found))
 			for _, session := range found {
-				age := formatAge(now.Sub(session.LastActivity)) + " ago"
-				if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", session.Provider, session.SessionID, session.RepositoryName, age); err != nil {
-					return err
-				}
+				rows = append(rows, []string{session.Provider, session.SessionID, session.RepositoryName, formatAge(now.Sub(session.LastActivity))})
+			}
+			if err := writeTable(command.OutOrStdout(), []string{"PROVIDER", "ID", "REPOSITORY", "AGE"}, rows); err != nil {
+				return err
 			}
 			for _, agentID := range result.Adopted {
-				if _, err := fmt.Fprintf(writer, "Registered Agent Session %s\n", agentID); err != nil {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "Registered Agent Session %s\n", agentID); err != nil {
 					return err
 				}
 			}

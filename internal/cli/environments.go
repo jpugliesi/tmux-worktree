@@ -195,47 +195,63 @@ func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.Env
 }
 
 func writeEnvironmentDetail(out io.Writer, now time.Time, info maintenance.EnvironmentInfo) error {
-	text := fmt.Sprintf("Prepared Environment: %s\nTemplate: %s\nStatus: %s\nAge: %s\nSize: %s\nCreated: %s\n",
-		info.ID, info.TemplateName, info.Status, environmentAge(now, info), formatBytes(info.Bytes), info.CreatedAt.UTC().Format(time.RFC3339))
+	fields := [][2]string{
+		{"Prepared Environment", info.ID},
+		{"Template", info.TemplateName},
+		{"Status", info.Status},
+		{"Age", environmentAge(now, info)},
+		{"Size", formatBytes(info.Bytes)},
+		{"Created", info.CreatedAt.UTC().Format(time.RFC3339)},
+	}
 	if info.ReadyAt != nil {
-		text += fmt.Sprintf("Ready: %s\n", info.ReadyAt.UTC().Format(time.RFC3339))
+		fields = append(fields, [2]string{"Ready", info.ReadyAt.UTC().Format(time.RFC3339)})
 	}
 	if info.Failure != "" {
-		text += fmt.Sprintf("Failure: %s\n", info.Failure)
+		fields = append(fields, [2]string{"Failure", info.Failure})
 	}
 	if info.LogPath != "" {
-		text += fmt.Sprintf("Log: %s\n", info.LogPath)
+		fields = append(fields, [2]string{"Log", info.LogPath})
 	}
 	if info.Project != nil {
-		text += fmt.Sprintf("Project: %s (%s)\nProject ID: %s\n", info.Project.Name, info.Project.Status, info.Project.ID)
+		fields = append(fields,
+			[2]string{"Project", info.Project.Name + " (" + string(info.Project.Status) + ")"},
+			[2]string{"Project ID", info.Project.ID},
+		)
+	}
+	if err := writeFields(out, fields); err != nil {
+		return err
 	}
 	if len(info.BaseCommits) > 0 {
-		text += "Base commits:\n"
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(info.BaseCommits))
 		for _, name := range sortedKeys(info.BaseCommits) {
-			text += fmt.Sprintf("  %s\t%s\n", name, info.BaseCommits[name])
+			rows = append(rows, []string{name, info.BaseCommits[name]})
+		}
+		if err := writeTable(out, []string{"REPOSITORY", "BASE"}, rows); err != nil {
+			return err
 		}
 	}
-	if len(info.Steps) > 0 {
-		succeeded := 0
-		for _, step := range info.Steps {
-			if step.Status == domain.StepSucceeded {
-				succeeded++
-			}
-		}
-		text += fmt.Sprintf("Steps: %d of %d are complete\n", succeeded, len(info.Steps))
-		for _, step := range info.Steps {
-			if step.Status == domain.StepSucceeded {
-				continue
-			}
-			line := fmt.Sprintf("  %s\t%s", step.ID, step.Status)
-			if step.Error != "" {
-				line += "\t" + step.Error
-			}
-			text += line + "\n"
-		}
+	if len(info.Steps) == 0 {
+		return nil
 	}
-	_, err := io.WriteString(out, text)
-	return err
+	succeeded := 0
+	incomplete := make([][]string, 0, len(info.Steps))
+	for _, step := range info.Steps {
+		if step.Status == domain.StepSucceeded {
+			succeeded++
+			continue
+		}
+		incomplete = append(incomplete, []string{step.ID, string(step.Status), step.Error})
+	}
+	if _, err := fmt.Fprintf(out, "\nSteps: %d of %d are complete\n", succeeded, len(info.Steps)); err != nil {
+		return err
+	}
+	if len(incomplete) == 0 {
+		return nil
+	}
+	return writeTable(out, []string{"STEP", "STATUS", "ERROR"}, incomplete)
 }
 
 // environmentDetail writes the value that a person needs most for one status.

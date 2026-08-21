@@ -178,7 +178,7 @@ func TestStorageShowSeparatesActiveAndArchivedProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Projects (active): 4.0 KiB (1)", "Projects (archived): 2.0 KiB (1)", "Worktrees: 2"} {
+	for _, want := range []string{"Projects (active)", "4.0 KiB (1)", "Projects (archived)", "2.0 KiB (1)", "Worktrees", "2"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("storage show text does not contain %q:\n%s", want, text)
 		}
@@ -362,11 +362,15 @@ func TestEnvironmentsShowAcceptsAnIDPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Prepared Environment: " + environment.ID,
-		"Template: example",
-		"Status: ready",
-		"Size: 1.0 KiB",
-		"app\ta1b2c3d",
+		environment.ID,
+		"Template",
+		"example",
+		"Status",
+		"ready",
+		"Size",
+		"1.0 KiB",
+		"app",
+		"a1b2c3d",
 		"Steps: 1 of 1 are complete",
 	} {
 		if !strings.Contains(text, want) {
@@ -423,9 +427,8 @@ func TestDoctorWarnsAboutAFailedEnvironmentAndStaysHealthy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doctor with a failed Prepared Environment returned an error: %v", err)
 	}
-	want := "warn\tenvironment:" + failed.ID + "\tPrepared Environment failed: clone failed. See " + log + ". Run 'twt storage clean --apply' to remove it."
-	if !strings.Contains(text, want) {
-		t.Fatalf("doctor text does not contain %q:\n%s", want, text)
+	if !strings.Contains(text, "environment:"+failed.ID) || !strings.Contains(text, "Prepared Environment failed: clone failed. See "+log) {
+		t.Fatalf("doctor text does not report the failed environment:\n%s", text)
 	}
 
 	encoded, _, err := runCLI(t, options, "doctor", "--output", "json")

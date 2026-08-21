@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"text/tabwriter"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -60,17 +59,11 @@ func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 				return err
 			}
 			now := time.Now().UTC()
-			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)
-			if _, err := fmt.Fprintln(writer, "NAME\tTEMPLATE\tSTATUS\tAGE"); err != nil {
-				return err
-			}
+			rows := make([][]string, 0, len(projects))
 			for _, project := range projects {
-				age := formatAge(now.Sub(projectAgeReference(project)))
-				if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", project.Name, project.TemplateName, project.Status, age); err != nil {
-					return err
-				}
+				rows = append(rows, []string{project.Name, project.TemplateName, string(project.Status), formatAge(now.Sub(projectAgeReference(project)))})
 			}
-			return writer.Flush()
+			return writeTable(command.OutOrStdout(), []string{"NAME", "TEMPLATE", "STATUS", "AGE"}, rows)
 		},
 	}
 	addListReadFlags(command, &limit, &offset, projectOutput{})
@@ -101,14 +94,17 @@ func writeProject(command *cobra.Command, project domain.Project) error {
 	if WantsJSON(command) {
 		return writeReadJSON(command, projectShowOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project)}, "project")
 	}
-	if _, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\nRoot: %s\n", project.Name, project.ID, project.TemplateName, project.Status, project.Root); err != nil {
-		return err
+	fields := [][2]string{
+		{"Project", project.Name},
+		{"ID", project.ID},
+		{"Template", project.TemplateName},
+		{"Status", string(project.Status)},
+		{"Root", project.Root},
 	}
-	if project.Ticket == "" {
-		return nil
+	if project.Ticket != "" {
+		fields = append(fields, [2]string{"Ticket", project.Ticket})
 	}
-	_, err := fmt.Fprintf(command.OutOrStdout(), "Ticket: %s\n", project.Ticket)
-	return err
+	return writeFields(command.OutOrStdout(), fields)
 }
 
 func newProjectsCurrentCommand(service *projectservice.Service) *cobra.Command {

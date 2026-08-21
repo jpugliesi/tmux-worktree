@@ -373,12 +373,18 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 	}
 
 	text := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID)
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) != 2 || lines[0] != "claude\tclaude-new\t0m" {
-		t.Fatalf("newest text line = %q", lines[0])
+	if strings.Contains(text, "\t") {
+		t.Fatalf("agents list text still contains tabs: %q", text)
 	}
-	if lines[1] != "codex\tagent-old\t2h" {
-		t.Fatalf("older text line = %q", lines[1])
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[0], "PROVIDER") || !strings.Contains(lines[0], "ID") {
+		t.Fatalf("agents list header = %q", text)
+	}
+	if !strings.HasPrefix(lines[1], "claude") || !strings.Contains(lines[1], "claude-new") || !strings.Contains(lines[1], "0m") {
+		t.Fatalf("newest text line = %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "codex") || !strings.Contains(lines[2], "agent-old") || !strings.Contains(lines[2], "2h") {
+		t.Fatalf("older text line = %q", lines[2])
 	}
 
 	var picked []string
@@ -387,7 +393,7 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 		return 0, nil
 	}
 	executeWithOptions(t, options, nil, "agents", "open", "--dry-run")
-	if strings.Join(picked, "\n") != strings.Join(lines, "\n") {
-		t.Fatalf("open picker lines = %v, want %v", picked, lines)
+	if len(picked) != 2 || picked[0] != "claude\tclaude-new\t0m" || picked[1] != "codex\tagent-old\t2h" {
+		t.Fatalf("open picker lines = %v", picked)
 	}
 }

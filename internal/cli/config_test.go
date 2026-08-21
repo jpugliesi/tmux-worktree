@@ -210,19 +210,45 @@ func TestConfigCommandWritesTextRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config --output text: %v", err)
 	}
+	if strings.Contains(stdout, "\t") {
+		t.Fatalf("config text still contains tabs:\n%s", stdout)
+	}
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	if len(lines) == 0 || !strings.Contains(lines[0], "KEY") || !strings.Contains(lines[0], "VALUE") || !strings.Contains(lines[0], "SOURCE") || !strings.Contains(lines[0], "ORIGIN") {
+		t.Fatalf("config text missing headers:\n%s", stdout)
+	}
+	valueAt := strings.Index(lines[0], "VALUE")
+	sourceAt := strings.Index(lines[0], "SOURCE")
 	configFile := filepath.Join(options.ConfigDir, "config.yaml")
-	want := strings.Join([]string{
-		"configDir\t" + options.ConfigDir + "\tdefault\t",
-		"stateDir\t" + options.StateDir + "\tdefault\t",
-		"dataDir\t" + options.DataDir + "\tdefault\t",
-		"configFile\t" + configFile + "\tdefault\t",
-		"tmuxSocket\t\tdefault\t",
-		"ticketsHome\t/vault/tickets\tfile\t" + configFile,
-		"branchPrefix\tjpugliesi/\tenv\tTWT_BRANCH_PREFIX",
-		"",
-	}, "\n")
-	if stdout != want {
-		t.Fatalf("text output:\n%s\nwant:\n%s", stdout, want)
+	for _, want := range []struct {
+		key    string
+		value  string
+		source string
+	}{
+		{"configDir", options.ConfigDir, "default"},
+		{"stateDir", options.StateDir, "default"},
+		{"dataDir", options.DataDir, "default"},
+		{"configFile", configFile, "default"},
+		{"tmuxSocket", "", "default"},
+		{"ticketsHome", "/vault/tickets", "file"},
+		{"branchPrefix", "jpugliesi/", "env"},
+	} {
+		var line string
+		for _, candidate := range lines[1:] {
+			if strings.HasPrefix(strings.TrimRight(candidate, " "), want.key) || strings.HasPrefix(candidate, want.key+" ") {
+				line = candidate
+				break
+			}
+		}
+		if line == "" {
+			t.Fatalf("config text missing %s:\n%s", want.key, stdout)
+		}
+		if want.value != "" && (valueAt >= len(line) || !strings.HasPrefix(line[valueAt:], want.value)) {
+			t.Fatalf("config text does not align %s value %q:\n%s", want.key, want.value, stdout)
+		}
+		if sourceAt >= len(line) || !strings.HasPrefix(line[sourceAt:], want.source) {
+			t.Fatalf("config text does not align %s source %q:\n%s", want.key, want.source, stdout)
+		}
 	}
 }
 

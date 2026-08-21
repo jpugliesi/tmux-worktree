@@ -75,9 +75,8 @@ func TestAgentsOpenRefusesJSONOutput(t *testing.T) {
 func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 	options, project, agentID := agentsOpenFixture(t)
 	listed := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID)
-	wantLines := strings.Split(strings.TrimSpace(listed), "\n")
-	if len(wantLines) != 2 {
-		t.Fatalf("agents list lines = %v", wantLines)
+	if strings.Contains(listed, "\t") || !strings.Contains(listed, "PROVIDER") || !strings.Contains(listed, agentID) {
+		t.Fatalf("agents list text = %q", listed)
 	}
 	var pickedLines []string
 	options.AgentPick = func(_ *cobra.Command, lines []string) (int, error) {
@@ -85,8 +84,8 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 		return 0, nil
 	}
 	output := executeWithOptions(t, options, nil, "agents", "open", "--project", project.ID, "--dry-run")
-	if strings.Join(pickedLines, "\n") != strings.Join(wantLines, "\n") {
-		t.Fatalf("agents open picker lines = %v, want %v", pickedLines, wantLines)
+	if len(pickedLines) != 2 {
+		t.Fatalf("agents open picker lines = %v", pickedLines)
 	}
 	if !strings.HasPrefix(pickedLines[0], "codex\t"+agentID+"\t") {
 		t.Fatalf("registered picker line = %q", pickedLines[0])

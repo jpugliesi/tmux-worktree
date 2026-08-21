@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -40,12 +39,11 @@ func newConfigCommand(options Options) *cobra.Command {
 			if WantsJSON(command) {
 				return writeReadJSON(command, configOutput{SchemaVersion: jsonSchemaVersion, Config: settings}, "config")
 			}
+			rows := make([][]string, 0, len(settings))
 			for _, setting := range settings {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", setting.Key, setting.Value, setting.Source, setting.Origin); err != nil {
-					return err
-				}
+				rows = append(rows, []string{setting.Key, setting.Value, setting.Source, setting.Origin})
 			}
-			return nil
+			return writeTable(command.OutOrStdout(), []string{"KEY", "VALUE", "SOURCE", "ORIGIN"}, rows)
 		},
 	}
 	addFieldsFlag(command, configSettingOutput{})

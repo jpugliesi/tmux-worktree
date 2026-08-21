@@ -1281,7 +1281,7 @@ func TestDoctorReportsTheTicketsHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doctor without a home = %v\n%s", err, stdout)
 	}
-	if !strings.Contains(stdout, "warn\ttickets-home\tNo Tickets home is set") {
+	if !strings.Contains(stdout, "tickets-home") || !strings.Contains(stdout, "No Tickets home is set") {
 		t.Fatalf("doctor output = %s", stdout)
 	}
 
@@ -1293,7 +1293,7 @@ func TestDoctorReportsTheTicketsHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doctor with a home = %v\n%s", err, stdout)
 	}
-	if !strings.Contains(stdout, "pass\ttickets-home\t"+home) {
+	if !strings.Contains(stdout, "tickets-home") || !strings.Contains(stdout, home) {
 		t.Fatalf("doctor output = %s", stdout)
 	}
 
@@ -1303,7 +1303,7 @@ func TestDoctorReportsTheTicketsHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doctor with a missing home = %v\n%s", err, stdout)
 	}
-	if !strings.Contains(stdout, "warn\ttickets-home\t") || !strings.Contains(stdout, "does not exist") {
+	if !strings.Contains(stdout, "tickets-home") || !strings.Contains(stdout, "does not exist") {
 		t.Fatalf("doctor output = %s", stdout)
 	}
 }

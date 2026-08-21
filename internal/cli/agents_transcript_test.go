@@ -243,7 +243,10 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 
 	text := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID)
-	for _, want := range []string{"codex\tcodex-one\tapp", "claude\tclaude-one\tapp"} {
+	if strings.Contains(text, "\t") {
+		t.Fatalf("agents discover text still contains tabs: %q", text)
+	}
+	for _, want := range []string{"PROVIDER", "ID", "REPOSITORY", "codex", "codex-one", "app", "claude", "claude-one"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("agents discover text = %q, want %q", text, want)
 		}
@@ -331,7 +334,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		codexAgent = stored[1]
 	}
 	shown := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--project", project.ID)
-	for _, want := range []string{"provider\tcodex", "provider session\tcodex-one", "project pane\tfail", "current command\tfail (advisory)", "can read transcript\tyes"} {
+	for _, want := range []string{"Provider", "codex", "Provider session", "codex-one", "project pane", "fail", "current command", "fail (advisory)", "Can read transcript", "yes"} {
 		if !strings.Contains(shown, want) {
 			t.Fatalf("agents show text = %q, want %q", shown, want)
 		}

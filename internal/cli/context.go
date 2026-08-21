@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,8 +53,11 @@ func writeContext(command *cobra.Command, project domain.Project, directory stri
 	if WantsJSON(command) {
 		return writeReadJSON(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, directory)}, "")
 	}
-	_, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\n", project.Name)
-	return err
+	fields := [][2]string{{"Project", project.Name}}
+	if repository := repositoryForDirectory(project, directory); repository != "" {
+		fields = append(fields, [2]string{"Repository", repository})
+	}
+	return writeFields(command.OutOrStdout(), fields)
 }
 
 func repositoryForDirectory(project domain.Project, directory string) string {

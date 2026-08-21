@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -346,20 +345,15 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No tickets match. Run 'twt tickets create DESCRIPTION'.")
 				return err
 			}
-			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)
-			if _, err := fmt.Fprintln(writer, "SLUG\tSTATUS\tPRIORITY\tBOARD\tTITLE"); err != nil {
-				return err
-			}
+			rows := make([][]string, 0, len(tickets))
 			for _, ticket := range tickets {
 				boardName := ticket.Board
 				if boardName == "" {
 					boardName = "-"
 				}
-				if _, err := fmt.Fprintf(writer, "%s\t%s\t%d\t%s\t%s\n", ticket.Slug, ticket.Status, ticket.Priority, boardName, ticket.Title); err != nil {
-					return err
-				}
+				rows = append(rows, []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), boardName, ticket.Title})
 			}
-			return writer.Flush()
+			return writeTable(command.OutOrStdout(), []string{"SLUG", "STATUS", "PRIORITY", "BOARD", "TITLE"}, rows)
 		},
 	}
 	command.Flags().StringVar(&board, "board", "", "List one Board; an empty value lists ungrouped Tickets")
@@ -398,14 +392,16 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 				}, "ticket")
 			}
 			ticket := result.Ticket
-			if _, err := fmt.Fprintf(command.OutOrStdout(), "Slug: %s\nTitle: %s\nStatus: %s\nPriority: %d\nBoard: %s\nPath: %s\n",
-				ticket.Slug, ticket.Title, ticket.Status, ticket.Priority, ticket.Board, ticket.Path); err != nil {
-				return err
+			fields := [][2]string{
+				{"Slug", ticket.Slug},
+				{"Title", ticket.Title},
+				{"Status", string(ticket.Status)},
+				{"Priority", fmt.Sprintf("%d", ticket.Priority)},
+				{"Board", ticket.Board},
+				{"Path", ticket.Path},
 			}
 			if ticket.ClaimedBy != "" {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Claimed by: %s\n", ticket.ClaimedBy); err != nil {
-					return err
-				}
+				fields = append(fields, [2]string{"Claimed by", ticket.ClaimedBy})
 			}
 			if len(result.BlockedByOpen) > 0 {
 				blockers := make([]string, 0, len(result.BlockedByOpen))
@@ -416,9 +412,10 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 					}
 					blockers = append(blockers, name)
 				}
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "Blocked by open tickets: %s\n", strings.Join(blockers, ", ")); err != nil {
-					return err
-				}
+				fields = append(fields, [2]string{"Blocked by", strings.Join(blockers, ", ")})
+			}
+			if err := writeFields(command.OutOrStdout(), fields); err != nil {
+				return err
 			}
 			_, err = fmt.Fprintf(command.OutOrStdout(), "\n%s", strings.TrimLeft(result.Body, "\n"))
 			return err
@@ -893,16 +890,11 @@ func newTicketsBoardsListCommand(options Options) *cobra.Command {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Boards exist. Run 'twt tickets boards create NAME'.")
 				return err
 			}
-			writer := tabwriter.NewWriter(command.OutOrStdout(), 0, 4, 2, ' ', 0)
-			if _, err := fmt.Fprintln(writer, "NAME\tTICKETS"); err != nil {
-				return err
-			}
+			rows := make([][]string, 0, len(boards))
 			for _, board := range boards {
-				if _, err := fmt.Fprintf(writer, "%s\t%d\n", board.Name, board.Tickets); err != nil {
-					return err
-				}
+				rows = append(rows, []string{board.Name, fmt.Sprintf("%d", board.Tickets)})
 			}
-			return writer.Flush()
+			return writeTable(command.OutOrStdout(), []string{"NAME", "TICKETS"}, rows)
 		},
 	}
 	addListReadFlags(command, &limit, &offset, domain.Board{})
@@ -926,8 +918,11 @@ func newTicketsBoardsShowCommand(options Options) *cobra.Command {
 			if WantsJSON(command) {
 				return writeReadJSON(command, boardShowOutput{SchemaVersion: jsonSchemaVersion, Board: board}, "board")
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Board: %s\nPath: %s\nTickets: %d\n", board.Name, board.Path, board.Tickets)
-			return err
+			return writeFields(command.OutOrStdout(), [][2]string{
+				{"Board", board.Name},
+				{"Path", board.Path},
+				{"Tickets", fmt.Sprintf("%d", board.Tickets)},
+			})
 		},
 	}
 	setArguments(command, requiredArgument("name"))

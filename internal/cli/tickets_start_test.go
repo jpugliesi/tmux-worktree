@@ -88,7 +88,7 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 
 	// projects show reports the link in text and JSON.
 	show := executeWithOptions(t, options, nil, "projects", "show", "fix-auth-tokens")
-	if !strings.Contains(show, "Ticket: fix-auth-tokens") {
+	if !strings.Contains(show, "Ticket") || !strings.Contains(show, "fix-auth-tokens") {
 		t.Fatalf("projects show has no Ticket line: %q", show)
 	}
 	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "show", "fix-auth-tokens", "--output", "json")

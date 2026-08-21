@@ -123,7 +123,7 @@ repositories:
 		t.Fatalf("Prepared Environment pool has ready=%d claimed=%d, want 1 and 1", ready, claimed)
 	}
 	storageOutput := executeWithOptions(t, options, nil, "storage", "show")
-	if !strings.Contains(storageOutput, "Prepared:") || !strings.Contains(storageOutput, "1 ready") {
+	if !strings.Contains(storageOutput, "Prepared") || !strings.Contains(storageOutput, "1 ready") {
 		t.Fatalf("storage show does not show the ready Prepared Environment:\n%s", storageOutput)
 	}
 	changedTemplate := strings.Replace(template, "    clone:\n", "    clone:\n      depth: 1\n", 1)
@@ -293,7 +293,7 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 		t.Fatalf("projects path with an unknown repository = %v", err)
 	}
 	showOutput := executeWithOptions(t, options, nil, "projects", "show", "fresh")
-	if !strings.Contains(showOutput, "Root: "+fresh.Root) {
+	if !strings.Contains(showOutput, "Root") || !strings.Contains(showOutput, fresh.Root) {
 		t.Fatalf("projects show has no Root line:\n%s", showOutput)
 	}
 	showJSON := executeWithOptions(t, options, nil, "projects", "show", "fresh", "--output", "json")
