@@ -60,6 +60,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsEditCommand(options))
 	tickets.AddCommand(newTicketsSetCommand(options))
 	tickets.AddCommand(newTicketsClaimCommand(options))
+	tickets.AddCommand(newTicketsStartCommand(options))
 	tickets.AddCommand(newTicketsUnclaimCommand(options))
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
@@ -531,6 +532,72 @@ func newTicketsClaimCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
+	return command
+}
+
+func newTicketsStartCommand(options Options) *cobra.Command {
+	var name, templateName, as string
+	var keepCurrent bool
+	command := &cobra.Command{
+		Use:     "start TICKET [--name NAME] [--template TEMPLATE] [--as NAME]",
+		Short:   "Claim a Ticket and start a Project for it",
+		Args:    exactArgs("TICKET"),
+		PreRunE: refuseJSONQuickCreate,
+		RunE: func(command *cobra.Command, args []string) error {
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			ticket, err := service.Resolve(args[0])
+			if err != nil {
+				return err
+			}
+			if ticket.Status == domain.TicketDone || ticket.Status == domain.TicketWontfix {
+				return clierr.WithHint(
+					clierr.New(clierr.PreconditionFailed, "the Ticket is closed"),
+					"Select a Ticket from 'twt tickets list --ready'.")
+			}
+			claimant, err := resolveClaimant(command, as)
+			if err != nil {
+				return err
+			}
+			// The claim comes first: a Ticket that a different claimant
+			// holds aborts before any Project work.
+			if err := claimTicket(command, service, ticket.Slug, claimant); err != nil {
+				return err
+			}
+			projectName := strings.TrimSpace(name)
+			if projectName == "" {
+				projectName = ticket.Slug
+			}
+			// A create failure keeps the claim: the create error already
+			// tells how to retry the setup.
+			if err := runQuickCreate(command, options, quickCreateRequest{
+				Name:         projectName,
+				TemplateName: templateName,
+				KeepCurrent:  keepCurrent,
+				Ticket:       ticket.Slug,
+			}); err != nil {
+				return err
+			}
+			if isDryRun(command) {
+				return nil
+			}
+			// The start comment is best-effort: a comment failure must not
+			// fail the start.
+			if err := commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Project %s.", projectName)); err != nil {
+				_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not add the start comment to Ticket %q: %v\n", ticket.Slug, err)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&name, "name", "", "Set the Project name; empty uses the Ticket slug")
+	command.Flags().StringVar(&templateName, "template", "", "Select the Project Template instead of the current Project's template")
+	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
+	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	setArguments(command, requiredArgument("ticket"))
+	command.ValidArgsFunction = ticketSlugCompletion(options)
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
 

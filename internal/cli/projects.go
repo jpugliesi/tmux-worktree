@@ -101,7 +101,13 @@ func writeProject(command *cobra.Command, project domain.Project) error {
 	if WantsJSON(command) {
 		return writeReadJSON(command, projectShowOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project)}, "project")
 	}
-	_, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\nRoot: %s\n", project.Name, project.ID, project.TemplateName, project.Status, project.Root)
+	if _, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\nID: %s\nTemplate: %s\nStatus: %s\nRoot: %s\n", project.Name, project.ID, project.TemplateName, project.Status, project.Root); err != nil {
+		return err
+	}
+	if project.Ticket == "" {
+		return nil
+	}
+	_, err := fmt.Fprintf(command.OutOrStdout(), "Ticket: %s\n", project.Ticket)
 	return err
 }
 

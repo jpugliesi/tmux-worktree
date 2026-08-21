@@ -67,7 +67,7 @@ func archiveProject(command *cobra.Command, options Options, service *projectser
 		return err
 	}
 	if relocate {
-		return relocateAndComplete(command, options, service, project, currentPane, true, projectservice.RemovalOptions{})
+		return relocateAndComplete(command, options, service, project, currentPane, true, projectservice.RemovalOptions{}, doneTicketPlan{})
 	}
 	return archiveProjectRecord(command, service, project.ID)
 }

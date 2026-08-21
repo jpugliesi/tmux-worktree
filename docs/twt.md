@@ -295,13 +295,13 @@ From the Project tmux session, create the next Project and archive the current
 Project:
 
 ```sh
-twt new fix-logout
+twt start fix-logout
 ```
 
 For an interactive prompt, omit the name:
 
 ```sh
-twt new
+twt start
 Project name: fix-logout
 ```
 
@@ -310,9 +310,9 @@ claims a matching Prepared Environment, switches the calling tmux client to
 the new Project, and archives `fix-auth`. Other tmux clients do not switch.
 Preparation of the replacement environment continues in the background.
 
-`twt new` finds the current Project from the current directory, the
+`twt start` finds the current Project from the current directory, the
 `TWT_PROJECT_ID` value, or the current tmux pane. The tmux client switch
-needs `TMUX_PANE`. From a plain shell inside a worktree, `twt new` uses
+needs `TMUX_PANE`. From a plain shell inside a worktree, `twt start` uses
 the Project Template of the current Project, creates the new Project, attaches
 its session, and keeps the current Project active.
 
@@ -562,6 +562,14 @@ twt done fix-auth --dry-run --output json
 after the archive. `--allow-unpublished` removes a branch that has commits
 which are not on the remote.
 
+When the Project links an open ticket (see `twt tickets start`), an
+interactive `done` asks `Close Ticket "<slug>"? [y/N]` before any change; the
+default is No. On yes, `done` closes the ticket after a successful removal. A
+close failure gives a warning with the `twt tickets close <slug>` hint and
+never fails `done`. Without a terminal, with `--output json`, with `--keep`,
+or on no, `done` keeps the ticket open and prints the close hint. A dry run
+never asks.
+
 From inside the Project tmux session, `done` moves your tmux client to the
 most recent other active Project, or detaches the client, and a worker window
 completes the work. This flow uses text output. For JSON output, run `done`
@@ -714,6 +722,7 @@ twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
 twt tickets claim TICKET [--as NAME]
+twt tickets start TICKET [--name NAME] [--template TEMPLATE] [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
@@ -808,6 +817,21 @@ such as a `wontfix` resolution or a hand-off of open work:
 ```sh
 twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
+```
+
+`tickets start` is the one-step daily loop for a person in a terminal. It
+refuses a closed ticket, claims the ticket first with the same claimant
+resolution as `claim`, then runs the same flow as `twt start`. The Project
+name is `--name`, or the ticket slug. The Project record carries the ticket
+slug, `twt projects show` reports it, and `twt done` then offers to close the
+ticket. On success, `tickets start` appends a start comment to the ticket. A
+create failure keeps the claim, and the error tells how to retry the setup.
+Like `twt start`, the command is interactive: it refuses `--output json` and
+has no apply operation.
+
+```sh
+twt tickets start fix-auth-tokens
+twt tickets start fix-auth-tokens --name auth-fix --template everysphere
 ```
 
 `comment` requires `--stdin`. It appends the text under the `## Comments`

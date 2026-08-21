@@ -87,7 +87,7 @@ An interactive path opens only for a person at a terminal:
   outside a terminal: a non-interactive call must pass `--as NAME`, so two
   agents cannot both hold one Ticket as the same OS user.
 
-`twt new` and `twt switch` are the two commands for a person in tmux: they
+`twt start` and `twt switch` are the two commands for a person in tmux: they
 move the calling client. An agent uses `twt projects create` and
 `twt projects archive` instead, with explicit names, a dry run, and JSON
 output.

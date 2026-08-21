@@ -47,7 +47,11 @@ type Project struct {
 	// Adopted marks a Project that twt made from an existing tmux session.
 	// twt did not create its directories, and removal never deletes them:
 	// removal only deletes the twt state and releases the session marker.
-	Adopted      bool                `json:"adopted,omitempty"`
+	Adopted bool `json:"adopted,omitempty"`
+	// Ticket is the slug of the Ticket that this Project works on. It is
+	// empty for a Project without a linked Ticket, and old records without
+	// the field decode to that empty value.
+	Ticket       string              `json:"ticket,omitempty"`
 	Root         string              `json:"root"`
 	TmuxSession  string              `json:"tmuxSession"`
 	Repositories []ProjectRepository `json:"repositories"`

@@ -67,7 +67,9 @@ type projectOutput struct {
 	Status   domain.ProjectStatus `json:"status"`
 	// Adopted marks a Project that twt made from an existing tmux session.
 	// Removal never deletes its directories.
-	Adopted      bool               `json:"adopted,omitempty"`
+	Adopted bool `json:"adopted,omitempty"`
+	// Ticket is the slug of the Ticket that the Project works on.
+	Ticket       string             `json:"ticket,omitempty"`
 	CreatedAt    string             `json:"createdAt"`
 	ArchivedAt   string             `json:"archivedAt,omitempty"`
 	Root         string             `json:"root"`
@@ -102,6 +104,7 @@ func toProjectOutput(project domain.Project) projectOutput {
 		Template:     project.TemplateName,
 		Status:       project.Status,
 		Adopted:      project.Adopted,
+		Ticket:       project.Ticket,
 		CreatedAt:    project.CreatedAt.Format(time.RFC3339),
 		Root:         project.Root,
 		Repositories: repositories,

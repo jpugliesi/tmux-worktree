@@ -35,6 +35,11 @@ type RelocationRequest struct {
 	AllowUnpublished bool
 	// CurrentPane is the tmux pane that runs the command.
 	CurrentPane string
+	// CloseTicket is the slug of the Ticket that the worker closes after a
+	// successful removal. It is empty when done closes no Ticket.
+	CloseTicket string
+	// CloseClaimant is the resolved claimant of the Ticket close.
+	CloseClaimant string
 }
 
 type Options struct {
@@ -250,10 +255,18 @@ func New(options Options) *cobra.Command {
 
 Each Project can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
-		Example: `  twt templates list
-  twt projects create fix-auth --template everysphere
-  twt new fix-logout
-  twt agents list --project current`,
+		Example: `  # File work, then pick a ticket.
+  twt tickets create "Fix auth token refresh"
+  twt tickets ls --ready
+  twt tickets claim fix-auth-tokens
+
+  # Start the Project and work in it.
+  twt start fix-auth-tokens
+  twt agents ls
+
+  # Close the ticket and remove the Project.
+  twt tickets close fix-auth-tokens
+  twt done`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(command *cobra.Command, _ []string) error {

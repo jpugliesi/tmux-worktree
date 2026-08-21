@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
@@ -39,15 +42,16 @@ func newDoneCommand(options Options) *cobra.Command {
 			if isDryRun(command) {
 				return doneDryRun(command, service, project.ID, removalOptions)
 			}
+			ticketPlan := resolveDoneTicket(command, options, project, keep)
 			currentPane := os.Getenv("TMUX_PANE")
 			relocate, err := relocationNeeded(command, options, service, project.ID, currentPane)
 			if err != nil {
 				return err
 			}
 			if relocate {
-				return relocateAndComplete(command, options, service, project, currentPane, keep, removalOptions)
+				return relocateAndComplete(command, options, service, project, currentPane, keep, removalOptions, ticketPlan)
 			}
-			return doneSynchronously(command, service, project.ID, currentPane, keep, removalOptions)
+			return doneSynchronously(command, options, service, project.ID, currentPane, keep, removalOptions, ticketPlan)
 		},
 	}
 	command.Flags().BoolVar(&keep, "keep", false, "Stop after the archive and keep the Project data")
@@ -101,9 +105,99 @@ func doneDryRun(command *cobra.Command, service *projectservice.Service, project
 	return printRemovalPlanText(out, plan, false)
 }
 
+// doneTicketPlan is the Ticket decision of one done run. An empty Slug means
+// that done has no Ticket work: the Project links no Ticket, or that Ticket
+// is already closed or unreadable.
+type doneTicketPlan struct {
+	// Slug is the linked open Ticket.
+	Slug string
+	// Close applies the confirmed close after a successful removal.
+	Close bool
+	// Claimant is the resolved claimant of the confirmed close.
+	Claimant string
+}
+
+// resolveDoneTicket resolves the linked Ticket of the Project and asks the
+// user whether done must close it. The prompt runs only in an interactive
+// text session, before any relocation or mutation; the default answer is No.
+// --keep never prompts, because the work is not complete after an archive.
+func resolveDoneTicket(command *cobra.Command, options Options, project domain.Project, keep bool) doneTicketPlan {
+	if project.Ticket == "" {
+		return doneTicketPlan{}
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return doneTicketPlan{}
+	}
+	ticket, err := service.Resolve(project.Ticket)
+	if err != nil || ticket.Status == domain.TicketDone || ticket.Status == domain.TicketWontfix {
+		return doneTicketPlan{}
+	}
+	plan := doneTicketPlan{Slug: ticket.Slug}
+	if keep || WantsJSON(command) || !interactiveTicketSession(command) {
+		return plan
+	}
+	if _, err := fmt.Fprintf(command.ErrOrStderr(), "Close Ticket %q? [y/N] ", ticket.Slug); err != nil {
+		return plan
+	}
+	line, err := bufio.NewReader(command.InOrStdin()).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return plan
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	if answer != "y" && answer != "yes" {
+		return plan
+	}
+	claimant, err := resolveClaimant(command, "")
+	if err != nil {
+		printTicketCloseWarning(command.ErrOrStderr(), ticket.Slug, err)
+		return plan
+	}
+	plan.Close = true
+	plan.Claimant = claimant
+	return plan
+}
+
+// finishDoneTicket runs after a successful removal: it closes the confirmed
+// Ticket, or prints the close hint for an open one. A close failure warns and
+// never fails done.
+func finishDoneTicket(command *cobra.Command, options Options, plan doneTicketPlan) error {
+	if plan.Slug == "" {
+		return nil
+	}
+	if !plan.Close {
+		out := command.OutOrStdout()
+		if WantsJSON(command) {
+			out = command.ErrOrStderr()
+		}
+		_, err := fmt.Fprintf(out, "Run 'twt tickets close %s' when the work is complete.\n", plan.Slug)
+		return err
+	}
+	if err := closeDoneTicket(options, plan); err != nil {
+		printTicketCloseWarning(command.ErrOrStderr(), plan.Slug, err)
+		return nil
+	}
+	_, err := fmt.Fprintf(command.OutOrStdout(), "Closed Ticket %q\n", plan.Slug)
+	return err
+}
+
+// closeDoneTicket closes one confirmed Ticket through the close core.
+func closeDoneTicket(options Options, plan doneTicketPlan) error {
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	_, err = service.Close(plan.Slug, plan.Claimant, false)
+	return err
+}
+
+func printTicketCloseWarning(out io.Writer, slug string, cause error) {
+	_, _ = fmt.Fprintf(out, "Warning: twt could not close Ticket %q: %v. Run 'twt tickets close %s'.\n", slug, cause, slug)
+}
+
 // doneSynchronously archives and removes the Project from the current
 // process. The caller is outside the Project tmux session.
-func doneSynchronously(command *cobra.Command, service *projectservice.Service, projectID, currentPane string, keep bool, opts projectservice.RemovalOptions) error {
+func doneSynchronously(command *cobra.Command, options Options, service *projectservice.Service, projectID, currentPane string, keep bool, opts projectservice.RemovalOptions, ticketPlan doneTicketPlan) error {
 	result, err := service.Archive(projectID, currentPane)
 	if err != nil {
 		return err
@@ -119,9 +213,11 @@ func doneSynchronously(command *cobra.Command, service *projectservice.Service, 
 	}
 	if keep {
 		if WantsJSON(command) {
-			return writeMutation(command, "projects.done", "archived", result.Project.ID, result.Project.Name)
+			if err := writeMutation(command, "projects.done", "archived", result.Project.ID, result.Project.Name); err != nil {
+				return err
+			}
 		}
-		return nil
+		return finishDoneTicket(command, options, ticketPlan)
 	}
 	plan, err := service.Remove(projectID, currentPane, opts)
 	if err != nil {
@@ -136,15 +232,20 @@ func doneSynchronously(command *cobra.Command, service *projectservice.Service, 
 		return err
 	}
 	if WantsJSON(command) {
-		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers})
+		if err := writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers}); err != nil {
+			return err
+		}
+		return finishDoneTicket(command, options, ticketPlan)
 	}
 	for _, worktree := range plan.Worktrees {
 		if _, err := fmt.Fprintf(out, "Removed worktree %s\n", worktree); err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(out, "Removed Project %q. Reclaimed %s.\n", plan.ProjectName, formatBytes(plan.Bytes))
-	return err
+	if _, err := fmt.Fprintf(out, "Removed Project %q. Reclaimed %s.\n", plan.ProjectName, formatBytes(plan.Bytes)); err != nil {
+		return err
+	}
+	return finishDoneTicket(command, options, ticketPlan)
 }
 
 // relocateAndComplete tells the user about the client relocation, then hands
@@ -152,7 +253,7 @@ func doneSynchronously(command *cobra.Command, service *projectservice.Service, 
 // tmux client and completes the work through a worker window in the
 // destination session. With keep, the worker only archives; archive from
 // inside the Project session behaves like done --keep.
-func relocateAndComplete(command *cobra.Command, options Options, service *projectservice.Service, project domain.Project, currentPane string, keep bool, opts projectservice.RemovalOptions) error {
+func relocateAndComplete(command *cobra.Command, options Options, service *projectservice.Service, project domain.Project, currentPane string, keep bool, opts projectservice.RemovalOptions, ticketPlan doneTicketPlan) error {
 	destination, found, err := latestOtherActiveProject(service, project.ID)
 	if err != nil {
 		return err
@@ -171,13 +272,23 @@ func relocateAndComplete(command *cobra.Command, options Options, service *proje
 	} else if _, err := fmt.Fprintln(out, "No other active Project exists. twt detaches the client."); err != nil {
 		return err
 	}
-	return options.DoneRelocate(RelocationRequest{
+	if ticketPlan.Slug != "" && !ticketPlan.Close {
+		if _, err := fmt.Fprintf(out, "Run 'twt tickets close %s' when the work is complete.\n", ticketPlan.Slug); err != nil {
+			return err
+		}
+	}
+	request := RelocationRequest{
 		ProjectID:            project.ID,
 		DestinationProjectID: destinationID,
 		Keep:                 keep,
 		AllowUnpublished:     opts.AllowUnpublished,
 		CurrentPane:          currentPane,
-	})
+	}
+	if ticketPlan.Close {
+		request.CloseTicket = ticketPlan.Slug
+		request.CloseClaimant = ticketPlan.Claimant
+	}
+	return options.DoneRelocate(request)
 }
 
 // realDoneRelocate returns the tmux implementation of the DoneRelocate hook.
@@ -215,6 +326,8 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 			workerBoolArg("keep", request.Keep),
 			workerBoolArg("allow-unpublished", request.AllowUnpublished),
 			transient,
+			workerValueArg(request.CloseTicket),
+			workerValueArg(request.CloseClaimant),
 		}
 		helper, err := startRelocationHelper(options, doneWorker, hostSessionID, clientName, workerArgs)
 		if err != nil {
@@ -238,12 +351,16 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 
 // RunDoneWorker runs the private __twt_done_worker argv mode. It waits for
 // the relocation signal, archives the Project, and removes it unless the
-// keep flag is set. On failure it keeps its remain-on-exit window visible.
+// keep flag is set. After a successful removal it closes the confirmed
+// Ticket; a close failure only adds a warning with the close hint. On
+// failure it keeps its remain-on-exit window visible.
 func RunDoneWorker(options Options, args []string) error {
-	if len(args) != 6 {
+	if len(args) != 8 {
 		return fmt.Errorf("invalid done worker request")
 	}
-	projectID, keepArg, allowArg, transient, channel, clientName := args[0], args[1], args[2], args[3], args[4], args[5]
+	projectID, keepArg, allowArg, transient := args[0], args[1], args[2], args[3]
+	closeTicket, closeClaimant := parseWorkerValueArg(args[4]), parseWorkerValueArg(args[5])
+	channel, clientName := args[6], args[7]
 	keep, err := parseWorkerBoolArg("keep", keepArg)
 	if err != nil {
 		return err
@@ -265,7 +382,15 @@ func RunDoneWorker(options Options, args []string) error {
 			if removeErr != nil {
 				return "", fmt.Errorf("%w; Project %q stays archived; run 'twt done %s' to retry", removeErr, result.Project.Name, projectID)
 			}
-			return fmt.Sprintf("Finished Project %s; reclaimed %s", plan.ProjectName, formatBytes(plan.Bytes)), nil
+			message := fmt.Sprintf("Finished Project %s; reclaimed %s", plan.ProjectName, formatBytes(plan.Bytes))
+			if closeTicket == "" {
+				return message, nil
+			}
+			if closeErr := closeDoneTicket(options, doneTicketPlan{Slug: closeTicket, Claimant: closeClaimant}); closeErr != nil {
+				printTicketCloseWarning(os.Stderr, closeTicket, closeErr)
+				return message + fmt.Sprintf("; Ticket %s stays open: run 'twt tickets close %s'", closeTicket, closeTicket), nil
+			}
+			return message + fmt.Sprintf("; closed Ticket %s", closeTicket), nil
 		})
 	if err != nil {
 		return err
@@ -288,6 +413,22 @@ func parseWorkerBoolArg(name, value string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("invalid done worker request")
+}
+
+// workerValueArg encodes one optional worker argv value. The "-" sentinel
+// stands for the empty value, so the argv keeps a fixed length.
+func workerValueArg(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
+}
+
+func parseWorkerValueArg(value string) string {
+	if value == "-" {
+		return ""
+	}
+	return value
 }
 
 // latestOtherActiveProject returns the most recently updated active Project

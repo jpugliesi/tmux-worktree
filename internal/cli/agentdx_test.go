@@ -53,7 +53,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundQuickCreate := false
 	foundArchive := false
 	for _, command := range schema.Commands {
-		if command.Path == "twt new" {
+		if command.Path == "twt start" {
 			foundQuickCreate = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
 				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
@@ -96,7 +96,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		t.Fatal("schema does not contain twt projects create")
 	}
 	if !foundQuickCreate {
-		t.Fatal("schema does not contain twt new")
+		t.Fatal("schema does not contain twt start")
 	}
 	if !foundArchive {
 		t.Fatal("schema does not contain twt archive")

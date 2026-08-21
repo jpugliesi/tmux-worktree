@@ -99,7 +99,7 @@ func TestOutputDefaultsToJSONWithoutTerminal(t *testing.T) {
 
 	// An interactive command treats the implicit json default like an
 	// explicit --output json.
-	_, _, err = executeRaw(t, options, "new", "some-project")
+	_, _, err = executeRaw(t, options, "start", "some-project")
 	if err == nil || !strings.Contains(err.Error(), "use 'twt projects create' for JSON automation") {
 		t.Fatalf("quick create without a terminal = %v", err)
 	}

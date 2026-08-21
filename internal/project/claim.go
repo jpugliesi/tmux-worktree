@@ -64,6 +64,9 @@ type CreateOptions struct {
 	BranchPrefix string
 	// NoFetch turns the default-branch refresh before the claim off.
 	NoFetch bool
+	// Ticket is the slug of the Ticket that the new Project works on. The
+	// Project record and its claim reservation snapshot carry it.
+	Ticket string
 }
 
 func (s *Service) CreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) (domain.Project, error) {
@@ -153,7 +156,7 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 	}
 	var project domain.Project
 	if err == nil {
-		project = s.projectForEnvironment(name, templateName, template, environment, projectID, branch)
+		project = s.projectForEnvironment(name, templateName, template, environment, projectID, branch, opts)
 		environment.Status = domain.EnvironmentClaiming
 		environment.ClaimReservation = &domain.EnvironmentClaim{Project: project, ReservedAt: s.now()}
 		environment.UpdatedAt = s.now()
@@ -279,12 +282,13 @@ func (s *Service) requireProjectNameAvailable(name string) error {
 	return nil
 }
 
-func (s *Service) projectForEnvironment(name, templateName string, template domain.Template, environment domain.PreparedEnvironment, id, branch string) domain.Project {
+func (s *Service) projectForEnvironment(name, templateName string, template domain.Template, environment domain.PreparedEnvironment, id, branch string, opts CreateOptions) domain.Project {
 	now := s.now()
 	project := domain.Project{
 		Version: domain.ProjectVersion, ID: id, Name: name, TemplateName: templateName,
 		TemplateSnapshot: template, EnvironmentID: environment.ID, Status: domain.ProjectInitializing,
-		Root: environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
+		Ticket: opts.Ticket,
+		Root:   environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
 	}
 	project.Steps = append(project.Steps, newStep("project_root", domain.StepProjectRoot, ""))
 	for _, repository := range environment.Repositories {

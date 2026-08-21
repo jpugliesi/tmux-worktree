@@ -154,7 +154,11 @@ func TestRootHelpGroupsCommandsAndShowsAWorkingExample(t *testing.T) {
 		"Workflows:",
 		"Inspect and maintain:",
 		"Automation:",
-		"twt projects create fix-auth --template everysphere",
+		"twt tickets ls --ready",
+		"twt tickets claim fix-auth-tokens",
+		"twt start fix-auth-tokens",
+		"twt tickets close fix-auth-tokens",
+		"twt done",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("root help does not contain %q:\n%s", want, output)
@@ -179,7 +183,7 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 }
 
 func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
-	output, err := execute(t, t.TempDir(), "new", "--help")
+	output, err := execute(t, t.TempDir(), "start", "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +191,7 @@ func TestQuickCreateHelpExplainsTheProjectChange(t *testing.T) {
 		"latest saved version of the current Project Template",
 		"switches the calling client",
 		"archives the old Project",
-		"twt new fix-auth",
+		"twt start fix-auth",
 		"twt projects create",
 	} {
 		if !strings.Contains(output, want) {

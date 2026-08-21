@@ -75,7 +75,7 @@ func pickSwitchProject(command *cobra.Command, options Options, service *project
 		return domain.Project{}, err
 	}
 	if len(projects) == 0 {
-		return domain.Project{}, clierr.New(clierr.NotFound, "no Projects exist; run 'twt new NAME' first")
+		return domain.Project{}, clierr.New(clierr.NotFound, "no Projects exist; run 'twt start NAME' first")
 	}
 	sortProjectsForDisplay(projects)
 	now := time.Now().UTC()

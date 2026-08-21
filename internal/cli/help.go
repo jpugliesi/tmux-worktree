@@ -16,8 +16,8 @@ var commandHelp = map[string]helpContent{
 	"twt projects": {
 		long: "Create and manage change-focused Projects. Each Project owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt projects create fix-auth --template everysphere\n  twt projects open fix-auth",
 	},
-	"twt new": {
-		long: "Create a new Project from the latest saved version of the current Project Template. twt switches the calling client to the new Project, then archives the old Project. If NAME is absent, twt asks for it in an interactive terminal. Use 'twt projects create' for automation.", example: "  twt new fix-auth\n  twt new",
+	"twt start": {
+		long: "Create a new Project from the latest saved version of the current Project Template. twt switches the calling client to the new Project, then archives the old Project. If NAME is absent, twt asks for it in an interactive terminal. Use 'twt projects create' for automation.", example: "  twt start fix-auth\n  twt start",
 	},
 	"twt switch": {
 		long: "Switch the calling tmux client to the session of a Project. An archived Project opens first. Without PROJECT, twt shows an interactive Project picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
@@ -26,7 +26,7 @@ var commandHelp = map[string]helpContent{
 		long: "Archive the current Project or a Project that you specify. twt keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt archive\n  twt archive fix-auth",
 	},
 	"twt done": {
-		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive.", example: "  twt done\n  twt done fix-auth --keep",
+		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive. When the Project links an open Ticket, twt asks in an interactive terminal whether it must also close that Ticket.", example: "  twt done\n  twt done fix-auth --keep",
 	},
 	"twt agents": {
 		long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --project current\n  twt agents resume AGENT_ID",
@@ -176,6 +176,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt tickets claim": {
 		long: "Claim one Ticket for a work session. The claimant comes from --as, then TWT_CLAIMANT, then the OS username in an interactive terminal. A Ticket that a different claimant holds returns the locked error.", example: "  twt tickets claim fix-the-vfs-tools --as codex-fix-auth\n  twt tickets claim fix-the-vfs-tools --as codex-fix-auth --output json",
+	},
+	"twt tickets start": {
+		long: "Claim one Ticket and start a Project for it. twt refuses a closed Ticket and claims the Ticket first: a Ticket that a different claimant holds aborts before any Project work. Then twt runs the same flow as 'twt start' and links the new Project to the Ticket. The Project name is --name, or the Ticket slug. On success twt appends a start comment to the Ticket. A create failure keeps the claim.", example: "  twt tickets start fix-auth-tokens\n  twt tickets start fix-auth-tokens --name auth-fix",
 	},
 	"twt tickets unclaim": {
 		long: "Remove the claim on one Ticket. The claimant resolution is the same as claim, and only the current claimant can remove its claim. An unclaimed Ticket succeeds without a change.", example: "  twt tickets unclaim fix-the-vfs-tools --as codex-fix-auth",

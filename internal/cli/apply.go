@@ -350,7 +350,7 @@ func applyJSONRequest(command *cobra.Command, options Options, request applyRequ
 // one needs a terminal or moves the calling tmux client, so no typed request
 // can replace it.
 const unsupportedApplyOperationHint = "Apply does no interactive mutation and no tmux client action. " +
-	"Run these in a terminal: 'twt new', 'twt switch', 'twt done', 'twt archive', " +
+	"Run these in a terminal: 'twt start', 'twt tickets start', 'twt switch', 'twt done', 'twt archive', " +
 	"'twt templates edit', 'twt agents focus', and 'twt agents register --pane current'. " +
 	"Apply replaces the editor with typed text: use tickets.create or tickets.edit with a body."
 

@@ -96,9 +96,9 @@ For typed input, send one strict JSON value to `twt apply --stdin`. It
 supports every non-interactive mutation. Read the current operation names and
 payload shapes from `twt schema`; this skill does not repeat them.
 
-An interactive command has no apply operation by design: `twt new`,
-`twt switch`, `twt done`, the tmux client move of an archive,
-`twt templates edit`, `twt agents focus`, and
+An interactive command has no apply operation by design: `twt start`,
+`twt tickets start`, `twt switch`, `twt done`, the tmux client move of an
+archive, `twt templates edit`, `twt agents focus`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Projects
@@ -119,7 +119,7 @@ initialization does not run again for that physical worktree.
 Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
-`twt new` and `twt switch` are interactive commands for a person in tmux.
+`twt start` and `twt switch` are interactive commands for a person in tmux.
 For agent work, use `twt projects create` and `twt projects archive` with
 explicit names, dry-runs, and JSON output.
 

@@ -33,7 +33,7 @@ gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 ### 2. Start a Project
 
 ```sh
-twt new fix-auth-tokens
+twt start fix-auth-tokens
 ```
 
 This claims a Prepared Environment — worktrees already cloned and
@@ -42,9 +42,13 @@ pane layout, starts any Agent Sessions the template declares, and switches
 your tmux client to it. Warm start to working session: about six seconds.
 The replacement environment prepares itself in the background.
 
-Run `twt new` with no name to get a prompt. Run it from anywhere — inside
+Run `twt start` with no name to get a prompt. Run it from anywhere — inside
 another Project it archives that Project after the switch; outside one it uses
 your last template.
+
+To claim a Ticket and start its Project in one step, run
+`twt tickets start fix-auth-tokens`. It links the Project to the Ticket, and
+`twt done` then offers to close that Ticket.
 
 ### 3. Work
 

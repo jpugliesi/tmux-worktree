@@ -53,7 +53,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	invalidIDOptions := options
 	invalidIDOptions.Stdout, invalidIDOptions.Stderr = &invalidIDOutput, &invalidIDError
 	invalidIDCommand := cli.New(invalidIDOptions)
-	invalidIDCommand.SetArgs(forceTextOutput([]string{"new", "invalid-id-project"}))
+	invalidIDCommand.SetArgs(forceTextOutput([]string{"start", "invalid-id-project"}))
 	err = invalidIDCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "does not contain an immutable Project ID") {
 		t.Fatalf("quick create with a Project name in tmux metadata = %v", err)
@@ -67,7 +67,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte(latestTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dryRun := executeWithOptions(t, options, nil, "new", "dry-project", "--dry-run")
+	dryRun := executeWithOptions(t, options, nil, "start", "dry-project", "--dry-run")
 	if !strings.Contains(dryRun, "projects.quick_create: valid") {
 		t.Fatalf("quick create dry-run output = %s", dryRun)
 	}
@@ -75,8 +75,8 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 		t.Fatal("quick create dry-run created a Project")
 	}
 	for _, jsonArgs := range [][]string{
-		{"new", "json-project", "--output", "json"},
-		{"new", "json-project", "--dry-run", "--output", "json"},
+		{"start", "json-project", "--output", "json"},
+		{"start", "json-project", "--dry-run", "--output", "json"},
 	} {
 		var jsonOutput, jsonError bytes.Buffer
 		jsonOptions := options
@@ -96,7 +96,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	missingNameOptions.Stdout, missingNameOptions.Stderr = &missingNameOutput, &missingNameError
 	missingName := cli.New(missingNameOptions)
 	missingName.SetIn(strings.NewReader(""))
-	missingName.SetArgs(forceTextOutput([]string{"new", "--dry-run"}))
+	missingName.SetArgs(forceTextOutput([]string{"start", "--dry-run"}))
 	err = missingName.Execute()
 	if err == nil || !strings.Contains(err.Error(), "no Project name was given") {
 		t.Fatalf("quick create without a Project name = %v", err)
@@ -119,7 +119,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	promptOptions.Stdout, promptOptions.Stderr = &promptOutput, &promptError
 	promptCommand := cli.New(promptOptions)
 	promptCommand.SetIn(strings.NewReader("new-project\n"))
-	promptCommand.SetArgs(forceTextOutput([]string{"new"}))
+	promptCommand.SetArgs(forceTextOutput([]string{"start"}))
 	if err := promptCommand.Execute(); err != nil {
 		t.Fatalf("quick create with prompt: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"new", "failed-switch"}))
+	command.SetArgs(forceTextOutput([]string{"start", "failed-switch"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test switch failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
@@ -187,7 +187,7 @@ func TestQuickCreatePromptsSwitchesThenArchivesTheCurrentProject(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"new", "setup-fails"}))
+	command.SetArgs(forceTextOutput([]string{"start", "setup-fails"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "initialization") {
 		t.Fatalf("quick create setup failure = %v", err)
@@ -226,7 +226,7 @@ func TestQuickCreateOutsideASessionNeedsATemplate(t *testing.T) {
 		Stderr:    &stderr,
 	}
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"new", "new-project"}))
+	command.SetArgs(forceTextOutput([]string{"start", "new-project"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "no Project Templates exist") {
 		t.Fatalf("quick create outside tmux error = %v", err)
@@ -250,7 +250,7 @@ func TestQuickCreateOutsideASessionNeedsATemplate(t *testing.T) {
 		}
 	}
 	command = cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"new", "new-project"}))
+	command.SetArgs(forceTextOutput([]string{"start", "new-project"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--template TEMPLATE") ||
 		!strings.Contains(err.Error(), "alpha") || !strings.Contains(err.Error(), "beta") {
@@ -292,7 +292,7 @@ func TestQuickCreateChecksTheTmuxClientBeforeProjectSetup(t *testing.T) {
 	}
 
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"new", "must-not-exist"}))
+	command.SetArgs(forceTextOutput([]string{"start", "must-not-exist"}))
 	started := time.Now()
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "clients are attached to its Project session") {
@@ -452,7 +452,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	failingOutputOptions := options
 	failingOutputOptions.Stdout = errorWriter{}
 	failingOutputCommand := cli.New(failingOutputOptions)
-	failingOutputCommand.SetArgs(forceTextOutput([]string{"new", "output-fails"}))
+	failingOutputCommand.SetArgs(forceTextOutput([]string{"start", "output-fails"}))
 	err = failingOutputCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test output failure") ||
 		!strings.Contains(err.Error(), "could not switch to the new Project") ||
@@ -471,7 +471,7 @@ func TestQuickCreateUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if clientSessionBeforeSuccess != oldProject.TmuxSession {
 		t.Fatalf("calling client after output failure = %q, want %q", clientSessionBeforeSuccess, oldProject.TmuxSession)
 	}
-	output := executeWithOptions(t, options, nil, "new", "new-project")
+	output := executeWithOptions(t, options, nil, "start", "new-project")
 	if !strings.Contains(output, "archiving Project \"old-project\"") {
 		t.Fatalf("real quick create output = %q", output)
 	}
@@ -535,7 +535,7 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	}
 
 	// --keep-current switches without an archive.
-	keepOutput := executeWithOptions(t, options, nil, "new", "second", "--keep-current")
+	keepOutput := executeWithOptions(t, options, nil, "start", "second", "--keep-current")
 	if !strings.Contains(keepOutput, "stays active") {
 		t.Fatalf("quick create --keep-current output = %q", keepOutput)
 	}
@@ -562,7 +562,7 @@ func TestQuickCreateKeepCurrentAndOutsideSessionFallback(t *testing.T) {
 	outsideOptions := options
 	outsideOptions.Stdout, outsideOptions.Stderr = &stdout, &stderr
 	outsideCommand := cli.New(outsideOptions)
-	outsideCommand.SetArgs(forceTextOutput([]string{"new", "outsider"}))
+	outsideCommand.SetArgs(forceTextOutput([]string{"start", "outsider"}))
 	if err := outsideCommand.Execute(); err != nil {
 		t.Fatalf("quick create outside a Project session: %v\n%s", err, stderr.String())
 	}
