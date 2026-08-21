@@ -78,6 +78,17 @@ func (s *Service) ValidateCreate(name, templateName string, template domain.Temp
 	return nil
 }
 
+// ValidateCreateWithOptions also validates the branch selection, so a dry
+// run refuses exactly what the real create refuses. The placeholder ID only
+// feeds the {id8} token.
+func (s *Service) ValidateCreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) error {
+	if err := s.ValidateCreate(name, templateName, template); err != nil {
+		return err
+	}
+	_, err := s.validateBranchSelection(name, "00000000", template, opts)
+	return err
+}
+
 func (s *Service) List() ([]domain.Project, error) { return s.store.List() }
 
 func (s *Service) Find(reference string) (domain.Project, error) { return s.store.Find(reference) }

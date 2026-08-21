@@ -75,7 +75,7 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 				return err
 			}
 			if isDryRun(command) {
-				if err := service.ValidateCreate(name, selected, template); err != nil {
+				if err := validateCreate(options, service, name, selected, template, projectservice.CreateOptions{Branch: branch, NoFetch: noFetch}); err != nil {
 					return err
 				}
 				return writeMutation(command, "projects.quick_create", statusValid, "", name)

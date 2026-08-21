@@ -41,7 +41,7 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 			var project domain.Project
 			if err := runMutation(command, "projects.create",
 				func() (string, string, error) {
-					return "", args[0], service.ValidateCreate(args[0], selected, template)
+					return "", args[0], validateCreate(options, service, args[0], selected, template, projectservice.CreateOptions{Branch: branch, NoFetch: noFetch})
 				},
 				func() (string, string, error) {
 					var err error
@@ -73,6 +73,17 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 // Environment refill, and last-template path. Every create entry point (the
 // projects create command, quick create, and apply) uses it. It resolves the
 // user branch prefix for the {prefix} token of the Project branch pattern.
+// validateCreate is the dry-run twin of createProject: it validates the same
+// branch selection, so a valid dry run never precedes a refused create.
+func validateCreate(options Options, service *projectservice.Service, name, templateName string, template domain.Template, createOptions projectservice.CreateOptions) error {
+	prefix, err := options.resolveBranchPrefix()
+	if err != nil {
+		return err
+	}
+	createOptions.BranchPrefix = prefix
+	return service.ValidateCreateWithOptions(name, templateName, template, createOptions)
+}
+
 func createProject(command *cobra.Command, options Options, name, templateName string, template domain.Template, createOptions projectservice.CreateOptions) (domain.Project, error) {
 	prefix, err := options.resolveBranchPrefix()
 	if err != nil {

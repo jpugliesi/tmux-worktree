@@ -182,24 +182,14 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 // in a Repository Cache, twt falls back to twt/<name>-<id8>.
 func (s *Service) resolveProjectBranch(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
 	fallback := "twt/" + name + "-" + projectID[:8]
-	candidate, err := s.projectBranchCandidate(name, projectID, template, opts)
+	candidate, err := s.validateBranchSelection(name, projectID, template, opts)
 	if err != nil {
 		return "", err
 	}
 	for _, spec := range template.Repositories {
-		repositoryDefault := spec.DefaultBranch
 		cachePath := s.cachePath(spec.Name, spec.Clone.URL)
 		cacheInfo, statErr := os.Stat(cachePath)
-		cacheExists := statErr == nil && cacheInfo.IsDir()
-		if cacheExists {
-			// Deliberate: a cache without a readable HEAD must not block
-			// branch selection.
-			repositoryDefault, _ = defaultBranch(cachePath, spec)
-		}
-		if repositoryDefault != "" && candidate == repositoryDefault {
-			return "", clierr.New(clierr.InvalidUsage, "branch %q is the default branch of repository %q; use --branch to set a different branch name", candidate, spec.Name)
-		}
-		if !cacheExists {
+		if statErr != nil || !cacheInfo.IsDir() {
 			continue
 		}
 		exists, err := refExists(cachePath, "refs/heads/"+candidate)
@@ -209,6 +199,30 @@ func (s *Service) resolveProjectBranch(name, projectID string, template domain.T
 		if exists {
 			s.report("Branch %q exists. twt uses %q.", candidate, fallback)
 			return fallback, nil
+		}
+	}
+	return candidate, nil
+}
+
+// validateBranchSelection renders the branch candidate and refuses a name
+// that equals a repository default branch. Dry-run validation shares it with
+// the claim path, so both agree before any change.
+func (s *Service) validateBranchSelection(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
+	candidate, err := s.projectBranchCandidate(name, projectID, template, opts)
+	if err != nil {
+		return "", err
+	}
+	for _, spec := range template.Repositories {
+		repositoryDefault := spec.DefaultBranch
+		cachePath := s.cachePath(spec.Name, spec.Clone.URL)
+		cacheInfo, statErr := os.Stat(cachePath)
+		if statErr == nil && cacheInfo.IsDir() {
+			// Deliberate: a cache without a readable HEAD must not block
+			// branch selection.
+			repositoryDefault, _ = defaultBranch(cachePath, spec)
+		}
+		if repositoryDefault != "" && candidate == repositoryDefault {
+			return "", clierr.New(clierr.InvalidUsage, "branch %q is the default branch of repository %q; use --branch to set a different branch name", candidate, spec.Name)
 		}
 	}
 	return candidate, nil

@@ -477,7 +477,7 @@ func applyProjectsCreate(command *cobra.Command, options Options, request applyR
 		return err
 	}
 	if isDryRun(command) {
-		if err := options.projectService().ValidateCreate(payload.Name, payload.Template, template); err != nil {
+		if err := validateCreate(options, options.projectService(), payload.Name, payload.Template, template, projectservice.CreateOptions{}); err != nil {
 			return err
 		}
 		return writeMutation(command, "projects.create", statusValid, "", payload.Name)
