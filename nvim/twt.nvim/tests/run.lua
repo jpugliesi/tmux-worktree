@@ -516,7 +516,7 @@ test("registers one command for each action, without the default mappings", func
   local commands = vim.api.nvim_get_commands({})
   local names = {
     "TwtAgents", "TwtNote", "TwtReview", "TwtSend",
-    "TwtNotes", "TwtResume", "TwtFocus", "TwtRefresh", "TwtClear",
+    "TwtNotes", "TwtNoteDelete", "TwtResume", "TwtFocus", "TwtRefresh", "TwtClear",
   }
   for _, name in ipairs(names) do
     assert(commands[name], name .. " is missing")
@@ -533,6 +533,12 @@ end
 local function cancel_keymap(buffer)
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(buffer, "n")) do
     if map.callback and map.lhs == "q" then return map.callback end
+  end
+end
+
+local function delete_keymap(buffer)
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buffer, "n")) do
+    if map.callback and map.lhs:lower():find("c%-d") then return map.callback end
   end
 end
 
@@ -688,6 +694,50 @@ test("cancels the message window one time and sends nothing", function()
   assert(not vim.api.nvim_buf_is_valid(buffer), "the message buffer must not stay")
 end)
 
+test("asks the notes picker for a snacks preview of the highlighted note", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
+  review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
+
+  local select_opts, select_items
+  with_config({
+    select = function(items, opts, done)
+      if opts.snacks then
+        select_opts = opts
+        select_items = items
+      end
+      done(nil)
+    end,
+  }, function()
+    review.prompt_notes(function() end)
+  end)
+  assert(select_opts and select_opts.snacks, "the notes picker must pass snacks preview options")
+  assert(select_opts.kind == "twt_review_note", vim.inspect(select_opts.kind))
+  local lines
+  select_opts.snacks.preview({
+    item = { item = select_items[1] },
+    preview = {
+      reset = function() end,
+      set_lines = function(_, value) lines = value end,
+      highlight = function() end,
+    },
+  })
+  local preview = table.concat(lines, "\n")
+  assert(preview:find("src/other.go:2", 1, true), preview)
+  assert(preview:find("first note", 1, true), preview)
+  assert(preview:find("two", 1, true), preview)
+  review.clear("project-1")
+end)
+
 test("lists a review note and deletes it", function()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/src", "p")
@@ -732,6 +782,240 @@ test("lists a review note and deletes it", function()
     end
     assert(#left == 1 and left[1] == "second note", table.concat(left, ","))
   end)
+  review.clear("project-1")
+end)
+
+test("opens an existing review note on the line and saves the edit", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+  local saved
+  review.prompt_add(function(err, note)
+    assert(err == nil, err)
+    saved = note
+  end)
+  local float = vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(float, 0, -1, false)
+  assert(table.concat(lines, "\n") == "first draft", vim.inspect(lines))
+  vim.api.nvim_buf_set_lines(float, 0, -1, false, { "revised note" })
+  local save = save_keymap(float)
+  assert(save, "the note window has no save mapping")
+  save()
+  assert(saved and saved.comment == "revised note", vim.inspect(saved))
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 1 and left[1] == "revised note", table.concat(left, ","))
+  review.clear("project-1")
+end)
+
+test("deletes an existing review note from the note window", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+  local result
+  review.prompt_add(function(err, value)
+    assert(err == nil, err)
+    result = value
+  end)
+  local float = vim.api.nvim_get_current_buf()
+  local config = vim.api.nvim_win_get_config(0)
+  local footer = config.footer
+  if type(footer) == "table" then footer = footer[1] and (footer[1][1] or footer[1]) or vim.inspect(footer) end
+  assert(tostring(footer):find("C%-d delete"), vim.inspect(config.footer))
+  local delete = delete_keymap(float)
+  assert(delete, "the note window has no delete mapping")
+  delete()
+  assert(result == "review note deleted", vim.inspect(result))
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 0, table.concat(left, ","))
+  review.clear("project-1")
+end)
+
+test("deletes an opened review note when the comment is cleared", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+  local result
+  review.prompt_add(function(err, value)
+    assert(err == nil, err)
+    result = value
+  end)
+  local float = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(float, 0, -1, false, { "" })
+  local save = save_keymap(float)
+  assert(save, "the note window has no save mapping")
+  save()
+  assert(result == "review note deleted", vim.inspect(result))
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 0, table.concat(left, ","))
+  review.clear("project-1")
+end)
+
+test("deletes the review note on the current line", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
+  review.add("drop me", 3, 3, function(err) assert(err == nil, err) end)
+  vim.api.nvim_win_set_cursor(0, { 3, 0 })
+
+  local result
+  review.prompt_delete(function(err, value)
+    assert(err == nil, err)
+    result = value
+  end)
+  assert(result == "review note deleted", vim.inspect(result))
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
+  review.clear("project-1")
+end)
+
+test("asks before it clears the Project review notes", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
+
+  local questions = {}
+  local answer = false
+  with_config({
+    confirm = function(question, done)
+      questions[#questions + 1] = question
+      done(answer)
+    end,
+  }, function()
+    review.clear_current(function(err) assert(err == nil, err) end)
+    assert(#questions == 1 and questions[1]:find("Are you sure", 1, true), vim.inspect(questions))
+    local left = {}
+    for _, note in ipairs(review.list()) do
+      if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    end
+    assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
+
+    answer = true
+    review.clear_current(function(err) assert(err == nil, err) end)
+    assert(#questions == 2)
+    left = {}
+    for _, note in ipairs(review.list()) do
+      if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    end
+    assert(#left == 0, table.concat(left, ","))
+  end)
+  review.clear("project-1")
+end)
+
+test("opens a review note from the picker and saves the edit", function()
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/src", "p")
+  vim.fn.mkdir(root .. "/.git", "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_set_current_buf(buffer)
+  require("twt.config").get().directory = function() return root .. "/src" end
+  local review = require("twt").review
+  review.clear("project-1")
+  review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
+  review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+  local actions
+  local choices = { 1, "Open" }
+  local saved
+  with_config({
+    select = function(items, opts, done)
+      local choice = table.remove(choices, 1)
+      if type(choice) == "number" then
+        done(items[choice])
+      else
+        actions = items
+        for _, item in ipairs(items) do
+          if item == choice then done(item); return end
+        end
+        done(nil)
+      end
+    end,
+  }, function()
+    review.prompt_notes(function(err, note)
+      assert(err == nil, err)
+      saved = note
+    end)
+    assert(actions[1] == "Open", vim.inspect(actions))
+    local float_win = vim.api.nvim_get_current_win()
+    local place = vim.api.nvim_win_get_config(float_win)
+    local parent = place.win
+    if type(parent) == "table" then parent = parent.win or parent[1] end
+    assert(parent and vim.api.nvim_win_get_cursor(parent)[1] == 2, vim.inspect(place))
+    local float = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(float, 0, -1, false)
+    assert(table.concat(lines, "\n") == "first note", vim.inspect(lines))
+    vim.api.nvim_buf_set_lines(float, 0, -1, false, { "opened from picker" })
+    local save = save_keymap(float)
+    assert(save, "the note window has no save mapping")
+    save()
+  end)
+  assert(saved and saved.comment == "opened from picker", vim.inspect(saved))
+  local left = {}
+  for _, note in ipairs(review.list()) do
+    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+  end
+  assert(#left == 2, table.concat(left, ","))
+  assert(left[1] == "opened from picker" and left[2] == "second note", table.concat(left, ","))
   review.clear("project-1")
 end)
 

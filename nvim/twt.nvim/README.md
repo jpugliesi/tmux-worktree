@@ -17,14 +17,19 @@ Agent Session, resume, focus, and feedback work goes through the versioned
 ```
 
 The plug-in needs Neovim 0.10 or later and a `twt` executable in `PATH`.
-It uses core `vim.ui.select`, so a picker provider is optional.
+It uses core `vim.ui.select`, so a picker provider is optional. LazyVim
+replaces that call with the Snacks picker. The notes list passes Snacks
+options so the picker shows a preview of the highlighted note.
 
 ## Main mappings
 
 | Mapping | Action |
 | --- | --- |
 | `<leader>arp` | Select an Agent Session and open its transcript |
-| `<leader>an` | Add a multi-line review note |
+| `<leader>an` | Add a review note, or open the note on this line |
+| `<leader>ad` | Delete the review note on this line |
+| `<leader>al` | List the review notes of this Project |
+| `<leader>arl` | List the review notes of this Project |
 | `<leader>arr` | Send the current Project review batch |
 | `<leader>ars` | Write free text in a window and send it |
 | `<leader>aru` | Resume the selected Agent Session |
@@ -41,8 +46,10 @@ background. Override `TwtFloat`, `TwtFloatBorder`, `TwtFloatTitle`, or
 below the selected line or visual block when that block is high in the
 viewport, and above it when the block is low. The parent window scrolls when
 both would not fit. The note window and the message window use the same keys.
-The footer shows `C-s save · q quit` on the right. Press `<C-s>` to accept
-the text. Press `q` to close the window and to keep no text.
+The footer shows `C-s save · q quit` on the right. An existing note also
+shows `C-d delete`. Press `<C-s>` to accept the text. Press `<C-d>` to
+delete the open note. Clear the comment and press `<C-s>` to delete it.
+Press `q` to close the window and to keep the note.
 
 Set `default_keymaps = false` to remove these mappings. The commands stay
 available:
@@ -50,7 +57,8 @@ available:
 | Command | Action |
 | --- | --- |
 | `:TwtAgents` | Select an Agent Session and open its transcript |
-| `:TwtNote` | Add a multi-line review note |
+| `:TwtNote` | Add a review note, or open the note on this line |
+| `:TwtNoteDelete` | Delete the review note on this line |
 | `:TwtReview` | Send the current Project review batch |
 | `:TwtSend` | Write free text in a window and send it |
 | `:TwtNotes` | List the review notes of this Project |
@@ -62,8 +70,17 @@ available:
 Each mapping has a command. The commands and the mappings do the same work and
 show the same messages.
 
-`:TwtNotes` shows the notes of the current Project. Select a note, then
-select `Delete` or `Go to the line`.
+`:TwtNotes`, `<leader>al`, and `<leader>arl` show the notes of the current Project. The
+Snacks picker preview shows the file, the selected lines, and the note
+comment. Select a note, then select `Open`, `Delete`, or `Go to the line`.
+`Open` moves to the line and opens the note window with the current comment.
+
+`<leader>an` on a line that already has a note opens that note. Save updates
+the comment. Press `<C-d>` in that window to delete the note. Clear the
+comment and press `<C-s>` to delete it. `<leader>ad` deletes the note on
+this line without opening the window. A line with more than one note asks
+which note to open or delete. `<leader>arx` asks `Are you sure you want to
+clear all review notes?` before it clears the Project batch.
 
 If the selected Agent Session is not live, but it can resume, a send asks you
 first: `The Agent Session is not live. Resume and send?`. Answer yes to resume
@@ -129,10 +146,12 @@ twt.agents.resume(done)
 twt.agents.focus(done)
 twt.agents.status()
 twt.review.prompt_add(done)
+twt.review.prompt_delete(done)
 twt.review.prompt_notes(done)
 twt.review.send(done)
 twt.review.list()
 twt.review.delete(note_id)
+twt.review.update(note_id, comment)
 twt.review.jump(note_id)
 twt.review.clear()
 ```
@@ -147,7 +166,8 @@ snapshot file that they opened. A canceled picker gives `done(nil)` with no
 result. A canceled text window gives no answer, so `prompt_add` and
 `prompt_send` show nothing after `q`.
 
-`setup` accepts a `confirm` function for the resume question:
+`setup` accepts a `confirm` function for the resume question and for
+clearing review notes:
 
 ```lua
 require("twt").setup({

@@ -24,7 +24,8 @@ local function scroll_parent(win, count)
   end)
 end
 
-local hint_text = " C-s save · q quit "
+local save_hint = " C-s save · q quit "
+local delete_hint = " C-s save · C-d delete · q quit "
 
 -- Inner width of a boxed float. The box stays under 76 columns and uses
 -- about 70% of the pane. col is the left edge inside the parent window.
@@ -129,8 +130,10 @@ end
 
 -- Opens a floating window for multi-line text.
 -- `<C-s>` closes the window and sends the text to `done`. `q` closes the window
--- and sends `nil`, which tells the caller that the user canceled. `done` runs
--- one time only. A start_line option anchors the window to a source block.
+-- and sends `nil`, which tells the caller that the user canceled. When
+-- on_delete is set, `<C-d>` closes the window and runs that callback. `done`
+-- runs one time only. A start_line option anchors the window to a source
+-- block. A text option fills the buffer before insert starts.
 function M.open(opts, done)
   opts = opts or {}
   local buffer = vim.api.nvim_create_buf(false, true)
@@ -143,7 +146,7 @@ function M.open(opts, done)
     col = place.col,
     title = " " .. (opts.title or "twt") .. " ",
     title_pos = "center",
-    footer = hint_text,
+    footer = opts.on_delete and delete_hint or save_hint,
     footer_pos = "right",
     style = "minimal",
     zindex = 50,
@@ -157,21 +160,33 @@ function M.open(opts, done)
   vim.wo[window].winhighlight = "Normal:TwtFloat,FloatBorder:TwtFloatBorder,FloatTitle:TwtFloatTitle,FloatFooter:TwtFloatFooter"
   vim.bo[buffer].filetype = opts.filetype or "markdown"
   vim.bo[buffer].bufhidden = "wipe"
+  if opts.text and opts.text ~= "" then
+    local lines = vim.split(opts.text, "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+    vim.api.nvim_win_set_cursor(window, { #lines, #lines[#lines] })
+  end
   local finished = false
-  local function finish(text)
+  local function finish(text, deleted)
     if finished then return end
     finished = true
     if opts.on_close then opts.on_close() end
     if vim.api.nvim_win_is_valid(window) then
       vim.api.nvim_win_close(window, true)
     end
+    if deleted then
+      opts.on_delete()
+      return
+    end
     done(text)
   end
   vim.keymap.set({ "n", "i" }, "<C-s>", function()
     finish(vim.trim(table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n")))
-  end, { buffer = buffer })
-  vim.keymap.set("n", "q", function() finish(nil) end, { buffer = buffer })
-  vim.cmd("startinsert")
+  end, { buffer = buffer, nowait = true })
+  vim.keymap.set("n", "q", function() finish(nil) end, { buffer = buffer, nowait = true })
+  if opts.on_delete then
+    vim.keymap.set({ "n", "i" }, "<C-d>", function() finish(nil, true) end, { buffer = buffer, nowait = true })
+  end
+  vim.cmd(opts.text and opts.text ~= "" and "startinsert!" or "startinsert")
   return buffer, window
 end
 

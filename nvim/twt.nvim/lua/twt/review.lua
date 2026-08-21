@@ -146,14 +146,94 @@ function M.clear_current(done)
       done(err)
       return
     end
-    M.clear(context.project.id)
-    done(nil, context.project.id)
+    if #notes_for(context.project.id) == 0 then
+      done("this Project has no review notes")
+      return
+    end
+    config.get().confirm("Are you sure you want to clear all review notes?", function(yes)
+      if not yes then return end
+      M.clear(context.project.id)
+      done(nil)
+    end)
   end)
 end
 
 function M.delete(id)
   local index = index_of(id)
   return index ~= nil and remove(index)
+end
+
+-- Replaces the comment of one note. Empty text is an error.
+function M.update(id, comment)
+  local index = index_of(id)
+  if not index then return "the review note no longer exists" end
+  local trimmed = vim.trim(comment or "")
+  if trimmed == "" then return "save the file and enter a review comment" end
+  notes[index].comment = trimmed
+  return nil
+end
+
+-- Notes whose extmark range overlaps the given lines in one buffer.
+local function notes_covering(buffer, start_line, end_line)
+  local matches = {}
+  for _, note in ipairs(notes) do
+    if note.buffer == buffer then
+      local place = location(note)
+      if place and place.line <= end_line and place.last >= start_line then
+        matches[#matches + 1] = note
+      end
+    end
+  end
+  return matches
+end
+
+local function label(note)
+  local place = location(note)
+  local where = place and string.format("%s:%d", place.path, place.line) or "no valid line"
+  local first = vim.split(note.comment, "\n", { plain = true })[1]
+  return string.format("%s · %s", where, first)
+end
+
+-- Markdown for the snacks picker preview. LazyVim replaces vim.ui.select
+-- with Snacks.picker.select. The default select layout hides preview, so
+-- the caller passes these options through opts.snacks.
+local function preview_text(note)
+  local place, err = location(note)
+  local parts = {}
+  if place then
+    local suffix = place.line == place.last and tostring(place.line) or (place.line .. "-" .. place.last)
+    parts[#parts + 1] = string.format("%s:%s", place.path, suffix)
+    parts[#parts + 1] = ""
+    if place.snippet ~= "" then
+      parts[#parts + 1] = "```"
+      parts[#parts + 1] = place.snippet
+      parts[#parts + 1] = "```"
+      parts[#parts + 1] = ""
+    end
+  else
+    parts[#parts + 1] = err or "no valid line"
+    parts[#parts + 1] = ""
+  end
+  parts[#parts + 1] = note.comment
+  return table.concat(parts, "\n")
+end
+
+local function note_select_opts(prompt)
+  return {
+    prompt = prompt,
+    format_item = label,
+    kind = "twt_review_note",
+    snacks = {
+      preview = function(ctx)
+        local note = ctx.item and (ctx.item.item or ctx.item)
+        if not note then return end
+        ctx.preview:reset()
+        ctx.preview:set_lines(vim.split(preview_text(note), "\n", { plain = true }))
+        ctx.preview:highlight({ ft = "markdown" })
+      end,
+      layout = { preset = "default" },
+    },
+  }
 end
 
 local function clear_ids(ids)
@@ -194,21 +274,11 @@ function M.send(done)
   end)
 end
 
--- Asks for a note comment for the current line or selection. A canceled window
--- adds no note. The window sits below the selected block when the viewport
--- has room, and above it when the block is low in the window.
-function M.prompt_add(done)
-  done = done or function() end
-  local start_line, end_line = vim.fn.line("."), vim.fn.line(".")
-  local mode = vim.fn.mode()
-  if mode:match("[vV\22]") then
-    start_line, end_line = vim.fn.line("v"), vim.fn.line(".")
-    if start_line > end_line then start_line, end_line = end_line, start_line end
-  end
-  local source = vim.api.nvim_get_current_buf()
+local function open_note_window(opts, on_text)
+  local source = opts.buffer
   local draft = vim.api.nvim_create_namespace("twt_review_draft")
-  local mark = vim.api.nvim_buf_set_extmark(source, draft, start_line - 1, 0, {
-    end_row = end_line,
+  local mark = vim.api.nvim_buf_set_extmark(source, draft, opts.start_line - 1, 0, {
+    end_row = opts.end_line,
     end_col = 0,
     hl_group = "Visual",
     hl_eol = true,
@@ -220,23 +290,111 @@ function M.prompt_add(done)
   end
   input.open({
     title = "Note",
+    text = opts.text,
+    start_line = opts.start_line,
+    end_line = opts.end_line,
+    on_close = clear_draft,
+    on_delete = opts.on_delete,
+  }, on_text)
+end
+
+-- Opens the note window with the current comment. Save updates that note.
+-- Ctrl-D deletes the note.
+local function prompt_edit(note, done)
+  local place, err = location(note)
+  if not place then
+    done(err)
+    return
+  end
+  open_note_window({
+    buffer = note.buffer,
+    start_line = place.line,
+    end_line = place.last,
+    text = note.comment,
+    on_delete = function()
+      M.delete(note.id)
+      done(nil, "review note deleted")
+    end,
+  }, function(text)
+    if not text then return end
+    if vim.trim(text) == "" then
+      M.delete(note.id)
+      done(nil, "review note deleted")
+      return
+    end
+    local update_err = M.update(note.id, text)
+    if update_err then
+      done(update_err)
+      return
+    end
+    done(nil, notes[index_of(note.id)])
+  end)
+end
+
+-- Asks for a note comment for the current line or selection. A canceled window
+-- adds no note. When the line already has a note, the window opens that note
+-- for edit. The window sits below the selected block when the viewport has
+-- room, and above it when the block is low in the window.
+function M.prompt_add(done)
+  done = done or function() end
+  local start_line, end_line = vim.fn.line("."), vim.fn.line(".")
+  local mode = vim.fn.mode()
+  if mode:match("[vV\22]") then
+    start_line, end_line = vim.fn.line("v"), vim.fn.line(".")
+    if start_line > end_line then start_line, end_line = end_line, start_line end
+  end
+  local source = vim.api.nvim_get_current_buf()
+  local existing = notes_covering(source, start_line, end_line)
+  if #existing == 1 then
+    prompt_edit(existing[1], done)
+    return
+  end
+  if #existing > 1 then
+    config.get().select(existing, note_select_opts("Select a twt review note"), function(note)
+      if not note then done(nil); return end
+      prompt_edit(note, done)
+    end)
+    return
+  end
+  open_note_window({
+    buffer = source,
     start_line = start_line,
     end_line = end_line,
-    on_close = clear_draft,
   }, function(text)
     if not text then return end
     M.add(text, start_line, end_line, done)
   end)
 end
 
-local function label(note)
-  local place = location(note)
-  local where = place and string.format("%s:%d", place.path, place.line) or "no valid line"
-  local first = vim.split(note.comment, "\n", { plain = true })[1]
-  return string.format("%s · %s", where, first)
+-- Deletes the review note on the current line or selection. A line with
+-- more than one note asks which note to delete.
+function M.prompt_delete(done)
+  done = done or function() end
+  local start_line, end_line = vim.fn.line("."), vim.fn.line(".")
+  local mode = vim.fn.mode()
+  if mode:match("[vV\22]") then
+    start_line, end_line = vim.fn.line("v"), vim.fn.line(".")
+    if start_line > end_line then start_line, end_line = end_line, start_line end
+  end
+  local existing = notes_covering(vim.api.nvim_get_current_buf(), start_line, end_line)
+  if #existing == 0 then
+    done("this line has no review note")
+    return
+  end
+  local function drop(note)
+    if not note then done(nil); return end
+    M.delete(note.id)
+    done(nil, "review note deleted")
+  end
+  if #existing == 1 then
+    drop(existing[1])
+    return
+  end
+  config.get().select(existing, note_select_opts("Delete a twt review note"), drop)
 end
 
--- Lists the review notes of the current Project, then deletes one or moves to it.
+-- Lists the review notes of the current Project, then opens, deletes, or
+-- moves to one.
 function M.prompt_notes(done)
   done = done or function() end
   client.project_context(function(err, context)
@@ -249,15 +407,16 @@ function M.prompt_notes(done)
       done("this Project has no review notes")
       return
     end
-    config.get().select(project_notes, {
-      prompt = "Select a twt review note",
-      format_item = label,
-    }, function(note)
+    config.get().select(project_notes, note_select_opts("Select a twt review note"), function(note)
       if not note then done(nil); return end
-      config.get().select({ "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
-        if choice == "Delete" then
+      config.get().select({ "Open", "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
+        if choice == "Open" then
+          local jump_err = M.jump(note.id)
+          if jump_err then done(jump_err); return end
+          prompt_edit(note, done)
+        elseif choice == "Delete" then
           M.delete(note.id)
-          done(nil, "deleted")
+          done(nil, "review note deleted")
         elseif choice == "Go to the line" then
           done(M.jump(note.id), "jumped")
         else

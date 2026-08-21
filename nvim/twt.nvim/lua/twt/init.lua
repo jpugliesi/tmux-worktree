@@ -29,8 +29,8 @@ local specs = {
     cmd = "TwtNote",
     lhs = "<leader>an",
     modes = { "n", "v" },
-    desc = "Add twt review note",
-    ok = "review note added",
+    desc = "Add or open a twt review note",
+    ok = "review note saved",
     fn = function(done) M.review.prompt_add(done) end,
   },
   {
@@ -49,8 +49,16 @@ local specs = {
   },
   {
     cmd = "TwtNotes",
+    lhs = { "<leader>al", "<leader>arl" },
     desc = "List the twt review notes of this Project",
     fn = function(done) M.review.prompt_notes(done) end,
+  },
+  {
+    cmd = "TwtNoteDelete",
+    lhs = "<leader>ad",
+    modes = { "n", "v" },
+    desc = "Delete the twt review note on this line",
+    fn = function(done) M.review.prompt_delete(done) end,
   },
   {
     cmd = "TwtResume",
@@ -81,7 +89,15 @@ local specs = {
 
 local function runner(spec)
   return function()
-    spec.fn(function(err) report(err, spec.ok) end)
+    spec.fn(function(err, result)
+      if err then
+        report(err)
+      elseif type(result) == "string" then
+        report(nil, result)
+      elseif spec.ok then
+        report(nil, spec.ok)
+      end
+    end)
   end
 end
 
@@ -103,8 +119,10 @@ function M.setup(options)
   })
   if not config.get().default_keymaps then return end
   for _, spec in ipairs(specs) do
-    if spec.lhs then
-      vim.keymap.set(spec.modes or "n", spec.lhs, runner(spec), { desc = spec.desc })
+    local keys = spec.lhs
+    if type(keys) == "string" then keys = { keys } end
+    for _, lhs in ipairs(keys or {}) do
+      vim.keymap.set(spec.modes or "n", lhs, runner(spec), { desc = spec.desc })
     end
   end
 end
