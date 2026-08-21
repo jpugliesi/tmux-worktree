@@ -1,14 +1,8 @@
 package cli
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -97,53 +91,8 @@ func pickSwitchProject(command *cobra.Command, options Options, service *project
 // realSwitchPick selects one picker line with fzf when it is installed, or
 // with a numbered list on the terminal.
 func realSwitchPick(command *cobra.Command, lines []string) (int, error) {
-	if _, err := exec.LookPath("fzf"); err == nil {
-		return fzfPick(lines)
-	}
-	return numberedPick(command, lines)
-}
-
-// fzfPick pipes the picker lines to fzf and returns the index of the
-// selected line. fzf draws its finder on the terminal.
-func fzfPick(lines []string) (int, error) {
-	fzf := exec.Command("fzf")
-	fzf.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
-	fzf.Stderr = os.Stderr
-	selected, err := fzf.Output()
-	if err != nil {
-		return 0, fmt.Errorf("no Project was selected")
-	}
-	choice := strings.TrimSpace(string(selected))
-	for index, line := range lines {
-		if line == choice {
-			return index, nil
-		}
-	}
-	return 0, fmt.Errorf("the Project picker returned an unknown line %q", choice)
-}
-
-// numberedPick prints a numbered Project list and reads the selected number
-// from standard input.
-func numberedPick(command *cobra.Command, lines []string) (int, error) {
-	if !interactiveInput(command.InOrStdin()) {
-		return 0, invalidUsage(command, "missing PROJECT; use 'twt switch PROJECT' in a script")
-	}
-	errOut := command.ErrOrStderr()
-	for index, line := range lines {
-		if _, err := fmt.Fprintf(errOut, "%d) %s\n", index+1, line); err != nil {
-			return 0, err
-		}
-	}
-	if _, err := fmt.Fprint(errOut, "Project number: "); err != nil {
-		return 0, err
-	}
-	line, err := bufio.NewReader(command.InOrStdin()).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return 0, fmt.Errorf("read the Project number: %w", err)
-	}
-	number, err := strconv.Atoi(strings.TrimSpace(line))
-	if err != nil || number < 1 || number > len(lines) {
-		return 0, invalidUsage(command, "give a Project number between 1 and %d", len(lines))
-	}
-	return number - 1, nil
+	return pickLine(command, lines, pickOptions{
+		Noun:        "Project",
+		MissingHint: "missing PROJECT; use 'twt switch PROJECT' in a script",
+	})
 }

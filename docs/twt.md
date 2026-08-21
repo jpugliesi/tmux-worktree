@@ -440,25 +440,37 @@ an Agent now runs as a child process. The safe common flow is to register a
 resume command without `--pane`, then run `agents resume`. twt starts that
 Agent in its own window and records its direct process identity.
 
-List, inspect, focus, resume, or send feedback:
+List, inspect, pick, focus, resume, or send feedback:
 
 ```sh
 twt agents list --project current
 twt agents show AGENT_ID --project current
+twt agents open
 twt agents focus AGENT_ID
 twt agents resume AGENT_ID
 printf '%s\n' 'Please fix the selected review note.' | \
   twt agents send AGENT_ID --project current --stdin
 ```
 
-`agents list` also scans the Codex, Claude, and Grok stores. A provider session that
-ran inside a repository of the Project, and that no Agent Session uses,
-appears after the registered Agent Sessions with the status `discovered`. Its
-`id` is the provider session ID. The list writes nothing. The first action on
-a discovered session adopts it: `resume`, `show`, `send`, and the
-`transcript` commands accept the provider session ID or a unique prefix, and
-register the session before they proceed. A manually started Codex or Claude
-session in a Project directory therefore needs no manual registration step.
+`agents open` shows an interactive Agent Session picker when AGENT_ID is
+absent. It uses `fzf` when `fzf` is installed, or a numbered list. The fzf
+preview shows the same transcript text as `twt agents transcript show`. A
+selection resumes the Agent Session. `--preview` writes that transcript as
+markdown. That path never registers a discovered session and never writes a
+snapshot.
+
+`agents list` also scans the Codex, Claude, and Grok stores. A provider
+session that ran inside a repository of the Project, and that no Agent
+Session uses, appears with status `discovered` and its provider session ID
+as `id`. The newest session comes first. Registered and discovered sessions
+share one recency order. Text output includes a short age and the created
+time, or last activity for a discovered session. The list writes nothing.
+
+The first action on a discovered session adopts it: `resume`, `open`,
+`show`, `send`, and the `transcript` commands accept the provider session
+ID or a unique prefix, and register the session before they proceed. A
+picker preview is not an action. A manually started Codex or Claude session
+in a Project directory therefore needs no manual registration step.
 
 Use `--registered` in a script that must not scan the provider stores. Use
 `--live=false` for the cheap statusline path: it does not probe tmux and does

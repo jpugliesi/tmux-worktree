@@ -76,6 +76,9 @@ type Options struct {
 	// SwitchPick selects one line index from the switch Project picker. New
 	// installs the real fzf or numbered-list implementation when it is nil.
 	SwitchPick func(command *cobra.Command, lines []string) (int, error)
+	// AgentPick selects one line index from the agents open picker. New uses
+	// the real fzf or numbered-list implementation when it is nil.
+	AgentPick func(command *cobra.Command, lines []string) (int, error)
 	// PickTicketBoard selects one Board picker line. The result is "(none)",
 	// an existing Board name, or a typed new name. New installs the real fzf
 	// or numbered-list implementation when it is nil.

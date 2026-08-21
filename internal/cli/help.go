@@ -29,7 +29,7 @@ var commandHelp = map[string]helpContent{
 		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive. Use --force to remove a branch with unpublished commits. When the Project links an open Ticket, twt asks in an interactive terminal whether it must also close that Ticket.", example: "  twt done\n  twt done fix-auth --keep",
 	},
 	"twt agents": {
-		long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --project current\n  twt agents resume AGENT_ID",
+		long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --project current\n  twt agents open\n  twt agents resume AGENT_ID",
 	},
 	"twt storage": {
 		long: "Inspect the disk space used by twt Projects, worktrees, and shared repository caches.", example: "  twt storage show",
@@ -124,7 +124,7 @@ var commandHelp = map[string]helpContent{
 		long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --project fix-auth --label review -- grok --resume SESSION_ID",
 	},
 	"twt agents list": {
-		long: "List Agent Sessions for one Project, including status and capabilities. twt asks tmux for the live state of each pane, and scans the Codex, Claude, and Grok stores for discovered sessions of the Project. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --project current --output json\n  twt agents list --project current --registered\n  twt agents list --project current --live=false",
+		long: "List Agent Sessions for one Project, newest first, including status, capabilities, age, and created time. twt asks tmux for the live state of each pane, and scans the Codex, Claude, and Grok stores for discovered sessions of the Project. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --project current --output json\n  twt agents list --project current --registered\n  twt agents list --project current --live=false",
 	},
 	"twt agents show": {
 		long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --project current --output json",
@@ -140,6 +140,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt agents focus": {
 		long: "Focus the tmux pane for a live Agent Session.", example: "  twt agents focus AGENT_ID",
+	},
+	"twt agents open": {
+		long: "Resume an Agent Session of the selected Project. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection resumes the Agent Session. --preview writes that transcript as markdown, never registers a discovered session, and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --project current",
 	},
 	"twt agents send": {
 		long: "Send standard-input text to a live, owned Agent Session in the selected Project. twt never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --project current --stdin",

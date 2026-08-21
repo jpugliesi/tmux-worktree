@@ -98,7 +98,7 @@ func TestAgentReferenceCompletionOffersRegisteredAndDiscoveredSessions(t *testin
 	// Every other command that takes an AGENT reference completes the same
 	// candidates.
 	for _, path := range [][]string{
-		{"agents", "resume"}, {"agents", "send"}, {"agents", "show"}, {"agents", "rm"},
+		{"agents", "resume"}, {"agents", "open"}, {"agents", "send"}, {"agents", "show"}, {"agents", "rm"},
 		{"agents", "transcript", "show"}, {"agents", "transcript", "snapshot"},
 		{"agents", "transcript", "link"},
 	} {

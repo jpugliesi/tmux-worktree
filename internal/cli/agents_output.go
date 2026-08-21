@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"sort"
 	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
@@ -23,6 +25,9 @@ type agentOutput struct {
 	// last write time of the provider transcript.
 	LastActivity string            `json:"lastActivity,omitempty"`
 	Capabilities agentCapabilities `json:"capabilities"`
+	// recency is the sort key: UpdatedAt for a registered session, or
+	// LastActivity for a discovered session.
+	recency time.Time `json:"-"`
 }
 
 type agentCapabilities struct {
@@ -98,6 +103,7 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, pro
 		Provider: agent.Provider, Label: agent.Label, Status: status,
 		CreatedAt: agent.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: agent.UpdatedAt.Format(time.RFC3339),
+		recency:   agent.UpdatedAt,
 		Capabilities: agentCapabilities{
 			CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
 			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
@@ -113,10 +119,30 @@ func discoveredAgentOutput(project domain.Project, session transcriptservice.Dis
 		ID: session.SessionID, ProviderSessionID: session.SessionID, ProjectID: project.ID,
 		Provider: session.Provider, Label: session.Provider, Status: "discovered",
 		LastActivity: session.LastActivity.UTC().Format(time.RFC3339),
+		recency:      session.LastActivity.UTC(),
 		Capabilities: agentCapabilities{
 			CanResume: project.Status == domain.ProjectActive, CanSend: false, CanFocus: false, CanReadTranscript: true,
 		},
 	}
+}
+
+// sortAgentsForDisplay puts the newest Agent Session first. Registered and
+// discovered sessions share one recency order.
+func sortAgentsForDisplay(outputs []agentOutput) {
+	sort.SliceStable(outputs, func(i, j int) bool {
+		return outputs[i].recency.After(outputs[j].recency)
+	})
+}
+
+// agentListLine writes one Agent Session list row. The age is the recency
+// used for sort. The last field is createdAt for a registered session, or
+// lastActivity for a discovered session.
+func agentListLine(output agentOutput, now time.Time) string {
+	stamp := output.CreatedAt
+	if stamp == "" {
+		stamp = output.LastActivity
+	}
+	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", output.ID, output.Provider, output.Status, output.Label, formatAge(now.Sub(output.recency)), stamp)
 }
 
 func boolText(value bool) string {

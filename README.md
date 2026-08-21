@@ -57,6 +57,7 @@ Move between live Projects with the picker:
 ```sh
 twt switch          # fzf-style picker: name, template, status, age
 twt switch fix-api  # or go direct
+twt agents open     # fzf-style picker: Agent Sessions, transcript preview
 ```
 
 Attach coding agents to the Project. Registration infers the provider and

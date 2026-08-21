@@ -18,7 +18,7 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 ## Honest caveats per axis
 
 **Raw payload input stays at 2.** Interactive commands (`new`, `switch`,
-`done`, `templates edit`, `tickets home`, `agents focus`,
+`done`, `templates edit`, `tickets home`, `agents focus`, `agents open`,
 `agents register --pane current`) have no apply operation by design — they
 move a tmux client or need a terminal. The axis's 3 asks for raw payloads as a first-class peer on every
 mutation; the exclusions are deliberate, so the score stays at 2. The

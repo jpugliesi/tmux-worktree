@@ -99,8 +99,9 @@ payload shapes from `twt schema`; this skill does not repeat them.
 
 An interactive command has no apply operation by design: `twt start`,
 `twt tickets start`, `twt tickets home`, `twt switch`, `twt done`, the tmux
-client move of an archive, `twt templates edit`, `twt agents focus`, and
-`twt agents register --pane current`. Run those in a terminal.
+client move of an archive, `twt templates edit`, `twt agents focus`,
+`twt agents open`, and `twt agents register --pane current`. Run those in a
+terminal.
 
 ## Work with Projects
 
@@ -197,16 +198,27 @@ twt agents show AGENT_ID --project PROJECT_ID --output json
 
 `twt agents list` shows discovered Codex, Claude, and Grok sessions of the Project
 automatically: an unregistered provider session appears with the status
-`discovered` and its provider session ID as `id`. Do not register it by hand.
+`discovered` and its provider session ID as `id`. The newest session comes
+first. Do not register it by hand.
 The first action on it adopts it: pass the session ID (or a unique prefix) to
-`resume`, `show`, `send`, or a `transcript` command, and twt registers the
-session before it proceeds. Use `--registered` when a scan of the provider
+`resume`, `open`, `show`, `send`, or a `transcript` command, and twt registers
+the session before it proceeds. Use `--registered` when a scan of the provider
 stores is unwanted, and `--live=false` for the cheap statusline read.
 
 ```sh
 twt agents list --project current --output json
 twt agents resume PROVIDER_SESSION_ID --output json
 twt agents list --project current --registered --output json
+```
+
+`twt agents open` is interactive. It shows an fzf Agent Session picker when
+fzf is installed, or a numbered list. The fzf preview shows the same
+transcript text as `twt agents transcript show`. A selection resumes the
+Agent Session. The preview never registers a discovered session.
+
+```sh
+twt agents open
+twt agents open AGENT_ID
 ```
 
 For bulk adoption of many sessions at one time, `agents discover` remains

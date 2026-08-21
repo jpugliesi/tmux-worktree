@@ -59,6 +59,8 @@ coding agent. `twt` treats that text as data:
   one line feed.
 - `twt agents transcript show` and `twt agents transcript snapshot` mark the
   JSON payload with `"untrusted": true`.
+- `twt agents open --preview` writes the same sanitized markdown as
+  `twt agents transcript show`. That path never writes JSON.
 - A snapshot Markdown file holds the same sanitized text, because that file
   goes into an agent context.
 

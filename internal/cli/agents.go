@@ -25,6 +25,7 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsRemoveCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsResumeCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsFocusCommand(agents, projects, options.StateDir))
+	command.AddCommand(newAgentsOpenCommand(options, agents, projects, options.StateDir))
 	command.AddCommand(newAgentsSendCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentTranscriptCommand(agents, projects, options.StateDir))
 	return command
@@ -130,25 +131,9 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return err
 			}
-			values, err := agents.List(project.ID)
+			outputs, err := projectAgentOutputs(agents, project, stateDir, live, registered)
 			if err != nil {
 				return err
-			}
-			outputs := make([]agentOutput, 0, len(values))
-			for _, value := range values {
-				outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive, live))
-			}
-			// The list also shows the discovered provider sessions after the
-			// registered Agent Sessions, newest first. The scan only reads;
-			// the first action on a discovered session adopts it.
-			if live && !registered {
-				found, err := discoverProjectSessions(project, stateDir, values)
-				if err != nil {
-					return err
-				}
-				for _, session := range found {
-					outputs = append(outputs, discoveredAgentOutput(project, session))
-				}
 			}
 			outputs, total, truncated, err := applyWindow(outputs, offset, limit)
 			if err != nil {
@@ -163,8 +148,9 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 					TotalCount: total, Truncated: truncated,
 				}, "agents")
 			}
+			now := time.Now()
 			for _, output := range outputs {
-				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\t%s\n", output.ID, output.Provider, output.Status, output.Label); err != nil {
+				if _, err := fmt.Fprintf(command.OutOrStdout(), "%s\n", agentListLine(output, now)); err != nil {
 					return err
 				}
 			}
@@ -177,6 +163,31 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 	command.Flags().BoolVar(&registered, "registered", false, "List only registered Agent Sessions; do not scan providers")
 	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	return command
+}
+
+// projectAgentOutputs lists the Agent Sessions of one Project in the same
+// order as `twt agents list`: newest first. Registered and discovered
+// sessions share one recency order. The scan only reads.
+func projectAgentOutputs(agents *agentservice.Service, project domain.Project, stateDir string, live, registered bool) ([]agentOutput, error) {
+	values, err := agents.List(project.ID)
+	if err != nil {
+		return nil, err
+	}
+	outputs := make([]agentOutput, 0, len(values))
+	for _, value := range values {
+		outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive, live))
+	}
+	if live && !registered {
+		found, err := discoverProjectSessions(project, stateDir, values)
+		if err != nil {
+			return nil, err
+		}
+		for _, session := range found {
+			outputs = append(outputs, discoveredAgentOutput(project, session))
+		}
+	}
+	sortAgentsForDisplay(outputs)
+	return outputs, nil
 }
 
 func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {

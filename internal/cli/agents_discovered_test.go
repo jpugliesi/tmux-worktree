@@ -15,6 +15,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/spf13/cobra"
 )
 
 // discoveredListEntry is the JSON shape of one agents list entry that this
@@ -25,6 +26,7 @@ type discoveredListEntry struct {
 	Provider          string `json:"provider"`
 	Label             string `json:"label"`
 	Status            string `json:"status"`
+	CreatedAt         string `json:"createdAt"`
 	LastActivity      string `json:"lastActivity"`
 	Capabilities      struct {
 		CanResume         bool `json:"canResume"`
@@ -323,5 +325,69 @@ func TestAgentsResumeAdoptsADiscoveredProviderSession(t *testing.T) {
 	entries := decodeAgentsList(t, executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--output", "json"))
 	if len(entries) != 1 || entries[0].ID != adopted[0].ID || entries[0].Status != "live" {
 		t.Fatalf("agents list after resume adopt = %+v", entries)
+	}
+}
+
+func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("TMUX_PANE", "")
+	repository := filepath.Join(root, "project", "app")
+	if err := os.MkdirAll(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	project := domain.Project{
+		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one",
+		Status: domain.ProjectActive, Root: filepath.Dir(repository), TmuxSession: "project-one",
+		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+		CreatedAt:    now, UpdatedAt: now,
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_PROJECT_ID", project.ID)
+	old := now.Add(-2 * time.Hour)
+	if err := store.NewAgentStore(stateDir).Save(domain.AgentSession{
+		Version: domain.AgentVersion, ID: "agent-old", ProjectID: project.ID,
+		Provider: "codex", Label: "review", ProviderSessionID: "session-old",
+		ResumeCommand: []string{"codex", "resume", "session-old"},
+		CreatedAt:     old, UpdatedAt: old,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeTestLines(t, filepath.Join(home, ".claude", "projects", "-user-code-app", "claude-new.jsonl"),
+		`{"sessionId":"claude-new","cwd":`+quoteJSON(t, repository)+`,"type":"user","message":{"role":"user","content":"New question"}}
+`)
+	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
+
+	listed := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--output", "json")
+	entries := decodeAgentsList(t, listed)
+	if len(entries) != 2 || entries[0].ID != "claude-new" || entries[0].Status != "discovered" {
+		t.Fatalf("newest session was not first: %+v", entries)
+	}
+	if entries[1].ID != "agent-old" || entries[1].Status != "stopped" || entries[1].CreatedAt == "" {
+		t.Fatalf("older registered session = %+v", entries[1])
+	}
+
+	text := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID)
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "claude-new\tclaude\tdiscovered\t") || !strings.Contains(lines[0], "\t0m\t") {
+		t.Fatalf("newest text line = %q", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "agent-old\tcodex\tstopped\treview\t") || !strings.HasSuffix(lines[1], "\t2h\t"+old.Format(time.RFC3339)) {
+		t.Fatalf("older text line = %q", lines[1])
+	}
+
+	var picked []string
+	options.AgentPick = func(_ *cobra.Command, lines []string) (int, error) {
+		picked = append([]string(nil), lines...)
+		return 0, nil
+	}
+	executeWithOptions(t, options, nil, "agents", "open", "--dry-run")
+	if strings.Join(picked, "\n") != strings.Join(lines, "\n") {
+		t.Fatalf("open picker lines = %v, want %v", picked, lines)
 	}
 }
