@@ -677,7 +677,7 @@ func TestAgentsListAndSendUseOwnedProjectPane(t *testing.T) {
 	}
 
 	feedback := "review feedback must remain text\n"
-	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--stdin", "--output", "json")
+	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--project", "agent-test", "--stdin", "--output", "json")
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		capture := runCommand(t, "", "tmux", "-L", socket, "capture-pane", "-p", "-t", pane)
