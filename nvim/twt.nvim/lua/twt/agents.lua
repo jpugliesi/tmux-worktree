@@ -106,9 +106,21 @@ local function take_snapshot(agent, project_id, directory, done)
       done(transcript_err)
       return
     end
-    if transcript.projectId ~= project_id or transcript.agentId ~= agent.id then
+    if transcript.projectId ~= project_id then
       done("twt returned a transcript for a different Project or Agent Session")
       return
+    end
+    -- A discovered session ID is the provider session ID. Snapshot adopts
+    -- that session and returns the new Agent Session ID.
+    if transcript.agentId ~= agent.id then
+      local discovered = agent.status == "discovered" and agent.providerSessionId == agent.id
+      if not discovered then
+        done("twt returned a transcript for a different Project or Agent Session")
+        return
+      end
+      local adopted = vim.deepcopy(agent)
+      adopted.id = transcript.agentId
+      agent = adopted
     end
     local path, path_err = snapshot.resolve(transcript, project_id)
     if not path then

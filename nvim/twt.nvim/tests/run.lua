@@ -141,6 +141,54 @@ test("lists and selects Agents through exact Project context", function()
   assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --project project-1 --limit 40 --output json")
 end)
 
+test("keeps the registered ID after a discovered transcript snapshot adopts the session", function()
+  local discovered = {
+    id = "codex-session-1",
+    projectId = "project-1",
+    provider = "codex",
+    providerSessionId = "codex-session-1",
+    label = "codex",
+    status = "discovered",
+    capabilities = { canResume = true, canSend = false, canFocus = false, canReadTranscript = true },
+  }
+  local registered_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  local saved_agents = agents_response.agents
+  agents_response.agents = { discovered }
+  with_config({
+    directory = fixed_directory("/work/app"),
+    runner = function(argv, opts, done)
+      if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
+        local path = save_snapshot("project-1", registered_id, "# Discovered transcript\n")
+        done({
+          code = 0,
+          stdout = vim.json.encode({
+            schemaVersion = 1,
+            projectId = "project-1",
+            agentId = registered_id,
+            provider = "codex",
+            repositoryName = "app",
+            updatedAt = "2026-08-20T00:00:00Z",
+            status = "applied",
+            path = path,
+          }),
+          stderr = "",
+        })
+        return
+      end
+      runner(argv, opts, done)
+    end,
+  }, function()
+    local result
+    require("twt").agents.pick(function(err, value)
+      assert(err == nil, err)
+      result = value
+    end)
+    assert(result.agent.id == registered_id, result.agent.id)
+  end)
+  agents_response.agents = saved_agents
+  require("twt").agents.pick(function(err) assert(err == nil, err) end)
+end)
+
 test("revalidates the selected Agent and sends feedback on standard input", function()
   local ok
   require("twt").agents.send("review text", function(err)
