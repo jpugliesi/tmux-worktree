@@ -1,351 +1,213 @@
 # tmux-worktree
 
-A small tool for managing git worktrees with dedicated tmux sessions.
+`twt` manages agentic development with tmux. One **Project** = one unit of work:
+its own git worktrees, its own tmux session with your pane layout, and its own
+coding-agent sessions. Prepared Environments make Project creation take
+seconds. A Markdown ticket tracker (`twt tickets`) holds the backlog your
+agents pick from. Everything speaks JSON, dry-runs, and stable error codes, so
+agents drive `twt` as well as you do.
 
-`twt` is a Go CLI that uses Projects, YAML Project Templates, multiple
-repositories, and Project Agent Sessions. See the
-[twt preview guide](docs/twt.md).
-It also includes a tested [Neovim plug-in](nvim/twt.nvim/README.md)
-for Project-scoped Agent selection and review feedback, and a personal
-Markdown ticket tracker (`twt tickets`) for a coding-agent backlog. See the
-[twt preview guide](docs/twt.md) for setup and commands.
+## The daily loop
 
-## Try the change-focused twt workflow
+This is the workflow the tool exists for. Every step is one short command.
 
-Build the preview CLI:
+### 1. Pick work
 
-```sh
-go build -o ./bin/twt ./cmd/twt
-```
-
-Define a reusable Project Template. This example gives each change one web
-repository, one API repository, and one tmux window for each repository:
+Your backlog lives as Markdown tickets in your Obsidian vault. List what is
+ready — unblocked, unclaimed, `ready-for-agent` — and claim one:
 
 ```sh
-twt templates create product
-twt templates repos add product web git@github.com:acme/web.git
-twt templates repos add product api git@github.com:acme/api.git
-twt templates init set product --repo web -- ./init.sh
-twt templates prepare product
+twt tickets list --ready
+twt tickets claim fix-auth-tokens
 ```
 
-Create a Project for one change:
+File new work at any time, from anywhere:
 
 ```sh
-twt projects create fix-auth --template product
+twt tickets create "Fix auth token refresh" --board core --status ready-for-agent
 ```
 
-`templates prepare` creates both worktrees and runs repository initialization
-once. Project creation claims that ready environment and opens one tmux session
-with `web` and `api` windows. twt prepares the next environment in the
-background.
+A claim is compare-and-set: when two agents race for one ticket, the second
+gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 
-From that Project tmux session, create the next Project with one short
-command:
+### 2. Start a Project
 
 ```sh
-twt new fix-logout
-# Or run `twt new` and enter the name at the prompt.
+twt new fix-auth-tokens
 ```
 
-`twt` uses the latest saved `product` template. It completes setup, switches
-your tmux client to `fix-logout`, and archives `fix-auth`. If creation or setup
-fails, `fix-auth` stays active.
+This claims a Prepared Environment — worktrees already cloned and
+initialized — creates a branch, builds the tmux session with your declared
+pane layout, starts any Agent Sessions the template declares, and switches
+your tmux client to it. Warm start to working session: about six seconds.
+The replacement environment prepares itself in the background.
 
-Register a coding-agent conversation and resume it in its own safe window:
+Run `twt new` with no name to get a prompt. Run it from anywhere — inside
+another Project it archives that Project after the switch; outside one it uses
+your last template.
+
+### 3. Work
+
+Move between live Projects with the picker:
 
 ```sh
-twt agents register \
-  --project fix-auth \
-  --provider codex \
-  --label auth-review \
-  --session CODEX_SESSION_ID \
-  -- codex resume CODEX_SESSION_ID
-twt agents list --project fix-auth
-twt agents resume AGENT_ID
+twt switch          # fzf-style picker: name, template, status, age
+twt switch fix-api  # or go direct
 ```
 
-Install [twt.nvim](nvim/twt.nvim/README.md) to select that Agent Session
-with `<leader>arp`. The plug-in opens that transcript in a private
-Project-specific `latest.md`. Add review notes with `<leader>an`, and send the
-note batch with `<leader>arr`. One Neovim process can safely work across
-different Projects. Linked transcript loading supports Codex and Claude.
-Archive keeps the snapshot. Applied Project removal deletes it.
-
-Archive the current Project when you stop its work. This keeps its worktrees,
-branches, and Agent Session records:
+Attach coding agents to the Project. Registration infers the provider and
+session ID from the resume command, and `discover` finds sessions that already
+ran in the Project's directories:
 
 ```sh
-twt archive
-twt projects open fix-auth
+twt agents register -- codex resume SESSION_ID
+twt agents discover --adopt
+twt agents list
 ```
 
-When the work is complete and pushed, `twt done` archives the Project and
-removes its data in one step. From inside the Project session, it moves your
-tmux client to another active Project first. `twt switch` moves your tmux
-client to any Project session, with an interactive picker when you give no
-name:
+In Neovim, [twt.nvim](nvim/twt.nvim/README.md) picks an Agent Session with
+`<leader>arp`, opens its transcript, collects review notes with `<leader>an`,
+and sends the batch to the agent's pane with `<leader>arr`. Log progress on
+the ticket as you go:
+
+```sh
+echo "Root cause found in token refresh path." | twt tickets comment fix-auth-tokens --stdin
+```
+
+### 4. Finish
 
 ```sh
 twt done
-twt done fix-auth --keep
-twt switch fix-auth
 ```
 
-Inspect disk use and preview cleanup before you remove archived data:
+One command: archives the Project, verifies nothing unpushed gets lost, and
+removes the worktrees, branch, and records — reclaiming gigabytes. When you
+run it from inside the Project's own session, it moves your tmux client to
+another Project first. A branch with unpushed commits blocks removal with the
+exact escape commands; a branch with no new commits removes instantly, even
+offline. Close the ticket:
 
 ```sh
-twt storage show
-twt environments list
-twt storage clean
-twt storage clean --apply
-twt projects remove fix-auth
-twt projects remove fix-auth --apply
+twt tickets set fix-auth-tokens --status done
+twt tickets unclaim fix-auth-tokens
 ```
 
-See the [twt preview guide](docs/twt.md) for YAML, JSON, retry, and safety
-details.
+Not done yet, just pausing? `twt archive` stops the session and keeps
+everything; `twt projects open NAME` brings it back, layout and all.
 
-Each worktree lives at `$TMUX_WORKTREE_DIR/<name>` and is backed by a shared
-bare repo at `$TMUX_WORKTREE_DIR/.<repo>.git`. Each worktree gets its own tmux
-session, laid out however you want.
+### Housekeeping
 
-## Install
+```sh
+twt storage show                      # active vs archived bytes
+twt environments list                 # the warm pool, with sizes and ages
+twt projects remove --all-archived --older-than 14d --apply
+twt storage clean --apply             # failed environments, orphan records
+twt doctor                            # end-to-end health check
+```
 
-### Manual
+## One-time setup
+
+### Install
+
+Needs Go 1.23+, git, and tmux:
 
 ```sh
 git clone https://github.com/jpugliesi/tmux-worktree ~/.tmux-worktree
+cd ~/.tmux-worktree && go build -o ./bin/twt ./cmd/twt
 echo 'export PATH="$HOME/.tmux-worktree/bin:$PATH"' >> ~/.zshrc
 ```
 
-Update later with `git -C ~/.tmux-worktree pull`.
-
-### twt preview
-
-The Go preview needs Go 1.23 or later. Build it in the same installation:
+Shell completion covers commands, template names, Project names, ticket
+slugs, and Agent Session IDs:
 
 ```sh
-cd ~/.tmux-worktree
-go build -o ./bin/twt ./cmd/twt
-exec zsh
-twt --help
+twt completion zsh > "${fpath[1]}/_twt"
 ```
 
-Install shell completion for command names, Project Template names, Project
-names, and Agent Session IDs with `twt completion zsh > "${fpath[1]}/_twt"`.
-Use `bash`, `fish`, or `powershell` for the other shells.
+### Define a Project Template
 
-With lazy.nvim, load the included Neovim plug-in from the same checkout:
-
-```lua
-{
-  dir = vim.fn.expand("~/.tmux-worktree/nvim/twt.nvim"),
-  config = function()
-    require("twt").setup()
-  end,
-}
-```
-
-After an update, run the `go build` command again. The preview does not yet
-include prebuilt release files.
-
-## Deprecation
-
-The original bash CLI is retired. It is installed as `bin/twt-legacy`, and the
-name `twt` now belongs to the Go CLI above. Its configuration file stays at
-`~/.config/tmux-worktree/config.sh`, and its data directory stays at
-`$TMUX_WORKTREE_DIR`. `tests/start-reset.sh` exercises the legacy CLI.
-
-The Go `twt` supersedes it. Use Projects and Project Templates for new work.
-
-The "Quick start", "Using tmux + twt with coding agents", "Configure", and
-"Shared files" sections below describe the retired CLI. Run each of those
-commands as `twt-legacy`, for example
-`twt-legacy create git@github.com:org/repo.git feature-xyz`.
-
-## Quick start
-
-No config needed — works out of the box:
+A template declares what every Project of its kind gets: repositories,
+initialization, your tmux pane layout, and default agents.
 
 ```sh
-twt create git@github.com:org/repo.git feature-xyz
-twt create --shallow https://github.com/org/huge-repo.git huge-0
-twt create --shallow \
-  --remote github=https://github.com/org/repo.git \
-  https://git.example.com/org/repo.git repo-0
-
-# From repo-0, ask to create repo-1 from the same shared repository
-cd "$TMUX_WORKTREE_DIR/repo-0"
-twt create
+twt templates create product
+twt templates repos add product api git@github.com:acme/api.git --depth 1
+twt templates repos init set product api -- sh -c './init.sh && direnv allow .'
 ```
 
-This clones the repo (as a bare repo under `$TMUX_WORKTREE_DIR`), creates a
-worktree on a new `feature-xyz` branch, and opens a tmux session. By default
-the session has one window with one pane — customize via config (below).
-`--shallow` (or `--depth <n>`) does a depth-limited bare clone, useful for
-large repositories; it only applies when the bare repo does not already exist.
-`--remote name=url` adds extra remotes on the bare repo (repeatable); the
-primary URL is always `origin`.
+Or write `~/.config/twt/templates/product.yaml` directly (validated on every
+load). A `session` command runs each time twt creates the Project's session —
+this example builds a three-pane layout (editor, shell below, agent column):
 
-When you run `twt create` without arguments in a numbered workspace, `twt`
-selects the next free number and asks for confirmation. It uses the same bare
-repository, remotes, fetch rules, shared-file hook, and session hook. It starts
-the new workspace from the repository's default branch. It does not copy the
-current branch, uncommitted files, or live tmux pane processes.
+```yaml
+session:
+  command:
+    - sh
+    - -c
+    - |
+      w="$TWT_TMUX_WINDOW_API"
+      tmux split-window -h -l 34% -t "$w" -c "$TWT_REPOSITORY_API"
+      tmux split-window -v -l 25% -t "$w".1 -c "$TWT_REPOSITORY_API"
+      tmux select-pane -t "$w".1
+agents:
+  - label: coder
+    provider: claude
+    start: [claude]
+pool_depth: 1
+```
 
-Other commands:
+Warm the pool once; twt keeps it warm after every claim:
 
 ```sh
-twt start ticket-123    # create a task branch + rename the current session
-twt rename review       # rename only the current tmux session
-twt reset               # reset panes + hard-reset branch to origin default (silent)
-twt reset -v            # same, but print per-step progress and git output
-twt shared enable       # (run inside a bare repo) enable symlinked shared files
+twt templates prepare product
 ```
 
-## Using tmux + twt with coding agents
+### Configure tickets
 
-I start tmux, then create one worktree and session per agent:
+Point twt at the directory in your Obsidian vault that holds tickets:
 
 ```sh
-tmux
-twt create --with-shared https://github.com/jpugliesi/my-repo my-repo-0
-twt create https://github.com/jpugliesi/my-repo my-repo-1
-twt create --with-shared https://github.com/jpugliesi/another-repo another-repo-0
+echo 'ticketsHome: ~/Vaults/yourvault/tickets' > ~/.config/twt/config.yaml
+twt tickets init
 ```
 
-Each repository is cloned once. Each command creates a branch, worktree, and
-tmux session with the supplied name, then switches to it. I run one agent and
-task per session while tmux keeps everything alive. `--with-shared` enables
-shared project files before the first worktree is checked out.
+`init` scaffolds the vault hub with Bases views (Recent, Ready, Blocked,
+Claimed) and a ticket template. It never overwrites existing notes, and
+existing ticket files with extra frontmatter keep working — mutations preserve
+unknown fields byte-for-byte.
 
-Once I pick a ticket, I create its branch and rename the current session:
-
-```sh
-twt start home-bug
-```
-
-This runs `git switch -c` and renames the session from its stable slot name,
-such as `core-4`, to `core-4-home-bug`. `twt` remembers the slot name so later
-branch changes do not stack session names.
-
-To change only the current tmux session name, run:
-
-```sh
-twt rename review
-```
-
-This does not rename the Git branch or worktree. The stable workspace name is
-kept, so a later `twt start` or `twt reset` command can replace the manual
-session name.
-
-![tmux sessions named by repository slot and task](docs/images/tmux-sessions.png)
-
-My `on_session_create` hook creates three panes in each session. I use them
-for:
-
-1. Neovim
-2. A shell
-3. A coding agent TUI
-
-![Neovim, shell, and coding agent TUI](docs/images/tmux-session.png)
-
-```text
-/Users/jpugliesi/code/firetiger/.core.git/shared/.lazy.lua
-```
-
-That shared file customizes LazyVim for the Firetiger project and is symlinked
-into all of its worktrees. See [Shared files](#shared-files-optional).
-
-When the task is done and its work is pushed, I reset the current workspace:
-
-```sh
-twt reset
-```
-
-This restores the stable branch and session name, such as `core-4`, respawns
-the other panes, and hard-resets tracked files to the origin default branch.
-It does not remove untracked files.
-
-I use [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) to save
-and restore the sessions, windows, and pane layouts across tmux server
-restarts.
-
-## Agent skill
-
-Install the `twt` skill for Cursor, Claude Code, Codex, and other compatible
-agents. `twt` carries the skill of its own build, so one command installs it
-in all three skill trees:
+### Give your agents the skill
 
 ```sh
 twt skills install
-twt skills show
 ```
 
-Run `twt skills install` again after a `twt` upgrade. `twt doctor` warns when
-an installed copy comes from another build.
+This writes the version-stamped `twt` skill into the Cursor, Claude Code, and
+Codex skill trees, so agents know to use JSON output, dry-runs, `--fields`,
+the ready queue, and claims. Run it again after upgrades — `twt doctor` warns
+when an installed copy is stale.
 
-From the repository instead:
+## For agents and scripts
 
-```sh
-npx skills add jpugliesi/tmux-worktree --skill twt
-```
+Every command takes `--output json` (the default when output is piped),
+`--dry-run` on every mutation, `--fields` and `--limit`/`--offset` on reads,
+and `ndjson` for streaming lists. `twt schema` describes the whole surface at
+runtime, including 25 typed `twt apply --stdin` operations and the stable
+error and exit codes. Transcript text is sanitized and marked untrusted.
+`twt` treats its caller as an untrusted operator — see
+[Security posture](docs/security.md) and the
+[Agent DX score](docs/agent-dx.md) (20/21).
 
-`twt` treats its caller as an untrusted operator. Read
-[Security posture](docs/security.md) for the guarantees that a coding agent
-can depend on.
+The full reference — YAML shapes, JSON contract, retry and safety semantics —
+is in the [twt guide](docs/twt.md).
 
-## Configure (optional)
+## Legacy bash CLI
 
-Only needed if you want a custom tmux layout or a different data directory.
-
-```sh
-mkdir -p ~/.config/tmux-worktree
-curl -fsSL https://raw.githubusercontent.com/jpugliesi/tmux-worktree/main/share/config.example.sh \
-  > ~/.config/tmux-worktree/config.sh
-```
-
-The example ships a three-pane work window. Edit to taste.
-
-Available knobs:
-
-| Variable / hook | Purpose | Default |
-|---|---|---|
-| `TMUX_WORKTREE_DIR` | Where bare repos and worktrees live | `${XDG_DATA_HOME:-$HOME/.local/share}/tmux-worktree` |
-| `on_session_create session path` | Build the tmux layout | One window, one pane |
-| `on_worktree_create path` | Run after worktree is created | No-op |
-
-## Shared files (optional)
-
-Each bare repo can opt into a symlink-based "shared files" mechanism: any file
-under `<bare>.git/shared/` is symlinked into each worktree's matching path when
-the worktree is checked out. Existing non-symlink files in the worktree are
-never overwritten.
-
-Useful for:
-
-- `.env.local`, secrets, credentials
-- Editor project config (e.g. LazyVim `.lazy.lua`)
-- `.rgignore`, `.claude/settings.local.json`, etc.
-
-Enable while creating the first worktree for a repo:
-
-```sh
-twt create --with-shared git@github.com:org/repo.git repo-0
-```
-
-Or enable it later from the bare repo:
-
-```sh
-cd "$TMUX_WORKTREE_DIR/.repo.git"
-twt shared enable
-```
-
-Then drop files into `shared/`. Optionally `cd shared && git init` to version
-them in their own (separate) repo.
-
-Disable with `twt shared disable`.
+The original bash CLI is retired and installed as `twt-legacy`. Its
+configuration stays at `~/.config/tmux-worktree/config.sh` and its data at
+`$TMUX_WORKTREE_DIR`; `tests/start-reset.sh` still exercises it. Run its old
+commands (`create`, `start`, `rename`, `reset`, `shared`) as `twt-legacy`.
+Use Projects and Project Templates for new work.
 
 ## License
 
