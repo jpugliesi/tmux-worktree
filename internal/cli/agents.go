@@ -60,7 +60,7 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	command.Flags().StringVar(&provider, "provider", "", "Set the provider: codex, claude, cursor, or command. twt infers it from the resume command")
+	command.Flags().StringVar(&provider, "provider", "", "Set the provider: codex, claude, cursor, grok, or command. twt infers it from the resume command")
 	command.Flags().StringVar(&label, "label", "", "Set the display label. The default label is the provider name")
 	command.Flags().StringVar(&pane, "pane", "", "Set an owned tmux pane ID, or use current")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading. twt infers it from the resume command")

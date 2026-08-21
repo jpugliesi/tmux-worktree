@@ -22,7 +22,7 @@ const noFileCompletion = cobra.ShellCompDirectiveNoFileComp
 
 // agentProviderNames are the Agent Session provider values that twt
 // accepts for --provider and in the request schema.
-var agentProviderNames = []string{"codex", "claude", "cursor", "command"}
+var agentProviderNames = []string{"codex", "claude", "cursor", "grok", "command"}
 
 // outputFormatNames are the values that --output accepts. Only list commands
 // accept ndjson.

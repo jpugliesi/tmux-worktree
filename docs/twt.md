@@ -451,7 +451,7 @@ printf '%s\n' 'Please fix the selected review note.' | \
   twt agents send AGENT_ID --project current --stdin
 ```
 
-`agents list` also scans the Codex and Claude stores. A provider session that
+`agents list` also scans the Codex, Claude, and Grok stores. A provider session that
 ran inside a repository of the Project, and that no Agent Session uses,
 appears after the registered Agent Sessions with the status `discovered`. Its
 `id` is the provider session ID. The list writes nothing. The first action on
@@ -482,7 +482,7 @@ twt agents discover --project current --adopt --limit 3
 ```
 
 The newest session comes first. `--adopt` registers each discovered session
-with a generated resume command. Discovery supports Codex and Claude.
+with a generated resume command. Discovery supports Codex, Claude, and Grok.
 
 Delete an Agent Session record with:
 
@@ -522,7 +522,7 @@ Session records, provider transcript reading, resume behavior, and safe
 feedback transport. Provider transcript paths and tmux targets do not enter
 the JSON interface.
 
-Linked transcript reading supports Codex and Claude. twt does not read Cursor
+Linked transcript reading supports Codex, Claude, and Grok. twt does not read Cursor
 transcripts because the local Cursor records do not give an exact Project
 directory that twt can verify.
 

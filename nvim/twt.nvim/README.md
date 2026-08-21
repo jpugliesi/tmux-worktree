@@ -101,7 +101,7 @@ names, so each Agent Session keeps its own file. If an older `twt` returns no
 the files. Applied Project removal deletes them. Register a new Agent Session
 with `--session SESSION_ID`, or use `twt agents transcript link` for an
 existing record.
-Transcript loading supports Codex and Claude. Cursor transcript loading stays
+Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading stays
 off because its local records do not contain a safe, exact Project directory.
 
 Older preview versions used the Neovim state directory. twt cannot reliably

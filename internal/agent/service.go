@@ -264,14 +264,18 @@ func inferProvider(resumeCommand []string) string {
 }
 
 // inferProviderSessionID reads the provider session ID from a resume command
-// such as "codex resume ID", "claude --resume ID", or "claude --resume=ID".
+// such as "codex resume ID", "claude --resume ID", "claude --resume=ID",
+// "grok --resume ID", or "grok --session ID".
 func inferProviderSessionID(resumeCommand []string) string {
 	for index := 1; index < len(resumeCommand); index++ {
 		argument := resumeCommand[index]
 		if value, found := strings.CutPrefix(argument, "--resume="); found {
 			return sessionIDArgument(value)
 		}
-		if argument != "resume" && argument != "--resume" && argument != "-r" {
+		if value, found := strings.CutPrefix(argument, "--session="); found {
+			return sessionIDArgument(value)
+		}
+		if argument != "resume" && argument != "--resume" && argument != "-r" && argument != "--session" {
 			continue
 		}
 		if index+1 < len(resumeCommand) {
@@ -475,7 +479,7 @@ func startCommand(command string) string {
 func commandMatchesProvider(command, provider string, resumeCommand []string) bool {
 	command = strings.ToLower(filepath.Base(command))
 	switch provider {
-	case "codex", "claude", "cursor":
+	case "codex", "claude", "cursor", "grok":
 		return strings.Contains(command, provider)
 	case "command":
 		if len(resumeCommand) == 0 {

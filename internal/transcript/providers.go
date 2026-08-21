@@ -35,6 +35,12 @@ var providers = map[string]providerDescriptor{
 		read:          (*Service).readClaude,
 		discover:      discoverClaude,
 	},
+	"grok": {
+		root:          (*Service).grokRoot,
+		resumeCommand: func(sessionID string) []string { return []string{"grok", "--resume", sessionID} },
+		read:          (*Service).readGrok,
+		discover:      discoverGrok,
+	},
 }
 
 // providerNames returns the supported provider names in sorted order.

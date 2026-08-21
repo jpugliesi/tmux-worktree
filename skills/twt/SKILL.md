@@ -195,7 +195,7 @@ Project ID. When `agents send` fails, read the liveness checks:
 twt agents show AGENT_ID --project PROJECT_ID --output json
 ```
 
-`twt agents list` shows discovered Codex and Claude sessions of the Project
+`twt agents list` shows discovered Codex, Claude, and Grok sessions of the Project
 automatically: an unregistered provider session appears with the status
 `discovered` and its provider session ID as `id`. Do not register it by hand.
 The first action on it adopts it: pass the session ID (or a unique prefix) to

@@ -153,6 +153,9 @@ func TestResumeCommandUsesTheProviderFlag(t *testing.T) {
 	if got := transcript.ResumeCommand("claude", "session-one"); strings.Join(got, " ") != "claude --resume session-one" {
 		t.Fatalf("ResumeCommand(claude) = %v", got)
 	}
+	if got := transcript.ResumeCommand("grok", "session-one"); strings.Join(got, " ") != "grok --resume session-one" {
+		t.Fatalf("ResumeCommand(grok) = %v", got)
+	}
 	if got := transcript.ResumeCommand("cursor", "session-one"); got != nil {
 		t.Fatalf("ResumeCommand(cursor) = %v", got)
 	}

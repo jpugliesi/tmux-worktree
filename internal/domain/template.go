@@ -43,7 +43,7 @@ type TemplateAgent struct {
 }
 
 // AgentProviders are the supported Agent Session provider names.
-var AgentProviders = []string{"codex", "claude", "cursor", "command"}
+var AgentProviders = []string{"codex", "claude", "cursor", "grok", "command"}
 
 // ValidAgentProvider reports whether the provider name is supported.
 func ValidAgentProvider(provider string) bool {
