@@ -31,9 +31,10 @@ func newProjectsCommand(options Options) *cobra.Command {
 func newProjectsListCommand(service *projectservice.Service) *cobra.Command {
 	var limit, offset int
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Projects",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Projects",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			projects, err := service.List()
 			if err != nil {

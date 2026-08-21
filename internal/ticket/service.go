@@ -603,6 +603,29 @@ func (s *Service) Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, err
 	})
 }
 
+// Close resolves one Ticket in one write: the status becomes done and the
+// claim fields become null. The claim check matches Unclaim: an unclaimed
+// Ticket or the same claimant proceeds, and a different claimant gets
+// locked.
+func (s *Service) Close(ref, claimant string, dryRun bool) (domain.Ticket, error) {
+	claimant, err := validClaimant(claimant)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	// Close writes the status, so it is a resolution escape hatch like Set
+	// with --status: it overwrites an unrecognized legacy status instead of
+	// refusing the mutation.
+	return s.mutate(ref, dryRun, true, func(m *mutation) error {
+		if current := m.ticket.ClaimedBy; current != "" && current != claimant {
+			return claimedByOther(m.ticket.Slug, current)
+		}
+		setMapString(m.mapping, "status", string(domain.TicketDone))
+		setMapNull(m.mapping, "claimed_by")
+		setMapNull(m.mapping, "claimed_at")
+		return nil
+	})
+}
+
 var commentsHeading = regexp.MustCompile(`(?m)^## Comments\s*$`)
 
 // Comment appends text under the "## Comments" heading and creates that

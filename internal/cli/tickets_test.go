@@ -574,6 +574,163 @@ func TestTicketsClaimWithoutAsNeedsATerminal(t *testing.T) {
 	}
 }
 
+func TestTicketsLsMatchesList(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "ls alias work"); err != nil {
+		t.Fatal(err)
+	}
+	listOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lsOut, _, err := executeCollectingInput(t, options, nil, "tickets", "ls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listOut != lsOut {
+		t.Fatalf("ls output differs from list:\nlist=%q\nls=%q", listOut, lsOut)
+	}
+}
+
+func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "ship it", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "ship-it.md")
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "claim", "ship-it", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A dry run writes nothing.
+	before := readTicketFile(t, path)
+	stdout, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "close", "ship-it", "--as", "agent-a", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := decodeTicketMutation(t, stdout)
+	if preview.Operation != "tickets.close" || preview.Status != "valid" || preview.ID != "ship-it" {
+		t.Fatalf("dry-run envelope = %+v\n%s", preview, stdout)
+	}
+	if readTicketFile(t, path) != before {
+		t.Fatal("a dry-run close changed the file")
+	}
+
+	// Another claimant is locked out.
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "close", "ship-it", "--as", "agent-b")
+	if err == nil || clierr.CodeOf(err) != clierr.Locked || !strings.Contains(err.Error(), "agent-a") {
+		t.Fatalf("close by another claimant = %v (code %q)", err, clierr.CodeOf(err))
+	}
+
+	// The text run confirms the close.
+	stdout, _, err = executeCollectingInput(t, options, nil, "tickets", "close", "ship-it", "--as", "agent-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(stdout) != `Closed Ticket "ship-it"` {
+		t.Fatalf("close text = %q", stdout)
+	}
+	content := readTicketFile(t, path)
+	if !strings.Contains(content, "status: done") || strings.Contains(content, "claimed_by: agent-a") {
+		t.Fatalf("close result:\n%s", content)
+	}
+
+	// The JSON envelope names the operation.
+	stdout, _, err = executeCollectingInput(t, options, nil,
+		"tickets", "close", "ship-it", "--as", "agent-a", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied := decodeTicketMutation(t, stdout)
+	if applied.SchemaVersion != 1 || applied.Operation != "tickets.close" || applied.Status != "applied" || applied.ID != "ship-it" {
+		t.Fatalf("close envelope = %+v\n%s", applied, stdout)
+	}
+}
+
+func TestTicketsCloseWithoutAsNeedsATerminal(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "close me"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "close", "close-me")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || clierr.ExitCode(err) != 2 {
+		t.Fatalf("non-terminal close without --as = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	if hint := clierr.HintOf(err); hint != "Pass --as NAME when twt runs without a terminal." {
+		t.Fatalf("close hint = %q", hint)
+	}
+}
+
+func TestTicketsListHidesClosedTicketsByDefault(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range []string{"open work", "shipped work", "dropped work"} {
+		if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", title); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "close", "shipped-work", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "set", "dropped-work", "--status", "wontfix"); err != nil {
+		t.Fatal(err)
+	}
+
+	slugs := func(args ...string) []string {
+		t.Helper()
+		stdout, _, err := executeCollectingInput(t, options, nil, append([]string{"tickets", "list", "--output", "json"}, args...)...)
+		if err != nil {
+			t.Fatalf("tickets list %v: %v", args, err)
+		}
+		var list struct {
+			Tickets []struct {
+				Slug string `json:"slug"`
+			} `json:"tickets"`
+			TotalCount int `json:"totalCount"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &list); err != nil {
+			t.Fatalf("decode list: %v\n%s", err, stdout)
+		}
+		if list.TotalCount != len(list.Tickets) {
+			t.Fatalf("totalCount = %d, tickets = %d", list.TotalCount, len(list.Tickets))
+		}
+		names := make([]string, 0, len(list.Tickets))
+		for _, ticket := range list.Tickets {
+			names = append(names, ticket.Slug)
+		}
+		sort.Strings(names)
+		return names
+	}
+
+	if got := strings.Join(slugs(), ","); got != "open-work" {
+		t.Fatalf("default list = %q, want only the open ticket", got)
+	}
+	if got := strings.Join(slugs("--all"), ","); got != "dropped-work,open-work,shipped-work" {
+		t.Fatalf("--all list = %q", got)
+	}
+	if got := strings.Join(slugs("--status", "done"), ","); got != "shipped-work" {
+		t.Fatalf("--status done list = %q", got)
+	}
+	if got := strings.Join(slugs("--status", "wontfix"), ","); got != "dropped-work" {
+		t.Fatalf("--status wontfix list = %q", got)
+	}
+}
+
 func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 	t.Setenv("TWT_CLAIMANT", "")
 	options, home := ticketTestOptions(t)
@@ -871,6 +1028,14 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	if strings.Join(names, ",") != "fix-the-vfs-tools" {
 		t.Fatalf("ticket completion = %v", names)
 	}
+	closeCommand := findCommand(command, "tickets", "close")
+	if closeCommand == nil || closeCommand.ValidArgsFunction == nil {
+		t.Fatal("twt tickets close has no argument completion")
+	}
+	names, _ = closeCommand.ValidArgsFunction(closeCommand, nil, "")
+	if strings.Join(names, ",") != "fix-the-vfs-tools" {
+		t.Fatalf("close completion = %v", names)
+	}
 	create := findCommand(command, "tickets", "create")
 	boardFlag, found := create.GetFlagCompletionFunc("board")
 	if !found {
@@ -950,14 +1115,16 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	for _, command := range []string{
 		`"twt tickets init"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
-		`"twt tickets comment"`, `"twt tickets boards create"`, `"twt tickets boards list"`, `"twt tickets boards show"`,
+		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets boards create"`,
+		`"twt tickets boards list"`, `"twt tickets boards show"`,
 	} {
 		if !strings.Contains(output, command) {
 			t.Fatalf("schema misses %s", command)
 		}
 	}
 	for _, operation := range []string{
-		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`, `"tickets.comment"`, `"tickets.boards.create"`,
+		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`,
+		`"tickets.close"`, `"tickets.comment"`, `"tickets.boards.create"`,
 	} {
 		if !strings.Contains(output, operation) {
 			t.Fatalf("schema misses the apply operation %s", operation)
@@ -1020,6 +1187,33 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	content = readTicketFile(t, filepath.Join(home, "change-monitor", "apply-work.md"))
 	if !strings.Contains(content, "status: done") || !strings.Contains(content, "Done.") || strings.Contains(content, "claimed_by: apply-agent") {
 		t.Fatalf("apply mutations result:\n%s", content)
+	}
+
+	// tickets.close resolves in one operation, and it needs ticket.as.
+	if _, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"close via apply","status":"ready-for-agent"}}`),
+		"apply", "--stdin", "--output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"close-via-apply"}}`),
+		"apply", "--stdin", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "ticket.as") {
+		t.Fatalf("apply close without as = %v", err)
+	}
+	stdout, _, err = executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"close-via-apply","as":"apply-agent"}}`),
+		"apply", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed := decodeTicketMutation(t, stdout); closed.Operation != "tickets.close" ||
+		closed.Status != "applied" || closed.ID != "close-via-apply" {
+		t.Fatalf("apply tickets.close = %+v\n%s", closed, stdout)
+	}
+	closedContent := readTicketFile(t, filepath.Join(home, "close-via-apply.md"))
+	if !strings.Contains(closedContent, "status: done") || strings.Contains(closedContent, "claimed_by: apply-agent") {
+		t.Fatalf("apply close result:\n%s", closedContent)
 	}
 
 	// Strict payloads reject fields from other operations.

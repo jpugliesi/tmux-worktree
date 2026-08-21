@@ -61,6 +61,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsSetCommand(options))
 	tickets.AddCommand(newTicketsClaimCommand(options))
 	tickets.AddCommand(newTicketsUnclaimCommand(options))
+	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
 	tickets.AddCommand(newTicketsBoardsCommand(options))
 	return tickets
@@ -266,12 +267,13 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var board, status string
-	var ready bool
+	var ready, all bool
 	var limit, offset int
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Tickets",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Tickets",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			service, err := options.ticketService()
 			if err != nil {
@@ -282,6 +284,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				BoardSet: command.Flags().Changed("board"),
 				Status:   status,
 				Ready:    ready,
+				All:      all,
 			})
 			if err != nil {
 				return err
@@ -319,6 +322,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&board, "board", "", "List one Board; an empty value lists ungrouped Tickets")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
+	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerBoardFlagCompletion(command, options)
@@ -554,6 +558,30 @@ func newTicketsUnclaimCommand(options Options) *cobra.Command {
 	return command
 }
 
+func newTicketsCloseCommand(options Options) *cobra.Command {
+	var as string
+	command := &cobra.Command{
+		Use:   "close TICKET [--as NAME]",
+		Short: "Resolve a Ticket: set the status done and drop the claim",
+		Args:  exactArgs("TICKET"),
+		RunE: func(command *cobra.Command, args []string) error {
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			claimant, err := resolveClaimant(command, as)
+			if err != nil {
+				return err
+			}
+			return closeTicket(command, service, args[0], claimant)
+		},
+	}
+	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	setArguments(command, requiredArgument("ticket"))
+	command.ValidArgsFunction = ticketSlugCompletion(options)
+	return command
+}
+
 // resolveClaimant resolves the claimant name: --as, then TWT_CLAIMANT, then
 // the OS username. The OS username applies only in an interactive terminal,
 // so two agents can never both succeed as the same default name.
@@ -612,6 +640,24 @@ func unclaimTicket(command *cobra.Command, service *ticketservice.Service, ref, 
 		},
 		func(out io.Writer, id, _ string) error {
 			_, err := fmt.Fprintf(out, "Removed the claim on ticket %q\n", id)
+			return err
+		})
+}
+
+// closeTicket resolves one Ticket. Both the tickets close command and apply
+// use it.
+func closeTicket(command *cobra.Command, service *ticketservice.Service, ref, claimant string) error {
+	return runMutation(command, "tickets.close",
+		func() (string, string, error) {
+			ticket, err := service.Close(ref, claimant, true)
+			return ticket.Slug, ticket.Title, err
+		},
+		func() (string, string, error) {
+			ticket, err := service.Close(ref, claimant, false)
+			return ticket.Slug, ticket.Title, err
+		},
+		func(out io.Writer, id, _ string) error {
+			_, err := fmt.Fprintf(out, "Closed Ticket %q\n", id)
 			return err
 		})
 }
@@ -711,9 +757,10 @@ func createBoard(command *cobra.Command, service *ticketservice.Service, name st
 func newTicketsBoardsListCommand(options Options) *cobra.Command {
 	var limit, offset int
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Boards",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Boards",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			service, err := options.ticketService()
 			if err != nil {

@@ -65,9 +65,10 @@ func newEnvironmentsCommand(options Options) *cobra.Command {
 func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 	var limit, offset int
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Prepared Environments",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Prepared Environments",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			report, err := service.EnvironmentReport()
 			if err != nil {

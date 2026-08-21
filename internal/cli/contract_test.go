@@ -93,6 +93,31 @@ func TestEveryCommandWithPlaceholdersDeclaresItsArguments(t *testing.T) {
 	}
 }
 
+func TestEveryListCommandHasLsAlias(t *testing.T) {
+	root := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
+	var missing []string
+	found := 0
+	var walk func(*cobra.Command)
+	walk = func(command *cobra.Command) {
+		if command.Name() == "list" && command.Runnable() {
+			found++
+			if !command.HasAlias("ls") {
+				missing = append(missing, command.CommandPath())
+			}
+		}
+		for _, child := range command.Commands() {
+			walk(child)
+		}
+	}
+	walk(root)
+	if found == 0 {
+		t.Fatal("no list commands found")
+	}
+	if len(missing) > 0 {
+		t.Fatalf("list commands missing ls alias: %s", strings.Join(missing, ", "))
+	}
+}
+
 func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 	output, err := execute(t, t.TempDir(), "schema")
 	if err != nil {

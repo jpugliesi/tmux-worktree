@@ -197,9 +197,10 @@ func readTemplateDocument(command *cobra.Command, path string, useStdin bool) (d
 func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 	var limit, offset int
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Project Templates",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Project Templates",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			names, err := templateStore.List()
 			if err != nil {

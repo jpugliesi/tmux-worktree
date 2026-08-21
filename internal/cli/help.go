@@ -163,7 +163,7 @@ var commandHelp = map[string]helpContent{
 		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt reads the body from standard input and --title is required. With no DESCRIPTION and no --stdin in an interactive terminal, twt asks for a title, then a Board, then opens VISUAL or EDITOR on an empty file for the description. A typed Board name that does not exist is created only after confirm. --board never creates a missing Board.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --board change-monitor --output json\n  printf '%s\\n' 'Steps...' | twt tickets create --title \"Fix auth\" --stdin",
 	},
 	"twt tickets list": {
-		long: "List Tickets sorted by priority, then by slug. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --status is a raw filter; do not use it together with --ready.", example: "  twt tickets list --ready --output json\n  twt tickets list --board change-monitor --limit 10",
+		long: "List Tickets sorted by priority, then by slug. The list hides done and wontfix Tickets by default; --all includes them, and an explicit --status shows that status. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --status is a raw filter; do not use it together with --ready.", example: "  twt tickets list --ready --output json\n  twt tickets list --all --output json\n  twt tickets list --board change-monitor --limit 10",
 	},
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
@@ -179,6 +179,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt tickets unclaim": {
 		long: "Remove the claim on one Ticket. The claimant resolution is the same as claim, and only the current claimant can remove its claim. An unclaimed Ticket succeeds without a change.", example: "  twt tickets unclaim fix-the-vfs-tools --as codex-fix-auth",
+	},
+	"twt tickets close": {
+		long: "Resolve one Ticket in one write: the status becomes done and the claim fields become empty. The claimant resolution is the same as claim, and a Ticket that a different claimant holds returns the locked error. Use 'twt tickets set --status' and 'twt tickets unclaim' when you need only one of the two changes.", example: "  twt tickets close fix-the-vfs-tools --as codex-fix-auth\n  twt tickets close fix-the-vfs-tools --as codex-fix-auth --output json",
 	},
 	"twt tickets comment": {
 		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt creates that heading when it is missing.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt tickets comment fix-the-vfs-tools --stdin",

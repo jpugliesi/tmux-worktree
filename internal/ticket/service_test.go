@@ -3,6 +3,7 @@ package ticket
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestListFiltersAndSort(t *testing.T) {
 	writeFixture(t, filepath.Join(home, "boards", "alpha.md"), fixture{title: "Alpha", status: "done", priority: "1"}.content())
 	writeFixture(t, filepath.Join(home, "no-priority.md"), fixture{title: "No priority", status: "needs-triage"}.content())
 
-	all, err := service.List(ListFilter{})
+	all, err := service.List(ListFilter{All: true})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestListFiltersAndSort(t *testing.T) {
 		t.Fatalf("sort order = %v", order)
 	}
 
-	board, err := service.List(ListFilter{Board: "boards", BoardSet: true})
+	board, err := service.List(ListFilter{Board: "boards", BoardSet: true, All: true})
 	if err != nil {
 		t.Fatalf("List --board: %v", err)
 	}
@@ -168,6 +169,171 @@ func TestListFiltersAndSort(t *testing.T) {
 		if ticket.Slug == "no-priority" && ticket.Priority != 2 {
 			t.Fatalf("missing priority read as %d, want 2", ticket.Priority)
 		}
+	}
+}
+
+func TestListHidesClosedTicketsByDefault(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "open.md"), fixture{title: "Open", status: "needs-triage"}.content())
+	writeFixture(t, filepath.Join(home, "shipped.md"), fixture{title: "Shipped", status: "done"}.content())
+	writeFixture(t, filepath.Join(home, "dropped.md"), fixture{title: "Dropped", status: "wontfix"}.content())
+	writeFixture(t, filepath.Join(home, "pickable.md"), fixture{title: "Pickable", status: "ready-for-agent"}.content())
+
+	slugsOf := func(filter ListFilter) string {
+		t.Helper()
+		tickets, err := service.List(filter)
+		if err != nil {
+			t.Fatalf("List(%+v): %v", filter, err)
+		}
+		slugs := make([]string, 0, len(tickets))
+		for _, ticket := range tickets {
+			slugs = append(slugs, ticket.Slug)
+		}
+		sort.Strings(slugs)
+		return strings.Join(slugs, ",")
+	}
+
+	if got := slugsOf(ListFilter{}); got != "open,pickable" {
+		t.Fatalf("default list = %q, want only the open tickets", got)
+	}
+	if got := slugsOf(ListFilter{All: true}); got != "dropped,open,pickable,shipped" {
+		t.Fatalf("--all list = %q", got)
+	}
+	// An explicit status turns the default exclusion off.
+	if got := slugsOf(ListFilter{Status: "done"}); got != "shipped" {
+		t.Fatalf("--status done list = %q", got)
+	}
+	if got := slugsOf(ListFilter{Status: "wontfix"}); got != "dropped" {
+		t.Fatalf("--status wontfix list = %q", got)
+	}
+	// --ready is already narrower, so the default exclusion changes nothing.
+	if got := slugsOf(ListFilter{Ready: true}); got != "pickable" {
+		t.Fatalf("--ready list = %q", got)
+	}
+	if got := slugsOf(ListFilter{Ready: true, All: true}); got != "pickable" {
+		t.Fatalf("--ready --all list = %q", got)
+	}
+}
+
+func TestCloseResolvesATicket(t *testing.T) {
+	service, home := newTestService(t)
+	unclaimed := filepath.Join(home, "unclaimed.md")
+	writeFixture(t, unclaimed, fixture{title: "Unclaimed", status: "ready-for-agent"}.content())
+	mine := filepath.Join(home, "mine.md")
+	writeFixture(t, mine, fixture{title: "Mine", status: "ready-for-agent", claimedBy: "agent-a"}.content())
+	theirs := filepath.Join(home, "theirs.md")
+	writeFixture(t, theirs, fixture{title: "Theirs", status: "ready-for-agent", claimedBy: "agent-b"}.content())
+
+	// An unclaimed Ticket closes.
+	closed, err := service.Close("unclaimed", "agent-a", false)
+	if err != nil {
+		t.Fatalf("Close on an unclaimed ticket: %v", err)
+	}
+	if closed.Status != domain.TicketDone || closed.ClaimedBy != "" || closed.ClaimedAt != "" {
+		t.Fatalf("closed ticket = %+v", closed)
+	}
+
+	// The claimant closes its own Ticket.
+	if _, err := service.Close("mine", "agent-a", false); err != nil {
+		t.Fatalf("Close by the claimant: %v", err)
+	}
+
+	// Another claimant is locked out, and the file stays as it was.
+	before := readFile(t, theirs)
+	_, err = service.Close("theirs", "agent-a", false)
+	if clierr.CodeOf(err) != clierr.Locked {
+		t.Fatalf("Close by another claimant = %v, want locked", err)
+	}
+	if !strings.Contains(err.Error(), `claimed by "agent-b"`) {
+		t.Fatalf("locked message %q does not name the holder", err)
+	}
+	if readFile(t, theirs) != before {
+		t.Fatal("a locked-out close changed the file")
+	}
+}
+
+func TestCloseOverwritesAnUnknownStatus(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "odd.md")
+	writeFixture(t, path, fixture{title: "Odd", status: "in-progress"}.content())
+
+	closed, err := service.Close("odd", "agent-a", false)
+	if err != nil {
+		t.Fatalf("Close on an unknown status: %v", err)
+	}
+	if closed.Status != domain.TicketDone {
+		t.Fatalf("status = %q, want done", closed.Status)
+	}
+	if !strings.Contains(readFile(t, path), "status: done\n") {
+		t.Fatalf("status not written:\n%s", readFile(t, path))
+	}
+}
+
+func TestCloseIsOneWriteThatKeepsLegacyKeys(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "change-monitor", "tkt-cm-001.md")
+	claimed := strings.Replace(legacyFixture, "claimed_by:\nclaimed_at:\n",
+		"claimed_by: agent-a\nclaimed_at: 2026-08-02\n", 1)
+	writeFixture(t, path, claimed)
+
+	if _, err := service.Close("tkt-cm-001", "agent-a", false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// One read after the single write: every change of the close mutation
+	// must be in this one file content.
+	content := readFile(t, path)
+	for _, line := range []string{
+		"status: done\n",
+		"claimed_by:\n",
+		"claimed_at:\n",
+		"updated: 2026-08-20\n",
+		"board: change-monitor\n",
+		// The legacy frontmatter survives the write.
+		"id: tkt-cm-001\n",
+		"type: task\n",
+		"category: enhancement\n",
+		"project: \"[[Change Monitor Agent]]\"\n",
+		"parent:\n",
+		"title: \"Reconnect Change Monitor VFS tools\"\n",
+		"blocked_by: []\n",
+	} {
+		if !strings.Contains(content, line) {
+			t.Fatalf("close result misses %q:\n%s", line, content)
+		}
+	}
+	if strings.Contains(content, "status: ready-for-agent") || strings.Contains(content, "agent-a") {
+		t.Fatalf("close left stale values:\n%s", content)
+	}
+	if !strings.HasSuffix(content, "## Comments\n") {
+		t.Fatalf("close changed the body:\n%s", content)
+	}
+}
+
+func TestCloseDryRunWritesNothing(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "work.md")
+	writeFixture(t, path, fixture{title: "Work", status: "ready-for-agent", claimedBy: "agent-a"}.content())
+	before := readFile(t, path)
+
+	closed, err := service.Close("work", "agent-a", true)
+	if err != nil {
+		t.Fatalf("dry-run Close: %v", err)
+	}
+	if closed.Status != domain.TicketDone || closed.ClaimedBy != "" {
+		t.Fatalf("dry-run result = %+v", closed)
+	}
+	if readFile(t, path) != before {
+		t.Fatal("a dry-run close changed the file")
+	}
+	// A dry run still runs every check.
+	if _, err := service.Close("work", "agent-b", true); clierr.CodeOf(err) != clierr.Locked {
+		t.Fatalf("dry-run Close by another claimant = %v, want locked", err)
+	}
+	if _, err := service.Close("missing", "agent-a", true); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("dry-run Close on a missing ticket = %v, want not_found", err)
+	}
+	if _, err := service.Close("work", "", true); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("dry-run Close without a claimant = %v, want invalid_usage", err)
 	}
 }
 

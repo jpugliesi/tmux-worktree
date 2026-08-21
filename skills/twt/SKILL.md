@@ -267,19 +267,23 @@ Follow these rules for every ticket command:
    `$EDITOR`; that path only opens for a person at an interactive terminal.
    `--board` does not create a Board. Create the Board first with
    `twt tickets boards create NAME`.
-7. Claim a ticket before starting work, and resolve it when the work ships.
+7. Claim a ticket before starting work. Close it with
+   `twt tickets close TICKET` when the work ships.
 8. Link related tickets and Topic notes with `[[slug]]`, the Obsidian
    wiki-link form.
-9. List pickable work with `twt tickets list --ready --output json`.
+9. List pickable work with `twt tickets list --ready --output json`. A plain
+   `twt tickets list` hides `done` and `wontfix` tickets; pass `--all` to
+   include them.
 
 ```sh
 twt tickets list --ready --output json --limit 20
+twt tickets list --all --output json --limit 20
 twt tickets show TICKET --output json
 twt tickets create "fix the vfs tools" --board change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --board change-monitor --output json
 ```
 
-### Claim and resolve
+### Claim and close
 
 `claimed_by` identifies who is doing the work. A person at an interactive
 terminal can claim with the OS user as the default claimant. An agent, and
@@ -293,10 +297,20 @@ twt tickets claim TICKET --as codex-fix-auth --dry-run --output json
 twt tickets claim TICKET --as codex-fix-auth --output json
 ```
 
-Resolve finished work by setting the status, then releasing the claim:
+Close finished work with one command. `close` sets the status to `done` and
+drops the claim in one write, and it uses the same claimant rules as `claim`:
 
 ```sh
-twt tickets set TICKET --status done --output json
+twt tickets close TICKET --as codex-fix-auth --dry-run --output json
+twt tickets close TICKET --as codex-fix-auth --output json
+```
+
+`set --status` and `unclaim` stay available as the granular forms. Use them
+when only one of the two changes applies, such as a `wontfix` resolution or a
+hand-off that leaves the ticket open:
+
+```sh
+twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 

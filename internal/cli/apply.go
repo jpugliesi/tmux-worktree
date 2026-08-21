@@ -275,6 +275,10 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
 		}}, applyTicketsUnclaim},
+		{applyOperationSchema{Operation: "tickets.close", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+		}}, applyTicketsClose},
 		{applyOperationSchema{Operation: "tickets.comment", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
@@ -754,6 +758,18 @@ func applyTicketsUnclaim(command *cobra.Command, options Options, request applyR
 		return err
 	}
 	return unclaimTicket(command, service, payload.Reference, payload.As)
+}
+
+func applyTicketsClose(command *cobra.Command, options Options, request applyRequest) error {
+	payload, err := decodeTicketClaimPayload("tickets.close", request.Ticket)
+	if err != nil {
+		return err
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return closeTicket(command, service, payload.Reference, payload.As)
 }
 
 func applyTicketsComment(command *cobra.Command, options Options, request applyRequest) error {

@@ -121,9 +121,10 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 	var live bool
 	var registered bool
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List Agent Sessions for a Project",
-		Args:  noArgs,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List Agent Sessions for a Project",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			project, err := resolveProject(projects, projectReference)
 			if err != nil {

@@ -709,12 +709,13 @@ and more than one document, the same as Project Template loading.
 ```sh
 twt tickets init
 twt tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
-twt tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
+twt tickets list [--board BOARD] [--status STATUS] [--ready] [--all] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
+twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
 twt tickets boards create NAME
 twt tickets boards list [--limit N]
@@ -747,6 +748,10 @@ printf '%s' "$BODY" | twt tickets create --stdin --title "Fix the vfs tools" --o
 
 ### List and filter
 
+`list` shows only open tickets: it hides every ticket with status `done` or
+`wontfix`. `--all` includes those closed tickets. An explicit `--status`
+turns the default off, so `--status done` lists the closed tickets.
+
 `--status` is a raw status filter on one of the six statuses:
 `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
 `wontfix`, `done`. It can still return a blocked or claimed ticket.
@@ -760,12 +765,13 @@ one.
 
 ```sh
 twt tickets list --ready --output json --limit 20
+twt tickets list --all --output json --limit 20
 twt tickets list --board change-monitor --status needs-triage --output json
 ```
 
 `list` results omit the body. `show` returns the metadata and the body.
 
-### Claim, unclaim, and comment
+### Claim, close, and comment
 
 `claim` is a compare-and-set write on the resolved claimant:
 
@@ -783,12 +789,24 @@ Agent Session ID.
 
 `unclaim` uses the same claimant resolution. It succeeds only when
 `claimed_by` is empty or equals the resolved claimant, and it then clears
-`claimed_by` and `claimed_at`. Resolve shipped work with
-`twt tickets set TICKET --status done`, then `unclaim`:
+`claimed_by` and `claimed_at`.
+
+`close` resolves shipped work in one write: it sets the status to `done` and
+clears `claimed_by` and `claimed_at`. It uses the same claimant resolution as
+`claim`, and a ticket that a different claimant holds returns `locked`.
+Because `close` writes the status, it also resolves a ticket that carries an
+unrecognized legacy status:
 
 ```sh
 twt tickets claim TICKET --as codex-fix-auth --output json
-twt tickets set TICKET --status done --output json
+twt tickets close TICKET --as codex-fix-auth --output json
+```
+
+Use `set --status` and `unclaim` when you need only one of the two changes,
+such as a `wontfix` resolution or a hand-off of open work:
+
+```sh
+twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 
