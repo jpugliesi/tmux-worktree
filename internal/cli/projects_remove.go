@@ -28,7 +28,7 @@ type bulkRemovalOutput struct {
 
 func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 	var apply bool
-	var allowUnpublished bool
+	var force bool
 	var cancel bool
 	var allArchived bool
 	var olderThan string
@@ -47,7 +47,7 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 				if cancel {
 					return invalidUsage(command, "do not use --all-archived together with --cancel")
 				}
-				return removeAllArchived(command, service, olderThan, apply, projectservice.RemovalOptions{AllowUnpublished: allowUnpublished})
+				return removeAllArchived(command, service, olderThan, apply, projectservice.RemovalOptions{AllowUnpublished: force})
 			}
 			if olderThan != "" {
 				return invalidUsage(command, "--older-than requires --all-archived")
@@ -60,8 +60,8 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 				return err
 			}
 			if cancel {
-				if apply || allowUnpublished {
-					return invalidUsage(command, "do not use --cancel together with --apply or --allow-unpublished")
+				if apply || force {
+					return invalidUsage(command, "do not use --cancel together with --apply or --force")
 				}
 				project, err := service.CancelRemoval(reference)
 				if err != nil {
@@ -73,11 +73,11 @@ func newProjectsRemoveCommand(service *projectservice.Service) *cobra.Command {
 				_, err = fmt.Fprintf(command.OutOrStdout(), "Removal of Project %q is canceled. The Project is archived.\n", project.Name)
 				return err
 			}
-			return runProjectRemoval(command, service, reference, apply, projectservice.RemovalOptions{AllowUnpublished: allowUnpublished})
+			return runProjectRemoval(command, service, reference, apply, projectservice.RemovalOptions{AllowUnpublished: force})
 		},
 	}
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the removal plan")
-	command.Flags().BoolVar(&allowUnpublished, "allow-unpublished", false, "Remove a branch with unpublished commits")
+	command.Flags().BoolVar(&force, "force", false, "Remove a branch with unpublished commits")
 	command.Flags().BoolVar(&cancel, "cancel", false, "Return a removing Project to the archived status")
 	command.Flags().BoolVar(&allArchived, "all-archived", false, "Plan or apply removal of all archived Projects")
 	command.Flags().StringVar(&olderThan, "older-than", "", "With --all-archived, select only Projects archived at least this long ago (for example 14d, 36h, or 30m)")

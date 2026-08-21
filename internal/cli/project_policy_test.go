@@ -155,7 +155,7 @@ func TestProjectsRemoveRefusesUnpublishedCommits(t *testing.T) {
 	executeWithOptions(t, options, nil, "projects", "archive", "unpublished")
 
 	blockedPlan := executeWithOptions(t, options, nil, "projects", "remove", "unpublished")
-	if !strings.Contains(blockedPlan, "Blocked:") || !strings.Contains(blockedPlan, "not on the remote") || !strings.Contains(blockedPlan, "--allow-unpublished") {
+	if !strings.Contains(blockedPlan, "Blocked:") || !strings.Contains(blockedPlan, "not on the remote") || !strings.Contains(blockedPlan, "--force") {
 		t.Fatalf("unpublished removal plan = %q", blockedPlan)
 	}
 
@@ -259,7 +259,7 @@ func TestProjectsRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
 	}
 }
 
-func TestProjectsRemoveAllowUnpublishedRemovesUnpublishedWork(t *testing.T) {
+func TestProjectsRemoveForceRemovesUnpublishedWork(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -297,16 +297,16 @@ func TestProjectsRemoveAllowUnpublishedRemovesUnpublishedWork(t *testing.T) {
 	runCommand(t, checkout, "git", "commit", "-qm", "throwaway work")
 	executeWithOptions(t, options, nil, "projects", "archive", "escape")
 
-	plan := executeWithOptions(t, options, nil, "projects", "remove", "escape", "--allow-unpublished")
+	plan := executeWithOptions(t, options, nil, "projects", "remove", "escape", "--force")
 	if strings.Contains(plan, "Blocked:") || !strings.Contains(plan, "Run again with --apply") {
-		t.Fatalf("allow-unpublished plan = %q", plan)
+		t.Fatalf("force plan = %q", plan)
 	}
-	executeWithOptions(t, options, nil, "projects", "remove", "escape", "--allow-unpublished", "--apply")
+	executeWithOptions(t, options, nil, "projects", "remove", "escape", "--force", "--apply")
 	if _, err := os.Stat(project.Root); !os.IsNotExist(err) {
-		t.Fatalf("allow-unpublished removal kept the Project root: %v", err)
+		t.Fatalf("force removal kept the Project root: %v", err)
 	}
 	if output := executeWithOptions(t, options, nil, "projects", "list"); output != "" {
-		t.Fatalf("projects list after allow-unpublished removal = %q", output)
+		t.Fatalf("projects list after force removal = %q", output)
 	}
 }
 

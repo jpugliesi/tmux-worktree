@@ -24,7 +24,7 @@ const noTransientSession = "-"
 func newDoneCommand(options Options) *cobra.Command {
 	service := options.projectService()
 	var keep bool
-	var allowUnpublished bool
+	var force bool
 	command := &cobra.Command{
 		Use:   "done [PROJECT]",
 		Short: "Archive a Project and remove its data",
@@ -38,7 +38,7 @@ func newDoneCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			removalOptions := projectservice.RemovalOptions{AllowUnpublished: allowUnpublished}
+			removalOptions := projectservice.RemovalOptions{AllowUnpublished: force}
 			if isDryRun(command) {
 				return doneDryRun(command, service, project.ID, removalOptions)
 			}
@@ -55,7 +55,7 @@ func newDoneCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&keep, "keep", false, "Stop after the archive and keep the Project data")
-	command.Flags().BoolVar(&allowUnpublished, "allow-unpublished", false, "Remove a branch with unpublished commits")
+	command.Flags().BoolVar(&force, "force", false, "Remove a branch with unpublished commits")
 	setArguments(command, optionalArgument("project", "the current Project when absent"))
 	command.ValidArgsFunction = projectNameCompletion(service)
 	return command
@@ -324,7 +324,7 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 		workerArgs := []string{
 			request.ProjectID,
 			workerBoolArg("keep", request.Keep),
-			workerBoolArg("allow-unpublished", request.AllowUnpublished),
+			workerBoolArg("force", request.AllowUnpublished),
 			transient,
 			workerValueArg(request.CloseTicket),
 			workerValueArg(request.CloseClaimant),
@@ -358,14 +358,14 @@ func RunDoneWorker(options Options, args []string) error {
 	if len(args) != 8 {
 		return fmt.Errorf("invalid done worker request")
 	}
-	projectID, keepArg, allowArg, transient := args[0], args[1], args[2], args[3]
+	projectID, keepArg, forceArg, transient := args[0], args[1], args[2], args[3]
 	closeTicket, closeClaimant := parseWorkerValueArg(args[4]), parseWorkerValueArg(args[5])
 	channel, clientName := args[6], args[7]
 	keep, err := parseWorkerBoolArg("keep", keepArg)
 	if err != nil {
 		return err
 	}
-	allowUnpublished, err := parseWorkerBoolArg("allow-unpublished", allowArg)
+	force, err := parseWorkerBoolArg("force", forceArg)
 	if err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ func RunDoneWorker(options Options, args []string) error {
 			if keep {
 				return fmt.Sprintf("Archived Project %s", result.Project.Name), nil
 			}
-			plan, removeErr := service.Remove(projectID, os.Getenv("TMUX_PANE"), projectservice.RemovalOptions{AllowUnpublished: allowUnpublished})
+			plan, removeErr := service.Remove(projectID, os.Getenv("TMUX_PANE"), projectservice.RemovalOptions{AllowUnpublished: force})
 			if removeErr != nil {
 				return "", fmt.Errorf("%w; Project %q stays archived; run 'twt done %s' to retry", removeErr, result.Project.Name, projectID)
 			}

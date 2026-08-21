@@ -559,8 +559,8 @@ twt done fix-auth --dry-run --output json
 ```
 
 `done` archives the Project, then applies the removal plan. `--keep` stops
-after the archive. `--allow-unpublished` removes a branch that has commits
-which are not on the remote.
+after the archive. `--force` removes a branch that has commits which are not
+on the remote.
 
 When the Project links an open ticket (see `twt tickets start`), an
 interactive `done` asks `Close Ticket "<slug>"? [y/N]` before any change; the
@@ -643,7 +643,7 @@ Removal applies no action while one Removal Blocker stays. These codes exist:
 | `unsafe_snapshot` | The Transcript Snapshot directory is not twt-owned. |
 | `unexpected_item` | The Project root contains an item that twt does not own. |
 
-`--allow-unpublished` accepts the `unpublished_branch` cause. Correct the
+`--force` accepts the `unpublished_branch` cause. Correct the
 other causes, then run the command again.
 
 A Project that stops in the middle of removal keeps the `removing` status. To

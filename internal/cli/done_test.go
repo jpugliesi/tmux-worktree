@@ -265,7 +265,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
-	err = cli.RunDoneWorker(timeoutOptions, []string{source.ID, "keep=false", "allow-unpublished=false", "-", "-", "-", "twt-done-timeout", "no-client"})
+	err = cli.RunDoneWorker(timeoutOptions, []string{source.ID, "keep=false", "force=false", "-", "-", "-", "twt-done-timeout", "no-client"})
 	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt done "+source.ID) {
 		t.Fatalf("done worker timeout = %v", err)
 	}
@@ -285,7 +285,7 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		signalResult <- exec.Command("tmux", "-L", options.TmuxSocket, "wait-for", "-S", channel).Run()
 	}()
-	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "allow-unpublished=false", "-", "-", "-", channel, "no-client"}); err != nil {
+	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "-", "-", channel, "no-client"}); err != nil {
 		t.Fatalf("run done worker: %v", err)
 	}
 	if err := <-signalResult; err != nil {

@@ -80,9 +80,9 @@ type projectOpenRequest struct {
 }
 
 type projectRemoveRequest struct {
-	Reference        string `json:"reference"`
-	Apply            bool   `json:"apply,omitempty"`
-	AllowUnpublished bool   `json:"allowUnpublished,omitempty"`
+	Reference string `json:"reference"`
+	Apply     bool   `json:"apply,omitempty"`
+	Force     bool   `json:"force,omitempty"`
 }
 
 // storageCleanApplyRequest plans, and with apply set removes, the unused
@@ -217,7 +217,7 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "projects.remove", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.reference", Type: "string", Required: true},
 			{Path: "project.apply", Type: "boolean", Required: false, Condition: "false or absent returns the removal plan only"},
-			{Path: "project.allowUnpublished", Type: "boolean", Required: false},
+			{Path: "project.force", Type: "boolean", Required: false},
 		}}, applyProjectsRemove},
 		{applyOperationSchema{Operation: "agents.register", Payload: "agent", Fields: []requestFieldSchema{
 			{Path: "agent.project", Type: "string", Required: true},
@@ -557,7 +557,7 @@ func applyProjectsRemove(command *cobra.Command, options Options, request applyR
 	if err != nil {
 		return err
 	}
-	return runProjectRemoval(command, service, reference, payload.Apply, projectservice.RemovalOptions{AllowUnpublished: payload.AllowUnpublished})
+	return runProjectRemoval(command, service, reference, payload.Apply, projectservice.RemovalOptions{AllowUnpublished: payload.Force})
 }
 
 func applyAgentsRegister(command *cobra.Command, options Options, request applyRequest) error {

@@ -194,7 +194,7 @@ func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		signalResult <- exec.Command("tmux", "-L", options.TmuxSocket, "wait-for", "-S", channel).Run()
 	}()
-	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "allow-unpublished=false", "-", "fix-auth", "tester", channel, "no-client"}); err != nil {
+	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "fix-auth", "tester", channel, "no-client"}); err != nil {
 		t.Fatalf("run done worker: %v", err)
 	}
 	if err := <-signalResult; err != nil {

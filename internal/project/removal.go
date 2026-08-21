@@ -251,14 +251,14 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 				repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
 					Code:    BlockerUnpublishedUnknown,
 					Message: fmt.Sprintf("twt could not read the remote \"origin\" (%s) to make sure branch %q is published", origin, repository.Branch),
-					Hint:    fmt.Sprintf("Connect to the remote and run the command again, or run 'twt projects remove %s --allow-unpublished --apply'.", reference),
+					Hint:    fmt.Sprintf("Connect to the remote and run the command again, or run 'twt projects remove %s --force --apply'.", reference),
 				})
 				return nil
 			}
 			repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
 				Code:    BlockerUnpublishedBranch,
 				Message: fmt.Sprintf("branch %q has commits that are not on the remote \"origin\" and not on another remote-tracking ref", repository.Branch),
-				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt projects remove %s --allow-unpublished --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
+				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt projects remove %s --force --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
 			})
 			return nil
 		}); err != nil {

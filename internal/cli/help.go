@@ -26,7 +26,7 @@ var commandHelp = map[string]helpContent{
 		long: "Archive the current Project or a Project that you specify. twt keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt archive\n  twt archive fix-auth",
 	},
 	"twt done": {
-		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive. When the Project links an open Ticket, twt asks in an interactive terminal whether it must also close that Ticket.", example: "  twt done\n  twt done fix-auth --keep",
+		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive. Use --force to remove a branch with unpublished commits. When the Project links an open Ticket, twt asks in an interactive terminal whether it must also close that Ticket.", example: "  twt done\n  twt done fix-auth --keep",
 	},
 	"twt agents": {
 		long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --project current\n  twt agents resume AGENT_ID",
@@ -118,7 +118,7 @@ var commandHelp = map[string]helpContent{
 		long: "Adopt an existing tmux session as a Project. twt records the git repositories that the panes of the session sit in, and marks the session with the Project ID. twt did not create the directories of an adopted Project, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt projects adopt\n  twt projects adopt my-session --name fix-auth",
 	},
 	"twt projects remove": {
-		long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Projects; apply skips blocked Projects.", example: "  twt projects archive fix-auth\n  twt projects remove fix-auth --apply\n  twt projects remove --all-archived --older-than 14d --apply",
+		long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state. Use --force to also remove a branch with unpublished commits. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Projects; apply skips blocked Projects.", example: "  twt projects archive fix-auth\n  twt projects remove fix-auth --apply\n  twt projects remove --all-archived --older-than 14d --apply",
 	},
 	"twt agents register": {
 		long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --project fix-auth --label review -- claude --resume SESSION_ID",
