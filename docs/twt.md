@@ -10,14 +10,14 @@ state, and data directories.
 ## Build
 
 ```sh
-go build -o ./bin/twt ./cmd/twt
+go install ./cmd/twt
 ```
 
 To stamp the build with a version, set the version variable with `-ldflags`.
 The `twt --version` and `twt schema` commands show this value:
 
 ```sh
-go build -ldflags "-X github.com/jpugliesi/tmux-worktree/internal/version.Version=$(git describe --always)" -o ./bin/twt ./cmd/twt
+go install -ldflags "-X github.com/jpugliesi/tmux-worktree/internal/version.Version=$(git describe --always)" ./cmd/twt
 ```
 
 By default, `twt` uses these directories:

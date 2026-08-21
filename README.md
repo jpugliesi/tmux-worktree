@@ -113,7 +113,7 @@ Needs Go 1.23+, git, and tmux:
 
 ```sh
 git clone https://github.com/jpugliesi/tmux-worktree ~/.tmux-worktree
-cd ~/.tmux-worktree && go build -o ./bin/twt ./cmd/twt
+cd ~/.tmux-worktree && go install ./cmd/twt
 echo 'export PATH="$HOME/.tmux-worktree/bin:$PATH"' >> ~/.zshrc
 ```
 
