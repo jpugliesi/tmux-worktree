@@ -44,12 +44,21 @@ or the config file path.
 
 ## Install shell completion
 
-`twt` completes command names, Project Template names, Project names, Agent
-Session IDs, Prepared Environment IDs, and the values of `--template`,
-`--project`, `--provider`, and `--output`:
+`twt` completes command names, Project Template names, Project names, Ticket
+slugs, Agent Session IDs, Prepared Environment IDs, and the values of
+`--template`, `--project`, `--provider`, and `--output`. `twt start` and
+`twt tickets start` offer Ticket slugs:
 
 ```sh
-twt completion zsh > "${fpath[1]}/_twt"
+# After `compinit` in ~/.zshrc. `compdef` exists only then.
+eval "$(twt completion zsh)"
+```
+
+Or write a file on `fpath` before `compinit`:
+
+```sh
+mkdir -p ~/.local/share/zsh/site-functions
+twt completion zsh > ~/.local/share/zsh/site-functions/_twt
 ```
 
 Use `twt completion bash`, `twt completion fish`, or

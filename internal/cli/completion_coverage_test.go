@@ -30,7 +30,6 @@ var completableArguments = map[string]bool{
 // that decision. The key is the command path and the argument name.
 var freeTextArguments = map[string]bool{
 	// The Project, Project Template, and Board names of a create are new.
-	"twt start name":                 true,
 	"twt projects create name":       true,
 	"twt templates create name":      true,
 	"twt tickets boards create name": true,

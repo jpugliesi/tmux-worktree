@@ -235,7 +235,15 @@ Shell completion covers commands, template names, Project names, ticket
 slugs, and Agent Session IDs:
 
 ```sh
-twt completion zsh > "${fpath[1]}/_twt"
+# After `compinit` in ~/.zshrc. `compdef` exists only then.
+eval "$(twt completion zsh)"
+```
+
+Or write a file on `fpath` before `compinit`:
+
+```sh
+mkdir -p ~/.local/share/zsh/site-functions
+twt completion zsh > ~/.local/share/zsh/site-functions/_twt
 ```
 
 Use `twt completion bash`, `twt completion fish`, or

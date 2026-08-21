@@ -187,3 +187,13 @@ func TestTicketsStartCompletesTicketSlugs(t *testing.T) {
 		t.Fatalf("tickets start completion = %q", candidates)
 	}
 }
+
+func TestStartCompletesTicketSlugs(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	candidates := completeArgs(t, options, "start", "")
+	if len(candidates) != 1 || candidates[0] != "fix-auth-tokens" {
+		t.Fatalf("start completion = %q", candidates)
+	}
+}

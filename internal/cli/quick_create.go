@@ -61,7 +61,8 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
-	setArguments(command, optionalArgument("name", "the interactive prompt asks for it when absent"))
+	setArguments(command, optionalArgument("name", "the interactive prompt asks for it when absent. TAB offers Ticket slugs"))
+	command.ValidArgsFunction = ticketSlugCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
