@@ -90,7 +90,7 @@ var commandHelp = map[string]helpContent{
 		example: "  twt templates init set product --cwd web -- ./scripts/init-project.sh\n  twt templates init set product --repo web -- ./init.sh",
 	},
 	"twt projects create": {
-		long:    "Create a Project from a saved Project Template. twt claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session.",
+		long:    "Create a Project from a saved Project Template. twt claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session. The Project branch name comes from --branch, then the branch_pattern of the Project Template, then the default pattern {prefix}{name}. Without a branch prefix (TWT_BRANCH_PREFIX or the branchPrefix value of config.yaml) the default is the Project name.",
 		example: "  twt projects create fix-auth --template everysphere\n  twt projects create fix-auth --template everysphere --dry-run --output json",
 	},
 	"twt projects list": {

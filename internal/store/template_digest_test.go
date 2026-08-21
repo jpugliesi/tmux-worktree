@@ -47,6 +47,7 @@ func TestEnvironmentDigestIgnoresChangesThatKeepTheWorktreeSet(t *testing.T) {
 		{"session command", func(template *domain.Template) {
 			template.Session = &domain.SessionSpec{Command: []string{"./scripts/layout.sh"}, CWD: "app"}
 		}},
+		{"branch pattern", func(template *domain.Template) { template.BranchPattern = "dev/{name}" }},
 	}
 	base, err := EnvironmentDigest(digestTemplate())
 	if err != nil {
@@ -225,6 +226,28 @@ func TestSessionCommandEditKeepsPreparedEnvironments(t *testing.T) {
 	catalog := TemplateCatalog{"example": TemplateStatus{Digests: editedDigests}}
 	if got := catalog.Disposition("example", prepared.Environment); got != TemplateCurrent {
 		t.Fatalf("Disposition after a session command edit = %v, want %v", got, TemplateCurrent)
+	}
+}
+
+// A branch pattern is presentation. An edit to it must keep each ready
+// Prepared Environment of the Project Template claimable.
+func TestBranchPatternEditKeepsPreparedEnvironments(t *testing.T) {
+	prepared, err := Digests(digestTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := digestTemplate()
+	edited.BranchPattern = "{prefix}dev/{name}"
+	editedDigests, err := Digests(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if editedDigests.Environment != prepared.Environment {
+		t.Fatalf("environment digest changed: %q != %q", editedDigests.Environment, prepared.Environment)
+	}
+	catalog := TemplateCatalog{"example": TemplateStatus{Digests: editedDigests}}
+	if got := catalog.Disposition("example", prepared.Environment); got != TemplateCurrent {
+		t.Fatalf("Disposition after a branch pattern edit = %v, want %v", got, TemplateCurrent)
 	}
 }
 

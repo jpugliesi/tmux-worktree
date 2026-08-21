@@ -99,6 +99,10 @@ repositories:
 `pool_depth` is the number of ready Prepared Environments that `twt` keeps
 for this Project Template. The default depth is 1.
 
+`branch_pattern` sets the default Project branch name of the Project
+Template, for example `branch_pattern: "{prefix}dev/{name}"`. See
+[Project branch names](#project-branch-names).
+
 Work with the YAML file through these commands:
 
 ```sh
@@ -242,6 +246,37 @@ Two flags control the Git start point:
 - `--branch NAME` sets a custom Project branch name.
 - `--no-fetch` uses the base commit of the Prepared Environment and does not
   refresh the default branch first.
+
+### Project branch names
+
+`twt` selects the Project branch name in this order:
+
+1. The `--branch` flag. It ignores the branch prefix.
+2. The `branch_pattern` of the Project Template.
+3. The default pattern `{prefix}{name}`. Without a configured branch prefix
+   this is the plain Project name, for example `fix-auth`.
+
+A `branch_pattern` uses these tokens: `{prefix}` is the user branch prefix,
+`{name}` is the Project name, and `{id8}` is the first 8 characters of the
+Project ID. The pattern must contain `{name}` and must render a valid Git
+branch name. The pattern is presentation only: an edit keeps each ready
+Prepared Environment claimable.
+
+Set the user branch prefix in `$TWT_CONFIG_DIR/config.yaml`:
+
+```yaml
+branchPrefix: jpugliesi/
+```
+
+`TWT_BRANCH_PREFIX` overrides the file. `twt` concatenates the prefix
+literally, so include the separator in the prefix value.
+
+Two safety rules apply to the resolved branch name:
+
+- The name must not equal the default branch of a repository. `twt` refuses
+  the creation with the `invalid_usage` error.
+- When the name already exists in a Repository Cache, `twt` falls back to
+  `twt/<name>-<id8>` and reports the fallback.
 
 `twt` opens or attaches the tmux session only when standard output is a
 terminal. Use `--no-open` to never open it. `--output json` no longer implies
@@ -488,7 +523,7 @@ twt done fix-auth --dry-run --output json
 
 `done` archives the Project, then applies the removal plan. `--keep` stops
 after the archive. `--allow-unpublished` removes a branch that has commits
-which are not on another known ref.
+which are not on the remote.
 
 From inside the Project tmux session, `done` moves your tmux client to the
 most recent other active Project, or detaches the client, and a worker window
@@ -556,7 +591,7 @@ Removal applies no action while one Removal Blocker stays. These codes exist:
 | `inside_session` | The command runs inside the tmux session of the Project. |
 | `unsafe_sessions` | Another tmux session claims the Project ID. |
 | `uncommitted_changes` | A worktree has changes that are not committed. |
-| `unpublished_branch` | The Project branch has commits that are not on another known ref. |
+| `unpublished_branch` | The Project branch has commits that are not on a remote-tracking ref and not on the remote. |
 | `unpublished_unknown` | twt cannot prove that the branch is published. |
 | `protected_branch` | The record names the default branch, or no branch. |
 | `invalid_state` | The Project record does not match the layout that twt owns. |

@@ -46,9 +46,10 @@ func interceptRemoteGit(t *testing.T, stub func(directory string, args ...string
 	return calls
 }
 
-func TestBranchPublishedUsesLocalRefsWithoutARemoteProbe(t *testing.T) {
+func TestBranchPublishedUsesRemoteTrackingRefsWithoutARemoteProbe(t *testing.T) {
 	repository := gitTestRepository(t)
 	testGit(t, repository, "branch", "feature")
+	testGit(t, repository, "update-ref", "refs/remotes/origin/main", "HEAD")
 	calls := interceptRemoteGit(t, func(directory string, args ...string) (string, error) {
 		return "", fmt.Errorf("the test forbids remote access")
 	})
@@ -61,6 +62,34 @@ func TestBranchPublishedUsesLocalRefsWithoutARemoteProbe(t *testing.T) {
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("the local fast path read the remote: %v", *calls)
+	}
+}
+
+// A local sibling branch that contains the commits must not count as
+// published. Only remote-tracking refs and the remote itself can vouch for
+// the commits.
+func TestBranchPublishedIgnoresLocalSiblingBranches(t *testing.T) {
+	repository := gitTestRepository(t)
+	testGit(t, repository, "switch", "-qc", "feature")
+	testGit(t, repository, "commit", "-q", "--allow-empty", "-m", "unpublished")
+	testGit(t, repository, "branch", "sibling")
+	testGit(t, repository, "switch", "-q", "main")
+	calls := interceptRemoteGit(t, func(directory string, args ...string) (string, error) {
+		if args[0] != "ls-remote" {
+			return "", fmt.Errorf("the test permits only one ls-remote probe, got git %s", strings.Join(args, " "))
+		}
+		// The remote has neither the branch nor a default tip.
+		return "", nil
+	})
+	published, unknown, err := branchPublished(repository, "feature")
+	if err != nil {
+		t.Fatalf("branchPublished() error = %v", err)
+	}
+	if published || unknown {
+		t.Fatalf("branchPublished() = published %v, unknown %v; want unpublished, known", published, unknown)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("remote round trips = %v, want one ls-remote probe", *calls)
 	}
 }
 

@@ -14,6 +14,10 @@ import (
 type Config struct {
 	// TicketsHome is the root directory of the Markdown ticket files.
 	TicketsHome string `yaml:"ticketsHome"`
+	// BranchPrefix is the user branch prefix for the {prefix} token of
+	// Project branch patterns. twt concatenates it literally, so include the
+	// separator, for example "jpugliesi/". TWT_BRANCH_PREFIX overrides it.
+	BranchPrefix string `yaml:"branchPrefix"`
 }
 
 // LoadConfig reads one strict twt config document from

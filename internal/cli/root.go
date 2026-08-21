@@ -46,8 +46,13 @@ type Options struct {
 	// is empty, twt resolves TWT_TICKETS_HOME and then the ticketsHome value
 	// of config.yaml at command time.
 	TicketsHome string
-	Stdout      io.Writer
-	Stderr      io.Writer
+	// BranchPrefix is the user branch prefix for the {prefix} token of
+	// Project branch patterns. When it is empty, twt resolves
+	// TWT_BRANCH_PREFIX and then the branchPrefix value of config.yaml at
+	// command time.
+	BranchPrefix string
+	Stdout       io.Writer
+	Stderr       io.Writer
 	// OpenEditor opens one file in the interactive editor and returns after
 	// the editor closes. New installs the real VISUAL/EDITOR implementation
 	// when it is nil; tests replace it with a fake.
@@ -119,6 +124,23 @@ func (o Options) resolveTicketsHome() (string, error) {
 		return "", err
 	}
 	return config.TicketsHome, nil
+}
+
+// resolveBranchPrefix resolves the user branch prefix: the injected Options
+// value, then TWT_BRANCH_PREFIX, then the branchPrefix value of config.yaml.
+// The result is empty when no source sets a prefix.
+func (o Options) resolveBranchPrefix() (string, error) {
+	if o.BranchPrefix != "" {
+		return o.BranchPrefix, nil
+	}
+	if value := os.Getenv("TWT_BRANCH_PREFIX"); value != "" {
+		return value, nil
+	}
+	config, err := store.LoadConfig(o.ConfigDir)
+	if err != nil {
+		return "", err
+	}
+	return config.BranchPrefix, nil
 }
 
 // ticketService builds the ticket service for these Options. It fails when no

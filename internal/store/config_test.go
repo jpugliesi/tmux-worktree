@@ -31,6 +31,18 @@ func TestLoadConfigReadsTicketsHome(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReadsBranchPrefix(t *testing.T) {
+	configDir := t.TempDir()
+	writeConfig(t, configDir, "branchPrefix: jpugliesi/\n")
+	config, err := store.LoadConfig(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.BranchPrefix != "jpugliesi/" {
+		t.Fatalf("BranchPrefix = %q, want %q", config.BranchPrefix, "jpugliesi/")
+	}
+}
+
 func TestLoadConfigRejectsUnknownFields(t *testing.T) {
 	configDir := t.TempDir()
 	writeConfig(t, configDir, "ticketsHome: /vault/tickets\nclaimant: me\n")

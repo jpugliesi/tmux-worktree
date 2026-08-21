@@ -22,6 +22,12 @@ type Template struct {
 	// PoolDepth is the number of ready Prepared Environments to keep for this
 	// Project Template. A value of 0 uses the default depth of 1.
 	PoolDepth int `yaml:"pool_depth,omitempty" json:"poolDepth,omitempty"`
+	// BranchPattern is the default Project branch name of this Project
+	// Template. The tokens {prefix}, {name}, and {id8} expand to the user
+	// branch prefix, the Project name, and the first 8 characters of the
+	// Project ID. An empty value uses DefaultBranchPattern. The pattern is
+	// presentation only: it does not change the Prepared Environment digest.
+	BranchPattern string `yaml:"branch_pattern,omitempty" json:"branchPattern,omitempty"`
 	// Agents are the Agent Sessions that each new Project gets.
 	Agents []TemplateAgent `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
@@ -112,6 +118,9 @@ func (t Template) Validate() error {
 	if t.PoolDepth < 0 {
 		return fmt.Errorf("pool_depth %d is negative", t.PoolDepth)
 	}
+	if err := validateBranchPattern(t.BranchPattern); err != nil {
+		return err
+	}
 	seen := make(map[string]struct{}, len(t.Repositories))
 	environmentNames := make(map[string]string, len(t.Repositories))
 	for _, repository := range t.Repositories {
@@ -186,6 +195,23 @@ func validateTemplateAgents(agents []TemplateAgent) error {
 		if len(agent.Start) == 0 || strings.TrimSpace(agent.Start[0]) == "" {
 			return fmt.Errorf("Agent Session %q has no start command", label)
 		}
+	}
+	return nil
+}
+
+// validateBranchPattern checks one declared branch_pattern. The pattern must
+// contain {name}, and a render with sample values and an empty prefix must
+// give a valid Git branch name.
+func validateBranchPattern(pattern string) error {
+	if pattern == "" {
+		return nil
+	}
+	if !strings.Contains(pattern, "{name}") {
+		return fmt.Errorf("branch_pattern %q does not contain the {name} token", pattern)
+	}
+	sample := RenderBranchPattern(pattern, "", "sample", "0123abcd")
+	if err := ValidateBranchName(sample); err != nil {
+		return fmt.Errorf("branch_pattern %q renders the invalid branch name %q: %w", pattern, sample, err)
 	}
 	return nil
 }

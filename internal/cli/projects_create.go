@@ -71,8 +71,14 @@ func newProjectsCreateCommand(options Options, service *projectservice.Service) 
 
 // createProject creates one Project through the shared progress, Prepared
 // Environment refill, and last-template path. Every create entry point (the
-// projects create command, quick create, and apply) uses it.
+// projects create command, quick create, and apply) uses it. It resolves the
+// user branch prefix for the {prefix} token of the Project branch pattern.
 func createProject(command *cobra.Command, options Options, name, templateName string, template domain.Template, createOptions projectservice.CreateOptions) (domain.Project, error) {
+	prefix, err := options.resolveBranchPrefix()
+	if err != nil {
+		return domain.Project{}, err
+	}
+	createOptions.BranchPrefix = prefix
 	service := newCreateService(command, options, templateName, template)
 	project, err := service.CreateWithOptions(name, templateName, template, createOptions)
 	if err != nil {

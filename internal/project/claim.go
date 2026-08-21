@@ -53,9 +53,15 @@ func (s *Service) failedEnvironmentError(environment domain.PreparedEnvironment)
 
 // CreateOptions changes how Create claims a Prepared Environment.
 type CreateOptions struct {
-	// Branch is an optional custom Project branch name. An empty value uses
-	// the default twt/<name>-<id> branch name.
+	// Branch is an optional custom Project branch name. It wins over the
+	// branch pattern and it ignores BranchPrefix. An empty value renders the
+	// branch pattern of the Project Template, or the default pattern
+	// {prefix}{name}.
 	Branch string
+	// BranchPrefix is the user branch prefix for the {prefix} token. The CLI
+	// resolves it from TWT_BRANCH_PREFIX and then the branchPrefix value of
+	// config.yaml.
+	BranchPrefix string
 	// NoFetch turns the default-branch refresh before the claim off.
 	NoFetch bool
 }
@@ -169,13 +175,16 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 }
 
 // resolveProjectBranch selects the Project branch name before the claim
-// reservation is saved. A custom branch must not be a repository default
-// branch. On a name collision twt falls back to the default branch name.
+// reservation is saved. The order is: the --branch flag, then the rendered
+// branch_pattern of the Project Template, then the default pattern
+// {prefix}{name}. The resolved name must be a valid Git branch name and must
+// not be a repository default branch. When the resolved name already exists
+// in a Repository Cache, twt falls back to twt/<name>-<id8>.
 func (s *Service) resolveProjectBranch(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
-	defaultName := "twt/" + name + "-" + projectID[:8]
-	candidate := strings.TrimSpace(opts.Branch)
-	if candidate == "" {
-		return defaultName, nil
+	fallback := "twt/" + name + "-" + projectID[:8]
+	candidate, err := s.projectBranchCandidate(name, projectID, template, opts)
+	if err != nil {
+		return "", err
 	}
 	for _, spec := range template.Repositories {
 		repositoryDefault := spec.DefaultBranch
@@ -188,7 +197,7 @@ func (s *Service) resolveProjectBranch(name, projectID string, template domain.T
 			repositoryDefault, _ = defaultBranch(cachePath, spec)
 		}
 		if repositoryDefault != "" && candidate == repositoryDefault {
-			return "", clierr.New(clierr.InvalidUsage, "branch %q is the default branch of repository %q; use a different branch name", candidate, spec.Name)
+			return "", clierr.New(clierr.InvalidUsage, "branch %q is the default branch of repository %q; use --branch to set a different branch name", candidate, spec.Name)
 		}
 		if !cacheExists {
 			continue
@@ -198,9 +207,38 @@ func (s *Service) resolveProjectBranch(name, projectID string, template domain.T
 			return "", err
 		}
 		if exists {
-			s.report("Branch %q exists. twt uses %q.", candidate, defaultName)
-			return defaultName, nil
+			s.report("Branch %q exists. twt uses %q.", candidate, fallback)
+			return fallback, nil
 		}
+	}
+	return candidate, nil
+}
+
+// projectBranchCandidate renders and validates the Project branch name before
+// the repository checks. The --branch flag wins and ignores the branch
+// prefix; otherwise twt renders the branch pattern.
+func (s *Service) projectBranchCandidate(name, projectID string, template domain.Template, opts CreateOptions) (string, error) {
+	if candidate := strings.TrimSpace(opts.Branch); candidate != "" {
+		if err := domain.ValidateBranchName(candidate); err != nil {
+			return "", clierr.New(clierr.InvalidUsage, "branch name %q is not valid: %v", candidate, err)
+		}
+		return candidate, nil
+	}
+	pattern := template.BranchPattern
+	if pattern == "" {
+		pattern = domain.DefaultBranchPattern
+	}
+	candidate := domain.RenderBranchPattern(pattern, opts.BranchPrefix, name, projectID[:8])
+	if err := domain.ValidateBranchName(candidate); err != nil {
+		if opts.BranchPrefix != "" {
+			withoutPrefix := domain.RenderBranchPattern(pattern, "", name, projectID[:8])
+			if domain.ValidateBranchName(withoutPrefix) == nil {
+				return "", clierr.WithHint(
+					clierr.New(clierr.InvalidUsage, "branch prefix %q makes the invalid branch name %q: %v", opts.BranchPrefix, candidate, err),
+					"Correct TWT_BRANCH_PREFIX or the branchPrefix value of config.yaml.")
+			}
+		}
+		return "", clierr.New(clierr.InvalidUsage, "branch name %q is not valid: %v", candidate, err)
 	}
 	return candidate, nil
 }

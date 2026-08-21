@@ -315,6 +315,9 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if staleHead != newTip {
 		t.Fatalf("--no-fetch claim landed on %s, want the old base %s", staleHead, newTip)
 	}
+	if stale.Repositories[0].Branch != "stale" {
+		t.Fatalf("default branch = %q, want the Project name %q", stale.Repositories[0].Branch, "stale")
+	}
 
 	_, stderr, err = executeCollectingOutput(t, options, "projects", "create", "third", "--branch", "feature/custom", "--no-open")
 	if err != nil {
@@ -333,6 +336,24 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 
 	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "fourth", "--branch", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
 		t.Fatalf("projects create with the default branch name = %v", err)
+	}
+
+	// A Project whose name equals the repository default branch must fail at
+	// create time, because its default Project branch is its name.
+	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
+		t.Fatalf("projects create named after the default branch = %v", err)
+	}
+
+	t.Setenv("TWT_BRANCH_PREFIX", "jpugliesi/")
+	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "prefixed", "--no-open"); err != nil {
+		t.Fatalf("projects create with a branch prefix: %v", err)
+	}
+	prefixed, err := store.NewProjectStore(options.StateDir).Find("prefixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefixed.Repositories[0].Branch != "jpugliesi/prefixed" {
+		t.Fatalf("prefixed branch = %q, want %q", prefixed.Repositories[0].Branch, "jpugliesi/prefixed")
 	}
 }
 

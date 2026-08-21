@@ -313,17 +313,17 @@ var remoteGitOutput = func(directory string, args ...string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// branchPublished reports whether the branch commits are safe on the remote
-// or on another declared ref. It returns unknown=true when twt could not
-// read the remote, so the caller can refuse instead of a silent pass. The
-// check reads the local cache first and uses at most one remote round trip:
+// branchPublished reports whether the branch commits are safe on the remote.
+// It returns unknown=true when twt could not read the remote, so the caller
+// can refuse instead of a silent pass. The check reads the remote-tracking
+// refs of the local cache first and uses at most one remote round trip:
 // one ls-remote probe answers both whether the branch is on the remote and
 // where the remote default branch points. A second round trip (a targeted
 // fetch of the default branch) happens only when the cache does not contain
 // the remote default tip.
 func branchPublished(cachePath, branch string) (published bool, unknown bool, err error) {
 	branchRef := "refs/heads/" + branch
-	published, err = branchOnLocalRefs(cachePath, branch)
+	published, err = branchOnRemoteRefs(cachePath, branch)
 	if err != nil || published {
 		return published, false, err
 	}
@@ -379,16 +379,18 @@ func branchPublished(cachePath, branch string) (published bool, unknown bool, er
 	return published, false, nil
 }
 
-// branchOnLocalRefs reports whether another declared ref in the local cache
-// already contains the branch. It does not read the remote.
-func branchOnLocalRefs(cachePath, branch string) (bool, error) {
+// branchOnRemoteRefs reports whether a remote-tracking ref in the local cache
+// already contains the branch. Only refs/remotes/* count as published: a
+// local sibling branch can never vouch for the commits. It does not read the
+// remote.
+func branchOnRemoteRefs(cachePath, branch string) (bool, error) {
 	branchRef := "refs/heads/" + branch
-	refs, err := output(cachePath, "git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
+	refs, err := output(cachePath, "git", "for-each-ref", "--format=%(refname)", "refs/remotes")
 	if err != nil {
 		return false, fmt.Errorf("list refs for branch %q: %w", branch, err)
 	}
 	for _, ref := range strings.Split(refs, "\n") {
-		if ref == "" || ref == branchRef || strings.HasPrefix(ref, "refs/heads/twt/") {
+		if ref == "" {
 			continue
 		}
 		contained, err := isAncestor(cachePath, branchRef, ref)
