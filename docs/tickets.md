@@ -336,7 +336,8 @@ ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
 `TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
 and more than one document, matching Project Template loading.
 
-`twt doctor` reports whether Tickets home is set, exists, and is writable.
+`twt config` shows the resolved Tickets home and its source. `twt doctor`
+reports whether Tickets home is set, exists, and is writable.
 
 Tests inject a temp Tickets home through `cli.Options`. They do not touch the
 personal vault.

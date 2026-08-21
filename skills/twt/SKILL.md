@@ -39,6 +39,7 @@ Keep the context cost of each read small:
   whether the limit removed results.
 
 ```sh
+twt config --output json
 twt context --output json
 twt projects list --limit 20 --fields id,name,status --output json
 twt agents list --project current --limit 20 --output ndjson

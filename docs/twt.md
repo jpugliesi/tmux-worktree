@@ -30,6 +30,18 @@ You can set `TWT_CONFIG_DIR`, `TWT_STATE_DIR`, and `TWT_DATA_DIR` to use
 other directories. Tests can set `TWT_TMUX_SOCKET` to use a separate tmux
 server.
 
+`twt config` shows every resolved setting, including defaults, and the source
+of each value:
+
+```sh
+twt config
+twt config --output json
+```
+
+The source is `env` for an environment variable, `file` for
+`$TWT_CONFIG_DIR/config.yaml`, or `default`. The origin names the variable
+or the config file path.
+
 ## Install shell completion
 
 `twt` completes command names, Project Template names, Project names, Agent
@@ -710,7 +722,8 @@ ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
 
 `TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
 and more than one document, the same as Project Template loading.
-`twt doctor` reports whether Tickets home is set, exists, and is writable.
+`twt config` shows the resolved Tickets home and its source. `twt doctor`
+reports whether Tickets home is set, exists, and is writable.
 
 ### Commands
 

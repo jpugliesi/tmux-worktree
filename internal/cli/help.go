@@ -207,6 +207,9 @@ var commandHelp = map[string]helpContent{
 	"twt context": {
 		long: "Show the Project and repository context for a directory or the current tmux pane.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
 	},
+	"twt config": {
+		long: "Show every resolved twt setting, including defaults. Each setting reports its value and its source: env for an environment variable, file for config.yaml, or default.", example: "  twt config\n  twt config --output json",
+	},
 	"twt storage show": {
 		long: "Show the disk space used by active Projects, archived Projects, Prepared Environments, worktrees, and shared repository caches.", example: "  twt storage show\n  twt storage show --output json",
 	},

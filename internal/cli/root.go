@@ -317,6 +317,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	tickets.GroupID = "workflows"
 	context := newContextCommand(options)
 	context.GroupID = "inspect"
+	configCommand := newConfigCommand(options)
+	configCommand.GroupID = "inspect"
 	environments := newEnvironmentsCommand(options)
 	environments.GroupID = "inspect"
 	storage := newStorageCommand(options)
@@ -329,7 +331,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	skillsCommand.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, environments, storage, doctor, schema, skillsCommand, apply)
+	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

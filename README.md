@@ -102,6 +102,7 @@ everything; `twt projects open NAME` brings it back, layout and all.
 ### Housekeeping
 
 ```sh
+twt config                            # resolved settings and their sources
 twt storage show                      # active vs archived bytes
 twt environments list                 # the warm pool, with sizes and ages
 twt projects remove --all-archived --older-than 14d --apply
