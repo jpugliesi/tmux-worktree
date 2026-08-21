@@ -16,6 +16,7 @@ func newProjectsCommand(options Options) *cobra.Command {
 	service := options.projectService()
 	projects := groupCommand(&cobra.Command{Use: "projects", Short: "Manage Projects"})
 	projects.AddCommand(newProjectsCreateCommand(options, service))
+	projects.AddCommand(newProjectsAdoptCommand(service))
 	projects.AddCommand(newProjectsListCommand(service))
 	projects.AddCommand(newProjectsShowCommand(service))
 	projects.AddCommand(newProjectsCurrentCommand(service))

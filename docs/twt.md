@@ -388,6 +388,27 @@ Project Template. A process stop can occur after an init command starts but
 before `twt` saves its result. For this reason, init commands must be safe to
 run more than one time.
 
+### Adopt an existing tmux session
+
+A tmux session that you made by hand can become a Project:
+
+```sh
+twt projects adopt
+twt projects adopt my-session --name fix-auth
+```
+
+Without a SESSION argument, `twt` adopts the tmux session of the calling
+pane. The default Project name is the session name. `twt` records the git
+repositories that the panes of the session sit in, and marks the session with
+the Project ID. After the adopt, `switch`, `context`, and the Agent Session
+commands work: a Codex or Claude session that ran inside an adopted
+repository appears in `agents list` as a discovered session.
+
+`twt` did not create the directories of an adopted Project. Removal never
+deletes them: `twt done` and `projects remove` delete only the twt state,
+show `keep_directory` actions in the plan, and release the session marker. A
+session with no git repository in any pane adopts with zero repositories.
+
 ## Agent Sessions
 
 Register a resumable Codex Agent Session:

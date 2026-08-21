@@ -89,21 +89,31 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		plan.ArchivedAt = &archivedAt
 	}
 	plan.Worktrees = make([]string, 0, len(p.Repositories))
-	for _, repository := range p.Repositories {
-		plan.Worktrees = append(plan.Worktrees, repository.Path)
-	}
-	actions := []RemovalAction{{Kind: "stop_tmux_session", Target: p.ID}}
-	for _, repository := range p.Repositories {
+	var actions []RemovalAction
+	if p.Adopted {
+		// twt did not create the directories of an adopted Project. Removal
+		// deletes the twt state only, and releases the session marker.
+		actions = []RemovalAction{{Kind: "release_tmux_session", Target: p.ID}}
+		for _, repository := range p.Repositories {
+			actions = append(actions, RemovalAction{Kind: "keep_directory", Target: repository.Path})
+		}
+	} else {
+		for _, repository := range p.Repositories {
+			plan.Worktrees = append(plan.Worktrees, repository.Path)
+		}
+		actions = []RemovalAction{{Kind: "stop_tmux_session", Target: p.ID}}
+		for _, repository := range p.Repositories {
+			actions = append(actions,
+				RemovalAction{Kind: "remove_worktree", Target: repository.Path},
+				RemovalAction{Kind: "delete_branch", Target: repository.Branch},
+				RemovalAction{Kind: "keep_repository_cache", Target: repository.CachePath},
+			)
+		}
 		actions = append(actions,
-			RemovalAction{Kind: "remove_worktree", Target: repository.Path},
-			RemovalAction{Kind: "delete_branch", Target: repository.Branch},
-			RemovalAction{Kind: "keep_repository_cache", Target: repository.CachePath},
+			RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt-owned.json")},
+			RemovalAction{Kind: "remove_project_root", Target: p.Root},
 		)
 	}
-	actions = append(actions,
-		RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt-owned.json")},
-		RemovalAction{Kind: "remove_project_root", Target: p.Root},
-	)
 
 	if p.Status != domain.ProjectArchived && p.Status != domain.ProjectRemoving && p.Status != domain.ProjectSetupFailed {
 		plan.Blockers = append(plan.Blockers, RemovalBlocker{
@@ -113,11 +123,16 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		})
 	}
 
-	stateBlockers, err := s.validateRemovalState(p)
-	if err != nil {
-		return plan, p, nil, err
+	// An adopted Project has no twt-owned layout to validate: its state is
+	// only the record itself.
+	var stateBlockers []RemovalBlocker
+	if !p.Adopted {
+		stateBlockers, err = s.validateRemovalState(p)
+		if err != nil {
+			return plan, p, nil, err
+		}
+		plan.Blockers = append(plan.Blockers, stateBlockers...)
 	}
-	plan.Blockers = append(plan.Blockers, stateBlockers...)
 
 	allowEmptySnapshot := p.Status == domain.ProjectRemoving || p.Status == domain.ProjectSetupFailed
 	snapshotExists, snapshotErr := s.snapshots.ValidateProject(p.ID, allowEmptySnapshot)
@@ -166,6 +181,11 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		plan.Blockers = append(plan.Blockers, RemovalBlocker{Code: BlockerInsideSession, Message: err.Error(), Hint: clierr.HintOf(err)})
 	}
 
+	if p.Adopted {
+		// Removal never inspects or deletes the directories of an adopted
+		// Project.
+		return plan, p, sessions, nil
+	}
 	if len(stateBlockers) > 0 {
 		// The recorded repository paths are not safe to inspect.
 		return plan, p, sessions, nil
@@ -262,10 +282,12 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	if len(plan.Blockers) > 0 {
 		return plan, removalRefusal(p.Name, plan.Blockers)
 	}
-	// Measure the Project root just before removal. The size feeds the
-	// reclaimed-space summary; a plan without removal does not pay for the
-	// walk.
-	plan.Bytes, _ = store.DirectoryBytes(p.Root)
+	if !p.Adopted {
+		// Measure the Project root just before removal. The size feeds the
+		// reclaimed-space summary; a plan without removal does not pay for
+		// the walk. An adopted Project reclaims no space.
+		plan.Bytes, _ = store.DirectoryBytes(p.Root)
+	}
 	if p.Status != domain.ProjectRemoving {
 		p.Status = domain.ProjectRemoving
 		p.UpdatedAt = s.now()
@@ -274,9 +296,20 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 		}
 	}
 	for _, sessionID := range sessions {
+		if p.Adopted {
+			// The user made this session; removal releases it and keeps it
+			// running.
+			if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "-u", "@twt_project_id")...); err != nil {
+				return plan, fmt.Errorf("release Project tmux session: %w", err)
+			}
+			continue
+		}
 		if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
 			return plan, fmt.Errorf("stop Project tmux session: %w", err)
 		}
+	}
+	if p.Adopted {
+		return plan, s.removeState(p)
 	}
 	for _, repository := range p.Repositories {
 		if err := s.withCacheLock(repository.CachePath, func() error {
@@ -310,21 +343,25 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	if err := os.Remove(p.Root); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return plan, fmt.Errorf("remove Project root %q: %w", p.Root, err)
 	}
+	return plan, s.removeState(p)
+}
+
+// removeState deletes the twt state records of one Project: its Transcript
+// Snapshots, Agent Sessions, Prepared Environment record, and the Project
+// record itself. It touches no worktree or user directory.
+func (s *Service) removeState(p domain.Project) error {
 	if err := s.snapshots.DeleteProject(p.ID, true); err != nil {
-		return plan, err
+		return err
 	}
 	if err := store.NewAgentStore(s.options.StateDir).DeleteProject(p.ID); err != nil {
-		return plan, err
+		return err
 	}
 	if p.EnvironmentID != "" {
 		if err := s.environments.Delete(p.EnvironmentID); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return plan, err
+			return err
 		}
 	}
-	if err := s.store.Delete(p.ID); err != nil {
-		return plan, err
-	}
-	return plan, nil
+	return s.store.Delete(p.ID)
 }
 
 // BulkRemovalPlans returns one removal plan for each archived Project whose
@@ -348,8 +385,11 @@ func (s *Service) BulkRemovalPlans(olderThan time.Duration, opts RemovalOptions)
 		if err != nil {
 			return nil, err
 		}
-		// The bulk plan shows the size of each selected Project.
-		plan.Bytes, _ = store.DirectoryBytes(p.Root)
+		// The bulk plan shows the size of each selected Project. An adopted
+		// Project reclaims no space.
+		if !p.Adopted {
+			plan.Bytes, _ = store.DirectoryBytes(p.Root)
+		}
 		plans = append(plans, plan)
 	}
 	sort.SliceStable(plans, func(i, j int) bool {

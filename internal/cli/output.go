@@ -61,14 +61,17 @@ type commandError struct {
 }
 
 type projectOutput struct {
-	ID           string               `json:"id"`
-	Name         string               `json:"name"`
-	Template     string               `json:"template"`
-	Status       domain.ProjectStatus `json:"status"`
-	CreatedAt    string               `json:"createdAt"`
-	ArchivedAt   string               `json:"archivedAt,omitempty"`
-	Root         string               `json:"root"`
-	Repositories []repositoryOutput   `json:"repositories"`
+	ID       string               `json:"id"`
+	Name     string               `json:"name"`
+	Template string               `json:"template"`
+	Status   domain.ProjectStatus `json:"status"`
+	// Adopted marks a Project that twt made from an existing tmux session.
+	// Removal never deletes its directories.
+	Adopted      bool               `json:"adopted,omitempty"`
+	CreatedAt    string             `json:"createdAt"`
+	ArchivedAt   string             `json:"archivedAt,omitempty"`
+	Root         string             `json:"root"`
+	Repositories []repositoryOutput `json:"repositories"`
 }
 
 type repositoryOutput struct {
@@ -98,6 +101,7 @@ func toProjectOutput(project domain.Project) projectOutput {
 		Name:         project.Name,
 		Template:     project.TemplateName,
 		Status:       project.Status,
+		Adopted:      project.Adopted,
 		CreatedAt:    project.CreatedAt.Format(time.RFC3339),
 		Root:         project.Root,
 		Repositories: repositories,

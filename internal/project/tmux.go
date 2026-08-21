@@ -12,16 +12,29 @@ import (
 
 // sessionName returns the tmux session name that twt uses for a new Project.
 // The Project Template name comes first, thus the native tmux session picker
-// groups the sessions of one codebase together. The name is presentation only:
-// twt finds its sessions through the session ID and the @twt_project_id
-// option.
+// groups the sessions of one codebase together. An adopted Project has no
+// template, so its session name is the Project name alone. The name is
+// presentation only: twt finds its sessions through the session ID and the
+// @twt_project_id option.
 func sessionName(templateName, projectName string) string {
+	if templateName == "" {
+		return projectName
+	}
 	return templateName + "-" + projectName
 }
 
 func (s *Service) ensureTmux(p *domain.Project) error {
 	if len(p.Repositories) == 0 {
-		return fmt.Errorf("Project Template has no repositories")
+		// An adopted Project can have no repositories. Its session is fine
+		// while it runs, but twt cannot make it again.
+		_, ownerID, exists, err := s.findSession(p.ID, sessionName(p.TemplateName, p.Name))
+		if err != nil {
+			return err
+		}
+		if exists && ownerID == p.ID {
+			return nil
+		}
+		return fmt.Errorf("Project %q has no repositories and no owned tmux session; twt cannot make the session again", p.Name)
 	}
 	name := sessionName(p.TemplateName, p.Name)
 	sessionID, projectID, exists, err := s.findSession(p.ID, name)

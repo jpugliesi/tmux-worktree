@@ -37,20 +37,24 @@ const (
 )
 
 type Project struct {
-	Version          int                 `json:"version"`
-	ID               string              `json:"id"`
-	EnvironmentID    string              `json:"environmentId,omitempty"`
-	Name             string              `json:"name"`
-	TemplateName     string              `json:"templateName"`
-	TemplateSnapshot Template            `json:"templateSnapshot"`
-	Status           ProjectStatus       `json:"status"`
-	Root             string              `json:"root"`
-	TmuxSession      string              `json:"tmuxSession"`
-	Repositories     []ProjectRepository `json:"repositories"`
-	Steps            []SetupStep         `json:"steps"`
-	CreatedAt        time.Time           `json:"createdAt"`
-	UpdatedAt        time.Time           `json:"updatedAt"`
-	ArchivedAt       *time.Time          `json:"archivedAt,omitempty"`
+	Version          int           `json:"version"`
+	ID               string        `json:"id"`
+	EnvironmentID    string        `json:"environmentId,omitempty"`
+	Name             string        `json:"name"`
+	TemplateName     string        `json:"templateName"`
+	TemplateSnapshot Template      `json:"templateSnapshot"`
+	Status           ProjectStatus `json:"status"`
+	// Adopted marks a Project that twt made from an existing tmux session.
+	// twt did not create its directories, and removal never deletes them:
+	// removal only deletes the twt state and releases the session marker.
+	Adopted      bool                `json:"adopted,omitempty"`
+	Root         string              `json:"root"`
+	TmuxSession  string              `json:"tmuxSession"`
+	Repositories []ProjectRepository `json:"repositories"`
+	Steps        []SetupStep         `json:"steps"`
+	CreatedAt    time.Time           `json:"createdAt"`
+	UpdatedAt    time.Time           `json:"updatedAt"`
+	ArchivedAt   *time.Time          `json:"archivedAt,omitempty"`
 }
 
 type ProjectRepository struct {

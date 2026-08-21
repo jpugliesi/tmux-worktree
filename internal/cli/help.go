@@ -114,6 +114,9 @@ var commandHelp = map[string]helpContent{
 	"twt projects setup retry": {
 		long: "Retry failed or interrupted setup steps from the saved Project Template snapshot.", example: "  twt projects setup retry fix-auth",
 	},
+	"twt projects adopt": {
+		long: "Adopt an existing tmux session as a Project. twt records the git repositories that the panes of the session sit in, and marks the session with the Project ID. twt did not create the directories of an adopted Project, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt projects adopt\n  twt projects adopt my-session --name fix-auth",
+	},
 	"twt projects remove": {
 		long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Projects; apply skips blocked Projects.", example: "  twt projects archive fix-auth\n  twt projects remove fix-auth --apply\n  twt projects remove --all-archived --older-than 14d --apply",
 	},

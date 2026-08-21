@@ -123,6 +123,17 @@ output is a terminal, but `--no-open` states the intention.
 For agent work, use `twt projects create` and `twt projects archive` with
 explicit names, dry-runs, and JSON output.
 
+To attach twt to a tmux session that a person made by hand, adopt it:
+
+```sh
+twt projects adopt SESSION --name NAME --dry-run --output json
+twt projects adopt SESSION --name NAME --output json
+```
+
+An adopted Project records the git repositories of the session panes.
+Removal of an adopted Project deletes only the twt state; it never deletes
+the directories.
+
 If setup fails, inspect the Project and retry the saved Template snapshot:
 
 ```sh
