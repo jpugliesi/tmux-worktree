@@ -146,6 +146,41 @@ func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 	}
 }
 
+func TestDiscoverFindsSessionsWhenTheTranscriptBodyExceedsTheReadLimit(t *testing.T) {
+	home := t.TempDir()
+	project, repository := discoverProject(t)
+	codexPath := writeCodexSession(t, home, "codex-large", repository)
+	claudePath := writeClaudeSession(t, home, "claude-large", repository)
+	grokPath := writeGrokSession(t, home, "01a02626-4685-7c72-9679-cccccccccccc", repository, "Q", "A")
+	events := filepath.Join(filepath.Dir(grokPath), "events.jsonl")
+	writeLines(t, events, []string{`{"type":"user","content":"noise"}`})
+	for _, path := range []string{codexPath, claudePath, grokPath, events} {
+		extendFile(t, path, 32<<20+1)
+	}
+
+	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, session := range found {
+		got[session.Provider] = session.SessionID
+	}
+	want := map[string]string{
+		"codex":  "codex-large",
+		"claude": "claude-large",
+		"grok":   "01a02626-4685-7c72-9679-cccccccccccc",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Discover() = %+v", found)
+	}
+	for provider, sessionID := range want {
+		if got[provider] != sessionID {
+			t.Fatalf("Discover() %s = %q, want %q from %+v", provider, got[provider], sessionID, found)
+		}
+	}
+}
+
 func TestResumeCommandUsesTheProviderFlag(t *testing.T) {
 	if got := transcript.ResumeCommand("codex", "session-one"); strings.Join(got, " ") != "codex resume session-one" {
 		t.Fatalf("ResumeCommand(codex) = %v", got)
@@ -197,6 +232,18 @@ func writeClaudeSession(t *testing.T, home, sessionID, repository string) string
 func setModTime(t *testing.T, path string, value time.Time) {
 	t.Helper()
 	if err := os.Chtimes(path, value, value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func extendFile(t *testing.T, path string, size int64) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := file.Truncate(size); err != nil {
 		t.Fatal(err)
 	}
 }

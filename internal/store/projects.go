@@ -56,6 +56,15 @@ func (s ProjectStore) List() ([]domain.Project, error) {
 }
 
 func (s ProjectStore) Find(reference string) (domain.Project, error) {
+	if ValidateResourceName(reference) == nil {
+		project, err := s.loadPath(filepath.Join(s.dir, reference+".json"))
+		if err == nil && project.ID == reference {
+			return project, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return domain.Project{}, err
+		}
+	}
 	projects, err := s.List()
 	if err != nil {
 		return domain.Project{}, err

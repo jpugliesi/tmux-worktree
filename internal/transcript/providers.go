@@ -14,10 +14,13 @@ type providerDescriptor struct {
 	root          func(s *Service) string
 	resumeCommand func(sessionID string) []string
 	read          func(s *Service, sessionID string, project domain.Project) (Transcript, error)
+	// transcriptName selects the JSON Lines files that belong to a session.
+	// A nil value accepts every .jsonl file.
+	transcriptName func(name string) bool
 	// discover reads the session ID and the repository name of one provider
 	// file. A file that twt cannot verify against the Project returns ok
-	// false.
-	discover func(path string, lines []map[string]any, project domain.Project) (sessionID, repositoryName string, ok bool)
+	// false. Discovery must not read the transcript body.
+	discover func(path string, project domain.Project) (sessionID, repositoryName string, ok bool)
 }
 
 // providers is the one table of providers that support verifiable linked
@@ -36,10 +39,11 @@ var providers = map[string]providerDescriptor{
 		discover:      discoverClaude,
 	},
 	"grok": {
-		root:          (*Service).grokRoot,
-		resumeCommand: func(sessionID string) []string { return []string{"grok", "--resume", sessionID} },
-		read:          (*Service).readGrok,
-		discover:      discoverGrok,
+		root:           (*Service).grokRoot,
+		resumeCommand:  func(sessionID string) []string { return []string{"grok", "--resume", sessionID} },
+		read:           (*Service).readGrok,
+		transcriptName: func(name string) bool { return name == "chat_history.jsonl" },
+		discover:       discoverGrok,
 	},
 }
 

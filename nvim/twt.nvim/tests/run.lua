@@ -548,6 +548,112 @@ test("answers the input window one time only", function()
   assert(#answers == 1 and answers[1] == "one line", vim.inspect(answers))
 end)
 
+local function with_source_window(line_count, cursor_line, view, body)
+  local previous = vim.api.nvim_get_current_buf()
+  local buffer = vim.api.nvim_create_buf(false, true)
+  local lines = {}
+  for index = 1, line_count do
+    lines[index] = "    content " .. index
+  end
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+  vim.api.nvim_set_current_buf(buffer)
+  vim.api.nvim_win_set_cursor(0, { cursor_line, 0 })
+  local viewinfo = vim.fn.winsaveview()
+  if view == "zt" then
+    viewinfo.topline = cursor_line
+  elseif view == "zb" then
+    viewinfo.topline = math.max(1, cursor_line - vim.api.nvim_win_get_height(0) + 1)
+  end
+  vim.fn.winrestview(viewinfo)
+  local ok, err = pcall(body)
+  vim.api.nvim_set_current_buf(previous)
+  vim.api.nvim_buf_delete(buffer, { force = true })
+  if not ok then error(err, 0) end
+end
+
+local function window_row(line)
+  local view = vim.fn.winsaveview()
+  vim.api.nvim_win_set_cursor(0, { line, 0 })
+  local row = vim.fn.winline()
+  vim.fn.winrestview(view)
+  return row
+end
+
+test("places a review note below a high selection when the viewport has room", function()
+  vim.o.lines = 40
+  vim.o.columns = 80
+  with_source_window(30, 3, "zt", function()
+    vim.wo.number = true
+    local textoff = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
+    local place = require("twt.input").placement({ start_line = 3, end_line = 5, height = 5 })
+    local block = window_row(5)
+    assert(place.relative == "win", vim.inspect(place))
+    assert(place.col == textoff + vim.fn.indent(3), vim.inspect({ place = place, textoff = textoff }))
+    assert(place.col >= textoff, vim.inspect({ place = place, textoff = textoff }))
+    assert(place.width < vim.api.nvim_win_get_width(0) - 4, vim.inspect(place))
+    assert(place.row >= block, vim.inspect({ place = place, block = block }))
+  end)
+end)
+
+test("places a review note above a low selection when the viewport has no room below", function()
+  vim.o.lines = 24
+  vim.o.columns = 80
+  with_source_window(40, 40, "zb", function()
+    local start_line = vim.fn.line("w$")
+    local place = require("twt.input").placement({
+      start_line = start_line, end_line = start_line, height = 5,
+    })
+    local block = window_row(start_line)
+    assert(place.relative == "win", vim.inspect(place))
+    assert(place.row + place.height + 2 <= block, vim.inspect({ place = place, block = block }))
+  end)
+end)
+
+-- A side of a box border is missing when that cell is empty or a space.
+local function border_side(border, index)
+  if type(border) == "string" then return border end
+  local cell = border[index]
+  if type(cell) == "table" then cell = cell[1] end
+  return cell
+end
+
+test("draws the review note as a colorscheme float box", function()
+  vim.o.lines = 40
+  vim.o.columns = 80
+  with_source_window(30, 3, "zt", function()
+    vim.wo.number = true
+    local textoff = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
+    local indent = vim.fn.indent(3)
+    local _, window = require("twt.input").open({
+      title = "Note", start_line = 3, end_line = 3,
+    }, function() end)
+    local config = vim.api.nvim_win_get_config(window)
+    local right = border_side(config.border, 4)
+    local left = border_side(config.border, 8)
+    assert(right ~= " " and right ~= "", vim.inspect(config.border))
+    assert(left ~= " " and left ~= "", vim.inspect(config.border))
+    local highlights = vim.wo[window].winhighlight
+    assert(highlights:find("TwtFloat"), highlights)
+    assert(highlights:find("TwtFloatBorder"), highlights)
+    assert(not highlights:find("WinSeparator"), highlights)
+    assert(not highlights:find("FloatBorder:FloatBorder"), highlights)
+    local fill = vim.api.nvim_get_hl(0, { name = "TwtFloat", link = true })
+    local border = vim.api.nvim_get_hl(0, { name = "TwtFloatBorder", link = true })
+    assert(fill.link == "Pmenu", vim.inspect(fill))
+    assert(border.link == "FloatTitle", vim.inspect(border))
+    local parent = config.win
+    if type(parent) == "table" then parent = parent.win or parent[1] end
+    assert(config.width < vim.api.nvim_win_get_width(parent) - 4, vim.inspect(config))
+    assert(config.col == textoff + indent, vim.inspect({ col = config.col, textoff = textoff, indent = indent }))
+    assert(config.col >= textoff, vim.inspect({ col = config.col, textoff = textoff }))
+    local footer = config.footer
+    if type(footer) == "table" then footer = footer[1] and (footer[1][1] or footer[1]) or vim.inspect(footer) end
+    assert(tostring(footer):find("C%-s save") and tostring(footer):find("q quit"), vim.inspect(config.footer))
+    assert(config.footer_pos == "right", vim.inspect(config.footer_pos))
+    vim.api.nvim_win_close(window, true)
+  end)
+end)
+
 test("sends free text from the message window", function()
   require("twt.config").get().directory = function() return "/work/app" end
   require("twt").agents.pick(function(err) assert(err == nil, err) end)

@@ -9,8 +9,8 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
-// maxDiscoverFiles limits the provider files that twt reads for one
-// discovery. twt reads the newest files first.
+// maxDiscoverFiles limits the provider files that twt inspects for one
+// discovery. twt inspects the newest files first.
 const maxDiscoverFiles = 256
 
 // DiscoveredSession is one provider session that belongs to a Project. Path
@@ -68,7 +68,7 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 
 func (s *Service) discoverProvider(provider string, project domain.Project, since time.Time) ([]DiscoveredSession, error) {
 	descriptor := providers[provider]
-	files, err := newestTranscriptFiles(descriptor.root(s), since)
+	files, err := newestTranscriptFiles(descriptor.root(s), since, descriptor.transcriptName)
 	if err != nil {
 		return nil, err
 	}
@@ -83,20 +83,17 @@ func (s *Service) discoverProvider(provider string, project domain.Project, sinc
 	return sessions, nil
 }
 
-// readDiscovered reads one provider file. A file that twt cannot verify
-// against the Project is not an error: discovery drops it.
+// readDiscovered verifies one provider file against the Project. A file that
+// twt cannot verify is not an error: discovery drops it. Discovery reads
+// session metadata only.
 func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, project domain.Project) (DiscoveredSession, bool) {
-	lines, info, err := readJSONLines(file.path)
-	if err != nil {
-		return DiscoveredSession{}, false
-	}
-	sessionID, repositoryName, ok := descriptor.discover(file.path, lines, project)
+	sessionID, repositoryName, ok := descriptor.discover(file.path, project)
 	if !ok || sessionID == "" || repositoryName == "" {
 		return DiscoveredSession{}, false
 	}
 	return DiscoveredSession{
 		Provider: provider, SessionID: sessionID, RepositoryName: repositoryName,
-		LastActivity: info.ModTime(), Path: file.path,
+		LastActivity: file.modTime, Path: file.path,
 	}, true
 }
 
@@ -109,7 +106,7 @@ type transcriptFile struct {
 // the newest to the oldest, with a limit on the number of files. A set since
 // time drops each older file before twt reads it, because the last activity
 // time of a discovered session is the file modification time.
-func newestTranscriptFiles(root string, since time.Time) ([]transcriptFile, error) {
+func newestTranscriptFiles(root string, since time.Time, include func(string) bool) ([]transcriptFile, error) {
 	files := []transcriptFile{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if os.IsNotExist(walkErr) {
@@ -125,6 +122,9 @@ func newestTranscriptFiles(root string, since time.Time) ([]transcriptFile, erro
 			return nil
 		}
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
+			return nil
+		}
+		if include != nil && !include(entry.Name()) {
 			return nil
 		}
 		info, err := entry.Info()

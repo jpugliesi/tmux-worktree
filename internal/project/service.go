@@ -174,21 +174,67 @@ func (s *Service) Current(directory, projectID, tmuxPane string) (domain.Project
 			}
 		}
 	}
-	projects, err := s.store.List()
-	if err != nil {
-		return domain.Project{}, err
-	}
+	return s.FindByDirectory(directory)
+}
+
+// FindByDirectory finds the Project that contains the directory. It matches
+// the ownership marker, the Project root, or any repository path. Adopted
+// Projects use repository paths, because their root is only the first pane.
+func (s *Service) FindByDirectory(directory string) (domain.Project, error) {
 	absDirectory, err := filepath.Abs(directory)
 	if err != nil {
 		return domain.Project{}, fmt.Errorf("resolve current directory: %w", err)
 	}
+	if project, ok := s.projectFromOwnershipMarker(absDirectory); ok {
+		return project, nil
+	}
+	projects, err := s.store.List()
+	if err != nil {
+		return domain.Project{}, err
+	}
 	for _, p := range projects {
-		relative, err := filepath.Rel(p.Root, absDirectory)
-		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		if projectContainsDirectory(p, absDirectory) {
 			return p, nil
 		}
 	}
 	return domain.Project{}, fmt.Errorf("the current directory or tmux pane is not in a twt Project")
+}
+
+func (s *Service) projectFromOwnershipMarker(directory string) (domain.Project, bool) {
+	for dir := directory; ; {
+		projectID, ok := readOwnershipProjectID(dir)
+		if ok {
+			project, err := s.store.Find(projectID)
+			if err == nil && projectContainsDirectory(project, directory) {
+				return project, true
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return domain.Project{}, false
+		}
+		dir = parent
+	}
+}
+
+func projectContainsDirectory(project domain.Project, directory string) bool {
+	if directoryInside(project.Root, directory) {
+		return true
+	}
+	for _, repository := range project.Repositories {
+		if directoryInside(repository.Path, directory) {
+			return true
+		}
+	}
+	return false
+}
+
+func directoryInside(root, directory string) bool {
+	if root == "" {
+		return false
+	}
+	relative, err := filepath.Rel(root, directory)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (s *Service) Retry(reference string) (domain.Project, error) {

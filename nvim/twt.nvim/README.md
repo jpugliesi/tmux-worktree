@@ -32,8 +32,17 @@ It uses core `vim.ui.select`, so a picker provider is optional.
 | `<leader>arR` | Write a new transcript snapshot for the selected Agent Session |
 | `<leader>arx` | Clear review notes |
 
-The note window and the message window use the same keys. Press `<C-s>` to
-accept the text. Press `q` to close the window and to keep no text.
+The note window is a boxed float in the current window. It lines up with
+the start of the selected line and stays to the right of the line numbers.
+It is narrower than the pane. The fill uses `Pmenu`, and the border and
+title use `FloatTitle`, so the box stays readable on a dark editor
+background. Override `TwtFloat`, `TwtFloatBorder`, `TwtFloatTitle`, or
+`TwtFloatFooter` to pick other colorscheme groups. It sits
+below the selected line or visual block when that block is high in the
+viewport, and above it when the block is low. The parent window scrolls when
+both would not fit. The note window and the message window use the same keys.
+The footer shows `C-s save · q quit` on the right. Press `<C-s>` to accept
+the text. Press `q` to close the window and to keep no text.
 
 Set `default_keymaps = false` to remove these mappings. The commands stay
 available:

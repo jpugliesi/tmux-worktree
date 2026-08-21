@@ -162,3 +162,18 @@ func ValidateProjectMarker(root, expectedProjectID string) error {
 	}
 	return nil
 }
+
+func readOwnershipProjectID(root string) (string, bool) {
+	data, err := os.ReadFile(filepath.Join(root, ".twt-owned.json"))
+	if err != nil {
+		return "", false
+	}
+	var marker struct {
+		Owner     string `json:"owner"`
+		ProjectID string `json:"projectId"`
+	}
+	if json.Unmarshal(data, &marker) != nil || marker.Owner != "twt" || marker.ProjectID == "" {
+		return "", false
+	}
+	return marker.ProjectID, true
+}

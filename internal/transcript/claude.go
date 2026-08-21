@@ -13,16 +13,29 @@ func (s *Service) claudeRoot() string { return filepath.Join(s.home, ".claude", 
 
 // discoverClaude reads the session ID and the repository name of one Claude
 // provider file for discovery.
-func discoverClaude(path string, lines []map[string]any, project domain.Project) (string, string, bool) {
+func discoverClaude(path string, project domain.Project) (string, string, bool) {
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if ValidateSessionID(id) != nil {
 		return "", "", false
 	}
-	name, _, matched, err := parseClaude(lines, id, project)
-	if err != nil || !matched {
+	cwd := ""
+	err := scanJSONLines(path, maxDiscoverScanBytes, func(line map[string]any) bool {
+		lineID := stringValue(line["sessionId"])
+		if lineID != "" && lineID != id {
+			cwd = ""
+			return false
+		}
+		lineCWD := stringValue(line["cwd"])
+		if lineCWD == "" {
+			return true
+		}
+		cwd = lineCWD
+		return false
+	})
+	if err != nil || cwd == "" {
 		return "", "", false
 	}
-	return id, name, true
+	return id, repositoryForDirectory(project, cwd), true
 }
 
 func (s *Service) readClaude(sessionID string, project domain.Project) (Transcript, error) {

@@ -12,8 +12,17 @@ func (s *Service) codexRoot() string { return filepath.Join(s.home, ".codex", "s
 
 // discoverCodex reads the session ID and the repository name of one Codex
 // provider file for discovery.
-func discoverCodex(_ string, lines []map[string]any, project domain.Project) (string, string, bool) {
-	id, cwd, err := codexMetadata(lines)
+func discoverCodex(path string, project domain.Project) (string, string, bool) {
+	id, cwd := "", ""
+	err := scanJSONLines(path, maxDiscoverScanBytes, func(line map[string]any) bool {
+		if stringValue(line["type"]) != "session_meta" {
+			return true
+		}
+		payload := mapValue(line["payload"])
+		id = stringValue(payload["id"])
+		cwd = stringValue(payload["cwd"])
+		return false
+	})
 	if err != nil || ValidateSessionID(id) != nil {
 		return "", "", false
 	}

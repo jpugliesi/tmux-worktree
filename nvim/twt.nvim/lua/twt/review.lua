@@ -195,7 +195,8 @@ function M.send(done)
 end
 
 -- Asks for a note comment for the current line or selection. A canceled window
--- adds no note.
+-- adds no note. The window sits below the selected block when the viewport
+-- has room, and above it when the block is low in the window.
 function M.prompt_add(done)
   done = done or function() end
   local start_line, end_line = vim.fn.line("."), vim.fn.line(".")
@@ -204,7 +205,25 @@ function M.prompt_add(done)
     start_line, end_line = vim.fn.line("v"), vim.fn.line(".")
     if start_line > end_line then start_line, end_line = end_line, start_line end
   end
-  input.open({ title = "Review note" }, function(text)
+  local source = vim.api.nvim_get_current_buf()
+  local draft = vim.api.nvim_create_namespace("twt_review_draft")
+  local mark = vim.api.nvim_buf_set_extmark(source, draft, start_line - 1, 0, {
+    end_row = end_line,
+    end_col = 0,
+    hl_group = "Visual",
+    hl_eol = true,
+  })
+  local function clear_draft()
+    if vim.api.nvim_buf_is_valid(source) then
+      pcall(vim.api.nvim_buf_del_extmark, source, draft, mark)
+    end
+  end
+  input.open({
+    title = "Note",
+    start_line = start_line,
+    end_line = end_line,
+    on_close = clear_draft,
+  }, function(text)
     if not text then return end
     M.add(text, start_line, end_line, done)
   end)

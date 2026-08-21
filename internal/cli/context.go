@@ -28,8 +28,9 @@ func newContextCommand(options Options) *cobra.Command {
 			projectID := os.Getenv("TWT_PROJECT_ID")
 			tmuxPane := os.Getenv("TMUX_PANE")
 			if command.Flags().Changed("directory") {
-				projectID = ""
-				tmuxPane = ""
+				if project, err := service.FindByDirectory(directory); err == nil {
+					return writeContext(command, project, lookupDirectory)
+				}
 			} else {
 				var err error
 				lookupDirectory, err = os.Getwd()
@@ -41,16 +42,20 @@ func newContextCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if WantsJSON(command) {
-				return writeReadJSON(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, lookupDirectory)}, "")
-			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Project: %s\n", project.Name)
-			return err
+			return writeContext(command, project, lookupDirectory)
 		},
 	}
 	command.Flags().StringVar(&directory, "directory", "", "Resolve context from this directory before tmux or environment context")
 	addFieldsFlag(command, contextOutput{})
 	return command
+}
+
+func writeContext(command *cobra.Command, project domain.Project, directory string) error {
+	if WantsJSON(command) {
+		return writeReadJSON(command, contextOutput{SchemaVersion: jsonSchemaVersion, Project: toProjectOutput(project), RepositoryName: repositoryForDirectory(project, directory)}, "")
+	}
+	_, err := fmt.Fprintf(command.OutOrStdout(), "Project: %s\n", project.Name)
+	return err
 }
 
 func repositoryForDirectory(project domain.Project, directory string) string {
