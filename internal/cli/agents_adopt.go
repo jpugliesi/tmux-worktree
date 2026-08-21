@@ -18,11 +18,18 @@ import (
 // state stay unchanged. When the provider roots are absent, the scan finds
 // nothing and costs nothing.
 func discoverProjectSessions(project domain.Project, stateDir string, linked []domain.AgentSession) ([]transcriptservice.DiscoveredSession, error) {
+	return discoverProjectSessionsSince(project, stateDir, linked, time.Time{})
+}
+
+// discoverProjectSessionsSince finds the provider sessions of the Project that
+// changed after one time. Shell completion uses a window, so a key press reads
+// only the recent provider files.
+func discoverProjectSessionsSince(project domain.Project, stateDir string, linked []domain.AgentSession, since time.Time) ([]transcriptservice.DiscoveredSession, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("find home directory: %w", err)
 	}
-	return transcriptservice.New(home, stateDir).Discover(project, transcriptservice.DiscoverOptions{Linked: linked})
+	return transcriptservice.New(home, stateDir).Discover(project, transcriptservice.DiscoverOptions{Linked: linked, Since: since})
 }
 
 // adoptDiscoveredSession registers one discovered provider session as an

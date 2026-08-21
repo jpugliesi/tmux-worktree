@@ -107,7 +107,7 @@ func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, projects *p
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -135,7 +135,7 @@ func newAgentTranscriptLinkCommand(agents *agentservice.Service, projects *proje
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Set the provider session ID")
 	_ = command.MarkFlagRequired("session")
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -191,7 +191,7 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, projects *proje
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	addFieldsFlag(command, agentTranscriptOutput{})
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 

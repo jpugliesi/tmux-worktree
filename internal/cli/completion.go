@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -147,39 +148,106 @@ func projectReferences(projects *projectservice.Service) []string {
 	return names
 }
 
-// agentIDCompletion completes Agent Session IDs. With a --project flag it
-// uses the Agent Sessions of that Project. Without one it uses every
-// Project.
-func agentIDCompletion(agents *agentservice.Service, projects *projectservice.Service) completionFunc {
+// completionDiscoveryWindow bounds the provider scan of an AGENT reference
+// completion. A key press must stay fast, so the completion offers the
+// provider sessions of the last two weeks. An older session ID stays a valid
+// typed value, and agents list shows it.
+const completionDiscoveryWindow = 14 * 24 * time.Hour
+
+// agentReferenceCompletion completes an AGENT reference. The candidates are
+// the registered Agent Sessions of the Project, with the label as the
+// description, and the provider sessions that the Project discovers, with the
+// provider as the description. Every twt command that takes an AGENT
+// reference adopts a discovered session on first touch, so a discovered
+// session ID is a valid value.
+func agentReferenceCompletion(agents *agentservice.Service, projects *projectservice.Service, stateDir string) completionFunc {
 	return func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
 		}
-		candidates := []domain.Project{}
-		if reference, err := command.Flags().GetString("project"); err == nil && reference != "" {
-			project, err := resolveProject(projects, reference)
-			if err != nil {
-				return nil, noFileCompletion
-			}
-			candidates = append(candidates, project)
-		} else {
-			list, err := projects.List()
-			if err != nil {
-				return nil, noFileCompletion
-			}
-			candidates = list
+		scope, ok := completionScopeOf(command, projects)
+		if !ok {
+			return nil, noFileCompletion
 		}
-		ids := []string{}
-		for _, project := range candidates {
-			sessions, err := agents.List(project.ID)
+		candidates := []string{}
+		for _, project := range scope.projects {
+			registered, err := agents.List(project.ID)
 			if err != nil {
 				continue
 			}
-			for _, session := range sessions {
-				ids = append(ids, session.ID)
+			for _, session := range registered {
+				candidates = append(candidates, withDescription(session.ID, session.Label))
+			}
+			if !scope.discover {
+				continue
+			}
+			found, err := discoverProjectSessionsSince(project, stateDir, registered, time.Now().Add(-completionDiscoveryWindow))
+			if err != nil {
+				continue
+			}
+			for _, session := range found {
+				candidates = append(candidates, withDescription(session.SessionID, "discovered "+session.Provider))
 			}
 		}
-		return matching(ids, toComplete), noFileCompletion
+		return matching(candidates, toComplete), noFileCompletion
+	}
+}
+
+// completionScope is the Project set that one Agent Session completion reads.
+type completionScope struct {
+	projects []domain.Project
+	// discover permits the provider scan. It is off for the fallback that has
+	// no single Project, because one scan for each Project is too slow for a
+	// key press.
+	discover bool
+}
+
+// completionScopeOf resolves the Projects of one Agent Session completion the
+// same way the command resolves its Project: a set --project flag selects that
+// Project, and every other case uses the current Project. A command without a
+// --project flag, such as agents focus, falls back to the registered Agent
+// Sessions of every Project, so a reference still completes outside a Project
+// directory. A resolution failure gives no candidates, because a completion
+// must never report an error.
+func completionScopeOf(command *cobra.Command, projects *projectservice.Service) (completionScope, bool) {
+	flag := command.Flags().Lookup("project")
+	if flag != nil && flag.Changed {
+		project, err := resolveProject(projects, flag.Value.String())
+		if err != nil {
+			return completionScope{}, false
+		}
+		return completionScope{projects: []domain.Project{project}, discover: true}, true
+	}
+	if project, err := resolveProject(projects, currentProjectReference); err == nil {
+		return completionScope{projects: []domain.Project{project}, discover: true}, true
+	}
+	if flag != nil {
+		return completionScope{}, false
+	}
+	list, err := projects.List()
+	if err != nil {
+		return completionScope{}, false
+	}
+	return completionScope{projects: list}, true
+}
+
+// withDescription builds one completion candidate with its shell description.
+// cobra splits the value from the description at the tab.
+func withDescription(value, description string) string {
+	if description == "" {
+		return value
+	}
+	return value + "\t" + description
+}
+
+// adoptSessionCompletion completes the SESSION argument of projects adopt with
+// the tmux sessions that no Project owns.
+func adoptSessionCompletion(projects *projectservice.Service) completionFunc {
+	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, noFileCompletion
+		}
+		return matching(projects.AdoptableSessions(), toComplete), noFileCompletion
 	}
 }
 

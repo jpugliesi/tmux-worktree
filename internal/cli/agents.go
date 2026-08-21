@@ -24,7 +24,7 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsDiscoverCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsRemoveCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsResumeCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsFocusCommand(agents, projects))
+	command.AddCommand(newAgentsFocusCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentsSendCommand(agents, projects, options.StateDir))
 	command.AddCommand(newAgentTranscriptCommand(agents, projects, options.StateDir))
 	return command
@@ -107,9 +107,9 @@ func requireAgentInProject(agent domain.AgentSession, project domain.Project) er
 
 // setAgentCommandCompletion declares the AGENT_ID argument of one Agent
 // Session command with its completion and the --project flag completion.
-func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service) {
+func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service, stateDir string) {
 	setAgentIDArgument(command)
-	command.ValidArgsFunction = agentIDCompletion(agents, projects)
+	command.ValidArgsFunction = agentReferenceCompletion(agents, projects, stateDir)
 	if command.Flags().Lookup("project") != nil {
 		_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
 	}
@@ -244,7 +244,7 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	addFieldsFlag(command, agentShowOutput{})
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -264,7 +264,7 @@ func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservi
 		},
 	}
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -391,7 +391,7 @@ func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservi
 			return resumeAgentSession(command, agents, projects, stateDir, args[0], "")
 		},
 	}
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -460,7 +460,7 @@ func findAgentProject(projects *projectservice.Service, agent domain.AgentSessio
 	return project, requireAgentInProject(agent, project)
 }
 
-func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
+func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "focus AGENT_ID",
 		Short: "Focus a live Agent Session pane",
@@ -485,7 +485,7 @@ func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservic
 				func(io.Writer, string, string) error { return nil })
 		},
 	}
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 
@@ -519,7 +519,7 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
 	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
 	_ = command.MarkFlagRequired("stdin")
-	setAgentCommandCompletion(command, agents, projects)
+	setAgentCommandCompletion(command, agents, projects, stateDir)
 	return command
 }
 

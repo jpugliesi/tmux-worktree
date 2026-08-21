@@ -41,5 +41,6 @@ func newProjectsAdoptCommand(service *projectservice.Service) *cobra.Command {
 	}
 	command.Flags().StringVar(&name, "name", "", "Set the Project name. The default name is the tmux session name")
 	setArguments(command, optionalArgument("session", "the default is the tmux session of the caller"))
+	command.ValidArgsFunction = adoptSessionCompletion(service)
 	return command
 }

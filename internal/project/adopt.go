@@ -131,6 +131,24 @@ func (s *Service) findAdoptTarget(sessionReference, currentPane string) (adoptTa
 	return adoptTarget{}, clierr.New(clierr.NotFound, "tmux session %q does not exist", sessionReference)
 }
 
+// AdoptableSessions lists the names of the tmux sessions that no Project owns.
+// Shell completion of the adopt SESSION argument reads it. A tmux that gives
+// no answer, such as a machine with no server, gives no names.
+func (s *Service) AdoptableSessions() []string {
+	rows, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", "#{session_id}\t#{session_name}\t#{@twt_project_id}")...)
+	if err != nil {
+		return nil
+	}
+	names := []string{}
+	for _, row := range strings.Split(rows, "\n") {
+		target, ok := parseAdoptTarget(row)
+		if ok && target.ownerID == "" {
+			names = append(names, target.sessionName)
+		}
+	}
+	return names
+}
+
 func parseAdoptTarget(row string) (adoptTarget, bool) {
 	parts := strings.SplitN(row, "\t", 3)
 	if len(parts) < 2 || parts[0] == "" {

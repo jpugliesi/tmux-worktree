@@ -43,7 +43,7 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 		if options.Provider != "" && options.Provider != provider {
 			continue
 		}
-		found, err := s.discoverProvider(provider, project)
+		found, err := s.discoverProvider(provider, project, options.Since)
 		if err != nil {
 			return nil, err
 		}
@@ -53,9 +53,6 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 	result := make([]DiscoveredSession, 0, len(sessions))
 	for _, session := range sessions {
 		if linked[session.Provider+"\x00"+session.SessionID] {
-			continue
-		}
-		if !options.Since.IsZero() && !session.LastActivity.After(options.Since) {
 			continue
 		}
 		result = append(result, session)
@@ -69,9 +66,9 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 	return result, nil
 }
 
-func (s *Service) discoverProvider(provider string, project domain.Project) ([]DiscoveredSession, error) {
+func (s *Service) discoverProvider(provider string, project domain.Project, since time.Time) ([]DiscoveredSession, error) {
 	descriptor := providers[provider]
-	files, err := newestTranscriptFiles(descriptor.root(s))
+	files, err := newestTranscriptFiles(descriptor.root(s), since)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +106,10 @@ type transcriptFile struct {
 }
 
 // newestTranscriptFiles lists the regular JSON Lines files under root, from
-// the newest to the oldest, with a limit on the number of files.
-func newestTranscriptFiles(root string) ([]transcriptFile, error) {
+// the newest to the oldest, with a limit on the number of files. A set since
+// time drops each older file before twt reads it, because the last activity
+// time of a discovered session is the file modification time.
+func newestTranscriptFiles(root string, since time.Time) ([]transcriptFile, error) {
 	files := []transcriptFile{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if os.IsNotExist(walkErr) {
@@ -130,6 +129,9 @@ func newestTranscriptFiles(root string) ([]transcriptFile, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
+			return nil
+		}
+		if !since.IsZero() && !info.ModTime().After(since) {
 			return nil
 		}
 		files = append(files, transcriptFile{path: path, modTime: info.ModTime()})
