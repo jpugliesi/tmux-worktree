@@ -374,10 +374,10 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 
 	text := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "claude-new\tclaude\tdiscovered\t") || !strings.Contains(lines[0], "\t0m\t") {
+	if len(lines) != 2 || lines[0] != "claude\tclaude-new\t0m" {
 		t.Fatalf("newest text line = %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "agent-old\tcodex\tstopped\treview\t") || !strings.HasSuffix(lines[1], "\t2h\t"+old.Format(time.RFC3339)) {
+	if lines[1] != "codex\tagent-old\t2h" {
 		t.Fatalf("older text line = %q", lines[1])
 	}
 

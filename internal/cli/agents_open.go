@@ -119,13 +119,13 @@ func realAgentPick(projectID string) func(*cobra.Command, []string) (int, error)
 }
 
 // agentOpenPreviewCommand is the fzf --preview command. fzf runs it with a
-// shell and replaces {1} with the Agent Session ID of the highlighted line.
+// shell and replaces {2} with the Agent Session ID of the highlighted line.
 func agentOpenPreviewCommand(projectID string) string {
 	executable, err := os.Executable()
 	if err != nil {
 		executable = os.Args[0]
 	}
-	return fmt.Sprintf("%s agents open --preview --project %s --output text '{1}'", shellQuote(executable), shellQuote(projectID))
+	return fmt.Sprintf("%s agents open --preview --project %s --output text '{2}'", shellQuote(executable), shellQuote(projectID))
 }
 
 // previewAgentTranscript writes the provider transcript of one Agent Session

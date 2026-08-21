@@ -88,10 +88,10 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 	if strings.Join(pickedLines, "\n") != strings.Join(wantLines, "\n") {
 		t.Fatalf("agents open picker lines = %v, want %v", pickedLines, wantLines)
 	}
-	if !strings.HasPrefix(pickedLines[0], agentID+"\tcodex\t") {
+	if !strings.HasPrefix(pickedLines[0], "codex\t"+agentID+"\t") {
 		t.Fatalf("registered picker line = %q", pickedLines[0])
 	}
-	if !strings.HasPrefix(pickedLines[1], "claude-one\tclaude\tdiscovered\t") {
+	if !strings.HasPrefix(pickedLines[1], "claude\tclaude-one\t") {
 		t.Fatalf("discovered picker line = %q", pickedLines[1])
 	}
 	if !strings.Contains(output, "agents.resume: valid") {
@@ -129,7 +129,7 @@ func TestAgentsOpenNumberedPickerReadsTheAgentNumber(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("agents open with the numbered picker: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "1) "+agentID) || !strings.Contains(stderr.String(), "Agent Session number: ") {
+	if !strings.Contains(stderr.String(), "1) codex\t"+agentID) || !strings.Contains(stderr.String(), "Agent Session number: ") {
 		t.Fatalf("numbered picker prompt = %q", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "agents.resume: valid") {

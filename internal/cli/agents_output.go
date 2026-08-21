@@ -134,15 +134,9 @@ func sortAgentsForDisplay(outputs []agentOutput) {
 	})
 }
 
-// agentListLine writes one Agent Session list row. The age is the recency
-// used for sort. The last field is createdAt for a registered session, or
-// lastActivity for a discovered session.
+// agentListLine writes one Agent Session list row: provider, ID, and age.
 func agentListLine(output agentOutput, now time.Time) string {
-	stamp := output.CreatedAt
-	if stamp == "" {
-		stamp = output.LastActivity
-	}
-	return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", output.ID, output.Provider, output.Status, output.Label, formatAge(now.Sub(output.recency)), stamp)
+	return fmt.Sprintf("%s\t%s\t%s", output.Provider, output.ID, formatAge(now.Sub(output.recency)))
 }
 
 func boolText(value bool) string {

@@ -463,8 +463,8 @@ snapshot.
 session that ran inside a repository of the Project, and that no Agent
 Session uses, appears with status `discovered` and its provider session ID
 as `id`. The newest session comes first. Registered and discovered sessions
-share one recency order. Text output includes a short age and the created
-time, or last activity for a discovered session. The list writes nothing.
+share one recency order. Text output is provider, ID, and age. The list
+writes nothing.
 
 The first action on a discovered session adopts it: `resume`, `open`,
 `show`, `send`, and the `transcript` commands accept the provider session
