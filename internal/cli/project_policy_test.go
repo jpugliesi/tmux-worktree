@@ -495,7 +495,7 @@ func TestRenamedProjectSessionRemainsTheImmutableTmuxTarget(t *testing.T) {
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "projects", "create", "stable", "--template", "policy", "--no-open")
-	runCommand(t, "", "tmux", "-L", socket, "rename-session", "-t", "twt-stable", "display-name")
+	runCommand(t, "", "tmux", "-L", socket, "rename-session", "-t", "policy-stable", "display-name")
 	openOutput := executeWithOptions(t, options, nil, "projects", "open", "stable", "--output", "json")
 	if !strings.Contains(openOutput, `"status":"applied"`) {
 		t.Fatalf("JSON open output = %q", openOutput)

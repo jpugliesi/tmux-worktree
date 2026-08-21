@@ -282,9 +282,10 @@ Two safety rules apply to the resolved branch name:
 terminal. Use `--no-open` to never open it. `--output json` no longer implies
 no-open: a program that pipes the output gets no tmux change.
 
-`twt` names the new tmux session `twt-<project name>`, for example
-`twt-fix-auth`. The prefix makes the sessions of `twt` clear in the tmux
-session picker. If a session with that name already exists and belongs to
+`twt` names the new tmux session `<template name>-<project name>`, for
+example `everysphere-fix-auth`. The Project Template name comes first, thus
+the tmux session picker groups the sessions of one codebase together. If a
+session with that name already exists and belongs to
 something else, `twt` adds the first 8 characters of the Project ID to the
 name. The name is presentation only: `twt` finds each session through the
 tmux session ID and the `@twt_project_id` option, so you can rename a session

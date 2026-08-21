@@ -10,25 +10,20 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
-// sessionNamePrefix marks each tmux session that twt owns. The prefix makes
-// twt sessions clear in the native tmux session picker. The name is
-// presentation only: twt finds its sessions through the session ID and the
-// @twt_project_id option.
-const sessionNamePrefix = "twt-"
-
 // sessionName returns the tmux session name that twt uses for a new Project.
-func sessionName(projectName string) string {
-	if strings.HasPrefix(projectName, sessionNamePrefix) {
-		return projectName
-	}
-	return sessionNamePrefix + projectName
+// The Project Template name comes first, thus the native tmux session picker
+// groups the sessions of one codebase together. The name is presentation only:
+// twt finds its sessions through the session ID and the @twt_project_id
+// option.
+func sessionName(templateName, projectName string) string {
+	return templateName + "-" + projectName
 }
 
 func (s *Service) ensureTmux(p *domain.Project) error {
 	if len(p.Repositories) == 0 {
 		return fmt.Errorf("Project Template has no repositories")
 	}
-	name := sessionName(p.Name)
+	name := sessionName(p.TemplateName, p.Name)
 	sessionID, projectID, exists, err := s.findSession(p.ID, name)
 	if err != nil {
 		return err

@@ -284,7 +284,7 @@ func (s *Service) projectForEnvironment(name, templateName string, template doma
 	project := domain.Project{
 		Version: domain.ProjectVersion, ID: id, Name: name, TemplateName: templateName,
 		TemplateSnapshot: template, EnvironmentID: environment.ID, Status: domain.ProjectInitializing,
-		Root: environment.Root, TmuxSession: name, CreatedAt: now, UpdatedAt: now,
+		Root: environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
 	}
 	project.Steps = append(project.Steps, newStep("project_root", domain.StepProjectRoot, ""))
 	for _, repository := range environment.Repositories {

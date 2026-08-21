@@ -77,8 +77,8 @@ session:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.TmuxSession != "twt-layout-me" {
-		t.Fatalf("Project tmux session = %q, want %q", project.TmuxSession, "twt-layout-me")
+	if project.TmuxSession != "example-layout-me" {
+		t.Fatalf("Project tmux session = %q, want %q", project.TmuxSession, "example-layout-me")
 	}
 	if panes := paneCount(t, socket, project.TmuxSession, "app"); panes != 3 {
 		t.Fatalf("panes in the repository window after create = %d, want 3", panes)
@@ -94,7 +94,7 @@ session:
 	// Open makes the tmux session again, so the session command runs again.
 	t.Setenv("TMUX_PANE", "")
 	executeWithOptions(t, options, nil, "projects", "archive", project.ID)
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=twt-layout-me").Run(); err == nil {
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=example-layout-me").Run(); err == nil {
 		t.Fatal("archive kept the Project tmux session")
 	}
 	executeWithOptions(t, options, nil, "projects", "open", project.ID, "--no-attach")
