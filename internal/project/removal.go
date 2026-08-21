@@ -170,6 +170,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		// The recorded repository paths are not safe to inspect.
 		return plan, p, sessions, nil
 	}
+	baseCommits := s.recordedBaseCommits(p)
 	for _, repository := range p.Repositories {
 		if _, err := os.Stat(repository.Path); errors.Is(err, os.ErrNotExist) {
 			continue
@@ -204,6 +205,14 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 			}
 			if !exists {
 				return nil
+			}
+			if base := baseCommits[repository.Name]; base != "" {
+				tip, err := output(repository.CachePath, "git", "rev-parse", "refs/heads/"+repository.Branch)
+				if err == nil && strings.TrimSpace(tip) == base {
+					// The branch has no commits after its recorded base;
+					// removal loses no work and needs no remote check.
+					return nil
+				}
 			}
 			if opts.AllowUnpublished {
 				// The operator accepts unpublished commits; do not read the
@@ -510,4 +519,21 @@ func dirtyPaths(status string, limit int) []string {
 		}
 	}
 	return paths
+}
+
+// recordedBaseCommits maps each repository to the base commit its checkout
+// started from, when the Prepared Environment record still exists.
+func (s *Service) recordedBaseCommits(p domain.Project) map[string]string {
+	if p.EnvironmentID == "" {
+		return nil
+	}
+	environment, err := s.environments.Find(p.EnvironmentID)
+	if err != nil {
+		return nil
+	}
+	commits := make(map[string]string, len(environment.Repositories))
+	for _, repository := range environment.Repositories {
+		commits[repository.Name] = repository.BaseCommit
+	}
+	return commits
 }

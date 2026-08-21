@@ -633,3 +633,54 @@ func TestProjectsRemoveRetriesAfterPartialDataRemoval(t *testing.T) {
 		t.Fatalf("partial Project state still exists: %s", output)
 	}
 }
+
+func TestProjectsRemoveNeedsNoRemoteForABranchWithoutWork(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	t.Setenv("TMUX_PANE", "")
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: policy\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "projects", "create", "idle", "--template", "policy", "--no-open")
+	project, err := store.NewProjectStore(options.StateDir).Find("idle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeWithOptions(t, options, nil, "projects", "archive", "idle")
+
+	// The branch has no commits after its recorded base. Removal must not
+	// read the remote, so a missing origin cannot block it.
+	runCommand(t, "", "git", "-C", project.Repositories[0].CachePath, "remote", "set-url", "origin", filepath.Join(root, "missing.git"))
+	planJSON := executeWithOptions(t, options, nil, "projects", "remove", "idle", "--output", "json")
+	var removal struct {
+		Blockers []struct {
+			Code string `json:"code"`
+		} `json:"blockers"`
+	}
+	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
+		t.Fatalf("decode removal plan: %v", err)
+	}
+	if len(removal.Blockers) != 0 {
+		t.Fatalf("expected no blockers for a branch without work, got %v", removal.Blockers)
+	}
+	executeWithOptions(t, options, nil, "projects", "remove", "idle", "--apply")
+	if _, err := store.NewProjectStore(options.StateDir).Find("idle"); err == nil {
+		t.Fatal("expected the Project record to be removed")
+	}
+}
