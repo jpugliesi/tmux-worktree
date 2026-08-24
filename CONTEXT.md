@@ -6,14 +6,15 @@ combine Git repositories, tmux, and coding agents.
 ## Language
 
 **Workspace Template**:
-A reusable declaration of the repositories and initialization that a new
-Workspace needs.
+A reusable declaration of one or more Repository Specifications and the
+initialization that a new Workspace needs.
 _Avoid_: Project template, change template
 
 **Workspace**:
 A temporary, resumable place for work on zero or more Tickets from one
-Project. A Workspace owns its checkout leases, tmux session, and Agent
-Sessions.
+Project. It owns its tmux session and Agent Sessions and, when created from a
+Workspace Template, one Checkout Lease for each Repository Specification; an
+adopted Workspace can have no Checkout Leases.
 _Avoid_: Project, session, workdir
 
 **Repository Specification**:
