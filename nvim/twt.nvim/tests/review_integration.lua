@@ -12,6 +12,7 @@ end
 
 local current = tmux({ "new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "review-test", "--", "cat" })
 local target = tmux({ "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", current, "--", "cat" })
+tmux({ "new-session", "-d", "-s", "unrelated-test", "--", "cat" })
 local server_live = true
 vim.api.nvim_create_autocmd("VimLeavePre", {
   callback = function()
@@ -32,6 +33,14 @@ require("twt").setup({
     vim.system(command, { stdin = opts.stdin, text = true }, vim.schedule_wrap(done))
   end,
 })
+
+local listed
+require("twt.tmux").list(function(err, panes)
+  assert(err == nil, err)
+  listed = panes
+end)
+assert(vim.wait(5000, function() return listed ~= nil end), "tmux pane list timed out")
+assert(#listed == 1 and listed[1].id == target, vim.inspect(listed))
 
 local root = vim.fn.tempname()
 assert(vim.fn.mkdir(root, "p") == 1)

@@ -583,6 +583,7 @@ test("lists safe tmux pane targets and sends with a private bracketed buffer", f
     tmux_runner = function(argv, opts, done)
       tmux_calls[#tmux_calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin }
       if argv[2] == "list-panes" then
+        assert(vim.deep_equal(vim.list_slice(argv, 2, 5), { "list-panes", "-s", "-t", "%1" }), vim.inspect(argv))
         local separator = string.char(31)
         done({ code = 0, stdout = table.concat({
           table.concat({ "%1", "dev:0.0", "zsh", "/work/current", "0" }, separator),

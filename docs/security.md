@@ -83,8 +83,9 @@ text.
 The Neovim plug-in can send a Review Batch directly to a tmux pane without
 using `twt`. This path has these limits:
 
-- It lists live panes, removes the current pane, and accepts only a pane ID
-  that matches `%<number>`. A display label never becomes a tmux target.
+- It lists live panes only in the current tmux session, removes the current
+  pane, and accepts only a pane ID that matches `%<number>`. A display label
+  never becomes a tmux target.
 - It loads review text through standard input into a unique tmux buffer. It
   requests bracketed paste, deletes the buffer after paste, and then sends
   Enter. A failure keeps the Review Notes and does not try another target.

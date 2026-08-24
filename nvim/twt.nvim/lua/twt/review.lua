@@ -267,7 +267,7 @@ function M.send(done)
   local clear_after = config.get().clear_after_send
   start_delivery(done, function(text, finish)
     agents.send(text, function(err, result)
-      finish(err, result, clear_after)
+      finish(err, result, clear_after and not (result and result.canceled))
     end)
   end)
 end

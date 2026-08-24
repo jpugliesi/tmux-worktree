@@ -62,7 +62,7 @@ function M.list(done)
     "#{pane_current_path}",
     "#{pane_dead}",
   }, separator)
-  request({ "list-panes", "-a", "-F", format }, nil, function(err, output)
+  request({ "list-panes", "-s", "-t", vim.env.TMUX_PANE, "-F", format }, nil, function(err, output)
     if err then
       done("could not list tmux panes: " .. err)
       return

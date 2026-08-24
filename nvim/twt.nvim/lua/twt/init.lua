@@ -27,7 +27,7 @@ local specs = {
   },
   {
     cmd = "TwtNote",
-    lhs = "<leader>an",
+    lhs = { "<leader>an", "<leader>arn" },
     modes = { "n", "v" },
     desc = "Add or open a review note",
     ok = "review note saved",
@@ -42,7 +42,7 @@ local specs = {
   {
     cmd = "TwtReviewAgent",
     lhs = "<leader>ara",
-    desc = "Send review notes to the selected twt Agent Session",
+    desc = "Send review notes to a twt Agent Session",
     ok = "review notes sent",
     fn = function(done) M.review.send(done) end,
   },
@@ -114,6 +114,8 @@ local function runner(spec)
         report(nil, result)
       elseif type(result) == "table" and result.message then
         report(nil, result.message)
+      elseif type(result) == "table" and result.canceled then
+        return
       elseif spec.ok then
         report(nil, spec.ok)
       end

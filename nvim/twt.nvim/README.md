@@ -32,11 +32,12 @@ Snacks options that show a preview.
 | --- | --- |
 | `<leader>arp` | Select an Agent Session and open its Agent Preview |
 | `<leader>an` | Add a review note, or open the note on this line |
+| `<leader>arn` | Add a review note, or open the note on this line |
 | `<leader>ad` | Delete the review note on this line |
 | `<leader>al` | List the Review Notes in this Neovim session |
 | `<leader>arl` | List the Review Notes in this Neovim session |
-| `<leader>arr` | Deliver the Review Batch to a tmux pane or the clipboard |
-| `<leader>ara` | Send the Review Batch to the selected Agent Session |
+| `<leader>arr` | Deliver the Review Batch to a pane in the current tmux session or to the clipboard |
+| `<leader>ara` | Send the Review Batch to an Agent Session in the current Workspace |
 | `<leader>ary` | Yank the Review Batch to the clipboard |
 | `<leader>art` | Send the Review Batch to a tmux pane |
 | `<leader>ars` | Write free text in a window and send it |
@@ -68,7 +69,7 @@ available:
 | `:TwtNote` | Add a review note, or open the note on this line |
 | `:TwtNoteDelete` | Delete the review note on this line |
 | `:TwtReview` | Deliver the Review Batch to a tmux pane or the clipboard |
-| `:TwtReviewAgent` | Send the Review Batch to the selected Agent Session |
+| `:TwtReviewAgent` | Send the Review Batch to an Agent Session in the current Workspace |
 | `:TwtReviewCopy` | Copy the Review Batch to the clipboard |
 | `:TwtReviewPane` | Send the Review Batch to a tmux pane |
 | `:TwtSend` | Write free text in a window and send it |
@@ -102,19 +103,20 @@ lines, and the note comment. Select a note, then select `Open`, `Delete`, or
 `Go to the line`. `Open` moves to the line and opens the note window with the
 current comment.
 
-`<leader>an` on a line that already has a note opens that note. Save updates
-the comment. Press `<C-d>` in that window to delete the note. Clear the
-comment and press `<C-s>` to delete it. `<leader>ad` deletes the note on
-this line without opening the window. A line with more than one note asks
-which note to open or delete. `<leader>arx` asks `Are you sure you want to
+`<leader>an` and `<leader>arn` on a line that already has a note open that
+note. Save updates the comment. Press `<C-d>` in that window to delete the
+note. Clear the comment and press `<C-s>` to delete it. `<leader>ad` deletes
+the note on this line without opening the window. A line with more than one
+note asks which note to open or delete. `<leader>arx` asks `Are you sure you want to
 clear all review notes?` before it clears the session batch.
 
-`<leader>arr` uses no `twt` command. In tmux, it lists all live panes except
-the current pane and adds Clipboard as a destination. Each pane label shows
-the session and window, pane ID, current command, and current path. Outside
-tmux, it copies the batch immediately. `<leader>art` always asks for a tmux
-pane. `<leader>ary` always yanks to the clipboard. A canceled
-picker keeps the batch and shows no success message.
+`<leader>arr` uses no `twt` command. In tmux, it lists the live panes in the
+current tmux session, except the current pane. It also adds Clipboard as a
+destination. Each pane label shows the session and window, pane ID, current
+command, and current path. It does not list panes from other tmux sessions.
+Outside tmux, it copies the batch immediately. `<leader>art` always asks for a
+tmux pane. `<leader>ary` always yanks to the clipboard. A canceled picker keeps
+the batch and shows no success message.
 
 Direct pane delivery loads the Review Batch through standard input, requests
 a bracketed paste, and submits it with Enter. A confirmed pane or Agent send
@@ -125,6 +127,12 @@ uncertain send also keeps them. The plug-in does not retry a send.
 Select pane targets carefully. If the selected program does not support
 bracketed paste, pasted line breaks can become input. A shell pane can run that
 input. See [the security guide](../../docs/security.md#direct-neovim-pane-delivery).
+
+`<leader>ara` keeps a selected Agent Session when it can send or resume. If
+there is no valid selection, the plug-in uses the only live Agent Session that
+can receive feedback. If there is more than one, it shows a Workspace-only
+send picker. This picker does not open an Agent Preview or write a Transcript
+Snapshot. A canceled picker keeps the Review Batch.
 
 If the selected Agent Session is not live, but it can resume, a send asks you
 first: `The Agent Session is not live. Resume and send?`. Answer yes to resume
@@ -217,8 +225,9 @@ Agent Preview in a scratch buffer. `refresh` requires a transcript and gives
 canceled text window gives no answer, so `prompt_add` and `prompt_send` show
 nothing after `q`.
 
-`review.deliver` is the `twt`-independent route. `review.send` keeps its prior
-meaning: it sends to the selected Agent Session through `twt`.
+`review.deliver` is the `twt`-independent route. `review.send` sends through
+`twt`. It selects a live send target when the Workspace has no valid prior
+selection.
 
 `setup` accepts a `confirm` function for the resume question and for clearing
 review notes. It also accepts clipboard and tmux adapters for custom setups or

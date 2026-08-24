@@ -71,14 +71,15 @@ function M.status()
   return { label = entry.label, live = entry.live }
 end
 
-local function list_for(context, directory, done)
+local function list_for(context, directory, done, limit)
+  limit = limit == nil and config.get().max_agents or limit
   client.request({
     "agents",
     "list",
     "--workspace",
     context.workspace.id,
     "--limit",
-    tostring(config.get().max_agents),
+    tostring(limit),
   }, { cwd = directory }, function(err, result)
     if err then
       done(err)
@@ -342,17 +343,86 @@ local function send_now(agent, workspace_id, directory, text, done)
   record.sending = true
   client.request({ "agents", "send", agent.id, "--workspace", workspace_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
     record.sending = nil
-    if not send_err then notify_refresh() end
+    if not send_err then
+      local selected_id = result and result.agentId
+      if type(selected_id) == "string" and selected_id ~= "" then
+        record.selected_id = selected_id
+        record.agents[selected_id] = { label = agent.label, live = true }
+      end
+      notify_refresh()
+    end
     done(send_err, result)
   end)
 end
 
-local function send_text(text, done, expected)
-  with_selected(function(err, agent, context, directory)
+local function send_picker(agents, done)
+  local prefixes = unique_prefixes(agents)
+  config.get().select(agents, {
+    prompt = "Select a twt Agent Session",
+    kind = "twt_agent_send",
+    format_item = function(agent) return picker_label(agent, prefixes) end,
+  }, function(agent)
+    done(agent)
+  end)
+end
+
+local function send_target(agent, context, directory)
+  return { agent = agent, context = context, directory = directory }
+end
+
+local function with_send_target(done, expected)
+  client.workspace_context(function(err, context, directory)
     if err then
       done(err)
       return
     end
+    if expected and context.workspace.id ~= expected.workspace_id then
+      done("the current buffer changed to a different Workspace")
+      return
+    end
+    -- The preview picker can have a display limit. A send must resolve the
+    -- complete Agent Session list before it decides that one target is unique.
+    list_for(context, directory, function(list_err, agents)
+      if list_err then
+        done(list_err)
+        return
+      end
+      local selected_id = workspace(context.workspace.id).selected_id
+      for _, agent in ipairs(agents) do
+        if agent.id == selected_id and (can(agent, "canSend") or can(agent, "canResume")) then
+          done(nil, send_target(agent, context, directory))
+          return
+        end
+      end
+      local sendable = {}
+      for _, agent in ipairs(agents) do
+        if can(agent, "canSend") then sendable[#sendable + 1] = agent end
+      end
+      if #sendable == 0 then
+        done("this Workspace has no live Agent Session that can receive feedback")
+      elseif #sendable == 1 then
+        done(nil, send_target(sendable[1], context, directory))
+      else
+        send_picker(sendable, function(agent)
+          if not agent then done(nil, { canceled = true }); return end
+          done(nil, send_target(agent, context, directory))
+        end)
+      end
+    end, 0)
+  end, expected and expected.directory or nil)
+end
+
+local function send_text(text, done, expected)
+  with_send_target(function(err, target)
+    if target and target.canceled then
+      done(nil, target)
+      return
+    end
+    if err then
+      done(err)
+      return
+    end
+    local agent, context, directory = target.agent, target.context, target.directory
     local workspace_id = context.workspace.id
     if can(agent, "canSend") then
       send_now(agent, workspace_id, directory, text, done)
