@@ -107,6 +107,7 @@ func (s WorkspaceStore) loadPath(path string) (domain.Workspace, error) {
 	if err := json.Unmarshal(data, &workspace); err != nil {
 		return domain.Workspace{}, fmt.Errorf("decode Workspace state %q: %w", path, err)
 	}
+	normalizeLegacySetupSteps(workspace.Steps)
 	if workspace.Version != domain.WorkspaceVersion {
 		return domain.Workspace{}, fmt.Errorf("Workspace %q uses unsupported state version %d", workspace.Name, workspace.Version)
 	}

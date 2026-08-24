@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -77,6 +78,9 @@ func (w *Workspace) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*w = Workspace(value.workspaceJSON)
+	if value.Ticket != "" && len(w.Tickets) > 0 && (len(w.Tickets) != 1 || w.Tickets[0] != value.Ticket) {
+		return fmt.Errorf("Workspace has conflicting ticket and tickets values")
+	}
 	if len(w.Tickets) == 0 && value.Ticket != "" {
 		w.Tickets = []string{value.Ticket}
 	}

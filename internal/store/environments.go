@@ -122,6 +122,10 @@ func (s EnvironmentStore) loadPath(path string) (domain.PreparedEnvironment, err
 	if err := requireJSONEnd(decoder); err != nil {
 		return domain.PreparedEnvironment{}, fmt.Errorf("decode Prepared Environment state %q: %w", path, err)
 	}
+	normalizeLegacySetupSteps(environment.Steps)
+	if environment.ClaimReservation != nil {
+		normalizeLegacySetupSteps(environment.ClaimReservation.Workspace.Steps)
+	}
 	if environment.ID != filenameID(path) {
 		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment state file %q contains ID %q", path, environment.ID)
 	}

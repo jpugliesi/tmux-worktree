@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +175,84 @@ func TestEnvironmentStoreLoadsALegacyWorkspaceClaim(t *testing.T) {
 	}
 	if got.ClaimReservation == nil || got.ClaimReservation.Workspace.ID != "legacy-workspace" {
 		t.Fatalf("legacy claim = %+v", got.ClaimReservation)
+	}
+}
+
+func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
+	stateDir := t.TempDir()
+	environments := NewEnvironmentStore(stateDir)
+	environment := testEnvironment("legacy-steps", time.Now().UTC())
+	environment.Steps = []domain.SetupStep{{
+		ID: "environment_root", Kind: domain.StepKind("project_root"),
+		Status: domain.StepSucceeded, Attempts: 1,
+	}}
+	environment.Status = domain.EnvironmentClaiming
+	environment.ClaimReservation = &domain.EnvironmentClaim{
+		Workspace: domain.Workspace{
+			Version: domain.WorkspaceVersion, ID: "legacy-workspace",
+			EnvironmentID: environment.ID, Name: "auth-fix",
+			TemplateName: environment.TemplateName, Status: domain.WorkspaceSetupFailed,
+			Steps: []domain.SetupStep{
+				{ID: "project_root", Kind: domain.StepKind("project_root"), Status: domain.StepSucceeded, Attempts: 1},
+				{ID: "project_init", Kind: domain.StepKind("project_init"), Status: domain.StepFailed, Attempts: 2, Error: "stopped"},
+			},
+		},
+		ReservedAt: time.Now().UTC(),
+	}
+	raw, err := json.MarshalIndent(environment, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyKey := []byte(`"workspace":`)
+	if bytes.Count(raw, legacyKey) != 1 {
+		t.Fatalf("current fixture has %d Workspace claim keys", bytes.Count(raw, legacyKey))
+	}
+	raw = bytes.Replace(raw, legacyKey, []byte(`"project":`), 1)
+	raw = append(raw, '\n')
+	directory := filepath.Join(stateDir, "environments")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, environment.ID+".json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := environments.Find(environment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Steps[0].ID != "environment_root" || got.Steps[0].Kind != domain.StepWorkspaceRoot {
+		t.Fatalf("legacy Environment root step = %+v", got.Steps[0])
+	}
+	claimSteps := got.ClaimReservation.Workspace.Steps
+	if claimSteps[0].ID != "workspace_root" || claimSteps[0].Kind != domain.StepWorkspaceRoot {
+		t.Fatalf("legacy claim root step = %+v", claimSteps[0])
+	}
+	if claimSteps[1].ID != "workspace_init" || claimSteps[1].Kind != domain.StepWorkspaceInit ||
+		claimSteps[1].Status != domain.StepFailed || claimSteps[1].Attempts != 2 || claimSteps[1].Error != "stopped" {
+		t.Fatalf("legacy claim initialization step = %+v", claimSteps[1])
+	}
+	unchanged, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(unchanged) != string(raw) {
+		t.Fatal("loading the legacy Prepared Environment changed its state file")
+	}
+
+	if err := environments.Save(got); err != nil {
+		t.Fatal(err)
+	}
+	rewritten, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rewritten), `"project_root"`) || strings.Contains(string(rewritten), `"project_init"`) {
+		t.Fatalf("saved Prepared Environment keeps legacy setup-step names:\n%s", rewritten)
+	}
+	if strings.Contains(string(rewritten), `"project":`) || !strings.Contains(string(rewritten), `"workspace":`) {
+		t.Fatalf("saved Prepared Environment keeps the legacy claim key:\n%s", rewritten)
 	}
 }
 
