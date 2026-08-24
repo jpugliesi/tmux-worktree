@@ -156,7 +156,7 @@ func TestRootHelpGroupsCommandsAndShowsAWorkingExample(t *testing.T) {
 		"Automation:",
 		"twt tickets ls --ready",
 		"twt tickets claim fix-auth-tokens",
-		"twt start fix-auth-tokens",
+		"twt next fix-auth-tokens",
 		"twt tickets close fix-auth-tokens",
 		"twt done",
 	} {
@@ -182,8 +182,8 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 	}
 }
 
-func TestQuickCreateHelpExplainsTheWorkspaceChange(t *testing.T) {
-	output, err := execute(t, t.TempDir(), "start", "--help")
+func TestNextHelpExplainsTheWorkspaceChange(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "next", "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,11 +192,11 @@ func TestQuickCreateHelpExplainsTheWorkspaceChange(t *testing.T) {
 		"switches the calling client",
 		"archives the old Workspace",
 		"interactive Ticket picker",
-		"twt start fix-auth",
-		"twt workspaces create",
+		"twt next fix-auth",
+		"twt create",
 	} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("quick create help does not contain %q:\n%s", want, output)
+			t.Fatalf("next help does not contain %q:\n%s", want, output)
 		}
 	}
 }

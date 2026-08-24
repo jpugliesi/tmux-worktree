@@ -46,7 +46,7 @@ or the config file path.
 
 `twt` completes command names, Workspace Template names, Workspace names, Ticket
 slugs, Agent Session IDs, Prepared Environment IDs, and the values of
-`--template`, `--workspace`, `--provider`, and `--output`. `twt start` and
+`--template`, `--workspace`, `--provider`, and `--output`. `twt next` and
 `twt tickets start` offer Ticket slugs:
 
 ```sh
@@ -255,8 +255,10 @@ its record, and `twt workspaces setup retry WORKSPACE` runs the step again.
 Create and open a Workspace:
 
 ```sh
-twt workspaces create fix-auth --template everysphere
+twt create fix-auth --template everysphere
 ```
+
+`twt create` is the short form of `twt workspaces create`.
 
 Without `--template`, `twt` selects the only Workspace Template, or the
 Workspace Template of the last successful creation. If neither rule applies, the
@@ -316,7 +318,7 @@ From the Workspace tmux session, create the next Workspace and archive the curre
 Workspace:
 
 ```sh
-twt start fix-logout
+twt next fix-logout
 ```
 
 Omit the name to pick an open Ticket. twt uses `fzf` when `fzf` is
@@ -325,8 +327,8 @@ claim those Tickets and link the new Workspace to them. If no Tickets exist,
 twt asks for a Workspace name:
 
 ```sh
-twt start
-twt start fix-auth-tokens add-auth-tests
+twt next
+twt next fix-auth-tokens add-auth-tests
 ```
 
 The command uses the latest saved version of the same Workspace Template. It
@@ -334,16 +336,16 @@ claims a matching Prepared Environment, switches the calling tmux client to
 the new Workspace, and archives `fix-auth`. Other tmux clients do not switch.
 Preparation of the replacement environment continues in the background.
 
-`twt start` finds the current Workspace from the current directory, the
-`TWT_WORKSPACE_ID` value, or the current tmux pane. The tmux client switch
-needs `TMUX_PANE`. From a plain shell inside a worktree, `twt start` uses
-the Workspace Template of the current Workspace, creates the new Workspace, attaches
-its session, and keeps the current Workspace active.
+`twt next` finds the current Workspace from the current directory, the
+`TWT_WORKSPACE_ID` value, or the current tmux pane. A real run must be inside
+the tmux session of that Workspace because the switch needs `TMUX_PANE`.
+Use `twt create` from a plain shell or when the current Workspace must stay
+active.
 
 If creation or setup fails, the current Workspace stays active. `twt` keeps a
 Workspace that has a setup failure. You can inspect it and run
-`twt workspaces setup retry WORKSPACE`. If the tmux switch fails, `twt` archives
-the new Workspace and keeps the current Workspace active.
+`twt workspaces setup retry WORKSPACE`. If the tmux switch fails, `twt` keeps
+both the new Workspace and the current Workspace active.
 
 Switch the tmux client to a different Workspace:
 
@@ -362,7 +364,7 @@ The short commands are for a person in tmux. For a script or coding agent, use
 the explicit JSON commands:
 
 ```sh
-twt workspaces create fix-logout \
+twt create fix-logout \
   --template everysphere \
   --no-open \
   --dry-run \
@@ -862,7 +864,7 @@ twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 
-`twt start` with no name is the daily loop in a terminal. It opens a Ticket
+`twt next` with no name is the daily loop in a terminal. It opens a Ticket
 picker when open Tickets exist, then claims the selected Ticket and starts
 its Workspace. `tickets start TICKET...` uses the same claim flow for one or
 more Tickets. All Tickets must be open and belong to one Project. The
@@ -1034,7 +1036,7 @@ Validate a mutation without a state, Git, or tmux change. Every mutation
 accepts `--dry-run`:
 
 ```sh
-twt workspaces create fix-auth \
+twt create fix-auth \
   --template everysphere \
   --no-open \
   --dry-run \

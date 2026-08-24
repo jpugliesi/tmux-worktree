@@ -287,7 +287,7 @@ func TestEmptyListsGiveAStderrHintInTextMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stdout != "" || !strings.Contains(stderr, "twt workspaces create NAME") {
+	if stdout != "" || !strings.Contains(stderr, "twt create NAME") {
 		t.Fatalf("empty workspaces list stdout = %q, stderr = %q", stdout, stderr)
 	}
 	stdout, stderr, err = executeCollectingOutput(t, options, "templates", "list", "--output", "json")

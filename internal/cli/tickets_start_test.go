@@ -50,6 +50,22 @@ func ticketsStartFixture(t *testing.T) (cli.Options, string) {
 	return options, home
 }
 
+// enterCurrentWorkspaceForNext creates a Workspace and gives the test a tmux
+// client in its session. The caller controls the switch and archive hooks.
+func enterCurrentWorkspaceForNext(t *testing.T, options cli.Options) domain.Workspace {
+	t.Helper()
+	executeWithOptions(t, options, nil, "create", "current", "--template", "example", "--no-open")
+	current, err := store.NewWorkspaceStore(options.StateDir).Find("current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=example-current", "-F", "#{pane_id}")
+	t.Setenv("TMUX_PANE", pane)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	attachControlClient(t, options.TmuxSocket, current.TmuxSession)
+	return current
+}
+
 func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	options, home := ticketsStartFixture(t)
 	t.Setenv("TMUX_PANE", "")
@@ -181,17 +197,17 @@ func TestApplyWorkspacesCreateLinksTickets(t *testing.T) {
 	}
 }
 
-func TestStartAcceptsManyTicketSlugs(t *testing.T) {
+func TestNextAcceptsManyTicketSlugs(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
-	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_WORKSPACE_ID", "")
+	enterCurrentWorkspaceForNext(t, options)
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
 	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+	options.QuickCreateArchive = func(_, _, _ string) error { return nil }
 
-	executeWithOptions(t, options, nil, "start", "fix-auth", "add-auth-tests", "--as", "tester")
+	executeWithOptions(t, options, nil, "next", "fix-auth", "add-auth-tests", "--as", "tester")
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth")
 	if err != nil {
 		t.Fatal(err)
@@ -303,20 +319,19 @@ func TestTicketsStartCompletesTicketSlugs(t *testing.T) {
 	}
 }
 
-func TestStartCompletesTicketSlugs(t *testing.T) {
+func TestNextCompletesTicketSlugs(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
-	candidates := completeArgs(t, options, "start", "")
+	candidates := completeArgs(t, options, "next", "")
 	if len(candidates) != 1 || candidates[0] != "fix-auth-tokens" {
-		t.Fatalf("start completion = %q", candidates)
+		t.Fatalf("next completion = %q", candidates)
 	}
 }
 
-func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
+func TestNextPickerClaimsTheSelectedTicket(t *testing.T) {
 	options, home := ticketsStartFixture(t)
-	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_WORKSPACE_ID", "")
+	enterCurrentWorkspaceForNext(t, options)
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
@@ -332,26 +347,27 @@ func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
 		switched = append(switched, session)
 		return nil
 	}
+	options.QuickCreateArchive = func(_, _, _ string) error { return nil }
 
-	output := executeWithOptions(t, options, nil, "start", "--as", "tester")
+	output := executeWithOptions(t, options, nil, "next", "--as", "tester")
 	if len(pickedLines) != 1 {
-		t.Fatalf("start picker lines = %v", pickedLines)
+		t.Fatalf("next picker lines = %v", pickedLines)
 	}
 	if !strings.HasPrefix(pickedLines[0], "fix-auth-tokens\t") {
-		t.Fatalf("start picker line = %q", pickedLines[0])
+		t.Fatalf("next picker line = %q", pickedLines[0])
 	}
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
-		t.Fatalf("start picker output has no claim: %q", output)
+		t.Fatalf("next picker output has no claim: %q", output)
 	}
 	if !strings.Contains(output, `Created Workspace "fix-auth-tokens"`) {
-		t.Fatalf("start picker output has no create: %q", output)
+		t.Fatalf("next picker output has no create: %q", output)
 	}
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
 	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
-		t.Fatalf("Workspace after start picker: %+v error=%v", workspace, err)
+		t.Fatalf("Workspace after next picker: %+v error=%v", workspace, err)
 	}
 	if len(switched) != 1 || switched[0] != workspace.TmuxSession {
-		t.Fatalf("start picker switch events = %v", switched)
+		t.Fatalf("next picker switch events = %v", switched)
 	}
 	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
 	if !strings.Contains(content, "tester") {
@@ -359,38 +375,43 @@ func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
 	}
 }
 
-func TestStartNumberedPickerReadsTheTicketNumber(t *testing.T) {
+func TestNextNumberedPickerReadsTheTicketNumber(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
-	t.Setenv("PATH", "")
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "create", "current", "--template", "example", "--no-open")
+	current, err := store.NewWorkspaceStore(options.StateDir).Find("current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", current.ID)
+	t.Setenv("PATH", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
-	output := executeWithOptions(t, options, strings.NewReader("1\n"), "start", "--as", "tester", "--dry-run")
-	if !strings.Contains(output, "tickets.claim: valid") || !strings.Contains(output, "workspaces.quick_create: valid") {
-		t.Fatalf("start numbered picker dry-run output = %q", output)
+	output := executeWithOptions(t, options, strings.NewReader("1\n"), "next", "--as", "tester", "--dry-run")
+	if !strings.Contains(output, "tickets.claim: valid") || !strings.Contains(output, "workspaces.next: valid") {
+		t.Fatalf("next numbered picker dry-run output = %q", output)
 	}
 	if _, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens"); err == nil {
-		t.Fatal("start numbered picker dry-run created a Workspace")
+		t.Fatal("next numbered picker dry-run created a Workspace")
 	}
 }
 
-func TestStartWithATicketSlugClaimsTheTicket(t *testing.T) {
+func TestNextWithATicketSlugClaimsTheTicket(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
-	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_WORKSPACE_ID", "")
+	enterCurrentWorkspaceForNext(t, options)
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 	options.QuickCreateSwitch = func(_ string, _ string) error { return nil }
+	options.QuickCreateArchive = func(_, _, _ string) error { return nil }
 
-	output := executeWithOptions(t, options, nil, "start", "fix-auth-tokens", "--as", "tester")
+	output := executeWithOptions(t, options, nil, "next", "fix-auth-tokens", "--as", "tester")
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
-		t.Fatalf("start with a Ticket slug has no claim: %q", output)
+		t.Fatalf("next with a Ticket slug has no claim: %q", output)
 	}
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
 	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
-		t.Fatalf("Workspace after start with a Ticket slug: %+v error=%v", workspace, err)
+		t.Fatalf("Workspace after next with a Ticket slug: %+v error=%v", workspace, err)
 	}
 }

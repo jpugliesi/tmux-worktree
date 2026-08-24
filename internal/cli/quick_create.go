@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// quickCreateRequest describes one quick-create run. Both twt start and twt
+// quickCreateRequest describes one quick-create run. Both twt next and twt
 // tickets start use the same flow.
 type quickCreateRequest struct {
 	// Name is the new Workspace name. An empty value asks for it in an
@@ -37,21 +37,22 @@ type quickCreateRequest struct {
 	Project string
 }
 
-func newQuickCreateCommand(options Options) *cobra.Command {
+func newNextCommand(options Options) *cobra.Command {
 	var templateName string
-	var keepCurrent bool
 	var noFetch bool
 	var branch string
 	var as string
 	command := &cobra.Command{
-		Use:     "start [NAME|TICKET...]",
-		Short:   "Start a Workspace and archive the current Workspace",
+		Use:     "next [NAME|TICKET...]",
+		Short:   "Create the next Workspace and archive the current Workspace",
 		Args:    func(_ *cobra.Command, _ []string) error { return nil },
 		PreRunE: refuseJSONQuickCreate,
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := requireNextContext(command, options); err != nil {
+				return err
+			}
 			request := quickCreateRequest{
 				TemplateName: templateName,
-				KeepCurrent:  keepCurrent,
 				NoFetch:      noFetch,
 				Branch:       branch,
 			}
@@ -65,24 +66,45 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 			if len(args) == 1 {
 				request.Name = args[0]
 			}
-			return runStart(command, options, request, as)
+			return runNext(command, options, request, as)
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
-	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Workspace and keep the current Workspace active")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
-	command.Flags().StringVar(&as, "as", "", "Set the claimant name when start claims a Ticket")
+	command.Flags().StringVar(&as, "as", "", "Set the claimant name when next claims a Ticket")
 	setArguments(command, variadicArgument("name_or_ticket", false, "one value can be a Workspace name or Ticket slug; many values must be Ticket slugs from one Project"))
 	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
 
-// runStart starts a Workspace. A Ticket slug claims that Ticket first. With no
+// requireNextContext checks the context before next claims a Ticket or creates
+// a Workspace. A real next run needs the current Workspace tmux pane because
+// it moves that client before it archives the Workspace.
+func requireNextContext(command *cobra.Command, options Options) error {
+	directory, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	currentPane := os.Getenv("TMUX_PANE")
+	_, err = options.workspaceService().CurrentForQuickCreate(directory, workspaceIDFromEnvironment(), currentPane)
+	if errors.Is(err, workspaceservice.ErrNotInWorkspace) {
+		return invalidUsage(command, "no current Workspace; use 'twt create NAME' to create one")
+	}
+	if err != nil {
+		return err
+	}
+	if currentPane == "" && !isDryRun(command) {
+		return invalidUsage(command, "next must run inside the current Workspace tmux session")
+	}
+	return nil
+}
+
+// runNext creates the next Workspace. A Ticket slug claims that Ticket first. With no
 // name and at least one open Ticket, it shows the Ticket picker. With no
 // Tickets it asks for a Workspace name.
-func runStart(command *cobra.Command, options Options, request quickCreateRequest, as string) error {
+func runNext(command *cobra.Command, options Options, request quickCreateRequest, as string) error {
 	name := strings.TrimSpace(request.Name)
 	if name != "" {
 		ticket, ok, err := resolveStartTicket(options, name)
@@ -173,7 +195,7 @@ func pickStartTicket(command *cobra.Command, options Options, tickets []domain.T
 func realTicketPick(command *cobra.Command, lines []string) (int, error) {
 	return pickLine(command, lines, pickOptions{
 		Noun:        "Ticket",
-		MissingHint: "missing Ticket; use 'twt start NAME' or 'twt tickets start TICKET' in a script",
+		MissingHint: "missing Ticket; use 'twt next NAME' or 'twt tickets start TICKET' in a script",
 		FzfArgs: []string{
 			"--delimiter", "\t",
 			"--preview", ticketStartPreviewCommand(),
@@ -196,7 +218,7 @@ func ticketStartPreviewCommand() string {
 // starts. The flow moves the calling tmux client, so it is interactive.
 func refuseJSONQuickCreate(command *cobra.Command, _ []string) error {
 	if WantsJSON(command) {
-		return invalidUsage(command, "quick create uses interactive text output; use 'twt workspaces create' for JSON automation")
+		return invalidUsage(command, "next uses interactive text output; use 'twt create' for JSON automation")
 	}
 	return nil
 }
@@ -258,7 +280,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		if err := validateCreate(options, service, name, selected, template, createOptions); err != nil {
 			return err
 		}
-		return writeMutation(command, "workspaces.quick_create", statusValid, "", name)
+		return writeMutation(command, "workspaces.next", statusValid, "", name)
 	}
 
 	created, err := createWorkspace(command, options, name, selected, template, createOptions)
@@ -311,7 +333,7 @@ func quickCreateSwitchFailure(created domain.Workspace, cause error) error {
 
 func quickCreateName(command *cobra.Command) (string, error) {
 	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Workspace name; use 'twt start NAME' in a script")
+		return "", invalidUsage(command, "missing Workspace name; use 'twt next NAME' in a script")
 	}
 	if _, err := fmt.Fprint(command.ErrOrStderr(), "Workspace name: "); err != nil {
 		return "", err

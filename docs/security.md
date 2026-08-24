@@ -101,15 +101,15 @@ An interactive path opens only for a person at a terminal:
   require a terminal on standard output, and they reject the null device.
   `--project` never creates a Project. A new Project from the wizard is created
   only after confirm, and only for a name that passes resource-name rules.
-- `twt workspaces create` and `twt workspaces open` attach the tmux session only
+- `twt create` and `twt workspaces open` attach the tmux session only
   when standard output is a terminal. `--no-open` and `--no-attach` state
   the same intention for a script.
 - `twt tickets claim` and `twt tickets unclaim` never default the claimant
   outside a terminal: a non-interactive call must pass `--as NAME`, so two
   agents cannot both hold one Ticket as the same OS user.
 
-`twt start` and `twt switch` are the two commands for a person in tmux: they
-move the calling client. An agent uses `twt workspaces create` and
+`twt next` and `twt switch` are the two commands for a person in tmux: they
+move the calling client. An agent uses `twt create` and
 `twt workspaces archive` instead, with explicit names, a dry run, and JSON
 output.
 

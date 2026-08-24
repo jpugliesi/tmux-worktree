@@ -269,8 +269,8 @@ repository, and a set of resumable coding Agent Sessions.`,
   twt tickets ls --ready
   twt tickets claim fix-auth-tokens
 
-  # Start the Workspace and work in it.
-  twt start fix-auth-tokens
+  # Create the next Workspace and work in it.
+  twt next fix-auth-tokens
   twt agents ls
 
   # Close the ticket and remove the Workspace.
@@ -314,8 +314,10 @@ repository, and a set of resumable coding Agent Sessions.`,
 	workspaces.GroupID = "workflows"
 	projects := newProjectsCommand(options)
 	projects.GroupID = "workflows"
-	quickCreate := newQuickCreateCommand(options)
-	quickCreate.GroupID = "workflows"
+	create := newWorkspacesCreateCommand(options, options.workspaceService())
+	create.GroupID = "workflows"
+	next := newNextCommand(options)
+	next.GroupID = "workflows"
 	switchCommand := newSwitchCommand(options)
 	switchCommand.GroupID = "workflows"
 	archive := newArchiveCommand(options)
@@ -342,7 +344,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	skillsCommand.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, workspaces, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
+	root.AddCommand(templates, workspaces, projects, create, next, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

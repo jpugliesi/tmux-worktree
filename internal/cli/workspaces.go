@@ -56,7 +56,7 @@ func newWorkspacesListCommand(service *workspaceservice.Service) *cobra.Command 
 				return writeReadJSON(command, workspacesListOutput{SchemaVersion: jsonSchemaVersion, Workspaces: values, TotalCount: total, Truncated: truncated}, "workspaces")
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Workspaces exist. Run 'twt workspaces create NAME'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Workspaces exist. Run 'twt create NAME'.")
 				return err
 			}
 			now := time.Now().UTC()

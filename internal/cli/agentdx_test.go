@@ -50,13 +50,14 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
-	foundQuickCreate := false
+	foundWorkspacesCreate := false
+	foundNext := false
 	foundArchive := false
 	for _, command := range schema.Commands {
-		if command.Path == "twt start" {
-			foundQuickCreate = true
+		if command.Path == "twt next" {
+			foundNext = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name_or_ticket" || command.Arguments[0].Required {
-				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
+				t.Fatalf("next schema arguments = %+v", command.Arguments)
 			}
 		}
 		if command.Path == "twt archive" {
@@ -65,12 +66,16 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 				t.Fatalf("archive schema arguments = %+v", command.Arguments)
 			}
 		}
-		if command.Path != "twt workspaces create" {
+		if command.Path != "twt create" && command.Path != "twt workspaces create" {
 			continue
 		}
-		foundCreate = true
+		if command.Path == "twt create" {
+			foundCreate = true
+		} else {
+			foundWorkspacesCreate = true
+		}
 		if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || !command.Arguments[0].Required {
-			t.Fatalf("workspaces create schema arguments = %+v", command.Arguments)
+			t.Fatalf("%s schema arguments = %+v", command.Path, command.Arguments)
 		}
 		flags := map[string]struct {
 			required bool
@@ -83,20 +88,23 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 			}{flag.Required, flag.Enum}
 		}
 		if flags["template"].required || len(flags["output"].enum) != 3 {
-			t.Fatalf("workspaces create schema flags = %+v", flags)
+			t.Fatalf("%s schema flags = %+v", command.Path, flags)
 		}
 		if _, ok := flags["branch"]; !ok {
-			t.Fatalf("workspaces create schema misses --branch: %+v", flags)
+			t.Fatalf("%s schema misses --branch: %+v", command.Path, flags)
 		}
 		if _, ok := flags["no-fetch"]; !ok {
-			t.Fatalf("workspaces create schema misses --no-fetch: %+v", flags)
+			t.Fatalf("%s schema misses --no-fetch: %+v", command.Path, flags)
 		}
 	}
 	if !foundCreate {
+		t.Fatal("schema does not contain twt create")
+	}
+	if !foundWorkspacesCreate {
 		t.Fatal("schema does not contain twt workspaces create")
 	}
-	if !foundQuickCreate {
-		t.Fatal("schema does not contain twt start")
+	if !foundNext {
+		t.Fatal("schema does not contain twt next")
 	}
 	if !foundArchive {
 		t.Fatal("schema does not contain twt archive")

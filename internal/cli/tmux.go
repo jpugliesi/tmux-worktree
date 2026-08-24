@@ -229,12 +229,12 @@ func callingTmuxClient(options Options, pane string) (string, error) {
 		return paneMatches[0], nil
 	}
 	if len(paneMatches) > 1 {
-		return "", fmt.Errorf("tmux pane %q is visible in %d clients; quick create requires exactly 1", pane, len(paneMatches))
+		return "", fmt.Errorf("tmux pane %q is visible in %d clients; next requires exactly 1", pane, len(paneMatches))
 	}
 	if len(sessionMatches) == 1 {
 		return sessionMatches[0], nil
 	}
-	return "", fmt.Errorf("tmux pane %q is not active in a client, and %d clients are attached to its Workspace session; quick create requires exactly 1", pane, len(sessionMatches))
+	return "", fmt.Errorf("tmux pane %q is not active in a client, and %d clients are attached to its Workspace session; next requires exactly 1", pane, len(sessionMatches))
 }
 
 func switchTmuxClient(options Options, clientName, sessionID string) error {

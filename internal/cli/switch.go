@@ -69,7 +69,7 @@ func pickSwitchWorkspace(command *cobra.Command, options Options, service *works
 		return domain.Workspace{}, err
 	}
 	if len(workspaces) == 0 {
-		return domain.Workspace{}, clierr.New(clierr.NotFound, "no Workspaces exist; run 'twt start NAME' first")
+		return domain.Workspace{}, clierr.New(clierr.NotFound, "no Workspaces exist; run 'twt create NAME' first")
 	}
 	sortWorkspacesForDisplay(workspaces)
 	now := time.Now().UTC()

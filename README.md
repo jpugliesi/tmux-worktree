@@ -37,20 +37,27 @@ twt tickets create "Fix auth token refresh" --project core --status ready-for-ag
 A claim is compare-and-set. When two agents race for one Ticket, the second
 gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 
-### 2. Start a Workspace
+### 2. Create a Workspace or move to the next Workspace
 
-Pick one or more open Tickets from one Project and start their Workspace:
+Create a Workspace and keep all other Workspaces active:
 
 ```sh
-twt start
+twt create fix-auth --template product
+```
+
+From a current Workspace, pick one or more open Tickets from one Project and
+move to the next Workspace:
+
+```sh
+twt next
 ```
 
 Ticket slugs claim those Tickets, create one Workspace, link the records, and
 append a start comment to each Ticket.
 
 ```sh
-twt start fix-auth-tokens
-twt start fix-auth-tokens add-auth-tests
+twt next fix-auth-tokens
+twt next fix-auth-tokens add-auth-tests
 ```
 
 Both paths claim a Prepared Environment and create a branch. They build the
@@ -59,9 +66,10 @@ template declares. Then they switch your tmux client to the new session.
 A warm start to a working session takes about six seconds. The replacement
 environment prepares itself in the background.
 
-Run `twt start` with no name to pick an open Ticket. Run it from anywhere. Inside
-another Workspace it archives that Workspace after the switch. Outside one it
-uses your last template.
+Run `twt next` with no name to pick an open Ticket. Run it inside the tmux
+session of the current Workspace. It archives that Workspace after the switch.
+Use `twt create` when there is no current Workspace or when another Workspace
+must stay active.
 
 ### 3. Work
 
@@ -161,7 +169,8 @@ twt doctor                            # end-to-end health check
 | --- | --- |
 | `twt tickets` | Create, list, claim, start, comment, and close Markdown Tickets |
 | `twt projects` | Create, list, and show durable Ticket Projects |
-| `twt start` | Pick Tickets or a name, create a Workspace, and switch to it |
+| `twt create` | Create a Workspace and keep other Workspaces active |
+| `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |
 | `twt tickets start` | Claim one or more Tickets and start one Workspace |
 | `twt switch` | Move the tmux client to a Workspace |
 | `twt agents` | List, open, resume, send, and read Agent Sessions |
@@ -195,7 +204,7 @@ twt doctor                            # end-to-end health check
 These commands are interactive. They have no apply operation. They refuse
 `--output json`:
 
-- `twt start`
+- `twt next`
 - `twt tickets start`
 - `twt tickets home`
 - `twt switch`

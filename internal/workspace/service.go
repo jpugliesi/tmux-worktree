@@ -163,7 +163,7 @@ func (s *Service) CurrentForQuickCreate(directory, workspaceID, tmuxPane string)
 		}
 	}
 	if p.Status != domain.WorkspaceActive {
-		return domain.Workspace{}, fmt.Errorf("Workspace %q has status %q; quick create requires status %q", p.Name, p.Status, domain.WorkspaceActive)
+		return domain.Workspace{}, fmt.Errorf("Workspace %q has status %q; next requires status %q", p.Name, p.Status, domain.WorkspaceActive)
 	}
 	if sessionID == "" {
 		return p, nil

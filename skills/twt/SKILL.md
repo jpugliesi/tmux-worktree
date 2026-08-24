@@ -86,7 +86,7 @@ only after the result has `status: "valid"` and the requested action has
 authority.
 
 ```sh
-twt workspaces create fix-auth \
+twt create fix-auth \
   --template everysphere \
   --no-open \
   --dry-run \
@@ -97,7 +97,7 @@ For typed input, send one strict JSON value to `twt apply --stdin`. It
 supports every non-interactive mutation. Read the current operation names and
 payload shapes from `twt schema`; this skill does not repeat them.
 
-An interactive command has no apply operation by design: `twt start`,
+An interactive command has no apply operation by design: `twt next`,
 `twt tickets start`, `twt tickets home`, `twt switch`, `twt done`, the tmux
 client move of an archive, `twt templates edit`, `twt agents focus`,
 `twt agents open`, and `twt agents register --pane current`. Run those in a
@@ -112,7 +112,7 @@ A Workspace can work on one or more open Tickets from one Project. Link them
 with repeated `--ticket` flags for a non-interactive create:
 
 ```sh
-twt workspaces create auth-work --template everysphere --no-open \
+twt create auth-work --template everysphere --no-open \
   --ticket fix-auth --ticket add-auth-tests --dry-run --output json
 ```
 
@@ -129,9 +129,10 @@ initialization does not run again for that physical worktree.
 Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
-`twt start` and `twt switch` are interactive commands for a person in tmux.
-`twt start` with no name opens a Ticket picker when open Tickets exist.
-For agent work, use `twt workspaces create` and `twt workspaces archive` with
+`twt next` and `twt switch` are interactive commands for a person in tmux.
+Run `twt next` inside the tmux session of the current Workspace.
+`twt next` with no name opens a Ticket picker when open Tickets exist.
+For agent work, use `twt create` and `twt workspaces archive` with
 explicit names, dry-runs, and JSON output.
 
 To attach twt to a tmux session that a person made by hand, adopt it:

@@ -14,10 +14,13 @@ var commandHelp = map[string]helpContent{
 		long: "Create and maintain reusable YAML Workspace Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create everysphere\n  twt templates show everysphere",
 	},
 	"twt workspaces": {
-		long: "Create and manage change-focused Workspaces. Each Workspace owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt workspaces create fix-auth --template everysphere\n  twt workspaces open fix-auth",
+		long: "Create and manage change-focused Workspaces. Each Workspace owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt create fix-auth --template everysphere\n  twt workspaces open fix-auth",
 	},
-	"twt start": {
-		long: "Create a new Workspace from the latest saved version of the current Workspace Template. twt switches the calling client to the new Workspace, then archives the old Workspace. One or more Ticket slugs claim those Tickets and link the new Workspace to them; all Tickets must belong to one Project. With no argument and open Tickets, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Workspace name. Use 'twt workspaces create' for automation.", example: "  twt start\n  twt start fix-auth\n  twt start fix-auth add-auth-tests",
+	"twt create": {
+		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. It does not archive another Workspace.", example: "  twt create fix-auth --template everysphere\n  twt create auth-work --ticket fix-auth --ticket add-auth-tests --dry-run --output json",
+	},
+	"twt next": {
+		long: "Create a new Workspace from the latest saved version of the current Workspace Template. Run this command inside the tmux session of the current Workspace. twt switches the calling client to the new Workspace, then archives the old Workspace. One or more Ticket slugs claim those Tickets and link the new Workspace to them; all Tickets must belong to one Project. With no argument and open Tickets, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Workspace name. Use 'twt create' when there is no current Workspace or for automation.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth add-auth-tests",
 	},
 	"twt switch": {
 		long: "Switch the calling tmux client to the session of a Workspace. An archived Workspace opens first. Without WORKSPACE, twt shows an interactive Workspace picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
