@@ -48,8 +48,8 @@ local specs = {
   },
   {
     cmd = "TwtReviewCopy",
-    lhs = "<leader>arc",
-    desc = "Copy review notes to the clipboard",
+    lhs = { "<leader>arc", "<leader>ary" },
+    desc = "Yank review notes to the clipboard",
     fn = function(done) M.review.copy(done) end,
   },
   {

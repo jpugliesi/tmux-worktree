@@ -38,6 +38,7 @@ Snacks options that show a preview.
 | `<leader>arr` | Deliver the Review Batch to a tmux pane or the clipboard |
 | `<leader>ara` | Send the Review Batch to the selected Agent Session |
 | `<leader>arc` | Copy the Review Batch to the clipboard |
+| `<leader>ary` | Yank the Review Batch to the clipboard |
 | `<leader>art` | Send the Review Batch to a tmux pane |
 | `<leader>ars` | Write free text in a window and send it |
 | `<leader>aru` | Resume the selected Agent Session |
@@ -110,8 +111,8 @@ clear all review notes?` before it clears the session batch.
 the current pane and adds Clipboard as a destination. Each pane label shows
 the session and window, pane ID, current command, and current path. Outside
 tmux, it copies the batch immediately. `<leader>art` always asks for a tmux
-pane. `<leader>arc` always copies. A canceled picker keeps the batch and shows
-no success message.
+pane. `<leader>arc` and `<leader>ary` always yank to the clipboard. A canceled
+picker keeps the batch and shows no success message.
 
 Direct pane delivery loads the Review Batch through standard input, requests
 a bracketed paste, and submits it with Enter. A confirmed pane or Agent send
