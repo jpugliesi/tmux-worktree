@@ -209,7 +209,8 @@ local function take_snapshot(agent, workspace_id, directory, done)
 end
 
 -- Selects an Agent Session that has an Agent Preview but no verified
--- transcript. A discovered live pane is adopted on this first action.
+-- transcript, then opens that preview in a scratch buffer. A discovered live
+-- pane is adopted on this first action.
 select_without_snapshot = function(agent, workspace_id, directory, done)
   local function select(selected)
     if selected.workspaceId ~= workspace_id then
@@ -220,10 +221,16 @@ select_without_snapshot = function(agent, workspace_id, directory, done)
     record.selected_id = selected.id
     record.agents[selected.id] = { label = selected.label, live = selected.status == "live" }
     notify_refresh()
-    done(nil, {
-      agent = selected,
-      message = "selected Agent Session " .. (selected.label or selected.provider or selected.id),
-    })
+    agent_preview.open(selected, workspace_id, directory, function(err)
+      if err then
+        done(err)
+        return
+      end
+      done(nil, {
+        agent = selected,
+        message = "selected Agent Session " .. (selected.label or selected.provider or selected.id),
+      })
+    end)
   end
 
   if agent.registration ~= "discovered" then
@@ -252,8 +259,9 @@ local function select_agent(agent, workspace_id, directory, done)
 end
 
 -- Lists the Agent Sessions of the current Workspace. A verified transcript
--- selection opens a snapshot. A live-pane selection adopts and selects it.
--- A canceled selection answers `done(nil)` with no result.
+-- selection opens a snapshot. A live-pane selection adopts, selects, and
+-- opens the Agent Preview. A canceled selection answers `done(nil)` with no
+-- result.
 function M.pick(done)
   done = done or function() end
   M.list(function(err, agents, context, directory)

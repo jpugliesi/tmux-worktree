@@ -99,6 +99,7 @@ local function runner(argv, opts, done)
   calls[#calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin, cwd = opts.cwd }
   local joined = table.concat(argv, " ")
   local snapshot_agent = opts.cwd == "/work/other" and "agent-2" or "agent-1"
+  local preview_id = joined:match("agents open %-%-preview (%S+)")
   local value = joined:find(" context ", 1, true) and (opts.cwd == "/work/other" and other_context or context)
     or joined:find(" agents list ", 1, true) and (opts.cwd == "/work/other" and other_agents_response or agents_response)
     or joined:find(" agents transcript snapshot ", 1, true) and {
@@ -109,6 +110,13 @@ local function runner(argv, opts, done)
       repositoryName = "app",
       updatedAt = "2026-08-20T00:00:00Z",
       status = "applied",
+    }
+    or preview_id and {
+      schemaVersion = 2,
+      workspaceId = opts.cwd == "/work/other" and "workspace-2" or "workspace-1",
+      agentId = preview_id,
+      untrusted = true,
+      markdown = "_Live pane preview. This is not the full Agent Transcript._\n\n# Agent Preview for " .. preview_id .. "\n",
     }
     or { schemaVersion = 2, status = "sent", agentId = "agent-1" }
   if joined:find(" agents transcript snapshot ", 1, true) then
@@ -191,6 +199,10 @@ test("selects and sends to a discovered live Cursor Agent without a transcript s
     assert(selected.agent.id == registered.id, vim.inspect(selected))
     assert(selected.path == nil, vim.inspect(selected))
     assert(selected.message:find("selected Agent Session", 1, true), selected.message)
+    local text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+    assert(text:find("Agent Preview for cursor-agent-session", 1, true), text)
+    assert(vim.bo.filetype == "markdown", vim.bo.filetype)
+    assert(vim.bo.buftype == "nofile", vim.bo.buftype)
     require("twt").agents.send("Cursor review", function(err) assert(err == nil, err) end)
   end)
   local commands = {}

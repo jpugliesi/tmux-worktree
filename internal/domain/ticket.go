@@ -56,11 +56,12 @@ type Ticket struct {
 	Priority  int          `yaml:"priority" json:"priority"`
 	Project   string       `yaml:"project" json:"project"`
 	BlockedBy []string     `yaml:"blocked_by" json:"blockedBy"`
-	ClaimedBy string       `yaml:"claimed_by" json:"claimedBy"`
-	ClaimedAt string       `yaml:"claimed_at" json:"-"`
-	Created   string       `yaml:"created" json:"created"`
-	Updated   string       `yaml:"updated" json:"updated"`
-	Path      string       `yaml:"-" json:"path"`
+	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
+	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
+	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
+	Created     string       `yaml:"created" json:"created"`
+	Updated     string       `yaml:"updated" json:"updated"`
+	Path        string       `yaml:"-" json:"path"`
 }
 
 // Project is one directory of Tickets under the Tickets home.

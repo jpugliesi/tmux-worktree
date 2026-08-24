@@ -112,7 +112,8 @@ In Neovim, [twt.nvim](nvim/twt.nvim/README.md) picks an Agent Session with
 `<leader>arp`. The LazyVim Snacks picker shows the highlighted Agent Preview
 before selection. Its rows include a unique Agent Session ID prefix, status,
 and activity time. A transcript row opens its Transcript Snapshot. A live-pane
-row selects the Agent Session without a false snapshot. Collect
+row selects the Agent Session and opens the Agent Preview in a scratch buffer.
+It does not write a Transcript Snapshot. Collect
 Review Notes from any regular file buffer with `<leader>an`. Use `<leader>arr`
 to select a tmux pane or the clipboard. Use `<leader>ara` to send through the
 selected Agent Session. Log progress on the Ticket as you go:
@@ -138,12 +139,13 @@ twt tickets close fix-auth-tokens
 twt done
 ```
 
-`close` sets the status to `done` and drops the claim in one write. `done`
-archives the Workspace, verifies that nothing unpushed gets lost, and removes
-the worktrees, branch, and records. When you run it from inside the
-Workspace's own session, it moves your tmux client to another Workspace first.
-A branch with unpushed commits blocks removal and prints the escape
-commands. A branch with no new commits removes instantly, even offline.
+`close` sets the status to `done`, drops the claim, and moves the Ticket to
+the marked `closed/` tree in one operation. `done` archives the Workspace,
+verifies that nothing unpushed gets lost, and removes the worktrees, branch,
+and records. When you run it from inside the Workspace's own session, it moves
+your tmux client to another Workspace first. A branch with unpushed commits
+blocks removal and prints the escape commands. A branch with no new commits
+removes instantly, even offline.
 
 When a Workspace has one open Ticket, `twt done` asks whether to close it.
 When it has many open Tickets, `twt done` keeps them open and prints one close
@@ -164,6 +166,9 @@ twt environments list --size          # also calculate prepared storage
 twt workspaces remove --all-archived --older-than 14d --apply
 twt storage clean --apply             # failed environments, orphan records
 twt doctor                            # end-to-end health check
+twt tickets doctor                    # report ticket storage problems
+twt tickets repair --dry-run          # preview safe ticket moves
+twt tickets repair                    # move tickets to the correct paths
 ```
 
 ## Command map
@@ -174,7 +179,7 @@ twt doctor                            # end-to-end health check
 
 | Command | Job |
 | --- | --- |
-| `twt tickets` | Create, list, claim, start, comment, and close Markdown Tickets |
+| `twt tickets` | Create, list, claim, start, close, check, and repair Markdown Tickets |
 | `twt projects` | Create, list, and show durable Ticket Projects |
 | `twt create` | Create a Workspace and keep other Workspaces active |
 | `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |
@@ -317,9 +322,9 @@ twt tickets home
 ```
 
 `init` scaffolds the vault hub with Bases views (Recent, Ready, Blocked,
-Claimed) and a ticket template. It never overwrites existing notes. Existing
-ticket files with extra frontmatter keep working. Mutations preserve unknown
-fields byte-for-byte.
+Claimed), a ticket template, and a marked `closed/` tree. It never overwrites
+existing notes. Existing ticket files with extra frontmatter keep working.
+Mutations preserve unknown fields byte-for-byte.
 
 ### Give your agents the skill
 

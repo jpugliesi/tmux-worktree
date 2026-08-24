@@ -50,20 +50,25 @@ func (s *Service) ensureTmux(p *domain.Workspace) error {
 		return fmt.Errorf("Workspace %q has no repositories and no owned tmux session; twt cannot make the session again", p.Name)
 	}
 	name := sessionName(p.TemplateName, p.Name)
-	sessionID, workspaceID, exists, err := s.findSession(p.ID, name)
+	sessionID, ownerID, exists, err := s.findSession(p.ID, name)
 	if err != nil {
 		return err
 	}
-	if exists && workspaceID != p.ID {
+	if exists && ownerID != "" && ownerID != p.ID {
 		fallback := name + "-" + p.ID[:8]
-		sessionID, workspaceID, exists, err = s.findSession(p.ID, fallback)
+		sessionID, ownerID, exists, err = s.findSession(p.ID, fallback)
 		if err != nil {
 			return err
 		}
-		if exists && workspaceID != p.ID {
+		if exists && ownerID != "" && ownerID != p.ID {
 			return fmt.Errorf("tmux sessions %q and %q already exist and belong to other Workspaces", name, fallback)
 		}
 		name = fallback
+	}
+	if exists && ownerID == "" {
+		if err := s.claimSession(sessionID, p.ID); err != nil {
+			return err
+		}
 	}
 	if !exists && p.TmuxSession != name {
 		p.TmuxSession = name
@@ -84,8 +89,8 @@ func (s *Service) ensureTmux(p *domain.Workspace) error {
 		}
 		sessionID = parts[0]
 		windowID := parts[1]
-		if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, workspaceTmuxOption, p.ID)...); err != nil {
-			return fmt.Errorf("mark tmux session: %w", err)
+		if err := s.claimSession(sessionID, p.ID); err != nil {
+			return err
 		}
 		if err := s.markWindow(windowID, first); err != nil {
 			return err
@@ -94,7 +99,7 @@ func (s *Service) ensureTmux(p *domain.Workspace) error {
 	}
 	windowIDs := make(map[string]string, len(p.Repositories))
 	for _, repository := range p.Repositories {
-		windowID, hasWindow, err := s.managedWindowID(sessionID, repository.Name)
+		windowID, hasWindow, err := s.ensureManagedWindow(sessionID, repository)
 		if err != nil {
 			return err
 		}
@@ -252,20 +257,45 @@ func parseWorkspaceSessionRows(value string, includeName bool) []tmuxSessionRow 
 	return rows
 }
 
-// managedWindowID returns the ID of the window that twt marked for the
-// repository in this session.
-func (s *Service) managedWindowID(sessionID, repositoryName string) (string, bool, error) {
-	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{@twt_repository_name}\t#{window_id}")...)
+// claimSession writes the Workspace ID onto one tmux session.
+func (s *Service) claimSession(sessionID, workspaceID string) error {
+	if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, workspaceTmuxOption, workspaceID)...); err != nil {
+		return fmt.Errorf("mark tmux session: %w", err)
+	}
+	return nil
+}
+
+// ensureManagedWindow finds the window that twt marked for the repository, or
+// an unmarked window with the same window name. A resurrected session often
+// keeps the name and loses the owner mark.
+func (s *Service) ensureManagedWindow(sessionID string, repository domain.WorkspaceRepository) (string, bool, error) {
+	rows, err := output("", "tmux", s.tmuxArgs("list-windows", "-t", sessionID, "-F", "#{window_id}\t#{window_name}\t#{@twt_repository_name}")...)
 	if err != nil {
 		return "", false, fmt.Errorf("list tmux windows: %w", err)
 	}
+	var unmarked string
 	for _, row := range strings.Split(rows, "\n") {
-		parts := strings.SplitN(row, "\t", 2)
-		if len(parts) == 2 && parts[0] == repositoryName {
-			return parts[1], true, nil
+		parts := strings.SplitN(row, "\t", 3)
+		if len(parts) == 2 {
+			parts = append(parts, "")
+		}
+		if len(parts) != 3 || parts[0] == "" {
+			continue
+		}
+		if parts[2] == repository.Name {
+			return parts[0], true, nil
+		}
+		if unmarked == "" && parts[2] == "" && parts[1] == repository.WindowName {
+			unmarked = parts[0]
 		}
 	}
-	return "", false, nil
+	if unmarked == "" {
+		return "", false, nil
+	}
+	if err := s.markWindow(unmarked, repository); err != nil {
+		return "", false, err
+	}
+	return unmarked, true, nil
 }
 
 func (s *Service) markWindow(windowID string, repository domain.WorkspaceRepository) error {

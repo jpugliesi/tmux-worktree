@@ -1,4 +1,6 @@
+local buffers = require("twt.buffers")
 local client = require("twt.client")
+local config = require("twt.config")
 local M = {}
 
 local Loader = {}
@@ -167,6 +169,73 @@ function M.new(opts)
     clock = 0,
     generation = 0,
   }, Loader)
+end
+
+local function preview_text(result, workspace_id, agent_id, max_bytes)
+  if result.workspaceId ~= workspace_id or result.agentId ~= agent_id then
+    return nil, "twt returned a preview for a different Agent Session"
+  end
+  if result.untrusted ~= true or type(result.markdown) ~= "string" then
+    return nil, "twt returned an invalid preview response"
+  end
+  if result.markdown == "" then
+    return "This Agent Preview is empty."
+  end
+  return limited(result.markdown, max_bytes)
+end
+
+local function reveal(bufnr)
+  local wins = vim.fn.win_findbuf(bufnr)
+  if wins[1] then
+    vim.api.nvim_set_current_win(wins[1])
+    return
+  end
+  local split = config.get().snapshot_split
+  if split == "tab drop" then
+    vim.cmd("tab sbuffer " .. bufnr)
+    return
+  end
+  vim.cmd(split)
+  vim.api.nvim_win_set_buf(0, bufnr)
+end
+
+-- Opens the Agent Preview of a live-pane Agent Session in a scratch buffer.
+-- This is not a Transcript Snapshot and does not write a file.
+function M.open(agent, workspace_id, directory, done)
+  done = done or function() end
+  client.request({
+    "agents", "open", "--preview", agent.id, "--workspace", workspace_id,
+  }, { cwd = directory }, function(err, result)
+    if err then
+      done(err)
+      return
+    end
+    local text, text_err = preview_text(result, workspace_id, agent.id, config.get().agent_preview_max_bytes)
+    if text_err then
+      done(text_err)
+      return
+    end
+    local name = "twt-preview://" .. workspace_id .. "/" .. agent.id
+    local bufnr = vim.fn.bufnr(name)
+    if bufnr == -1 then
+      bufnr = vim.api.nvim_create_buf(true, true)
+      vim.api.nvim_buf_set_name(bufnr, name)
+    end
+    vim.bo[bufnr].buftype = "nofile"
+    vim.bo[bufnr].bufhidden = "hide"
+    vim.bo[bufnr].swapfile = false
+    vim.bo[bufnr].modifiable = true
+    vim.bo[bufnr].readonly = false
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, vim.split(text, "\n", { plain = true }))
+    vim.bo[bufnr].filetype = "markdown"
+    vim.bo[bufnr].modifiable = false
+    vim.bo[bufnr].readonly = true
+    vim.b[bufnr][buffers.workspace_id] = workspace_id
+    vim.b[bufnr][buffers.workspace_directory] = directory
+    reveal(bufnr)
+    vim.cmd("normal! G")
+    done(nil)
+  end)
 end
 
 return M

@@ -19,10 +19,16 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	var branch string
 	var ticketRefs []string
 	command := &cobra.Command{
-		Use:   "create NAME",
+		Use:   "create [NAME]",
 		Short: "Create a Workspace from a Workspace Template",
-		Args:  exactArgs("NAME"),
+		Args:  optionalArg("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			} else if !canPromptWorkspaceName(command) {
+				return invalidUsage(command, "missing Workspace name; use '%s NAME' in a script", command.CommandPath())
+			}
 			project, tickets, err := resolveWorkspaceTicketLinks(options, ticketRefs)
 			if err != nil {
 				return err
@@ -43,15 +49,21 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 			if err != nil {
 				return err
 			}
+			if name == "" {
+				name, err = promptWorkspaceName(command, fmt.Sprintf("missing Workspace name; use '%s NAME' in a script", command.CommandPath()))
+				if err != nil {
+					return err
+				}
+			}
 			createOptions := workspaceservice.CreateOptions{Branch: branch, NoFetch: noFetch, Project: project, Tickets: tickets}
 			var workspace domain.Workspace
 			if err := runMutation(command, "workspaces.create",
 				func() (string, string, error) {
-					return "", args[0], validateCreate(options, service, args[0], selected, template, createOptions)
+					return "", name, validateCreate(options, service, name, selected, template, createOptions)
 				},
 				func() (string, string, error) {
 					var err error
-					workspace, err = createWorkspace(command, options, args[0], selected, template, createOptions)
+					workspace, err = createWorkspace(command, options, name, selected, template, createOptions)
 					return workspace.ID, workspace.Name, err
 				},
 				func(out io.Writer, _, _ string) error {
@@ -71,7 +83,7 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringArrayVar(&ticketRefs, "ticket", nil, "Link a Ticket; repeat for more Tickets")
-	setArguments(command, requiredArgument("name"))
+	setArguments(command, optionalArgument("name", "the prompt asks for it when stdin is a terminal and output is text"))
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	_ = command.RegisterFlagCompletionFunc("ticket", ticketFlagCompletion(options))
 	return command
@@ -137,7 +149,29 @@ func createWorkspace(command *cobra.Command, options Options, name, templateName
 		return workspace, createFailureError(workspace, err)
 	}
 	_ = store.SaveLastTemplate(options.StateDir, templateName)
+	if err := stampTicketWorkspaces(command, options, workspace); err != nil {
+		return workspace, err
+	}
 	return workspace, nil
+}
+
+// stampTicketWorkspaces writes the Workspace ID onto each linked Ticket. The
+// stamp is the join key for coordinator reads. A stamp failure after create
+// keeps the Workspace, the same as a start comment failure after claim.
+func stampTicketWorkspaces(command *cobra.Command, options Options, workspace domain.Workspace) error {
+	if len(workspace.Tickets) == 0 || strings.TrimSpace(workspace.ID) == "" {
+		return nil
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	for _, slug := range workspace.Tickets {
+		if _, err := service.SetWorkspace(slug, workspace.ID, false); err != nil {
+			_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not stamp Workspace %q on Ticket %q: %v\n", workspace.ID, slug, err)
+		}
+	}
+	return nil
 }
 
 // newCreateService builds a Workspace service that reports progress and starts

@@ -77,6 +77,7 @@ type workspaceReferenceRequest struct {
 // attaches a tmux client, so noAttach must be true or absent.
 type workspaceOpenRequest struct {
 	Reference string `json:"reference"`
+	AllActive bool   `json:"allActive,omitempty"`
 	NoAttach  *bool  `json:"noAttach,omitempty"`
 }
 
@@ -207,7 +208,8 @@ func applyOperations() []applyOperation {
 			{Path: "workspace.tickets", Type: "array[string]", Required: false, Condition: "all Tickets must be open and belong to one Project"},
 		}}, applyWorkspacesCreate},
 		{applyOperationSchema{Operation: "workspaces.open", Payload: "workspace", Fields: []requestFieldSchema{
-			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.reference", Type: "string", Required: false, Condition: "required when workspace.allActive is not true"},
+			{Path: "workspace.allActive", Type: "boolean", Required: false, Condition: "repairs every active Workspace and attaches no tmux client"},
 			{Path: "workspace.noAttach", Type: "boolean", Required: false, Condition: "must be true or absent; apply repairs the tmux session but attaches no tmux client"},
 		}}, applyWorkspacesOpen},
 		{applyOperationSchema{Operation: "workspaces.setup.retry", Payload: "workspace", Fields: []requestFieldSchema{
@@ -285,6 +287,7 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
 		}}, applyTicketsComment},
+		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
 		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 		}}, applyTicketsProjectsCreate},
@@ -517,13 +520,19 @@ func applyWorkspacesOpen(command *cobra.Command, options Options, request applyR
 	if err := decodeApplyPayload("workspaces.open", "workspace", request.Workspace, &payload); err != nil {
 		return err
 	}
-	if payload.Reference == "" {
-		return fmt.Errorf("workspace.reference is required for workspaces.open")
-	}
 	if payload.NoAttach != nil && !*payload.NoAttach {
 		return fmt.Errorf("apply never attaches a tmux client; workspace.noAttach must be true or absent")
 	}
 	service := options.workspaceService()
+	if payload.AllActive {
+		if payload.Reference != "" {
+			return fmt.Errorf("workspace.reference and workspace.allActive cannot be set together")
+		}
+		return openAllActiveSessions(command, service)
+	}
+	if payload.Reference == "" {
+		return fmt.Errorf("workspace.reference is required for workspaces.open")
+	}
 	reference, err := resolveWorkspaceReference(service, payload.Reference)
 	if err != nil {
 		return err
@@ -791,6 +800,18 @@ func applyTicketsComment(command *cobra.Command, options Options, request applyR
 		return err
 	}
 	return commentTicket(command, service, payload.Reference, payload.Text)
+}
+
+func applyTicketsRepair(command *cobra.Command, options Options, request applyRequest) error {
+	if len(request.Template) > 0 || len(request.Workspace) > 0 || len(request.Agent) > 0 ||
+		len(request.Storage) > 0 || len(request.Ticket) > 0 || len(request.Project) > 0 {
+		return fmt.Errorf("tickets.repair accepts no payload")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return repairTickets(command, service)
 }
 
 func applyTicketsProjectsCreate(command *cobra.Command, options Options, request applyRequest) error {

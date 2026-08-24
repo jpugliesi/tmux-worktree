@@ -17,6 +17,7 @@ filters:
     - file.ext == "md"
     - file.name != "index"
     - '!file.inFolder("{{FOLDER}}/templates")'
+    - '!file.inFolder("{{FOLDER}}/closed")'
 views:
   - type: table
     name: Recent

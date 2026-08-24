@@ -53,6 +53,8 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsUnclaimCommand(options))
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
+	tickets.AddCommand(newTicketsDoctorCommand(options))
+	tickets.AddCommand(newTicketsRepairCommand(options))
 	return tickets
 }
 
@@ -136,7 +138,10 @@ func initializeTicketsHome(command *cobra.Command, service *ticketservice.Servic
 			if err := reportScaffold(out, result.WroteIndex, filepath.Join(result.Home, "index.md")); err != nil {
 				return err
 			}
-			return reportScaffold(out, result.WroteTemplate, filepath.Join(result.Home, "templates", "ticket.md"))
+			if err := reportScaffold(out, result.WroteTemplate, filepath.Join(result.Home, "templates", "ticket.md")); err != nil {
+				return err
+			}
+			return reportScaffold(out, result.WroteClosedMarker, filepath.Join(result.Home, "closed", ".twt-closed"))
 		})
 }
 
@@ -297,7 +302,7 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var project, status string
-	var ready, all bool
+	var ready, claimed, all bool
 	var limit, offset int
 	command := &cobra.Command{
 		Use:     "list",
@@ -314,6 +319,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				ProjectSet: command.Flags().Changed("project"),
 				Status:     status,
 				Ready:      ready,
+				Claimed:    claimed,
 				All:        all,
 			})
 			if err != nil {
@@ -339,6 +345,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
+	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
 	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
@@ -586,9 +593,9 @@ func setTicket(command *cobra.Command, service *ticketservice.Service, ref strin
 }
 
 func newTicketsClaimCommand(options Options) *cobra.Command {
-	var as string
+	var as, workspaceRef string
 	command := &cobra.Command{
-		Use:   "claim TICKET [--as NAME]",
+		Use:   "claim TICKET [--as NAME] [--workspace WORKSPACE]",
 		Short: "Claim a Ticket",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -600,13 +607,38 @@ func newTicketsClaimCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return claimTicket(command, service, args[0], claimant)
+			if err := claimTicket(command, service, args[0], claimant); err != nil {
+				return err
+			}
+			if !command.Flags().Changed("workspace") {
+				return nil
+			}
+			return stampClaimedWorkspace(command, options, service, args[0], workspaceRef)
 		},
 	}
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	command.Flags().StringVar(&workspaceRef, "workspace", "", "Stamp the Workspace ID on the Ticket")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
+}
+
+func stampClaimedWorkspace(command *cobra.Command, options Options, service *ticketservice.Service, ticketRef, workspaceRef string) error {
+	workspace, err := resolveWorkspace(options.workspaceService(), workspaceRef)
+	if err != nil {
+		return err
+	}
+	if isDryRun(command) {
+		return nil
+	}
+	if _, err := service.SetWorkspace(ticketRef, workspace.ID, false); err != nil {
+		return err
+	}
+	if WantsJSON(command) {
+		return nil
+	}
+	_, err = fmt.Fprintf(command.OutOrStdout(), "Linked ticket %q to Workspace %q\n", ticketRef, workspace.ID)
+	return err
 }
 
 func newTicketsUnclaimCommand(options Options) *cobra.Command {

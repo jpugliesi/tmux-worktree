@@ -76,6 +76,47 @@ func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
 	}
 }
 
+func TestWorkspacesListFiltersByProjectTicketAndStatus(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Now().UTC()
+	active := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "auth-work",
+		TemplateName: "everysphere", Status: domain.WorkspaceActive, Project: "core",
+		Tickets: []string{"fix-auth"}, CreatedAt: now, UpdatedAt: now,
+	}
+	other := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Name: "docs-work",
+		TemplateName: "everysphere", Status: domain.WorkspaceActive, Project: "docs",
+		Tickets: []string{"write-guide"}, CreatedAt: now, UpdatedAt: now,
+	}
+	archived := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "cccccccccccccccccccccccccccccccc", Name: "old-auth",
+		TemplateName: "everysphere", Status: domain.WorkspaceArchived, Project: "core",
+		Tickets: []string{"fix-auth"}, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	workspaceStore := store.NewWorkspaceStore(filepath.Join(root, "state"))
+	for _, workspace := range []domain.Workspace{active, other, archived} {
+		if err := workspaceStore.Save(workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
+
+	byProject := executeWithOptions(t, options, nil, "workspaces", "list", "--project", "core", "--output", "json")
+	if !strings.Contains(byProject, `"name":"auth-work"`) || !strings.Contains(byProject, `"name":"old-auth"`) || strings.Contains(byProject, `"name":"docs-work"`) {
+		t.Fatalf("--project filter = %s", byProject)
+	}
+	byTicket := executeWithOptions(t, options, nil, "workspaces", "list", "--ticket", "write-guide", "--output", "json")
+	if !strings.Contains(byTicket, `"name":"docs-work"`) || strings.Contains(byTicket, `"name":"auth-work"`) {
+		t.Fatalf("--ticket filter = %s", byTicket)
+	}
+	byStatus := executeWithOptions(t, options, nil, "workspaces", "list", "--status", "active", "--output", "json")
+	if !strings.Contains(byStatus, `"name":"auth-work"`) || strings.Contains(byStatus, `"name":"old-auth"`) {
+		t.Fatalf("--status filter = %s", byStatus)
+	}
+}
+
 func TestWorkspacesListShowsRecentActiveWorkspacesBeforeArchives(t *testing.T) {
 	t.Parallel()
 

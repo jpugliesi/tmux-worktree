@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,19 @@ func createLinkedWorkspace(t *testing.T, options cli.Options, name, slug string)
 // ticketStatusDone reports whether the Ticket file carries the done status.
 func ticketStatusDone(t *testing.T, home string) bool {
 	t.Helper()
-	return strings.Contains(readTicketFile(t, filepath.Join(home, "fix-auth.md")), "status: done")
+	for _, path := range []string{
+		filepath.Join(home, "fix-auth.md"),
+		filepath.Join(home, "closed", "fix-auth.md"),
+	} {
+		content, err := os.ReadFile(path)
+		if err == nil {
+			return strings.Contains(string(content), "status: done")
+		}
+		if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	return false
 }
 
 func TestDoneAsksToCloseTheLinkedTicket(t *testing.T) {

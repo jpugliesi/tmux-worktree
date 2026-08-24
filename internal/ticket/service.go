@@ -53,9 +53,10 @@ func (s *Service) home() (string, error) {
 
 // InitResult reports what Init wrote or would write.
 type InitResult struct {
-	Home          string `json:"home"`
-	WroteIndex    bool   `json:"wroteIndex"`
-	WroteTemplate bool   `json:"wroteTemplate"`
+	Home              string `json:"home"`
+	WroteIndex        bool   `json:"wroteIndex"`
+	WroteTemplate     bool   `json:"wroteTemplate"`
+	WroteClosedMarker bool   `json:"wroteClosedMarker"`
 }
 
 // Init creates the Tickets home with its hub index and create template. It
@@ -67,16 +68,24 @@ func (s *Service) Init(dryRun bool) (InitResult, error) {
 	}
 	indexPath := filepath.Join(home, "index.md")
 	templatePath := filepath.Join(home, "templates", "ticket.md")
+	closedExists, err := closedRootExists(home)
+	if err != nil {
+		return InitResult{}, err
+	}
 	result := InitResult{
-		Home:          home,
-		WroteIndex:    !fileExists(indexPath),
-		WroteTemplate: !fileExists(templatePath),
+		Home:              home,
+		WroteIndex:        !fileExists(indexPath),
+		WroteTemplate:     !fileExists(templatePath),
+		WroteClosedMarker: !closedExists,
 	}
 	if dryRun {
 		return result, nil
 	}
 	if err := os.MkdirAll(filepath.Join(home, "templates"), 0o755); err != nil {
 		return InitResult{}, fmt.Errorf("create Tickets home: %w", err)
+	}
+	if err := ensureClosedRoot(home, false); err != nil {
+		return InitResult{}, err
 	}
 	if result.WroteIndex {
 		if err := store.WriteFileAtomic(indexPath, rootIndexContent(home, s.today()), 0o644, "Tickets index"); err != nil {
@@ -101,24 +110,34 @@ func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error
 	if err := store.ValidateResourceName(name); err != nil {
 		return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
 	}
-	if name == "templates" {
+	if reservedProjectName(name) {
 		return domain.Project{}, clierr.New(clierr.InvalidUsage, "the Project name %q is reserved", name)
 	}
+	if _, err := closedRootExists(home); err != nil {
+		return domain.Project{}, err
+	}
 	path := filepath.Join(home, name)
-	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
-		return domain.Project{}, clierr.New(clierr.UnsafeState, "the Project path %q is a file, not a directory", path)
+	exists, err := projectDirectoryExists(home, name)
+	if err != nil {
+		return domain.Project{}, err
 	}
 	indexPath := filepath.Join(path, "index.md")
 	if dryRun {
-		project, projectErr := s.projectInfo(home, name)
-		if projectErr != nil {
-			project = domain.Project{Name: name, Path: path}
+		project := domain.Project{Name: name, Path: path}
+		if exists {
+			project, err = s.projectInfo(home, name)
+			if err != nil {
+				return domain.Project{}, err
+			}
 		}
 		project.HasIndex = true
 		return project, nil
 	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return domain.Project{}, fmt.Errorf("create Project directory: %w", err)
+	}
+	if _, err := projectDirectoryExists(home, name); err != nil {
+		return domain.Project{}, err
 	}
 	if !fileExists(indexPath) {
 		if err := store.WriteFileAtomic(indexPath, projectIndexContent(name, s.today()), 0o644, "Project index"); err != nil {
@@ -141,10 +160,13 @@ func (s *Service) Projects() ([]domain.Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list Projects: %w", err)
 	}
+	if _, err := closedRootExists(home); err != nil {
+		return nil, err
+	}
 	projects := []domain.Project{}
 	for _, entry := range entries {
 		name := entry.Name()
-		if !entry.IsDir() || name == "templates" || strings.HasPrefix(name, ".") {
+		if !entry.IsDir() || reservedProjectName(name) || strings.HasPrefix(name, ".") {
 			continue
 		}
 		project, err := s.projectInfo(home, name)
@@ -163,8 +185,17 @@ func (s *Service) Project(name string) (domain.Project, error) {
 	if err != nil {
 		return domain.Project{}, err
 	}
-	info, statErr := os.Stat(filepath.Join(home, name))
-	if statErr != nil || !info.IsDir() {
+	if reservedProjectName(name) {
+		return domain.Project{}, projectMissing(name)
+	}
+	if _, err := closedRootExists(home); err != nil {
+		return domain.Project{}, err
+	}
+	exists, err := projectDirectoryExists(home, name)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if !exists {
 		return domain.Project{}, projectMissing(name)
 	}
 	return s.projectInfo(home, name)
@@ -189,6 +220,23 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 			continue
 		}
 		project.Tickets++
+	}
+	closedPath := filepath.Join(home, closedDirectoryName, name)
+	closedExists, closedErr := regularTicketDirectory(closedPath, "closed Project")
+	if closedErr != nil {
+		return domain.Project{}, closedErr
+	}
+	if !closedExists {
+		return project, nil
+	}
+	closedEntries, closedErr := os.ReadDir(closedPath)
+	if closedErr != nil && !errors.Is(closedErr, os.ErrNotExist) {
+		return domain.Project{}, fmt.Errorf("read closed Tickets for Project %q: %w", name, closedErr)
+	}
+	for _, entry := range closedEntries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") && entry.Name() != "index.md" {
+			project.Tickets++
+		}
 	}
 	return project, nil
 }
@@ -267,25 +315,22 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 			clierr.New(clierr.AlreadyExists, "ticket slug %q already exists at %q", slug, paths[0]),
 			"Pass --slug to select a different slug.")
 	}
-	directory := home
+	projectExists := true
 	if req.Project != "" {
 		if req.EnsureProject {
 			if _, err := s.CreateProject(req.Project, dryRun); err != nil {
 				return CreateResult{}, err
 			}
 		}
-		info, statErr := os.Stat(filepath.Join(home, req.Project))
-		if statErr != nil || !info.IsDir() {
-			if dryRun && req.EnsureProject {
-				directory = filepath.Join(home, req.Project)
-			} else {
-				return CreateResult{}, projectMissing(req.Project)
-			}
-		} else {
-			directory = filepath.Join(home, req.Project)
+		projectExists, err = projectDirectoryExists(home, req.Project)
+		if err != nil {
+			return CreateResult{}, err
+		}
+		if !projectExists && !(dryRun && req.EnsureProject) {
+			return CreateResult{}, projectMissing(req.Project)
 		}
 	}
-	path := filepath.Join(directory, slug+".md")
+	path := canonicalTicketPath(home, status, req.Project, slug)
 	lock, err := store.AcquireNamedLock(s.options.StateDir, "ticket", slug)
 	if err != nil {
 		return CreateResult{}, err
@@ -300,8 +345,22 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 	if err != nil {
 		return CreateResult{}, err
 	}
+	if projectExists {
+		if err := ensureTicketDirectory(home, status, req.Project, dryRun); err != nil {
+			return CreateResult{}, err
+		}
+	} else if closedStatus(status) {
+		if err := ensureClosedRoot(home, true); err != nil {
+			return CreateResult{}, err
+		}
+	}
 	if !dryRun {
-		if err := store.WriteFileAtomic(path, content, 0o644, "Ticket"); err != nil {
+		if err := store.WriteFileExclusiveAtomic(path, content, 0o644, "Ticket"); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return CreateResult{}, clierr.WithHint(
+					clierr.New(clierr.AlreadyExists, "ticket slug %q already exists at %q", slug, path),
+					"Pass --slug to select a different slug.")
+			}
 			return CreateResult{}, err
 		}
 	}
@@ -367,6 +426,7 @@ type ListFilter struct {
 	ProjectSet bool
 	Status     string
 	Ready      bool
+	Claimed    bool
 	All        bool
 }
 
@@ -384,6 +444,11 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 		return nil, clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "--ready and --status select different sets"),
 			"Use --ready or --status, not both.")
+	}
+	if filter.Ready && filter.Claimed {
+		return nil, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "--ready and --claimed select different sets"),
+			"Use --ready or --claimed, not both.")
 	}
 	home, err := s.home()
 	if err != nil {
@@ -406,6 +471,9 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 			continue
 		}
 		if filter.Ready && !idx.ready(ticket) {
+			continue
+		}
+		if filter.Claimed && ticket.ClaimedBy == "" {
 			continue
 		}
 		tickets = append(tickets, ticket)
@@ -533,26 +601,25 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 				clierr.New(clierr.InvalidUsage, "the Project name is empty"),
 				"Pass a Project name.")
 		}
-		info, statErr := os.Stat(filepath.Join(home, req.Project))
-		if statErr != nil || !info.IsDir() {
+		exists, directoryErr := projectDirectoryExists(home, req.Project)
+		if directoryErr != nil {
+			return domain.Ticket{}, directoryErr
+		}
+		if !exists {
 			return domain.Ticket{}, projectMissing(req.Project)
 		}
 	}
 	return s.mutate(ref, dryRun, req.StatusSet, func(m *mutation) error {
 		if req.StatusSet {
 			setMapString(m.mapping, "status", req.Status)
+			m.relocate = true
 		}
 		if req.PrioritySet {
 			setMapInt(m.mapping, "priority", req.Priority)
 		}
 		if req.ProjectSet {
-			destination := filepath.Join(home, req.Project, m.ticket.Slug+".md")
-			if destination != m.destPath {
-				if fileExists(destination) {
-					return clierr.New(clierr.AlreadyExists, "ticket file %q already exists", destination)
-				}
-				m.destPath = destination
-			}
+			m.project = req.Project
+			m.relocate = true
 		}
 		return nil
 	})
@@ -599,6 +666,7 @@ func (s *Service) Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, err
 		}
 		setMapNull(m.mapping, "claimed_by")
 		setMapNull(m.mapping, "claimed_at")
+		setMapNull(m.mapping, "twt_workspace_id")
 		return nil
 	})
 }
@@ -622,6 +690,36 @@ func (s *Service) Close(ref, claimant string, dryRun bool) (domain.Ticket, error
 		setMapString(m.mapping, "status", string(domain.TicketDone))
 		setMapNull(m.mapping, "claimed_by")
 		setMapNull(m.mapping, "claimed_at")
+		setMapNull(m.mapping, "twt_workspace_id")
+		m.relocate = true
+		return nil
+	})
+}
+
+// SetWorkspace stamps or clears the Workspace ID on one Ticket. An empty
+// workspaceID clears the field. The stamp is the join key for a coordinator
+// read: Ticket to Workspace.
+func (s *Service) SetWorkspace(ref, workspaceID string, dryRun bool) (domain.Ticket, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID != "" {
+		if err := store.ValidateResourceName(workspaceID); err != nil {
+			return domain.Ticket{}, clierr.Wrap(clierr.InvalidUsage, err)
+		}
+	}
+	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+		if workspaceID == "" {
+			if m.ticket.WorkspaceID == "" {
+				m.skipWrite = true
+				return nil
+			}
+			setMapNull(m.mapping, "twt_workspace_id")
+			return nil
+		}
+		if m.ticket.WorkspaceID == workspaceID {
+			m.skipWrite = true
+			return nil
+		}
+		setMapString(m.mapping, "twt_workspace_id", workspaceID)
 		return nil
 	})
 }
@@ -667,7 +765,9 @@ type mutation struct {
 	file      *TicketFile
 	mapping   *yaml.Node
 	ticket    domain.Ticket
+	project   string
 	destPath  string
+	relocate  bool
 	skipWrite bool
 }
 
@@ -715,7 +815,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 			"Set one of %s with 'twt tickets set %s --status STATUS'.",
 			strings.Join(domain.TicketStatuses(), ", "), slug)
 	}
-	m := &mutation{file: file, mapping: file.ensureMapping(), ticket: ticket, destPath: path}
+	m := &mutation{file: file, mapping: file.ensureMapping(), ticket: ticket, project: ticket.Project, destPath: path}
 	if err := apply(m); err != nil {
 		return domain.Ticket{}, err
 	}
@@ -723,6 +823,13 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 		return m.ticket, nil
 	}
 	setMapDate(m.mapping, "updated", s.today())
+	if m.relocate {
+		located, decodeErr := decodeTicket(m.file, slug)
+		if decodeErr != nil {
+			return domain.Ticket{}, decodeErr
+		}
+		m.destPath = canonicalTicketPath(home, located.Status, m.project, slug)
+	}
 	healProject(m.mapping, home, m.destPath)
 	data, err := m.file.Render()
 	if err != nil {
@@ -733,17 +840,27 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 		return domain.Ticket{}, err
 	}
 	result.Path = m.destPath
-	result.Project = projectOf(home, m.destPath)
+	result.Project = m.project
+	if m.destPath != path {
+		if err := ensureTicketDirectory(home, result.Status, m.project, dryRun); err != nil {
+			return domain.Ticket{}, err
+		}
+	}
 	if dryRun {
+		return result, nil
+	}
+	if m.destPath != path {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return domain.Ticket{}, fmt.Errorf("inspect ticket %q before move: %w", path, statErr)
+		}
+		if err := moveTicketFile(path, m.destPath, data, info.Mode().Perm()); err != nil {
+			return domain.Ticket{}, err
+		}
 		return result, nil
 	}
 	if err := store.WriteFileAtomic(m.destPath, data, 0o644, "Ticket"); err != nil {
 		return domain.Ticket{}, err
-	}
-	if m.destPath != path {
-		if err := os.Remove(path); err != nil {
-			return domain.Ticket{}, fmt.Errorf("remove moved ticket %q: %w", path, err)
-		}
 	}
 	return result, nil
 }
@@ -788,13 +905,13 @@ func bodyTitle(body, slug string) string {
 	return slug
 }
 
-// projectOf derives the Project of a ticket path from its directory.
+// projectOf derives the Project from one supported active or closed path.
 func projectOf(home, path string) string {
-	directory := filepath.Dir(path)
-	if directory == filepath.Clean(home) {
+	location, err := classifyTicketPath(home, path)
+	if err != nil {
 		return ""
 	}
-	return filepath.Base(directory)
+	return location.Project
 }
 
 // healProject writes the path-derived Project into the frontmatter. An ungrouped

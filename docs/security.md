@@ -69,8 +69,8 @@ coding agent. `twt` treats that text as data:
 The Neovim Agent Session picker puts preview Markdown only in a scratch buffer.
 It never evaluates the text. Preview does not register a discovered Agent
 Session and does not write a Transcript Snapshot. A transcript selection can
-write a snapshot. A live-pane selection can adopt the pane but cannot create a
-Transcript Snapshot.
+write a snapshot. A live-pane selection can adopt the pane and open the same
+Agent Preview in a scratch buffer. It cannot create a Transcript Snapshot.
 
 The `agents discover` result carries no free text: `twt` validates each
 provider session ID and matches each repository name against the Workspace.
@@ -112,9 +112,17 @@ An interactive path opens only for a person at a terminal:
   require a terminal on standard output, and they reject the null device.
   `--project` never creates a Project. A new Project from the wizard is created
   only after confirm, and only for a name that passes resource-name rules.
+- `twt create` and `twt workspaces create` ask for a Workspace name only when
+  `NAME` is absent, standard input is a terminal, standard output is a
+  terminal, and output is text. A pipe or `--output json` reports
+  `invalid_usage` and requires `NAME`.
 - `twt create` and `twt workspaces open` attach the tmux session only
   when standard output is a terminal. `--no-open` and `--no-attach` state
-  the same intention for a script.
+  the same intention for a script. `--all-active` never attaches.
+
+- `twt tickets start` without `TICKET` shows the Ticket picker only when
+  standard input is a terminal. fzf previews `twt tickets show` text. A pipe
+  or `--output json` reports `invalid_usage` and requires `TICKET`.
 - `twt tickets claim` and `twt tickets unclaim` never default the claimant
   outside a terminal: a non-interactive call must pass `--as NAME`, so two
   agents cannot both hold one Ticket as the same OS user.

@@ -93,6 +93,9 @@ type Service struct {
 	// skillPaths are the installed agent skill files that doctor compares
 	// with skillVersion.
 	skillPaths []string
+	// tmuxSocket is the tmux socket name that doctor uses to inspect
+	// Workspace sessions. Empty uses the default tmux server.
+	tmuxSocket string
 }
 
 func NewService(configDir, stateDir, dataDir, ticketsHome string) *Service {
@@ -105,6 +108,11 @@ func NewService(configDir, stateDir, dataDir, ticketsHome string) *Service {
 // WithSkillCheck adds the agent skill drift check to doctor. version is the
 // version that 'twt skills install' stamps, and paths are the installed skill
 // files. Doctor skips the check without both values.
+func (s *Service) WithTmuxSocket(socket string) *Service {
+	s.tmuxSocket = socket
+	return s
+}
+
 func (s *Service) WithSkillCheck(version string, paths []string) *Service {
 	s.skillVersion = version
 	s.skillPaths = paths
@@ -315,6 +323,7 @@ func (s *Service) Doctor() DoctorReport {
 		if valid {
 			report.addPass("workspaces", fmt.Sprintf("%d Workspace records are valid", len(workspaces)))
 		}
+		s.addSessionGapChecks(&report)
 	}
 	environments, err := store.NewEnvironmentStore(s.stateDir).List()
 	if err != nil {
@@ -350,6 +359,29 @@ func (s *Service) Doctor() DoctorReport {
 	s.checkTicketsHome(&report)
 	s.checkSkill(&report)
 	return report
+}
+
+// addSessionGapChecks reports tmux sessions that drifted from Workspace
+// records. A reboot or tmux-resurrect restore often creates this gap. The
+// checks are warnings, so doctor stays healthy until the person repairs them.
+func (s *Service) addSessionGapChecks(report *DoctorReport) {
+	service := workspaceservice.NewService(workspaceservice.Options{StateDir: s.stateDir, DataDir: s.dataDir, TmuxSocket: s.tmuxSocket})
+	gaps, err := service.SessionGaps()
+	if err != nil {
+		report.addWarning("tmux-sessions", err.Error())
+		return
+	}
+	if len(gaps) == 0 {
+		report.addPass("tmux-sessions", "active Workspace tmux sessions match twt state")
+		return
+	}
+	for _, gap := range gaps {
+		hint := "Run 'twt workspaces open --all-active --no-attach'."
+		if gap.Code == workspaceservice.SessionGapArchivedLive {
+			hint = fmt.Sprintf("Run 'twt workspaces archive %s'.", gap.Workspace.Name)
+		}
+		report.addWarning("tmux-session:"+gap.Workspace.Name, gap.Message+". "+hint)
+	}
 }
 
 // checkSkill compares each installed agent skill file with the running build.

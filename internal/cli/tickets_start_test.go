@@ -103,6 +103,13 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	if !strings.Contains(content, "Started Workspace fix-auth-tokens.") {
 		t.Fatalf("ticket has no start comment:\n%s", content)
 	}
+	if !strings.Contains(content, "twt_workspace_id: "+workspace.ID) {
+		t.Fatalf("ticket has no Workspace stamp:\n%s", content)
+	}
+	showTicket := executeWithOptions(t, options, nil, "tickets", "show", "fix-auth-tokens", "--output", "json")
+	if !strings.Contains(showTicket, `"workspaceId":"`+workspace.ID+`"`) {
+		t.Fatalf("tickets show JSON has no workspaceId: %s", showTicket)
+	}
 
 	// workspaces show reports the link in text and JSON.
 	show := executeWithOptions(t, options, nil, "workspaces", "show", "fix-auth-tokens")
@@ -127,6 +134,34 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	namedContent := readTicketFile(t, filepath.Join(home, "core", "second-thing.md"))
 	if !strings.Contains(namedContent, "Started Workspace custom-app.") {
 		t.Fatalf("ticket has no start comment for --name:\n%s", namedContent)
+	}
+}
+
+func TestProjectsShowReportsTheCoordinatorBoard(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Ready work", "--project", "core", "--status", "ready-for-agent")
+	executeWithOptions(t, options, nil, "tickets", "create", "Started work", "--project", "core", "--status", "ready-for-agent")
+	executeWithOptions(t, options, nil, "tickets", "start", "started-work", "--as", "tester")
+
+	output := executeWithOptions(t, options, nil, "projects", "show", "core", "--output", "json")
+	if !strings.Contains(output, `"slug":"ready-work"`) {
+		t.Fatalf("ready Ticket missing from Project board: %s", output)
+	}
+	if !strings.Contains(output, `"slug":"started-work"`) || !strings.Contains(output, `"inFlight"`) {
+		t.Fatalf("in-flight Ticket missing from Project board: %s", output)
+	}
+	if !strings.Contains(output, `"name":"started-work"`) {
+		t.Fatalf("Workspace missing from Project board: %s", output)
+	}
+
+	claimed := executeWithOptions(t, options, nil, "tickets", "list", "--claimed", "--output", "json")
+	if !strings.Contains(claimed, `"slug":"started-work"`) || strings.Contains(claimed, `"slug":"ready-work"`) {
+		t.Fatalf("--claimed list = %s", claimed)
 	}
 }
 

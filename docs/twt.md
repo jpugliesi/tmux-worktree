@@ -260,6 +260,10 @@ twt create fix-auth --template everysphere
 
 `twt create` is the short form of `twt workspaces create`.
 
+Without `NAME`, and when standard input and standard output are terminals and
+output is text, `twt` asks for a Workspace name. A script, a pipe, and
+`--output json` still require `NAME`.
+
 Without `--template`, `twt` selects the only Workspace Template, or the
 Workspace Template of the last successful creation. If neither rule applies, the
 command lists the available names and stops.
@@ -373,11 +377,18 @@ twt create fix-logout \
 
 ```sh
 twt workspaces list
+twt workspaces list --project change-monitor --status active
 twt workspaces show fix-auth
 twt workspaces current
 twt workspaces path fix-auth everysphere
 twt workspaces open fix-auth
+twt workspaces open --all-active --no-attach
 ```
+
+`twt workspaces open` repairs a missing tmux session of an active Workspace. It
+also claims an unowned session whose name matches the Workspace, so a
+tmux-resurrect restore after a reboot does not create a second session.
+`--all-active` repairs every active Workspace and attaches no client.
 
 The text list shows an aligned table with the Workspace name, Workspace Template,
 status, and age, in that order. The list does not read disk sizes, so it stays
@@ -576,8 +587,8 @@ the transcript to
 `latest.md` in the Workspace directory as a copy of the most recent snapshot. If
 `TWT_STATE_DIR` is not set, twt uses the normal XDG state directory.
 Different Workspaces use different private files. A live Cursor selection has
-no verified transcript, so it selects and adopts the pane without writing a
-Transcript Snapshot. Archive keeps the snapshot files.
+no verified transcript, so it selects the pane and opens the Agent Preview in a
+scratch buffer. It does not write a Transcript Snapshot. Archive keeps the snapshot files.
 `twt workspaces remove WORKSPACE --apply` deletes the matching owned snapshots.
 For an older Agent Session, add the provider link:
 
@@ -635,11 +646,15 @@ completes the work. This flow uses text output. For JSON output, run `done`
 from a different session. A dry run reports the archive and the complete
 removal plan and changes nothing.
 
-Open an archived Workspace to make it active and create its tmux session again:
+Open an archived Workspace to make it active and create its tmux session again.
+The same command repairs an active Workspace whose session is missing after a
+reboot:
 
 ```sh
 twt workspaces open fix-auth
 twt workspaces open fix-auth --no-attach
+twt workspaces open --all-active --dry-run --output json
+twt workspaces open --all-active
 ```
 
 From inside the Workspace tmux session, `archive` behaves like `done --keep`:
@@ -785,12 +800,12 @@ reports whether Tickets home is set, exists, and is writable.
 twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
-twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--all] [--limit N]
+twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT]
-twt tickets claim TICKET [--as NAME]
-twt tickets start TICKET... [--name NAME] [--template TEMPLATE] [--as NAME]
+twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
+twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
@@ -933,6 +948,12 @@ twt projects create change-monitor --output json
 twt projects list --output json
 twt projects show change-monitor --output json
 ```
+
+`projects show` is the coordinator board. JSON includes `ready` Tickets,
+`inFlight` (claimed) Tickets, and Workspaces linked to the Project.
+`create --ticket` and `tickets start` stamp `workspaceId` on each Ticket.
+`tickets list --claimed` lists in-flight Tickets. `context` includes the
+linked Tickets and the ready queue for the current Workspace Project.
 
 ### Resolve a TICKET argument
 

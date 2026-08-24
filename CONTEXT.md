@@ -99,14 +99,22 @@ Configured root directory of ticket Markdown files. Default personal value:
 `~/Vaults/spacexai/tickets/`.
 _Avoid_: Vault, issues dir
 
+**Closed Tickets directory**:
+The twt-owned tree at `$TICKETS_HOME/closed`, marked by `.twt-closed`. It
+holds `done` and `wontfix` Tickets. The `closed` segment is not a Project.
+_Avoid_: Closed Project, archive Project
+
 **Project**:
 One durable directory under Tickets home, with `index.md`. It groups Tickets
-and can have many Workspaces over time.
+and can have many Workspaces over time. Its Ticket count includes active and
+closed Tickets.
 _Avoid_: Board, workspace, epic folder
 
 **Ticket**:
 One Markdown file with YAML frontmatter. A Ticket belongs to one Project and
-can belong to only one active Workspace.
+can belong to only one active Workspace. `twt_workspace_id` is that
+Workspace ID while the Ticket is in flight. Its directory defines its
+Project, including below the Closed Tickets directory.
 _Avoid_: Issue, task file, combined tickets note
 
 **Topic note**:

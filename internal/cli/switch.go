@@ -37,11 +37,9 @@ func newSwitchCommand(options Options) *cobra.Command {
 			if isDryRun(command) {
 				return writeSwitchPlan(command.OutOrStdout(), workspace)
 			}
-			if workspace.Status == domain.WorkspaceArchived {
-				workspace, err = service.Open(workspace.ID)
-				if err != nil {
-					return err
-				}
+			workspace, err = service.Open(workspace.ID)
+			if err != nil {
+				return err
 			}
 			return openTmux(options, workspace.TmuxSession)
 		},
@@ -57,7 +55,7 @@ func writeSwitchPlan(out io.Writer, workspace domain.Workspace) error {
 		_, err := fmt.Fprintf(out, "Dry run: open archived Workspace %q, then switch the client to session %q.\n", workspace.Name, workspace.TmuxSession)
 		return err
 	}
-	_, err := fmt.Fprintf(out, "Dry run: switch the client to session %q of Workspace %q.\n", workspace.TmuxSession, workspace.Name)
+	_, err := fmt.Fprintf(out, "Dry run: repair the tmux session of Workspace %q if it is missing, then switch the client to session %q.\n", workspace.Name, workspace.TmuxSession)
 	return err
 }
 

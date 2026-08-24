@@ -205,16 +205,12 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		}
 		var repositoryBlockers []RemovalBlocker
 		if err := s.withCacheLock(repository.CachePath, func() error {
-			status, err := output(repository.Path, "git", "status", "--porcelain")
+			blocker, err := worktreeChangesBlocker(repository.Path)
 			if err != nil {
-				return fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+				return err
 			}
-			if status != "" {
-				repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
-					Code:    BlockerUncommittedChanges,
-					Message: fmt.Sprintf("worktree %q has uncommitted changes; clean or save them before removal", repository.Path),
-					Paths:   dirtyPaths(status, 5),
-				})
+			if blocker != nil {
+				repositoryBlockers = append(repositoryBlockers, *blocker)
 			}
 			if err := ensureOriginFetchRefspec(repository.CachePath); err != nil {
 				return err
@@ -317,7 +313,19 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	for _, repository := range p.Repositories {
 		if err := s.withCacheLock(repository.CachePath, func() error {
 			if _, err := os.Stat(repository.Path); err == nil {
-				if err := run(repository.CachePath, "git", "worktree", "remove", repository.Path); err != nil {
+				blocker, err := worktreeChangesBlocker(repository.Path)
+				if err != nil {
+					return err
+				}
+				if blocker != nil {
+					plan.Blockers = append(plan.Blockers, *blocker)
+					return removalRefusal(p.Name, plan.Blockers)
+				}
+				// Git requires --force for every worktree that contains an
+				// initialized submodule, including a clean worktree. The strict
+				// status check above keeps this Git compatibility flag from
+				// discarding changes that submodule ignore settings can hide.
+				if err := run(repository.CachePath, "git", "worktree", "remove", "--force", repository.Path); err != nil {
 					return fmt.Errorf("remove worktree %q: %w", repository.Path, err)
 				}
 			}
@@ -347,6 +355,23 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 		return plan, fmt.Errorf("remove Workspace root %q: %w", p.Root, err)
 	}
 	return plan, s.removeState(p)
+}
+
+// worktreeChangesBlocker includes submodule changes even when repository
+// configuration tells normal Git status output to ignore them.
+func worktreeChangesBlocker(worktreePath string) (*RemovalBlocker, error) {
+	status, err := output(worktreePath, "git", "status", "--porcelain", "--ignore-submodules=none")
+	if err != nil {
+		return nil, fmt.Errorf("inspect worktree %q: %w", worktreePath, err)
+	}
+	if status == "" {
+		return nil, nil
+	}
+	return &RemovalBlocker{
+		Code:    BlockerUncommittedChanges,
+		Message: fmt.Sprintf("worktree %q has uncommitted changes; clean or save them before removal", worktreePath),
+		Paths:   dirtyPaths(status, 5),
+	}, nil
 }
 
 // removeState deletes the twt state records of one Workspace: its Transcript

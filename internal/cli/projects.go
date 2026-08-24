@@ -17,8 +17,11 @@ type projectsListOutput struct {
 }
 
 type projectShowOutput struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	Project       domain.Project `json:"project"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Project       domain.Project    `json:"project"`
+	Ready         []domain.Ticket   `json:"ready"`
+	InFlight      []domain.Ticket   `json:"inFlight"`
+	Workspaces    []workspaceOutput `json:"workspaces"`
 }
 
 func newProjectsCommand(options Options) *cobra.Command {
@@ -118,18 +121,60 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			board, err := projectBoard(options, service, project)
+			if err != nil {
+				return err
+			}
 			if WantsJSON(command) {
-				return writeReadJSON(command, projectShowOutput{SchemaVersion: jsonSchemaVersion, Project: project}, "project")
+				return writeReadJSON(command, board, "project")
 			}
 			return writeFields(command.OutOrStdout(), [][2]string{
 				{"Project", project.Name},
 				{"Path", project.Path},
 				{"Tickets", fmt.Sprintf("%d", project.Tickets)},
+				{"Ready", fmt.Sprintf("%d", len(board.Ready))},
+				{"In flight", fmt.Sprintf("%d", len(board.InFlight))},
+				{"Workspaces", fmt.Sprintf("%d", len(board.Workspaces))},
 			})
 		},
 	}
 	setArguments(command, requiredArgument("name"))
-	addFieldsFlag(command, domain.Project{})
+	addFieldsFlag(command, projectShowOutput{})
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command
+}
+
+// projectBoard is the coordinator read for one Project: pickable Tickets,
+// claimed Tickets, and the Workspaces that belong to the Project.
+func projectBoard(options Options, service *ticketservice.Service, project domain.Project) (projectShowOutput, error) {
+	ready, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, Ready: true})
+	if err != nil {
+		return projectShowOutput{}, err
+	}
+	if ready == nil {
+		ready = []domain.Ticket{}
+	}
+	claimed, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, Claimed: true})
+	if err != nil {
+		return projectShowOutput{}, err
+	}
+	if claimed == nil {
+		claimed = []domain.Ticket{}
+	}
+	workspaces, err := options.workspaceService().List()
+	if err != nil {
+		return projectShowOutput{}, err
+	}
+	linked := filterWorkspaces(workspaces, project.Name, "", "", true, false)
+	outputs := make([]workspaceOutput, 0, len(linked))
+	for _, workspace := range linked {
+		outputs = append(outputs, toWorkspaceOutput(workspace))
+	}
+	return projectShowOutput{
+		SchemaVersion: jsonSchemaVersion,
+		Project:       project,
+		Ready:         ready,
+		InFlight:      claimed,
+		Workspaces:    outputs,
+	}, nil
 }

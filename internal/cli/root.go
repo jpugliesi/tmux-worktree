@@ -124,6 +124,7 @@ func (o Options) maintenanceService() *maintenance.Service {
 	}
 	userHome, _ := os.UserHomeDir()
 	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir, home).
+		WithTmuxSocket(o.TmuxSocket).
 		WithSkillCheck(version.Version, skillasset.UserPaths(userHome))
 }
 

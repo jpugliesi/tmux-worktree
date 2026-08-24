@@ -4,7 +4,7 @@ Design for a personal Markdown ticket tracker in `twt`. The files are the
 store. The CLI owns every mutation. Agents call `twt tickets`. They do not
 write ticket files by hand.
 
-This document is the implementation spec. It is not yet shipped.
+This document is the implementation specification for the current feature.
 
 ## Why this exists
 
@@ -45,6 +45,11 @@ $TICKETS_HOME/
   change-monitor/
     index.md               # project hub, scaffold once
     some-ticket.md
+  closed/
+    .twt-closed            # marks the twt-owned closed tree
+    old-ticket.md          # closed, ungrouped ticket
+    change-monitor/
+      old-project-ticket.md
 ```
 
 Rules:
@@ -54,18 +59,24 @@ Rules:
   `reconnect-change-monitor-vfs-tools.md`.
 - A slug is unique across the whole Tickets home, so `[[some-ticket]]` is
   unambiguous in Obsidian.
-- A Project is one directory segment. No nested Projects in v1.
+- A Project is one directory segment. In `closed/PROJECT/`, the second
+  directory segment defines the Project. No nested Projects exist in v1.
 - `index.md` and files under `templates/` are not Tickets.
-- Closed Tickets stay in place so wiki-links stay stable.
+- `done` and `wontfix` Tickets are closed. They live under `closed/`, which
+  is a reserved Project name.
+- Bare slugs and `[[slug]]` wiki-links stay stable after a move. Old path
+  references do not.
 - Existing files such as `tkt-cm-001.md` stay valid. The resolver accepts any
   Markdown stem.
 
 `twt tickets init` creates Tickets home if it is missing. It writes
-`index.md` and `templates/ticket.md` only when those files are missing. It
-does not overwrite notes.
+`index.md` and `templates/ticket.md` only when they are missing. It creates
+the marked closed tree when no `closed` path exists. It does not adopt an
+unmarked `closed` directory or overwrite notes.
 
 `twt projects create NAME` creates the Project directory and writes
-`index.md` only when that file is missing.
+`index.md` only when that file is missing. Project ticket counts include
+active and closed Tickets.
 
 Do not rewrite Bases queries on each ticket write. Obsidian Bases owns the
 view. The CLI scaffolds the hub once.
@@ -73,7 +84,9 @@ view. The CLI scaffolds the hub once.
 ### Root `index.md` views
 
 Recent, Ready, Blocked, Claimed. Filter to Markdown files under Tickets home.
-Exclude `index.md` and `templates/`.
+Exclude `index.md`, `templates/`, and `closed/`. The new scaffold includes
+the `closed/` filter. An existing personalized index is not rewritten; add
+the same filter to it manually.
 
 ### Project `index.md` views
 
@@ -99,6 +112,7 @@ project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
+twt_workspace_id:
 created: 2026-08-20
 updated: 2026-08-20
 ---
@@ -118,11 +132,15 @@ Statuses:
 - `needs-info`
 - `ready-for-agent`
 - `ready-for-human`
-- `wontfix`
-- `done` (shipped work. Extra value. Not a triage role.)
+- `wontfix` (closed)
+- `done` (closed shipped work. Extra value. Not a triage role.)
 
-Not in v1: `parent`, `type`, `category`, `twtWorkspaceId`, sequential IDs
-such as `tkt-cm-001`.
+`twt_workspace_id` is the immutable Workspace ID of the active Workspace
+that works on the Ticket. Create with `--ticket` and `tickets start` stamp
+it. `close` and `unclaim` clear it. `claim --workspace` stamps it.
+
+Not in v1: `parent`, `type`, `category`, sequential IDs such as
+`tkt-cm-001`.
 
 ### Body
 
@@ -175,7 +193,10 @@ twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT]
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
+twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
+twt tickets doctor
+twt tickets repair
 twt projects create NAME
 twt projects list [--limit N]
 twt projects show NAME
@@ -198,6 +219,8 @@ from the store.
 6. Path under Tickets home
 
 An ambiguous prefix is `invalid_usage`. Put the candidate slugs in `hint`.
+Path lookup uses the current path. An old path does not follow a moved
+Ticket; use its bare slug or `[[slug]]` instead.
 
 ### `tickets create`
 
@@ -212,6 +235,7 @@ Default status is `needs-triage`. `--status ready-for-agent` is allowed.
 `--dry-run` prints the file that would be written and does not write it.
 When the wizard would create a Project, text dry-run prints that Project first,
 then the Ticket file. JSON dry-run stays one `tickets.create` envelope.
+Create puts an initial `done` or `wontfix` Ticket in the closed tree.
 
 Slug rule: lowercase, hyphenate, strip characters that are not ASCII letters
 or digits, cap at 60 characters. If the slug exists anywhere under Tickets
@@ -221,6 +245,17 @@ If `--project` names a missing Project, return `not_found` and hint
 `twt projects create NAME`. `--project` never creates a Project. The
 interactive picker may create a Project after confirm. Apply `tickets.create`
 still requires an existing Project.
+
+### Ticket moves
+
+Status and Project directory define the correct path. `create`, `close`,
+and `set --status` or `set --project` move a Ticket when necessary. A
+closed Project Ticket moves to `closed/PROJECT/SLUG.md`. A closed ungrouped
+Ticket moves to `closed/SLUG.md`. Setting a closed Ticket to an open status
+reopens it and moves it back to the active tree.
+
+The directory remains the source of truth for Project. The `closed` segment
+is storage, not a Project.
 
 ### `tickets list --ready`
 
@@ -284,28 +319,46 @@ files live next to the destination and must not remain after success.
 `claimed_by` is empty or equals the resolved claimant. A different claimant
 gets `locked`. It then clears `claimed_by` and `claimed_at`.
 
-Resolve shipped work with `twt tickets set TICKET --status done` and
-`unclaim`.
+Resolve shipped work with `twt tickets close TICKET`. It sets `done` and
+removes the claim.
 
 ### `tickets comment`
 
 Require `--stdin`. Append under `## Comments`. Create that heading if it is
 missing. Set `updated`.
 
+### `tickets doctor` and `tickets repair`
+
+`twt tickets doctor` is read-only. It reports invalid files, duplicate slugs,
+closed-tree conflicts, and Tickets outside their correct location.
+
+Run repair as a dry-run first. Repair applies no move when the doctor report
+has a blocker:
+
+```sh
+twt tickets doctor --output json
+twt tickets repair --dry-run --output json
+twt tickets repair --output json
+```
+
 ### `apply` operations
 
-Add:
+Ticket apply operations:
 
+- `tickets.init` (no payload)
 - `tickets.create`
+- `tickets.edit`
 - `tickets.set`
 - `tickets.claim`
 - `tickets.unclaim`
+- `tickets.close`
 - `tickets.comment`
+- `tickets.repair` (no payload)
 - `projects.create`
 
 `twt schema` must list every new command and these operations. Update
-`TestSchemaDescribesCommandsFlagsAndRawApplyOperations`. That test currently
-asserts exactly six apply operations.
+`TestSchemaDescribesCommandsFlagsAndRawApplyOperations` with the new
+operation.
 
 `tickets.claim` and `tickets.unclaim` require `ticket.as`. Apply is never a
 TTY path, so it has no OS-username default.
@@ -320,8 +373,8 @@ TTY path, so it has no OS-username default.
 ```
 
 A ticket object includes `slug`, `title`, `status`, `priority`, `project`,
-`path`, `claimedBy`, `blockedBy`, `created`, `updated`. `show` also includes
-`body`.
+`path`, `claimedBy`, `blockedBy`, `workspaceId`, `created`, `updated`.
+`workspaceId` is omitted when empty. `show` also includes `body`.
 
 Mutation dry-run uses the existing mutation envelope: `schemaVersion`,
 `operation`, `status` (`valid` or `applied`), plus `id` as the slug.
@@ -357,7 +410,7 @@ three user skill trees so Cursor, Claude Code, and Codex all see it:
 - `~/.claude/skills/twt/SKILL.md`
 - `~/.agents/skills/twt/SKILL.md`
 
-Keep one canonical file in this repo. The install step copies or symlinks it.
+Keep one source file in this repo. The install step copies or symlinks it.
 
 Skill rules:
 
@@ -387,9 +440,6 @@ follow-up rewrites that file so publish and fetch go through `twt tickets`.
 
 ## Later work (not this slice)
 
-- `twt tickets claim TICKET --workspace current` stamps `twtWorkspaceId`
-- `twt context` lists `--ready` tickets
-- `twt workspaces create` takes `--ticket TICKET` and copies the title
 - Nested Projects
 - Field masks on `tickets show`
 

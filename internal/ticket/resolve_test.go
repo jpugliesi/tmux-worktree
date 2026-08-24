@@ -114,6 +114,45 @@ func TestResolveDuplicateSlug(t *testing.T) {
 	}
 }
 
+func TestResolveIndexesClosedTicketLocations(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, closedDirectoryName, closedMarkerName), "twt closed tickets\n")
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "ungrouped.md"),
+		fixture{title: "Closed ungrouped", status: "done"}.content())
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "core", "project-work.md"),
+		fixture{title: "Closed Project work", status: "wontfix"}.content())
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "core", "deep", "too-deep.md"),
+		fixture{title: "Too deep", status: "done"}.content())
+
+	ungrouped, err := service.Resolve("ungrouped")
+	if err != nil {
+		t.Fatalf("Resolve closed ungrouped: %v", err)
+	}
+	if ungrouped.Project != "" || ungrouped.Path != filepath.Join(home, closedDirectoryName, "ungrouped.md") {
+		t.Fatalf("closed ungrouped Ticket = %+v", ungrouped)
+	}
+
+	project, err := service.Resolve("project-work")
+	if err != nil {
+		t.Fatalf("Resolve closed Project Ticket: %v", err)
+	}
+	if project.Project != "core" || project.Path != filepath.Join(home, closedDirectoryName, "core", "project-work.md") {
+		t.Fatalf("closed Project Ticket = %+v", project)
+	}
+
+	if _, err := service.Resolve("too-deep"); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("Resolve invalid nested closed Ticket = %v, want not_found", err)
+	}
+
+	all, err := service.List(ListFilter{All: true})
+	if err != nil {
+		t.Fatalf("List --all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("List --all = %+v", all)
+	}
+}
+
 func TestResolveSkippedFileReportsItsError(t *testing.T) {
 	service, _ := resolverHome(t)
 	_, err := service.Resolve("broken")

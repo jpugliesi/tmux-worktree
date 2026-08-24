@@ -1,6 +1,7 @@
 package ticket
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -286,6 +287,104 @@ func TestCloseResolvesATicket(t *testing.T) {
 	}
 }
 
+func TestCloseMovesTicketToTheClosedProjectTree(t *testing.T) {
+	service, home := newTestService(t)
+	if _, err := service.CreateProject("core", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	source := filepath.Join(home, "core", "work.md")
+	writeFixture(t, source, fixture{title: "Work", status: "ready-for-agent", claimedBy: "agent-a"}.content())
+
+	closed, err := service.Close("work", "agent-a", false)
+	if err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	destination := filepath.Join(home, closedDirectoryName, "core", "work.md")
+	if closed.Path != destination || closed.Project != "core" || closed.Status != domain.TicketDone {
+		t.Fatalf("closed Ticket = %+v", closed)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("source still exists after Close: %v", err)
+	}
+	if !strings.Contains(readFile(t, destination), "status: done\n") {
+		t.Fatalf("destination has the wrong status:\n%s", readFile(t, destination))
+	}
+}
+
+func TestSetRelocatesAfterStatusAndProjectChanges(t *testing.T) {
+	service, home := newTestService(t)
+	for _, project := range []string{"core", "other"} {
+		if _, err := service.CreateProject(project, false); err != nil {
+			t.Fatalf("CreateProject(%s): %v", project, err)
+		}
+	}
+	writeFixture(t, filepath.Join(home, "core", "work.md"), fixture{title: "Work", status: "ready-for-agent"}.content())
+
+	closed, err := service.Set("work", SetRequest{
+		Status: "done", StatusSet: true, Project: "other", ProjectSet: true,
+	}, false)
+	if err != nil {
+		t.Fatalf("Set status and Project: %v", err)
+	}
+	closedPath := filepath.Join(home, closedDirectoryName, "other", "work.md")
+	if closed.Path != closedPath || closed.Project != "other" || closed.Status != domain.TicketDone {
+		t.Fatalf("closed Ticket = %+v", closed)
+	}
+
+	reopened, err := service.Set("work", SetRequest{Status: "ready-for-agent", StatusSet: true}, false)
+	if err != nil {
+		t.Fatalf("reopen Ticket: %v", err)
+	}
+	activePath := filepath.Join(home, "other", "work.md")
+	if reopened.Path != activePath || reopened.Project != "other" || reopened.Status != domain.TicketReadyForAgent {
+		t.Fatalf("reopened Ticket = %+v", reopened)
+	}
+	if _, err := os.Stat(closedPath); !os.IsNotExist(err) {
+		t.Fatalf("closed path still exists after reopen: %v", err)
+	}
+}
+
+func TestSetMovesAClosedTicketBetweenProjects(t *testing.T) {
+	service, home := newTestService(t)
+	for _, project := range []string{"core", "other"} {
+		if _, err := service.CreateProject(project, false); err != nil {
+			t.Fatalf("CreateProject(%s): %v", project, err)
+		}
+	}
+	if err := ensureClosedRoot(home, false); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "core", "work.md"), fixture{title: "Work", status: "done"}.content())
+
+	moved, err := service.Set("work", SetRequest{Project: "other", ProjectSet: true}, false)
+	if err != nil {
+		t.Fatalf("Set Project: %v", err)
+	}
+	want := filepath.Join(home, closedDirectoryName, "other", "work.md")
+	if moved.Path != want || moved.Project != "other" || moved.Status != domain.TicketDone {
+		t.Fatalf("moved closed Ticket = %+v", moved)
+	}
+}
+
+func TestCloseDoesNotChangeEitherDuplicateDestination(t *testing.T) {
+	service, home := newTestService(t)
+	if err := ensureClosedRoot(home, false); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(home, "work.md")
+	destination := filepath.Join(home, closedDirectoryName, "work.md")
+	writeFixture(t, source, fixture{title: "Active", status: "ready-for-agent"}.content())
+	writeFixture(t, destination, fixture{title: "Existing", status: "done"}.content())
+	sourceBefore, destinationBefore := readFile(t, source), readFile(t, destination)
+
+	if _, err := service.Close("work", "agent-a", false); clierr.CodeOf(err) != clierr.UnsafeState {
+		t.Fatalf("Close with a duplicate destination = %v, want unsafe_state", err)
+	}
+	if readFile(t, source) != sourceBefore || readFile(t, destination) != destinationBefore {
+		t.Fatal("Close changed a file in a destination collision")
+	}
+}
+
 func TestCloseOverwritesAnUnknownStatus(t *testing.T) {
 	service, home := newTestService(t)
 	path := filepath.Join(home, "odd.md")
@@ -298,8 +397,8 @@ func TestCloseOverwritesAnUnknownStatus(t *testing.T) {
 	if closed.Status != domain.TicketDone {
 		t.Fatalf("status = %q, want done", closed.Status)
 	}
-	if !strings.Contains(readFile(t, path), "status: done\n") {
-		t.Fatalf("status not written:\n%s", readFile(t, path))
+	if !strings.Contains(readFile(t, closed.Path), "status: done\n") {
+		t.Fatalf("status not written:\n%s", readFile(t, closed.Path))
 	}
 }
 
@@ -310,12 +409,13 @@ func TestCloseIsOneWriteThatKeepsLegacyKeys(t *testing.T) {
 		"claimed_by: agent-a\nclaimed_at: 2026-08-02\n", 1)
 	writeFixture(t, path, claimed)
 
-	if _, err := service.Close("tkt-cm-001", "agent-a", false); err != nil {
+	closed, err := service.Close("tkt-cm-001", "agent-a", false)
+	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	// One read after the single write: every change of the close mutation
 	// must be in this one file content.
-	content := readFile(t, path)
+	content := readFile(t, closed.Path)
 	for _, line := range []string{
 		"status: done\n",
 		"claimed_by:\n",
@@ -358,6 +458,9 @@ func TestCloseDryRunWritesNothing(t *testing.T) {
 	}
 	if readFile(t, path) != before {
 		t.Fatal("a dry-run close changed the file")
+	}
+	if _, err := os.Stat(filepath.Join(home, closedDirectoryName)); !os.IsNotExist(err) {
+		t.Fatal("a dry-run close created the closed directory")
 	}
 	// A dry run still runs every check.
 	if _, err := service.Close("work", "agent-b", true); clierr.CodeOf(err) != clierr.Locked {
@@ -424,6 +527,56 @@ func TestClaimCompareAndSet(t *testing.T) {
 	}
 	if readFile(t, path) != bytesBefore {
 		t.Fatal("failed claim changed the file")
+	}
+}
+
+func TestSetWorkspaceStampsAndClears(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "work.md")
+	writeFixture(t, path, fixture{title: "Work", status: "ready-for-agent"}.content())
+
+	stamped, err := service.SetWorkspace("work", "514a26ed287e429b888000aaa288333a", false)
+	if err != nil {
+		t.Fatalf("SetWorkspace: %v", err)
+	}
+	if stamped.WorkspaceID != "514a26ed287e429b888000aaa288333a" {
+		t.Fatalf("stamped WorkspaceID = %q", stamped.WorkspaceID)
+	}
+	content := readFile(t, path)
+	if !strings.Contains(content, "twt_workspace_id: 514a26ed287e429b888000aaa288333a\n") {
+		t.Fatalf("stamp not written:\n%s", content)
+	}
+
+	if _, err := service.Claim("work", "agent-a", false); err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	closed, err := service.Close("work", "agent-a", false)
+	if err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if closed.WorkspaceID != "" || closed.ClaimedBy != "" {
+		t.Fatalf("closed ticket still linked: %+v", closed)
+	}
+	closedPath := filepath.Join(home, "closed", "work.md")
+	if strings.Contains(readFile(t, closedPath), "twt_workspace_id: 514a26ed287e429b888000aaa288333a") {
+		t.Fatalf("close kept the Workspace stamp:\n%s", readFile(t, closedPath))
+	}
+}
+
+func TestListClaimedOmitsUnclaimedTickets(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "open.md"), fixture{title: "Open", status: "ready-for-agent"}.content())
+	writeFixture(t, filepath.Join(home, "held.md"), fixture{title: "Held", status: "ready-for-agent", claimedBy: "agent-a"}.content())
+
+	claimed, err := service.List(ListFilter{Claimed: true})
+	if err != nil {
+		t.Fatalf("List claimed: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].Slug != "held" {
+		t.Fatalf("claimed list = %+v", claimed)
+	}
+	if _, err := service.List(ListFilter{Ready: true, Claimed: true}); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("ready+claimed = %v, want invalid_usage", err)
 	}
 }
 
@@ -829,6 +982,33 @@ func TestCreateUngroupedWithBody(t *testing.T) {
 	}
 }
 
+func TestCreateClosedTicketsUsesTheClosedTree(t *testing.T) {
+	service, home := newTestService(t)
+	if _, err := service.CreateProject("core", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	done, err := service.Create(CreateRequest{Title: "Shipped", Status: domain.TicketDone, Priority: -1}, false)
+	if err != nil {
+		t.Fatalf("Create done Ticket: %v", err)
+	}
+	if want := filepath.Join(home, closedDirectoryName, "shipped.md"); done.Ticket.Path != want {
+		t.Fatalf("done Ticket path = %q, want %q", done.Ticket.Path, want)
+	}
+
+	wontfix, err := service.Create(CreateRequest{Title: "Dropped", Project: "core", Status: domain.TicketWontfix, Priority: -1}, false)
+	if err != nil {
+		t.Fatalf("Create wontfix Ticket: %v", err)
+	}
+	if want := filepath.Join(home, closedDirectoryName, "core", "dropped.md"); wontfix.Ticket.Path != want {
+		t.Fatalf("wontfix Ticket path = %q, want %q", wontfix.Ticket.Path, want)
+	}
+
+	if content := readFile(t, filepath.Join(home, closedDirectoryName, closedMarkerName)); content == "" {
+		t.Fatal("the closed directory marker is empty")
+	}
+}
+
 func TestCreateErrors(t *testing.T) {
 	service, home := newTestService(t)
 	writeFixture(t, filepath.Join(home, "taken.md"), fixture{title: "Taken", status: "needs-triage"}.content())
@@ -904,7 +1084,7 @@ func TestInitIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if !first.WroteIndex || !first.WroteTemplate {
+	if !first.WroteIndex || !first.WroteTemplate || !first.WroteClosedMarker {
 		t.Fatalf("first Init = %+v", first)
 	}
 	indexPath := filepath.Join(home, "index.md")
@@ -916,7 +1096,7 @@ func TestInitIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
-	if second.WroteIndex || second.WroteTemplate {
+	if second.WroteIndex || second.WroteTemplate || second.WroteClosedMarker {
 		t.Fatalf("second Init = %+v, want no writes", second)
 	}
 	if readFile(t, indexPath) != "# my custom hub\n" || readFile(t, templatePath) != "my custom template\n" {
@@ -930,11 +1110,14 @@ func TestInitDryRunWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run Init: %v", err)
 	}
-	if !result.WroteIndex || !result.WroteTemplate {
+	if !result.WroteIndex || !result.WroteTemplate || !result.WroteClosedMarker {
 		t.Fatalf("dry-run Init = %+v", result)
 	}
 	if _, err := os.Stat(filepath.Join(home, "index.md")); !os.IsNotExist(err) {
 		t.Fatal("dry-run Init wrote index.md")
+	}
+	if _, err := os.Stat(filepath.Join(home, closedDirectoryName)); !os.IsNotExist(err) {
+		t.Fatal("dry-run Init created the closed directory")
 	}
 }
 
@@ -948,6 +1131,7 @@ func TestInitScaffoldSubstitutesTheFolderName(t *testing.T) {
 	for _, want := range []string{
 		"file.inFolder(\"" + folder + "\")",
 		"'!file.inFolder(\"" + folder + "/templates\")'",
+		"'!file.inFolder(\"" + folder + "/closed\")'",
 		"created: 2026-08-20",
 		"status == \"ready-for-agent\"",
 	} {
@@ -992,11 +1176,12 @@ func TestProjects(t *testing.T) {
 	}
 
 	writeFixture(t, filepath.Join(home, "change-monitor", "one.md"), fixture{title: "One", status: "needs-triage"}.content())
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "change-monitor", "shipped.md"), fixture{title: "Shipped", status: "done"}.content())
 	projects, err := service.Projects()
 	if err != nil {
 		t.Fatalf("Projects: %v", err)
 	}
-	if len(projects) != 1 || projects[0].Name != "change-monitor" || projects[0].Tickets != 1 || !projects[0].HasIndex {
+	if len(projects) != 1 || projects[0].Name != "change-monitor" || projects[0].Tickets != 2 || !projects[0].HasIndex {
 		t.Fatalf("Projects = %+v", projects)
 	}
 
@@ -1008,6 +1193,52 @@ func TestProjects(t *testing.T) {
 	}
 	if _, err := service.CreateProject("templates", false); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("reserved Project name = %v, want invalid_usage", err)
+	}
+	if _, err := service.CreateProject("Closed", false); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("closed Project name = %v, want invalid_usage", err)
+	}
+}
+
+func TestCloseRejectsASymbolicLinkClosedProjectDirectory(t *testing.T) {
+	service, home := newTestService(t)
+	if _, err := service.CreateProject("core", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(CreateRequest{
+		Title: "Keep inside home", Project: "core", Status: domain.TicketReadyForAgent, Priority: -1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureClosedRoot(home, false); err != nil {
+		t.Fatal(err)
+	}
+	external := t.TempDir()
+	if err := os.Symlink(external, filepath.Join(home, closedDirectoryName, "core")); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+
+	_, err := service.Close("keep-inside-home", "test-agent", false)
+	if clierr.CodeOf(err) != clierr.UnsafeState {
+		t.Fatalf("Close() through a closed Project symlink = %v, want unsafe_state", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, "core", "keep-inside-home.md")); statErr != nil {
+		t.Fatalf("Close() removed the source Ticket: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(external, "keep-inside-home.md")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("Close() wrote through the symlink: %v", statErr)
+	}
+}
+
+func TestUnmarkedClosedDirectoryIsAConflict(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "index.md"), "# Existing Project\n")
+	writeFixture(t, filepath.Join(home, closedDirectoryName, "work.md"), fixture{title: "Existing work", status: "needs-triage"}.content())
+
+	if _, err := service.Projects(); clierr.CodeOf(err) != clierr.UnsafeState {
+		t.Fatalf("Projects with an unmarked closed directory = %v, want unsafe_state", err)
+	}
+	if _, err := service.Create(CreateRequest{Title: "Shipped", Status: domain.TicketDone, Priority: -1}, false); clierr.CodeOf(err) != clierr.UnsafeState {
+		t.Fatalf("Create with an unmarked closed directory = %v, want unsafe_state", err)
 	}
 }
 

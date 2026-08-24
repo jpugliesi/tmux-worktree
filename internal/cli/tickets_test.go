@@ -80,7 +80,7 @@ func TestTicketsInitScaffoldsOnceAndKeepsNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(stdout, "Wrote") != 2 {
+	if strings.Count(stdout, "Wrote") != 3 {
 		t.Fatalf("first init output = %q", stdout)
 	}
 	indexPath := filepath.Join(home, "index.md")
@@ -91,7 +91,7 @@ func TestTicketsInitScaffoldsOnceAndKeepsNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(stdout, "Kept") != 2 {
+	if strings.Count(stdout, "Kept") != 3 {
 		t.Fatalf("second init output = %q", stdout)
 	}
 	if readTicketFile(t, indexPath) != "# my custom hub\n" {
@@ -756,7 +756,7 @@ func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
 	if strings.TrimSpace(stdout) != `Closed Ticket "ship-it"` {
 		t.Fatalf("close text = %q", stdout)
 	}
-	content := readTicketFile(t, path)
+	content := readTicketFile(t, filepath.Join(home, "closed", "ship-it.md"))
 	if !strings.Contains(content, "status: done") || strings.Contains(content, "claimed_by: agent-a") {
 		t.Fatalf("close result:\n%s", content)
 	}
@@ -788,6 +788,69 @@ func TestTicketsCloseWithoutAsNeedsATerminal(t *testing.T) {
 	}
 	if hint := clierr.HintOf(err); hint != "Pass --as NAME when twt runs without a terminal." {
 		t.Fatalf("close hint = %q", hint)
+	}
+}
+
+func TestTicketsDoctorAndRepairLocationMismatches(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "old shipped work"); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(home, "old-shipped-work.md")
+	content := strings.Replace(readTicketFile(t, active), "status: needs-triage", "status: done", 1)
+	if err := os.WriteFile(active, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	doctorJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "doctor", "--output", "json")
+	if err != nil {
+		t.Fatalf("tickets doctor: %v", err)
+	}
+	var doctor struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Report        struct {
+			Healthy bool `json:"healthy"`
+			Issues  []struct {
+				Code        string `json:"code"`
+				Destination string `json:"destination"`
+			} `json:"issues"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(doctorJSON), &doctor); err != nil {
+		t.Fatalf("decode doctor: %v\n%s", err, doctorJSON)
+	}
+	destination := filepath.Join(home, "closed", "old-shipped-work.md")
+	if doctor.SchemaVersion != 2 || doctor.Report.Healthy || len(doctor.Report.Issues) != 1 ||
+		doctor.Report.Issues[0].Code != "location_mismatch" || doctor.Report.Issues[0].Destination != destination {
+		t.Fatalf("doctor output = %+v\n%s", doctor, doctorJSON)
+	}
+
+	dryJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "repair", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("tickets repair --dry-run: %v", err)
+	}
+	if !strings.Contains(dryJSON, `"operation":"tickets.repair"`) || !strings.Contains(dryJSON, `"status":"valid"`) {
+		t.Fatalf("repair dry-run output = %s", dryJSON)
+	}
+	if _, err := os.Stat(active); err != nil {
+		t.Fatalf("repair dry run moved the source: %v", err)
+	}
+
+	appliedJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "repair", "--output", "json")
+	if err != nil {
+		t.Fatalf("tickets repair: %v", err)
+	}
+	if !strings.Contains(appliedJSON, `"status":"applied"`) || !strings.Contains(appliedJSON, `"movedCount":1`) {
+		t.Fatalf("repair output = %s", appliedJSON)
+	}
+	if _, err := os.Stat(active); !os.IsNotExist(err) {
+		t.Fatalf("repair kept the source: %v", err)
+	}
+	if readTicketFile(t, destination) != content {
+		t.Fatal("repair changed the Ticket content")
 	}
 }
 
@@ -1018,7 +1081,7 @@ func TestTicketsSetChangesFields(t *testing.T) {
 		"tickets", "set", "move-me", "--status", "done", "--project", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
-	moved := filepath.Join(home, "change-monitor", "move-me.md")
+	moved := filepath.Join(home, "closed", "change-monitor", "move-me.md")
 	content := readTicketFile(t, moved)
 	if !strings.Contains(content, "status: done") || !strings.Contains(content, "project: change-monitor") {
 		t.Fatalf("set result:\n%s", content)
@@ -1277,7 +1340,8 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	for _, command := range []string{
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
-		`"twt tickets close"`, `"twt tickets comment"`, `"twt projects create"`,
+		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets doctor"`, `"twt tickets repair"`,
+		`"twt projects create"`,
 		`"twt projects list"`, `"twt projects show"`,
 	} {
 		if !strings.Contains(output, command) {
@@ -1286,11 +1350,50 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	}
 	for _, operation := range []string{
 		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`,
-		`"tickets.close"`, `"tickets.comment"`, `"projects.create"`,
+		`"tickets.close"`, `"tickets.comment"`, `"tickets.repair"`, `"projects.create"`,
 	} {
 		if !strings.Contains(output, operation) {
 			t.Fatalf("schema misses the apply operation %s", operation)
 		}
+	}
+}
+
+func TestApplySupportsTicketsRepair(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "old shipped work"); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(home, "old-shipped-work.md")
+	content := strings.Replace(readTicketFile(t, active), "status: needs-triage", "status: done", 1)
+	if err := os.WriteFile(active, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dry, _, err := executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair"}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply tickets.repair dry run: %v", err)
+	}
+	if !strings.Contains(dry, `"status":"valid"`) {
+		t.Fatalf("apply tickets.repair dry run = %s", dry)
+	}
+
+	applied, _, err := executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair"}`),
+		"apply", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply tickets.repair: %v", err)
+	}
+	if !strings.Contains(applied, `"status":"applied"`) || !strings.Contains(applied, `"movedCount":1`) {
+		t.Fatalf("apply tickets.repair = %s", applied)
+	}
+
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair","ticket":{}}`),
+		"apply", "--stdin", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "accepts no payload") {
+		t.Fatalf("apply tickets.repair with a payload = %v", err)
 	}
 }
 
@@ -1346,7 +1449,7 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 		"apply", "--stdin", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
-	content = readTicketFile(t, filepath.Join(home, "change-monitor", "apply-work.md"))
+	content = readTicketFile(t, filepath.Join(home, "closed", "change-monitor", "apply-work.md"))
 	if !strings.Contains(content, "status: done") || !strings.Contains(content, "Done.") || strings.Contains(content, "claimed_by: apply-agent") {
 		t.Fatalf("apply mutations result:\n%s", content)
 	}
@@ -1373,7 +1476,7 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 		closed.Status != "applied" || closed.ID != "close-via-apply" {
 		t.Fatalf("apply tickets.close = %+v\n%s", closed, stdout)
 	}
-	closedContent := readTicketFile(t, filepath.Join(home, "close-via-apply.md"))
+	closedContent := readTicketFile(t, filepath.Join(home, "closed", "close-via-apply.md"))
 	if !strings.Contains(closedContent, "status: done") || strings.Contains(closedContent, "claimed_by: apply-agent") {
 		t.Fatalf("apply close result:\n%s", closedContent)
 	}

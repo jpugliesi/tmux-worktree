@@ -42,6 +42,16 @@ func doneFixture(t *testing.T) cli.Options {
 	return cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 }
 
+func addSubmoduleToDoneFixture(t *testing.T, options cli.Options) {
+	t.Helper()
+	fixtureRoot := filepath.Dir(options.ConfigDir)
+	sourceRepository := filepath.Join(fixtureRoot, "source")
+	submoduleRepository := filepath.Join(fixtureRoot, "submodule")
+	initGitRepository(t, submoduleRepository)
+	runCommand(t, sourceRepository, "git", "-c", "protocol.file.allow=always", "submodule", "add", submoduleRepository, "dependencies/example")
+	runCommand(t, sourceRepository, "git", "commit", "-qm", "add submodule")
+}
+
 func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
@@ -300,4 +310,166 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-worker-src").Run(); err == nil {
 		t.Fatal("done worker kept the source tmux session")
 	}
+}
+
+func TestDoneWorkerRemovesACleanCheckoutWithAnInitializedSubmodule(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	addSubmoduleToDoneFixture(t, options)
+
+	executeWithOptions(t, options, nil, "workspaces", "create", "submodule-src", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "submodule-dest", "--template", "example", "--no-open")
+	source, err := store.NewWorkspaceStore(options.StateDir).Find("submodule-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, filepath.Join(source.Root, "app"), "git", "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	helpPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=example-submodule-dest", "-n", "done-helper", "--", "sleep", "60")
+	t.Setenv("TMUX_PANE", helpPane)
+
+	channel := "twt-done-submodule-worker-test"
+	signalResult := make(chan error, 1)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		signalResult <- exec.Command("tmux", "-L", options.TmuxSocket, "wait-for", "-S", channel).Run()
+	}()
+	workerErr := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "-", "-", channel, "no-client"})
+	if err := <-signalResult; err != nil {
+		t.Fatalf("signal done worker: %v", err)
+	}
+	windowName := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "display-message", "-p", "-t", helpPane, "#{window_name}")
+	if workerErr != nil {
+		t.Fatalf("run done worker for a clean submodule checkout: %v; destination window = %q", workerErr, windowName)
+	}
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID); err == nil {
+		t.Fatal("done worker kept the Workspace record")
+	}
+	if _, err := os.Stat(source.Root); !os.IsNotExist(err) {
+		t.Fatalf("done worker kept the Workspace root: %v", err)
+	}
+	if windowName == "done-failed" {
+		t.Fatal("done worker renamed the destination window to done-failed")
+	}
+}
+
+func TestWorkspaceRemovalRefusesIgnoredSubmoduleChanges(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, submodulePath string) string
+	}{
+		{
+			name: "modified tracked file",
+			mutate: func(t *testing.T, submodulePath string) string {
+				t.Helper()
+				path := filepath.Join(submodulePath, "README.md")
+				if err := os.WriteFile(path, []byte("changed\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+		},
+		{
+			name: "untracked file",
+			mutate: func(t *testing.T, submodulePath string) string {
+				t.Helper()
+				path := filepath.Join(submodulePath, "unsaved.txt")
+				if err := os.WriteFile(path, []byte("keep\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := doneFixture(t)
+			t.Setenv("TMUX_PANE", "")
+			t.Setenv("TWT_WORKSPACE_ID", "")
+			addSubmoduleToDoneFixture(t, options)
+			executeWithOptions(t, options, nil, "workspaces", "create", "submodule-dirty", "--template", "example", "--no-open")
+			workspace, err := store.NewWorkspaceStore(options.StateDir).Find("submodule-dirty")
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkoutPath := filepath.Join(workspace.Root, "app")
+			submodulePath := filepath.Join(checkoutPath, "dependencies", "example")
+			runCommand(t, checkoutPath, "git", "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+			runCommand(t, checkoutPath, "git", "config", "submodule.dependencies/example.ignore", "all")
+			changedPath := test.mutate(t, submodulePath)
+			executeWithOptions(t, options, nil, "workspaces", "archive", workspace.ID)
+			planOutput := executeWithOptions(t, options, nil, "workspaces", "remove", workspace.ID)
+			if !strings.Contains(planOutput, "uncommitted changes") || !strings.Contains(planOutput, "dependencies/example") {
+				t.Fatalf("submodule removal plan does not identify the hidden changes: %q", planOutput)
+			}
+
+			var stdout, stderr bytes.Buffer
+			removeOptions := options
+			removeOptions.Stdout, removeOptions.Stderr = &stdout, &stderr
+			command := cli.New(removeOptions)
+			command.SetArgs(forceTextOutput([]string{"workspaces", "remove", workspace.ID, "--apply"}))
+			err = command.Execute()
+			if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+				t.Fatalf("submodule removal error = %v; stdout = %q", err, stdout.String())
+			}
+			if _, err := os.Stat(changedPath); err != nil {
+				t.Fatalf("submodule removal changed user data: %v", err)
+			}
+			unchanged, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+			if err != nil || unchanged.Status != domain.WorkspaceArchived {
+				t.Fatalf("blocked Workspace status = %q, error = %v", unchanged.Status, err)
+			}
+		})
+	}
+}
+
+func TestDoneRelocationClosesItsHelperAfterRemovingASubmoduleCheckout(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go is not installed")
+	}
+	options := doneFixture(t)
+	binary := filepath.Join(filepath.Dir(options.ConfigDir), "twt")
+	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
+	options.QuickCreateExecutable = binary
+	addSubmoduleToDoneFixture(t, options)
+
+	executeWithOptions(t, options, nil, "workspaces", "create", "relocation-src", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "relocation-dest", "--template", "example", "--no-open")
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	source, err := workspaceStore.Find("relocation-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := workspaceStore.Find("relocation-dest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, filepath.Join(source.Root, "app"), "git", "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "="+source.TmuxSession, "-F", "#{pane_id}")
+	attachControlClient(t, options.TmuxSocket, source.TmuxSession)
+	t.Setenv("TMUX_PANE", sourcePane)
+	t.Setenv("TWT_WORKSPACE_ID", source.ID)
+
+	output := executeWithOptions(t, options, nil, "done", source.ID)
+	if !strings.Contains(output, "switching the client to Workspace \"relocation-dest\"") {
+		t.Fatalf("relocated done output = %q", output)
+	}
+	waitFor(t, 5*time.Second, func() bool {
+		_, findErr := workspaceStore.Find(source.ID)
+		return findErr != nil
+	}, "the done worker did not remove the source Workspace")
+	if _, err := workspaceStore.Find(source.ID); err == nil {
+		t.Fatal("the done worker kept the source Workspace record")
+	}
+	if _, err := os.Stat(source.Root); !os.IsNotExist(err) {
+		t.Fatalf("the done worker kept the source Workspace root: %v", err)
+	}
+	clientSession := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-clients", "-F", "#{session_name}")
+	if clientSession != destination.TmuxSession {
+		t.Fatalf("calling client session = %q, want %q", clientSession, destination.TmuxSession)
+	}
+	waitFor(t, 2*time.Second, func() bool {
+		windows, listErr := exec.Command("tmux", "-L", options.TmuxSocket, "list-windows", "-t", "="+destination.TmuxSession, "-F", "#{window_name}").CombinedOutput()
+		return listErr == nil && strings.TrimSpace(string(windows)) == "app"
+	}, "the successful done helper window did not close")
 }

@@ -52,6 +52,31 @@ func TestContextDirectoryUsesAnAdoptedRepositoryThenFallsBackToTheSession(t *tes
 	}
 }
 
+func TestContextListsLinkedTicketsAndReadyWork(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Ready work", "--project", "core", "--status", "ready-for-agent")
+	executeWithOptions(t, options, nil, "tickets", "create", "Started work", "--project", "core", "--status", "ready-for-agent")
+	executeWithOptions(t, options, nil, "tickets", "start", "started-work", "--as", "tester")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("started-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
+
+	output := executeWithOptions(t, options, nil, "context", "--output", "json")
+	if !strings.Contains(output, `"slug":"started-work"`) {
+		t.Fatalf("context missing linked Ticket: %s", output)
+	}
+	if !strings.Contains(output, `"slug":"ready-work"`) {
+		t.Fatalf("context missing ready Ticket: %s", output)
+	}
+}
+
 func TestContextAcceptsTheLegacyProjectEnvironmentID(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now().UTC()

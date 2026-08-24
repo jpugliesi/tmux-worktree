@@ -132,8 +132,9 @@ output is a terminal, but `--no-open` states the intention.
 `twt next` and `twt switch` are interactive commands for a person in tmux.
 Run `twt next` inside the tmux session of the current Workspace.
 `twt next` with no name opens a Ticket picker when open Tickets exist.
-For agent work, use `twt create` and `twt workspaces archive` with
-explicit names, dry-runs, and JSON output.
+A person at a terminal can omit `NAME` on `twt create`. twt then asks for
+it. For agent work, use `twt create` and `twt workspaces archive` with
+explicit names, dry-runs, and JSON output. Do not omit `NAME`.
 
 To attach twt to a tmux session that a person made by hand, adopt it:
 
@@ -152,6 +153,16 @@ If setup fails, inspect the Workspace and retry the saved Template snapshot:
 twt workspaces show WORKSPACE --output json
 twt workspaces setup retry WORKSPACE --dry-run --output json
 twt workspaces setup retry WORKSPACE --output json
+```
+
+After a reboot, repair every active Workspace session. Do not use tmux-resurrect
+as the source of truth. `open` claims an unowned session with the Workspace
+name, or it creates a missing session:
+
+```sh
+twt doctor --output json
+twt workspaces open --all-active --no-attach --dry-run --output json
+twt workspaces open --all-active --no-attach --output json
 ```
 
 Archive a completed Workspace from outside its tmux session. Archive stops live
@@ -304,16 +315,22 @@ Follow these rules for every ticket command:
    `twt projects create NAME`.
 7. Claim a ticket before starting work. Close it with
    `twt tickets close TICKET` when the work ships.
-8. Link related tickets and Topic notes with `[[slug]]`, the Obsidian
-   wiki-link form.
+8. Link related tickets with a bare slug or `[[slug]]`. These references stay
+   stable when twt moves a Ticket. An old path reference does not.
 9. List pickable work with `twt tickets list --ready --output json`. A plain
    `twt tickets list` hides `done` and `wontfix` tickets; pass `--all` to
-   include them.
+   include them. A coordinator reads one Project with
+   `twt projects show PROJECT --output json`. That envelope includes `ready`,
+   `inFlight`, and `workspaces`. `twt context --output json` includes the
+   linked Tickets and the ready queue for the current Workspace Project.
 
 ```sh
 twt tickets list --ready --output json --limit 20
+twt tickets list --claimed --output json --limit 20
 twt tickets list --all --output json --limit 20
 twt tickets show TICKET --output json
+twt projects show PROJECT --output json
+twt workspaces list --project PROJECT --status active --output json
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
 ```
@@ -347,6 +364,36 @@ hand-off that leaves the ticket open:
 ```sh
 twt tickets set TICKET --status wontfix --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
+```
+
+### Closed tickets and repair
+
+`done` and `wontfix` Tickets live in the marked
+`$TICKETS_HOME/closed/.twt-closed` tree. An ungrouped Ticket lives at
+`closed/SLUG.md`; a Project Ticket lives at `closed/PROJECT/SLUG.md`.
+`closed` is a reserved Project name. The directory, without the `closed`
+segment, defines Project.
+
+Create, close, and a status or Project change move the Ticket. Setting a
+closed Ticket to an open status reopens it and returns it to the active tree.
+Project ticket counts include both trees.
+
+Doctor is read-only. Repair applies no move when any blocker exists. Run the
+dry-run before the repair:
+
+```sh
+twt tickets doctor --output json
+twt tickets repair --dry-run --output json
+twt tickets repair --output json
+```
+
+The typed repair operation has no payload:
+
+```sh
+printf '%s\n' '{"operation":"tickets.repair"}' \
+  | twt apply --stdin --dry-run --output json
+printf '%s\n' '{"operation":"tickets.repair"}' \
+  | twt apply --stdin --output json
 ```
 
 ## Keep this skill current

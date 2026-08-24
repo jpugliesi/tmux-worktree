@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -177,6 +175,9 @@ func pickStartTicket(command *cobra.Command, options Options, tickets []domain.T
 	}
 	pick := options.TicketPick
 	if pick == nil {
+		if !interactiveTicketSession(command) {
+			return domain.Ticket{}, invalidUsage(command, "missing Ticket; use 'twt next NAME' or 'twt tickets start TICKET' in a script")
+		}
 		pick = realTicketPick
 	}
 	index, err := pick(command, lines)
@@ -218,7 +219,7 @@ func ticketStartPreviewCommand() string {
 // starts. The flow moves the calling tmux client, so it is interactive.
 func refuseJSONQuickCreate(command *cobra.Command, _ []string) error {
 	if WantsJSON(command) {
-		return invalidUsage(command, "next uses interactive text output; use 'twt create' for JSON automation")
+		return invalidUsage(command, "%s uses interactive text output; use 'twt create' for JSON automation", command.CommandPath())
 	}
 	return nil
 }
@@ -332,17 +333,25 @@ func quickCreateSwitchFailure(created domain.Workspace, cause error) error {
 }
 
 func quickCreateName(command *cobra.Command) (string, error) {
-	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Workspace name; use 'twt next NAME' in a script")
+	return promptWorkspaceName(command, "missing Workspace name; use 'twt next NAME' in a script")
+}
+
+// canPromptWorkspaceName reports whether create or next can ask for a
+// Workspace name. JSON output and a non-terminal session fail immediately.
+func canPromptWorkspaceName(command *cobra.Command) bool {
+	return resolvedOutputFormat(command) == outputText && interactiveTicketSession(command)
+}
+
+// promptWorkspaceName asks for a Workspace name on a person terminal. A
+// script, a pipe, and JSON output return invalid_usage.
+func promptWorkspaceName(command *cobra.Command, missingHint string) (string, error) {
+	if !canPromptWorkspaceName(command) {
+		return "", invalidUsage(command, "%s", missingHint)
 	}
-	if _, err := fmt.Fprint(command.ErrOrStderr(), "Workspace name: "); err != nil {
+	name, err := promptTicketLine(command, "Workspace name: ")
+	if err != nil {
 		return "", err
 	}
-	line, err := bufio.NewReader(command.InOrStdin()).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read Workspace name: %w", err)
-	}
-	name := strings.TrimSpace(line)
 	if name == "" {
 		return "", invalidUsage(command, "Workspace creation was canceled; no Workspace name was given")
 	}

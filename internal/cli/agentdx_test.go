@@ -26,8 +26,9 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		Commands      []struct {
 			Path      string `json:"path"`
 			Arguments []struct {
-				Name     string `json:"name"`
-				Required bool   `json:"required"`
+				Name      string `json:"name"`
+				Required  bool   `json:"required"`
+				Condition string `json:"condition"`
 			} `json:"arguments"`
 			Flags []struct {
 				Name     string   `json:"name"`
@@ -46,7 +47,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 26 {
+	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 27 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -74,8 +75,11 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		} else {
 			foundWorkspacesCreate = true
 		}
-		if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || !command.Arguments[0].Required {
+		if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
 			t.Fatalf("%s schema arguments = %+v", command.Path, command.Arguments)
+		}
+		if !strings.Contains(command.Arguments[0].Condition, "prompt") {
+			t.Fatalf("%s schema name condition = %q", command.Path, command.Arguments[0].Condition)
 		}
 		flags := map[string]struct {
 			required bool

@@ -31,11 +31,14 @@ type index struct {
 	bodies  map[string]string
 }
 
-// buildIndex walks home once. Only regular *.md files at depth zero (the
-// home) or depth one (inside one Project directory) are Tickets. index.md at
-// any level, the templates directory, and dot directories are not.
+// buildIndex walks home once. It indexes the four supported active and closed
+// Ticket locations. index.md at any level, the templates directory, and dot
+// directories are not Tickets.
 func buildIndex(home string) (*index, error) {
 	root := filepath.Clean(home)
+	if _, err := closedRootExists(root); err != nil {
+		return nil, err
+	}
 	idx := &index{
 		root:    root,
 		bySlug:  map[string][]string{},
@@ -72,8 +75,7 @@ func buildIndex(home string) (*index, error) {
 		if entry.Name() == "index.md" {
 			return nil
 		}
-		depth := strings.Count(relative, string(filepath.Separator))
-		if depth > 1 {
+		if _, locationErr := classifyTicketPath(root, path); locationErr != nil {
 			return nil
 		}
 		idx.add(path)

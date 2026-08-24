@@ -16,31 +16,41 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode, label string) e
 	return writeFileAtomicIn(filepath.Dir(path), ".twt-write-*", path, data, perm, label)
 }
 
+// WriteFileExclusiveAtomic writes a new file without replacing an existing
+// destination. A hard link publishes a complete temporary file and gives the
+// operation the O_EXCL property that os.Rename does not provide.
+func WriteFileExclusiveAtomic(path string, data []byte, perm os.FileMode, label string) error {
+	directory := filepath.Dir(path)
+	temporaryPath, err := writeTemporaryFile(directory, ".twt-write-*", data, perm, label)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporaryPath)
+	if err := os.Link(temporaryPath, path); err != nil {
+		return fmt.Errorf("save new %s: %w", label, err)
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		rollbackErr := os.Remove(path)
+		if rollbackErr != nil {
+			return fmt.Errorf("remove temporary %s: %w; remove rollback destination %q: %v", label, err, path, rollbackErr)
+		}
+		return fmt.Errorf("remove temporary %s: %w", label, err)
+	}
+	if err := syncDirectory(directory); err != nil {
+		return fmt.Errorf("sync %s directory: %w", label, err)
+	}
+	return nil
+}
+
 // writeFileAtomicIn is the core of WriteFileAtomic. The Transcript Snapshot
 // store passes its own temporary directory and name pattern, because its
 // cleanup scan finds orphan temporary files by that pattern.
 func writeFileAtomicIn(temporaryDirectory, pattern, path string, data []byte, perm os.FileMode, label string) error {
-	temporary, err := os.CreateTemp(temporaryDirectory, pattern)
+	temporaryPath, err := writeTemporaryFile(temporaryDirectory, pattern, data, perm, label)
 	if err != nil {
-		return fmt.Errorf("create temporary %s: %w", label, err)
+		return err
 	}
-	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(perm); err != nil {
-		temporary.Close()
-		return fmt.Errorf("set %s permissions: %w", label, err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return fmt.Errorf("write %s: %w", label, err)
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync %s: %w", label, err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", label, err)
-	}
 	if err := os.Rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("save %s: %w", label, err)
 	}
@@ -48,6 +58,34 @@ func writeFileAtomicIn(temporaryDirectory, pattern, path string, data []byte, pe
 		return fmt.Errorf("sync %s directory: %w", label, err)
 	}
 	return nil
+}
+
+func writeTemporaryFile(directory, pattern string, data []byte, perm os.FileMode, label string) (string, error) {
+	temporary, err := os.CreateTemp(directory, pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temporary %s: %w", label, err)
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Chmod(perm); err != nil {
+		temporary.Close()
+		os.Remove(temporaryPath)
+		return "", fmt.Errorf("set %s permissions: %w", label, err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		os.Remove(temporaryPath)
+		return "", fmt.Errorf("write %s: %w", label, err)
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		os.Remove(temporaryPath)
+		return "", fmt.Errorf("sync %s: %w", label, err)
+	}
+	if err := temporary.Close(); err != nil {
+		os.Remove(temporaryPath)
+		return "", fmt.Errorf("close %s: %w", label, err)
+	}
+	return temporaryPath, nil
 }
 
 func syncDirectory(path string) error {

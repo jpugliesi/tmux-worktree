@@ -30,7 +30,7 @@ Snacks options that show a preview.
 
 | Mapping | Action |
 | --- | --- |
-| `<leader>arp` | Select an Agent Session and show its Agent Preview |
+| `<leader>arp` | Select an Agent Session and open its Agent Preview |
 | `<leader>an` | Add a review note, or open the note on this line |
 | `<leader>ad` | Delete the review note on this line |
 | `<leader>al` | List the Review Notes in this Neovim session |
@@ -64,7 +64,7 @@ available:
 
 | Command | Action |
 | --- | --- |
-| `:TwtAgents` | Select an Agent Session and show its Agent Preview |
+| `:TwtAgents` | Select an Agent Session and open its Agent Preview |
 | `:TwtNote` | Add a review note, or open the note on this line |
 | `:TwtNoteDelete` | Delete the review note on this line |
 | `:TwtReview` | Deliver the Review Batch to a tmux pane or the clipboard |
@@ -92,8 +92,9 @@ row identity and can select the Agent Session.
 
 Preview is read-only. It does not register a discovered Agent Session and does
 not write a Transcript Snapshot. A transcript row writes and opens its private
-Transcript Snapshot. A live-pane row adopts and selects the Agent Session, but
-it does not write a false Transcript Snapshot.
+Transcript Snapshot. A live-pane row adopts and selects the Agent Session, then
+opens the Agent Preview in a scratch buffer. It does not write a Transcript
+Snapshot.
 
 `:TwtNotes`, `<leader>al`, and `<leader>arl` show all Review Notes in the
 current Neovim session. The Snacks picker preview shows the file, the selected
@@ -174,7 +175,7 @@ existing record.
 Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading
 stays off because its local records do not contain a safe, exact Workspace
 directory. The picker can still preview, select, focus, and send to a verified
-live Cursor Agent pane.
+live Cursor Agent pane. Confirm opens that Agent Preview in a scratch buffer.
 
 Older preview versions used the Neovim state directory. twt cannot reliably
 find that path when `NVIM_APPNAME` changes. You can remove those old preview
@@ -210,10 +211,11 @@ for a success. `done` is optional. These modules show no message, so the caller
 decides what the user sees.
 
 `pick` gives `done(nil, result)`. A transcript result has `agent` and `path`.
-A live-pane result has `agent` and `message`, but no `path`. `refresh` requires
-a transcript and gives `agent` and `path`. A canceled picker gives `done(nil)` with no
-result. A canceled text window gives no answer, so `prompt_add` and
-`prompt_send` show nothing after `q`.
+A live-pane result has `agent` and `message`, but no `path`. Confirm opens the
+Agent Preview in a scratch buffer. `refresh` requires a transcript and gives
+`agent` and `path`. A canceled picker gives `done(nil)` with no result. A
+canceled text window gives no answer, so `prompt_add` and `prompt_send` show
+nothing after `q`.
 
 `review.deliver` is the `twt`-independent route. `review.send` keeps its prior
 meaning: it sends to the selected Agent Session through `twt`.

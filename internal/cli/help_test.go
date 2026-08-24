@@ -200,6 +200,39 @@ func TestTicketsStartHelpExplainsThePicker(t *testing.T) {
 	}
 }
 
+func TestOpenHelpExplainsAllActive(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "workspaces", "open", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"--all-active",
+		"unowned tmux session",
+		"twt workspaces open --all-active",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("workspaces open help does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestCreateHelpExplainsTheNamePrompt(t *testing.T) {
+	for _, args := range [][]string{{"create", "--help"}, {"workspaces", "create", "--help"}} {
+		output, err := execute(t, t.TempDir(), args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"asks for a Workspace name",
+			"--output json still require NAME",
+		} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("%v help does not contain %q:\n%s", args, want, output)
+			}
+		}
+	}
+}
+
 func TestNextHelpExplainsTheWorkspaceChange(t *testing.T) {
 	output, err := execute(t, t.TempDir(), "next", "--help")
 	if err != nil {

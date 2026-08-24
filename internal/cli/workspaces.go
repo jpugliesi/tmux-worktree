@@ -30,6 +30,7 @@ func newWorkspacesCommand(options Options) *cobra.Command {
 
 func newWorkspacesListCommand(service *workspaceservice.Service) *cobra.Command {
 	var limit, offset int
+	var project, ticket, status string
 	command := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -40,6 +41,10 @@ func newWorkspacesListCommand(service *workspaceservice.Service) *cobra.Command 
 			if err != nil {
 				return err
 			}
+			if status != "" && !validWorkspaceStatus(status) {
+				return invalidUsage(command, "status %q is not valid; use one of: %s", status, strings.Join(workspaceStatusNames(), ", "))
+			}
+			workspaces = filterWorkspaces(workspaces, project, ticket, status, command.Flags().Changed("project"), command.Flags().Changed("ticket"))
 			sortWorkspacesForDisplay(workspaces)
 			workspaces, total, truncated, err := applyWindow(workspaces, offset, limit)
 			if err != nil {
@@ -68,7 +73,56 @@ func newWorkspacesListCommand(service *workspaceservice.Service) *cobra.Command 
 		},
 	}
 	addListReadFlags(command, &limit, &offset, workspaceOutput{})
+	command.Flags().StringVar(&project, "project", "", "List Workspaces linked to one Project")
+	command.Flags().StringVar(&ticket, "ticket", "", "List Workspaces linked to one Ticket slug")
+	command.Flags().StringVar(&status, "status", "", "List one Workspace status")
+	setFlagEnum(command, "status", workspaceStatusNames()...)
 	return command
+}
+
+func workspaceStatusNames() []string {
+	return []string{
+		string(domain.WorkspaceActive),
+		string(domain.WorkspaceArchived),
+		string(domain.WorkspaceInitializing),
+		string(domain.WorkspaceRemoving),
+		string(domain.WorkspaceSetupFailed),
+	}
+}
+
+func validWorkspaceStatus(status string) bool {
+	for _, name := range workspaceStatusNames() {
+		if status == name {
+			return true
+		}
+	}
+	return false
+}
+
+func filterWorkspaces(workspaces []domain.Workspace, project, ticket, status string, projectSet, ticketSet bool) []domain.Workspace {
+	filtered := make([]domain.Workspace, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if projectSet && workspace.Project != project {
+			continue
+		}
+		if ticketSet && !workspaceHasTicket(workspace, ticket) {
+			continue
+		}
+		if status != "" && string(workspace.Status) != status {
+			continue
+		}
+		filtered = append(filtered, workspace)
+	}
+	return filtered
+}
+
+func workspaceHasTicket(workspace domain.Workspace, slug string) bool {
+	for _, linked := range workspace.Tickets {
+		if linked == slug {
+			return true
+		}
+	}
+	return false
 }
 
 func newWorkspacesShowCommand(service *workspaceservice.Service) *cobra.Command {
@@ -175,11 +229,21 @@ func newWorkspacesPathCommand(service *workspaceservice.Service) *cobra.Command 
 
 func newWorkspacesOpenCommand(options Options, service *workspaceservice.Service) *cobra.Command {
 	var noAttach bool
+	var allActive bool
 	command := &cobra.Command{
-		Use:   "open WORKSPACE",
+		Use:   "open [WORKSPACE]",
 		Short: "Open or repair a Workspace tmux session",
-		Args:  exactArgs("WORKSPACE"),
+		Args:  optionalArg("WORKSPACE"),
 		RunE: func(command *cobra.Command, args []string) error {
+			if allActive {
+				if len(args) != 0 {
+					return invalidUsage(command, "do not use --all-active together with a WORKSPACE argument")
+				}
+				return openAllActiveSessions(command, service)
+			}
+			if len(args) != 1 {
+				return invalidUsage(command, "missing required argument WORKSPACE")
+			}
 			reference, err := resolveWorkspaceReference(service, args[0])
 			if err != nil {
 				return err
@@ -195,9 +259,96 @@ func newWorkspacesOpenCommand(options Options, service *workspaceservice.Service
 		},
 	}
 	command.Flags().BoolVar(&noAttach, "no-attach", false, "Repair the session without attaching")
-	setArguments(command, requiredArgument("workspace"))
+	command.Flags().BoolVar(&allActive, "all-active", false, "Repair the tmux session of every active Workspace and attach none")
+	setArguments(command, optionalArgument("workspace", "required when --all-active is not set"))
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
+}
+
+type bulkOpenOutput struct {
+	SchemaVersion int                 `json:"schemaVersion"`
+	Operation     string              `json:"operation"`
+	Status        string              `json:"status"`
+	Workspaces    []bulkOpenWorkspace `json:"workspaces"`
+}
+
+type bulkOpenWorkspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// openAllActiveSessions repairs the tmux session of every active Workspace.
+// It never attaches a tmux client.
+func openAllActiveSessions(command *cobra.Command, service *workspaceservice.Service) error {
+	workspaces, err := service.List()
+	if err != nil {
+		return err
+	}
+	active := make([]domain.Workspace, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if workspace.Status == domain.WorkspaceActive {
+			active = append(active, workspace)
+		}
+	}
+	sortWorkspacesForDisplay(active)
+	if isDryRun(command) {
+		for _, workspace := range active {
+			if err := service.ValidateOpen(workspace.ID); err != nil {
+				return err
+			}
+		}
+		return writeBulkOpen(command, statusValid, active)
+	}
+	opened := make([]domain.Workspace, 0, len(active))
+	for _, workspace := range active {
+		result, err := service.Open(workspace.ID)
+		if err != nil {
+			return err
+		}
+		opened = append(opened, result)
+	}
+	return writeBulkOpen(command, statusApplied, opened)
+}
+
+func writeBulkOpen(command *cobra.Command, status string, workspaces []domain.Workspace) error {
+	if WantsJSON(command) {
+		items := make([]bulkOpenWorkspace, 0, len(workspaces))
+		for _, workspace := range workspaces {
+			items = append(items, bulkOpenWorkspace{ID: workspace.ID, Name: workspace.Name})
+		}
+		return writeJSONOutput(command, bulkOpenOutput{
+			SchemaVersion: jsonSchemaVersion,
+			Operation:     "workspaces.open",
+			Status:        status,
+			Workspaces:    items,
+		})
+	}
+	if len(workspaces) == 0 {
+		_, err := fmt.Fprintln(command.OutOrStdout(), "No active Workspaces.")
+		return err
+	}
+	verb := "Opened"
+	if status == statusValid {
+		verb = "Would open"
+	}
+	if _, err := fmt.Fprintf(command.OutOrStdout(), "%s %d active Workspace", verb, len(workspaces)); err != nil {
+		return err
+	}
+	if len(workspaces) != 1 {
+		if _, err := fmt.Fprint(command.OutOrStdout(), "s"); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(command.OutOrStdout(), ":"); err != nil {
+		return err
+	}
+	for _, workspace := range workspaces {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), " %s", workspace.Name); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(command.OutOrStdout())
+	return err
 }
 
 // openWorkspaceSession opens or repairs the tmux session of one Workspace and
