@@ -267,15 +267,17 @@ Each Workspace can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
 		Example: `  # File work, then pick a ticket.
   twt tickets create "Fix auth token refresh"
+	# or just use the wizard to create a new workspace
+  twt create
   twt tickets ls --ready
-  twt tickets claim fix-auth-tokens
+  twt tickets start # start ticket wizard
 
-  # Create the next Workspace and work in it.
-  twt next fix-auth-tokens
   twt agents ls
 
-  # Close the ticket and remove the Workspace.
-  twt tickets close fix-auth-tokens
+  # Archive current workspace, Create the next Workspace and work in it.
+  twt next fix-auth-tokens
+
+  # Close the workspace and optionally the ticket
   twt done
 
   # Restore active Workspace sessions after tmux restarts.
