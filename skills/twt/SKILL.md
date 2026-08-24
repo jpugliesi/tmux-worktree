@@ -206,28 +206,29 @@ Workspace ID. When `agents send` fails, read the liveness checks:
 twt agents show AGENT_ID --workspace WORKSPACE_ID --output json
 ```
 
-`twt agents list` finds live Codex, Claude Code, Cursor Agent, and Grok
-processes. It also finds Codex, Claude, and Grok transcript sessions. An
-unregistered session appears with the status `discovered`. Its `id` is a
-provider-qualified candidate reference. The newest session comes
-first. Do not register it by hand.
-Use `agents adopt` to register it without another action. `resume`, `open`,
-and `send` also adopt before they act. Transcript show and picker preview stay
-read-only. Use `--registered` when a provider scan is unwanted, and use
-`--live=false` for the cheap statusline read.
+`twt agents list` combines registered Agent Sessions with candidates that twt
+can verify from provider or live-process evidence. Treat each `id` as an
+opaque action reference. Read `registration`, `runtime`, and `capabilities`
+instead of inferring behavior from the provider name. The newest result comes
+first.
+
+List and preview are read-only. An action can adopt a discovered candidate
+before it continues. Use `agents adopt` when registration is the requested
+outcome. Use `--registered` to skip discovery, and use `--live=false` for a
+cheap status read. A complete discovery result has `complete: true`. When it
+is false, read every diagnostic before you choose an action.
 
 ```sh
 twt agents list --workspace current --output json
 twt agents adopt AGENT_ID --workspace current --output json
-twt agents resume PROVIDER_SESSION_ID --output json
+twt agents resume AGENT_ID --output json
 twt agents list --workspace current --registered --output json
 ```
 
-`twt agents open` is interactive. It shows an fzf Agent Session picker when
-fzf is installed, or a numbered list. The fzf preview shows a verified
-transcript or a bounded visible-pane preview. A live selection focuses its
-pane. A stopped selection starts its provider resume command. Preview never
-registers a discovered session.
+`twt agents open` is interactive. It shows an Agent Session picker and a safe
+preview when the selected result has `canPreview: true`. A live selection can
+focus its pane. A stopped selection can start its resume command. Preview
+does not register a discovered session.
 
 ```sh
 twt agents open
