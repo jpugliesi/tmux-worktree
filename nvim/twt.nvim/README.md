@@ -99,9 +99,9 @@ Snapshot.
 
 `:TwtNotes`, `<leader>al`, and `<leader>arl` show all Review Notes in the
 current Neovim session. The Snacks picker preview shows the file, the selected
-lines, and the note comment. Select a note, then select `Open`, `Delete`, or
-`Go to the line`. `Open` moves to the line and opens the note window with the
-current comment.
+lines, and the note comment. Select a note to move to its lines and open the
+note window with the current comment. Press `<C-d>` in that window to delete
+the note.
 
 `<leader>an` and `<leader>arn` on a line that already has a note open that
 note. Save updates the comment. Press `<C-d>` in that window to delete the

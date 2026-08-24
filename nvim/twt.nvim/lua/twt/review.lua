@@ -457,8 +457,7 @@ function M.prompt_delete(done)
   config.get().select(existing, note_select_opts("Delete a review note"), drop)
 end
 
--- Lists the Review Notes of this Neovim session, then opens, deletes, or moves
--- to one.
+-- Lists the Review Notes of this Neovim session, then opens the selected note.
 function M.prompt_notes(done)
   done = done or function() end
   if #notes == 0 then
@@ -467,20 +466,9 @@ function M.prompt_notes(done)
   end
   config.get().select(notes, note_select_opts("Select a review note"), function(note)
     if not note then done(nil); return end
-    config.get().select({ "Open", "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
-      if choice == "Open" then
-        local jump_err = M.jump(note.id)
-        if jump_err then done(jump_err); return end
-        prompt_edit(note, done)
-      elseif choice == "Delete" then
-        M.delete(note.id)
-        done(nil, "review note deleted")
-      elseif choice == "Go to the line" then
-        done(M.jump(note.id), "jumped")
-      else
-        done(nil)
-      end
-    end)
+    local jump_err = M.jump(note.id)
+    if jump_err then done(jump_err); return end
+    prompt_edit(note, done)
   end)
 end
 

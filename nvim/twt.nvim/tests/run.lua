@@ -1382,7 +1382,7 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   review.clear()
 end)
 
-test("lists a review note and deletes it", function()
+test("opens a selected review note and deletes it with Control-D", function()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/src", "p")
   vim.fn.mkdir(root .. "/.git", "p")
@@ -1397,32 +1397,33 @@ test("lists a review note and deletes it", function()
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
 
   local labels
-  local choices = { 2, "Go to the line" }
+  local select_count = 0
+  local deleted
   with_config({
     select = function(items, opts, done)
-      local choice = table.remove(choices, 1)
-      if type(choice) == "number" then
-        labels = vim.tbl_map(opts.format_item, items)
-        done(items[choice])
-      else
-        for _, item in ipairs(items) do
-          if item == choice then done(item); return end
-        end
-        done(nil)
-      end
+      select_count = select_count + 1
+      labels = vim.tbl_map(opts.format_item, items)
+      done(items[2])
     end,
   }, function()
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
-    review.prompt_notes(function(err) assert(err == nil, err) end)
+    review.prompt_notes(function(err, result)
+      assert(err == nil, err)
+      deleted = result
+    end)
+    assert(select_count == 1, "the note list opened a second picker")
     assert(#labels == 2)
     assert(labels[1]:find("src/other.go:2 · first note", 1, true), labels[1])
-    assert(vim.api.nvim_win_get_cursor(0)[1] == 3)
-
-    choices = { 1, "Delete" }
-    review.prompt_notes(function(err) assert(err == nil, err) end)
-    local left = vim.tbl_map(function(note) return note.comment end, review.list())
-    assert(#left == 1 and left[1] == "second note", table.concat(left, ","))
+    local float = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(float, 0, -1, false)
+    assert(table.concat(lines, "\n") == "second note", vim.inspect(lines))
+    local delete = delete_keymap(float)
+    assert(delete, "the note window has no delete mapping")
+    delete()
   end)
+  assert(deleted == "review note deleted", tostring(deleted))
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
+  assert(#left == 1 and left[1] == "first note", table.concat(left, ","))
   review.clear()
 end)
 
@@ -1597,28 +1598,19 @@ test("opens a review note from the picker and saves the edit", function()
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
-  local actions
-  local choices = { 1, "Open" }
+  local select_count = 0
   local saved
   with_config({
-    select = function(items, opts, done)
-      local choice = table.remove(choices, 1)
-      if type(choice) == "number" then
-        done(items[choice])
-      else
-        actions = items
-        for _, item in ipairs(items) do
-          if item == choice then done(item); return end
-        end
-        done(nil)
-      end
+    select = function(items, _, done)
+      select_count = select_count + 1
+      done(items[1])
     end,
   }, function()
     review.prompt_notes(function(err, note)
       assert(err == nil, err)
       saved = note
     end)
-    assert(actions[1] == "Open", vim.inspect(actions))
+    assert(select_count == 1, "the note list opened a second picker")
     local float_win = vim.api.nvim_get_current_win()
     local place = vim.api.nvim_win_get_config(float_win)
     local parent = place.win
