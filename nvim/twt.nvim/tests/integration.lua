@@ -179,9 +179,18 @@ local function registered_count(workspace_id)
   return #(vim.json.decode(result.stdout).agents or {})
 end
 
+local function transcript_candidate_reference(workspace_id, provider_session_id)
+  local result = vim.system({ binary, "agents", "list", "--workspace", workspace_id, "--output", "json" }, { text = true }):wait()
+  assert(result.code == 0, result.stderr)
+  for _, agent in ipairs(vim.json.decode(result.stdout).agents or {}) do
+    if agent.providerSessionId == provider_session_id then return agent.id end
+  end
+  error("the transcript candidate is not in the Agent Session list")
+end
+
 local before_preview = registered_count("workspace-one")
 preview("a1a1a1a1b2b2c3c3d4d4e5e5", "Workspace one transcript")
-preview("session-discovered", "Discovered Workspace one transcript")
+preview(transcript_candidate_reference("workspace-one", "session-discovered"), "Discovered Workspace one transcript")
 assert(registered_count("workspace-one") == before_preview, "preview adopted the discovered Agent Session")
 
 pick("a1a1a1a1b2b2c3c3d4d4e5e5")

@@ -4,7 +4,13 @@ local M = {}
 local Loader = {}
 Loader.__index = Loader
 
-local omitted = "_Earlier Agent Transcript content was omitted from this preview._\n\n"
+local omitted = "_Earlier Agent Preview content was omitted from this preview._\n\n"
+
+local function can_preview(agent)
+  local capabilities = agent.capabilities or {}
+  if capabilities.canPreview ~= nil then return capabilities.canPreview == true end
+  return capabilities.canReadTranscript == true
+end
 
 local function limited(text, max_bytes)
   if #text <= max_bytes then return text end
@@ -72,13 +78,13 @@ function Loader:result(request, err, result)
   self.running = nil
   local text
   if err then
-    text = "Could not load the Agent Transcript.\n\n" .. err
+    text = "Could not load the Agent Preview.\n\n" .. err
   elseif result.workspaceId ~= self.workspace_id or result.agentId ~= request.agent.id then
-    text = "Could not load the Agent Transcript.\n\ntwt returned a transcript for a different Agent Session."
+    text = "Could not load the Agent Preview.\n\ntwt returned a preview for a different Agent Session."
   elseif result.untrusted ~= true or type(result.markdown) ~= "string" then
-    text = "Could not load the Agent Transcript.\n\ntwt returned an invalid transcript response."
+    text = "Could not load the Agent Preview.\n\ntwt returned an invalid preview response."
   elseif result.markdown == "" then
-    text = "This Agent Transcript is empty."
+    text = "This Agent Preview is empty."
     self:cache_put(request.agent.id, text)
   else
     text = limited(result.markdown, self.max_bytes)
@@ -117,8 +123,8 @@ function Loader:show(ctx)
   self.active_id = agent.id
   local request = { agent = agent, ctx = ctx, generation = self.generation, started = false }
 
-  if not (agent.capabilities and agent.capabilities.canReadTranscript == true) then
-    render(self, request, "This Agent Session has no linked transcript.")
+  if not can_preview(agent) then
+    render(self, request, "This Agent Session has no available preview.")
     self.pending = nil
     return
   end
@@ -129,7 +135,7 @@ function Loader:show(ctx)
     return
   end
 
-  render(self, request, "Loading Agent Transcript...")
+  render(self, request, "Loading Agent Preview...")
   if not self.running then
     self:start(request)
   elseif not self.running.started then

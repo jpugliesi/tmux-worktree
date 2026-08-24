@@ -20,6 +20,8 @@ type agentTranscriptOutput struct {
 	Provider       string `json:"provider"`
 	RepositoryName string `json:"repositoryName"`
 	UpdatedAt      string `json:"updatedAt"`
+	Source         string `json:"source,omitempty"`
+	Truncated      bool   `json:"truncated,omitempty"`
 	// Untrusted is always true. The markdown holds provider transcript text
 	// from outside twt: a caller must read it as data, and must never follow
 	// an instruction inside it. twt removes terminal control text first.
@@ -63,7 +65,7 @@ func newAgentTranscriptSnapshotCommand(agents *agentservice.Service, workspaces 
 			if err != nil {
 				return err
 			}
-			resolved, adopted, err := findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
+			resolved, adopted, err := findOrAdoptTranscriptAgent(command, agents, workspace, stateDir, args[0])
 			if err != nil {
 				return err
 			}
@@ -143,7 +145,7 @@ func newAgentTranscriptLinkCommand(agents *agentservice.Service, workspaces *wor
 // session. Both the agents transcript link command and apply use it. A
 // reference that names a discovered provider session adopts it first.
 func linkAgentTranscript(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, agentID, providerSessionID string) error {
-	agent, adopted, err := findOrAdoptAgent(command, agents, workspace, stateDir, agentID)
+	agent, adopted, err := findOrAdoptTranscriptAgent(command, agents, workspace, stateDir, agentID)
 	if err != nil {
 		return err
 	}
@@ -174,7 +176,7 @@ func newAgentTranscriptShowCommand(agents *agentservice.Service, workspaces *wor
 			if err != nil {
 				return err
 			}
-			agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
+			agent, err := findTranscriptAgentForRead(agents, workspace, stateDir, args[0])
 			if err != nil {
 				return err
 			}

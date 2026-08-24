@@ -1,11 +1,15 @@
 package transcript
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -31,6 +35,9 @@ type DiscoverOptions struct {
 	// Linked holds the Agent Sessions of the Workspace. Discover does not
 	// return a provider session that one of these records uses.
 	Linked []domain.AgentSession
+	// IncludeLinked returns verified linked sessions too. It also keeps their
+	// exact candidate files outside the bounded newest-file window.
+	IncludeLinked bool
 	// Since drops each provider session with an older last activity time.
 	Since time.Time
 }
@@ -38,21 +45,42 @@ type DiscoverOptions struct {
 // Discover finds the provider sessions that ran inside a repository of the
 // Workspace. The result is sorted from the newest last activity to the oldest.
 func (s *Service) Discover(workspace domain.Workspace, options DiscoverOptions) ([]DiscoveredSession, error) {
-	sessions := []DiscoveredSession{}
+	names := []string{}
 	for _, provider := range providerNames() {
 		if options.Provider != "" && options.Provider != provider {
 			continue
 		}
-		found, err := s.discoverProvider(provider, workspace, options.Since)
-		if err != nil {
-			return nil, err
+		names = append(names, provider)
+	}
+	foundByProvider := make([][]DiscoveredSession, len(names))
+	errorsByProvider := make([]error, len(names))
+	linkedByProvider := linkedSessionIDs(options.Linked)
+	var wait sync.WaitGroup
+	for index, provider := range names {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			var linked map[string]bool
+			if options.IncludeLinked {
+				linked = linkedByProvider[provider]
+			}
+			foundByProvider[index], errorsByProvider[index] = s.discoverProvider(provider, workspace, options.Since, linked)
+		}()
+	}
+	wait.Wait()
+	sessions := []DiscoveredSession{}
+	diagnostics := []error{}
+	for index := range names {
+		if errorsByProvider[index] != nil {
+			diagnostics = append(diagnostics, fmt.Errorf("%s transcript discovery: %w", names[index], errorsByProvider[index]))
+			continue
 		}
-		sessions = append(sessions, found...)
+		sessions = append(sessions, foundByProvider[index]...)
 	}
 	linked := linkedSessions(options.Linked)
 	result := make([]DiscoveredSession, 0, len(sessions))
 	for _, session := range sessions {
-		if linked[session.Provider+"\x00"+session.SessionID] {
+		if !options.IncludeLinked && linked[session.Provider+"\x00"+session.SessionID] {
 			continue
 		}
 		result = append(result, session)
@@ -63,12 +91,16 @@ func (s *Service) Discover(workspace domain.Workspace, options DiscoverOptions) 
 		}
 		return result[i].LastActivity.After(result[j].LastActivity)
 	})
-	return result, nil
+	return result, errors.Join(diagnostics...)
 }
 
-func (s *Service) discoverProvider(provider string, workspace domain.Workspace, since time.Time) ([]DiscoveredSession, error) {
+func (s *Service) discoverProvider(provider string, workspace domain.Workspace, since time.Time, linked map[string]bool) ([]DiscoveredSession, error) {
 	descriptor := providers[provider]
-	files, err := newestTranscriptFiles(descriptor.root(s), since, descriptor.transcriptName)
+	var linkedCandidate func(string) bool
+	if len(linked) > 0 {
+		linkedCandidate = func(path string) bool { return descriptor.linkedCandidate(path, linked) }
+	}
+	files, err := newestTranscriptFiles(descriptor.root(s), since, descriptor.transcriptName, linkedCandidate)
 	if err != nil {
 		return nil, err
 	}
@@ -103,10 +135,10 @@ type transcriptFile struct {
 }
 
 // newestTranscriptFiles lists the regular JSON Lines files under root, from
-// the newest to the oldest, with a limit on the number of files. A set since
-// time drops each older file before twt reads it, because the last activity
-// time of a discovered session is the file modification time.
-func newestTranscriptFiles(root string, since time.Time, include func(string) bool) ([]transcriptFile, error) {
+// the newest to the oldest, with a limit on general discovery files. Exact
+// linked candidates stay outside that window, with a separate bound. A set
+// since time drops older files unless they are exact linked candidates.
+func newestTranscriptFiles(root string, since time.Time, include func(string) bool, linkedCandidate func(string) bool) ([]transcriptFile, error) {
 	files := []transcriptFile{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if os.IsNotExist(walkErr) {
@@ -131,7 +163,8 @@ func newestTranscriptFiles(root string, since time.Time, include func(string) bo
 		if err != nil {
 			return nil
 		}
-		if !since.IsZero() && !info.ModTime().After(since) {
+		linked := linkedCandidate != nil && linkedCandidate(path)
+		if !since.IsZero() && !info.ModTime().After(since) && !linked {
 			return nil
 		}
 		files = append(files, transcriptFile{path: path, modTime: info.ModTime()})
@@ -142,9 +175,35 @@ func newestTranscriptFiles(root string, since time.Time, include func(string) bo
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].modTime.After(files[j].modTime) })
 	if len(files) > maxDiscoverFiles {
-		files = files[:maxDiscoverFiles]
+		newest := append([]transcriptFile(nil), files[:maxDiscoverFiles]...)
+		linkedExtras := 0
+		for _, file := range files[maxDiscoverFiles:] {
+			if linkedCandidate == nil || !linkedCandidate(file.path) {
+				continue
+			}
+			linkedExtras++
+			if linkedExtras > maxDiscoverFiles {
+				return nil, clierr.New(clierr.PreconditionFailed, "too many linked transcript candidates outside the discovery window")
+			}
+			newest = append(newest, file)
+		}
+		files = newest
 	}
 	return files, nil
+}
+
+func linkedSessionIDs(agents []domain.AgentSession) map[string]map[string]bool {
+	result := map[string]map[string]bool{}
+	for _, agent := range agents {
+		if agent.ProviderSessionID == "" {
+			continue
+		}
+		if result[agent.Provider] == nil {
+			result[agent.Provider] = map[string]bool{}
+		}
+		result[agent.Provider][agent.ProviderSessionID] = true
+	}
+	return result
 }
 
 func linkedSessions(agents []domain.AgentSession) map[string]bool {

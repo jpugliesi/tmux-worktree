@@ -353,10 +353,27 @@ type ndjsonSummary struct {
 	Truncated  bool `json:"truncated"`
 }
 
+type discoveryNDJSONSummary struct {
+	TotalCount  int      `json:"totalCount"`
+	Truncated   bool     `json:"truncated"`
+	Complete    bool     `json:"complete"`
+	Diagnostics []string `json:"diagnostics,omitempty"`
+}
+
 // writeNDJSONList writes one list as newline-delimited JSON: one element for
 // each line without an envelope, then one summary line with totalCount and
 // truncated. The --fields mask applies to each element line.
 func writeNDJSONList[T any](command *cobra.Command, elements []T, total int, truncated bool) error {
+	return writeNDJSON(command, elements, ndjsonSummary{TotalCount: total, Truncated: truncated})
+}
+
+func writeDiscoveryNDJSONList[T any](command *cobra.Command, elements []T, total int, truncated, complete bool, diagnostics []string) error {
+	return writeNDJSON(command, elements, discoveryNDJSONSummary{
+		TotalCount: total, Truncated: truncated, Complete: complete, Diagnostics: diagnostics,
+	})
+}
+
+func writeNDJSON[T any](command *cobra.Command, elements []T, summary any) error {
 	mask, err := fieldMask(command)
 	if err != nil {
 		return err
@@ -374,7 +391,7 @@ func writeNDJSONList[T any](command *cobra.Command, elements []T, total int, tru
 			return err
 		}
 	}
-	return encoder.Encode(ndjsonSummary{TotalCount: total, Truncated: truncated})
+	return encoder.Encode(summary)
 }
 
 func writeMutation(command *cobra.Command, operation, status, id, name string) error {

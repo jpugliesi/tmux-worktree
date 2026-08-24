@@ -1,17 +1,17 @@
 local config = require("twt.config")
 local M = {}
 
-local function message(result)
+local function request_error(result)
   for _, value in ipairs({ result.stderr, result.stdout }) do
     if value and value ~= "" then
       local ok, decoded = pcall(vim.json.decode, value)
       if ok and type(decoded) == "table" and type(decoded.error) == "table" and decoded.error.message then
-        return decoded.error.message
+        return decoded.error.message, decoded.error.code
       end
-      return vim.trim(value)
+      return vim.trim(value), nil
     end
   end
-  return "twt returned no error details"
+  return "twt returned no error details", nil
 end
 
 function M.request(args, opts, done)
@@ -22,7 +22,8 @@ function M.request(args, opts, done)
   vim.list_extend(argv, { "--output", "json" })
   local function finish(result)
     if result.code ~= 0 then
-      done(message(result))
+      local err, code = request_error(result)
+      done(err, nil, code)
       return
     end
     if not result.stdout or result.stdout == "" then

@@ -55,6 +55,45 @@ func findOrAdoptAgent(command *cobra.Command, agents *agentservice.Service, work
 	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
 		return agent, false, err
 	}
+	triedLive := agentservice.IsLivePaneReference(reference)
+	if triedLive {
+		agent, found, liveErr := agents.AdoptLivePane(workspace, reference, isDryRun(command))
+		if liveErr != nil || found {
+			return agent, found, liveErr
+		}
+	}
+	session, found, matchErr := matchDiscoveredSession(agents, workspace, stateDir, reference)
+	if matchErr != nil {
+		return domain.AgentSession{}, false, matchErr
+	}
+	if !found {
+		if triedLive {
+			return domain.AgentSession{}, false, err
+		}
+		if !agentservice.CouldBeLivePaneReference(reference) {
+			return domain.AgentSession{}, false, err
+		}
+		agent, liveFound, liveErr := agents.AdoptLivePane(workspace, reference, isDryRun(command))
+		if liveErr != nil || liveFound {
+			return agent, liveFound, liveErr
+		}
+		return domain.AgentSession{}, false, err
+	}
+	if isDryRun(command) {
+		agent, err := validateAdoption(agents, workspace, session)
+		return agent, true, err
+	}
+	agent, err = adoptDiscoveredSession(agents, workspace, session)
+	return agent, true, err
+}
+
+// findOrAdoptTranscriptAgent resolves only stored Agent Sessions and verified
+// transcript candidates. It never adopts a live-pane-only candidate.
+func findOrAdoptTranscriptAgent(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, reference string) (domain.AgentSession, bool, error) {
+	agent, err := agents.Find(reference)
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
+		return agent, false, err
+	}
 	session, found, matchErr := matchDiscoveredSession(agents, workspace, stateDir, reference)
 	if matchErr != nil {
 		return domain.AgentSession{}, false, matchErr
@@ -70,6 +109,29 @@ func findOrAdoptAgent(command *cobra.Command, agents *agentservice.Service, work
 	return agent, true, err
 }
 
+// findTranscriptAgentForRead resolves a transcript candidate without a state
+// write. A registered Agent Session still wins.
+func findTranscriptAgentForRead(agents *agentservice.Service, workspace domain.Workspace, stateDir, reference string) (domain.AgentSession, error) {
+	agent, err := agents.Find(reference)
+	if err == nil {
+		return agent, requireAgentInWorkspace(agent, workspace)
+	}
+	if clierr.CodeOf(err) != clierr.NotFound {
+		return domain.AgentSession{}, err
+	}
+	session, found, matchErr := matchDiscoveredSession(agents, workspace, stateDir, reference)
+	if matchErr != nil {
+		return domain.AgentSession{}, matchErr
+	}
+	if !found {
+		return domain.AgentSession{}, err
+	}
+	return domain.AgentSession{
+		ID: session.SessionID, WorkspaceID: workspace.ID, Provider: session.Provider,
+		ProviderSessionID: session.SessionID,
+	}, nil
+}
+
 // matchDiscoveredSession finds the one discovered provider session that the
 // reference names. An exact session ID match wins. A prefix must match one
 // session only; an ambiguous prefix reports the candidates.
@@ -83,13 +145,22 @@ func matchDiscoveredSession(agents *agentservice.Service, workspace domain.Works
 		return transcriptservice.DiscoveredSession{}, false, err
 	}
 	matches := []transcriptservice.DiscoveredSession{}
+	exact := []transcriptservice.DiscoveredSession{}
 	for _, session := range sessions {
-		if session.SessionID == reference {
-			return session, true, nil
+		candidateReference := agentservice.TranscriptReference(session.Provider, session.SessionID)
+		if candidateReference == reference || session.SessionID == reference {
+			exact = append(exact, session)
+			continue
 		}
-		if strings.HasPrefix(session.SessionID, reference) {
+		if strings.HasPrefix(candidateReference, reference) || strings.HasPrefix(session.SessionID, reference) {
 			matches = append(matches, session)
 		}
+	}
+	if len(exact) == 1 {
+		return exact[0], true, nil
+	}
+	if len(exact) > 1 {
+		matches = exact
 	}
 	switch len(matches) {
 	case 0:
@@ -99,7 +170,7 @@ func matchDiscoveredSession(agents *agentservice.Service, workspace domain.Works
 	default:
 		ids := make([]string, 0, len(matches))
 		for _, match := range matches {
-			ids = append(ids, match.SessionID)
+			ids = append(ids, agentservice.TranscriptReference(match.Provider, match.SessionID))
 		}
 		return transcriptservice.DiscoveredSession{}, false, clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "provider session ID prefix %q is ambiguous", reference),

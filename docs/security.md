@@ -59,17 +59,18 @@ coding agent. `twt` treats that text as data:
   one line feed.
 - `twt agents transcript show` and `twt agents transcript snapshot` mark the
   JSON payload with `"untrusted": true`.
-- `twt agents open --preview` writes the same sanitized markdown as
-  `twt agents transcript show`. An explicit `--output json` returns the normal
-  transcript envelope with `"untrusted": true`; text output stays suitable for
-  the fzf preview.
+- `twt agents open --preview` returns sanitized Agent Preview markdown. It
+  uses a verified transcript when one is available. A live-pane preview reads
+  only the visible screen, has strict byte and line limits, and does not read
+  scrollback. JSON marks both sources with `"untrusted": true`.
 - A snapshot Markdown file holds the same sanitized text, because that file
   goes into an agent context.
 
 The Neovim Agent Session picker puts preview Markdown only in a scratch buffer.
 It never evaluates the text. Preview does not register a discovered Agent
-Session and does not write a Transcript Snapshot. Confirming a picker row can
-do both actions.
+Session and does not write a Transcript Snapshot. A transcript selection can
+write a snapshot. A live-pane selection can adopt the pane but cannot create a
+Transcript Snapshot.
 
 The `agents discover` result carries no free text: `twt` validates each
 provider session ID and matches each repository name against the Workspace.
@@ -93,7 +94,10 @@ using `twt`. This path has these limits:
   the command in the pane label before you select it.
 
 Agent Session delivery through `twt` keeps the stronger Workspace ownership
-and process-liveness checks. Clipboard copy does not clear Review Notes because
+and process-liveness checks. For a shell-hosted Agent, state stores a digest of
+the provider process evidence; it does not store the process arguments. twt
+checks that evidence and the pane root identity again before each send.
+Clipboard copy does not clear Review Notes because
 copying does not confirm that another program received the text.
 
 ## No interactive escape without a terminal

@@ -19,6 +19,9 @@ type agentOutput struct {
 	Provider          string `json:"provider"`
 	Label             string `json:"label"`
 	Status            string `json:"status"`
+	Registration      string `json:"registration,omitempty"`
+	Runtime           string `json:"runtime,omitempty"`
+	RepositoryName    string `json:"repositoryName,omitempty"`
 	CreatedAt         string `json:"createdAt,omitempty"`
 	UpdatedAt         string `json:"updatedAt,omitempty"`
 	// LastActivity is set for a discovered provider session only. It is the
@@ -31,16 +34,20 @@ type agentOutput struct {
 }
 
 type agentCapabilities struct {
-	CanResume         bool `json:"canResume"`
-	CanSend           bool `json:"canSend"`
-	CanFocus          bool `json:"canFocus"`
-	CanReadTranscript bool `json:"canReadTranscript"`
+	CanResume             bool `json:"canResume"`
+	CanSend               bool `json:"canSend"`
+	CanFocus              bool `json:"canFocus"`
+	CanPreview            bool `json:"canPreview"`
+	CanReadTranscript     bool `json:"canReadTranscript"`
+	CanSnapshotTranscript bool `json:"canSnapshotTranscript"`
 }
 
 type agentsListOutput struct {
 	SchemaVersion int           `json:"schemaVersion"`
 	WorkspaceID   string        `json:"workspaceId"`
 	Agents        []agentOutput `json:"agents"`
+	Complete      bool          `json:"complete"`
+	Diagnostics   []string      `json:"diagnostics,omitempty"`
 	TotalCount    int           `json:"totalCount"`
 	Truncated     bool          `json:"truncated,omitempty"`
 }
@@ -89,41 +96,53 @@ type agentSendOutput struct {
 // not ask tmux for the state of the pane: the status is "unknown" and the
 // capabilities that need a live pane are false.
 func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, workspaceActive, probeLive bool) agentOutput {
-	live := false
-	status := "unknown"
-	if probeLive {
-		live = service.IsLive(agent)
-		status = "stopped"
-		if live {
-			status = "live"
-		}
+	if !probeLive {
+		return toAgentOutputFields(agent, workspaceActive, false, false, "unknown")
 	}
+	return toAgentOutputWithProbe(agent, workspaceActive, service.Probe(agent))
+}
+
+func toAgentOutputWithProbe(agent domain.AgentSession, workspaceActive bool, probe agentservice.ProbeResult) agentOutput {
+	output := toAgentOutputFields(agent, workspaceActive, probe.Live, probe.Ready, "stopped")
+	if probe.Live {
+		output.Status = "live"
+	}
+	return output
+}
+
+func toAgentOutputFields(agent domain.AgentSession, workspaceActive, live, ready bool, status string) agentOutput {
 	return agentOutput{
 		ID: agent.ID, ProviderSessionID: agent.ProviderSessionID, WorkspaceID: agent.WorkspaceID,
 		Provider: agent.Provider, Label: agent.Label, Status: status,
-		CreatedAt: agent.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: agent.UpdatedAt.Format(time.RFC3339),
-		recency:   agent.UpdatedAt,
+		CreatedAt: agent.CreatedAt.Format(time.RFC3339), UpdatedAt: agent.UpdatedAt.Format(time.RFC3339), recency: agent.UpdatedAt,
 		Capabilities: agentCapabilities{
-			CanResume: workspaceActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
-			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
+			CanResume: workspaceActive && (live || len(agent.ResumeCommand) > 0), CanSend: ready, CanFocus: live,
+			CanPreview:            agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
+			CanReadTranscript:     agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
+			CanSnapshotTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
 		},
 	}
 }
 
-// discoveredAgentOutput describes one discovered provider session in the
-// Agent Session list. The session is not registered yet: its ID is the
-// provider session ID, and the first action on it adopts it.
-func discoveredAgentOutput(workspace domain.Workspace, session transcriptservice.DiscoveredSession) agentOutput {
+func catalogAgentOutput(workspace domain.Workspace, entry agentservice.CatalogEntry) agentOutput {
 	return agentOutput{
-		ID: session.SessionID, ProviderSessionID: session.SessionID, WorkspaceID: workspace.ID,
-		Provider: session.Provider, Label: session.Provider, Status: "discovered",
-		LastActivity: session.LastActivity.UTC().Format(time.RFC3339),
-		recency:      session.LastActivity.UTC(),
+		ID: entry.Reference, ProviderSessionID: entry.ProviderSessionID, WorkspaceID: workspace.ID,
+		Provider: entry.Provider, Label: entry.Label, Status: entry.Status,
+		Registration: entry.Registration, Runtime: entry.Runtime, RepositoryName: entry.RepositoryName,
+		CreatedAt: formatOptionalTime(entry.CreatedAt), UpdatedAt: formatOptionalTime(entry.UpdatedAt),
+		LastActivity: formatOptionalTime(entry.LastActivity), recency: entry.LastActivity,
 		Capabilities: agentCapabilities{
-			CanResume: workspace.Status == domain.WorkspaceActive, CanSend: false, CanFocus: false, CanReadTranscript: true,
+			CanResume: entry.CanResume, CanSend: entry.CanSend, CanFocus: entry.CanFocus, CanPreview: entry.CanPreview,
+			CanReadTranscript: entry.CanSnapshot, CanSnapshotTranscript: entry.CanSnapshot,
 		},
 	}
+}
+
+func formatOptionalTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 // sortAgentsForDisplay puts the newest Agent Session first. Registered and

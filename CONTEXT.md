@@ -38,9 +38,16 @@ complete set as its checkout leases.
 _Avoid_: Warm Workspace, spare worktree, checkout pool item
 
 **Agent Session**:
-A resumable coding-agent conversation associated with one Workspace and,
-optionally, one checkout lease.
+A coding-agent run associated with one Workspace and, optionally, one
+checkout lease. It can have a verified live process, a resume command, a
+linked Agent Transcript, or a combination of these.
 _Avoid_: Agent process, tmux pane
+
+**Agent Candidate**:
+A verified provider transcript or live provider process that belongs to a
+Workspace but has no Agent Session record. It has a provider-qualified,
+versioned reference. Preview is read-only. Adoption creates the Agent Session.
+_Avoid_: Agent Session ID, raw provider session ID
 
 **Agent Transcript**:
 The provider conversation history linked to one Agent Session. An Agent
@@ -51,6 +58,12 @@ _Avoid_: Log file, latest.md
 A Workspace-scoped Markdown copy of an Agent Transcript for review and
 display. Archive keeps it. Workspace removal deletes it.
 _Avoid_: Agent Transcript, global latest.md
+
+**Agent Preview**:
+Read-only display text from a verified Agent Transcript or the visible screen
+of a verified live Agent Session pane. A live-pane Agent Preview is not an
+Agent Transcript and cannot become a Transcript Snapshot.
+_Avoid_: Transcript Snapshot, pane transcript
 
 **Review Note**:
 A Neovim-session annotation anchored to lines in one file. It does not belong

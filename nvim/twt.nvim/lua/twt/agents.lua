@@ -29,7 +29,12 @@ end
 
 local function can(agent, capability)
   local capabilities = agent.capabilities
-  return capabilities ~= nil and capabilities[capability] == true
+  if capabilities == nil then return false end
+  if capabilities[capability] ~= nil then return capabilities[capability] == true end
+  if capability == "canPreview" or capability == "canSnapshotTranscript" then
+    return capabilities.canReadTranscript == true
+  end
+  return false
 end
 
 local function notify_refresh()
@@ -84,6 +89,11 @@ local function list_for(context, directory, done)
       return
     end
     local agents = result.agents or {}
+    if result.complete == false then
+      local detail = result.diagnostics and result.diagnostics[1]
+      done(detail and ("Agent Session discovery is incomplete: " .. detail) or "Agent Session discovery is incomplete")
+      return
+    end
     local validation_err = validate(agents)
     if validation_err then
       done(validation_err)
@@ -144,8 +154,9 @@ end
 
 -- Writes a new transcript snapshot for one Agent Session and opens the file.
 -- It answers `done(nil, { agent = agent, path = path })`.
+local select_without_snapshot
 local function take_snapshot(agent, workspace_id, directory, done)
-  if not can(agent, "canReadTranscript") then
+  if not can(agent, "canSnapshotTranscript") then
     done("the selected Agent Session has no linked transcript")
     return
   end
@@ -155,9 +166,13 @@ local function take_snapshot(agent, workspace_id, directory, done)
     return
   end
   record.snapshotting = true
-  client.request({ "agents", "transcript", "snapshot", agent.id, "--workspace", workspace_id }, { cwd = directory }, function(transcript_err, transcript)
+  client.request({ "agents", "transcript", "snapshot", agent.id, "--workspace", workspace_id }, { cwd = directory }, function(transcript_err, transcript, error_code)
     record.snapshotting = nil
     if transcript_err then
+      if error_code == "not_found" and can(agent, "canPreview") and (can(agent, "canSend") or can(agent, "canFocus")) then
+        select_without_snapshot(agent, workspace_id, directory, done)
+        return
+      end
       done(transcript_err)
       return
     end
@@ -168,7 +183,7 @@ local function take_snapshot(agent, workspace_id, directory, done)
     -- A discovered session ID is the provider session ID. Snapshot adopts
     -- that session and returns the new Agent Session ID.
     if transcript.agentId ~= agent.id then
-      local discovered = agent.status == "discovered" and agent.providerSessionId == agent.id
+      local discovered = agent.status == "discovered" and type(agent.providerSessionId) == "string" and agent.providerSessionId ~= ""
       if not discovered then
         done("twt returned a transcript for a different Workspace or Agent Session")
         return
@@ -193,9 +208,52 @@ local function take_snapshot(agent, workspace_id, directory, done)
   end)
 end
 
--- Lists the Agent Sessions of the current Workspace, then writes and opens the
--- transcript snapshot of the selected one. A canceled selection answers
--- `done(nil)` with no result.
+-- Selects an Agent Session that has an Agent Preview but no verified
+-- transcript. A discovered live pane is adopted on this first action.
+select_without_snapshot = function(agent, workspace_id, directory, done)
+  local function select(selected)
+    if selected.workspaceId ~= workspace_id then
+      done("twt returned an Agent Session for a different Workspace")
+      return
+    end
+    local record = workspace(workspace_id)
+    record.selected_id = selected.id
+    record.agents[selected.id] = { label = selected.label, live = selected.status == "live" }
+    notify_refresh()
+    done(nil, {
+      agent = selected,
+      message = "selected Agent Session " .. (selected.label or selected.provider or selected.id),
+    })
+  end
+
+  if agent.registration ~= "discovered" then
+    select(agent)
+    return
+  end
+  client.request({ "agents", "adopt", agent.id, "--workspace", workspace_id }, { cwd = directory }, function(err, result)
+    if err then
+      done(err)
+      return
+    end
+    if type(result.agent) ~= "table" then
+      done("twt returned an invalid Agent Session response")
+      return
+    end
+    select(result.agent)
+  end)
+end
+
+local function select_agent(agent, workspace_id, directory, done)
+  if can(agent, "canSnapshotTranscript") then
+    take_snapshot(agent, workspace_id, directory, done)
+  else
+    select_without_snapshot(agent, workspace_id, directory, done)
+  end
+end
+
+-- Lists the Agent Sessions of the current Workspace. A verified transcript
+-- selection opens a snapshot. A live-pane selection adopts and selects it.
+-- A canceled selection answers `done(nil)` with no result.
 function M.pick(done)
   done = done or function() end
   M.list(function(err, agents, context, directory)
@@ -214,7 +272,7 @@ function M.pick(done)
       directory = directory,
       max_bytes = cfg.agent_preview_max_bytes,
       cache_bytes = cfg.agent_preview_cache_bytes,
-      title = function(agent) return "Agent Transcript · " .. prefixes[agent.id] end,
+      title = function(agent) return "Agent Preview · " .. prefixes[agent.id] end,
     })
     config.get().select(agents, {
       prompt = "Select a twt Agent Session",
@@ -230,7 +288,7 @@ function M.pick(done)
         done(nil)
         return
       end
-      take_snapshot(agent, context.workspace.id, directory, done)
+      select_agent(agent, context.workspace.id, directory, done)
     end)
   end)
 end

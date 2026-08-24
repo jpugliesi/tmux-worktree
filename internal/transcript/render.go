@@ -78,6 +78,10 @@ func sanitizeUntrusted(text string) string {
 	return builder.String()
 }
 
+// SanitizeUntrusted removes terminal control text from untrusted display text.
+// Agent Transcript rendering and live-pane Agent Previews use the same rules.
+func SanitizeUntrusted(text string) string { return sanitizeUntrusted(text) }
+
 // skipEscape returns the index of the last rune of the escape sequence that
 // starts at start. A sequence with no end consumes the rest of the text.
 func skipEscape(runes []rune, start int) int {

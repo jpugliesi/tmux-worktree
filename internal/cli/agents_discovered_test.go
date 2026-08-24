@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -32,7 +33,9 @@ type discoveredListEntry struct {
 		CanResume         bool `json:"canResume"`
 		CanSend           bool `json:"canSend"`
 		CanFocus          bool `json:"canFocus"`
+		CanPreview        bool `json:"canPreview"`
 		CanReadTranscript bool `json:"canReadTranscript"`
+		CanSnapshot       bool `json:"canSnapshotTranscript"`
 	} `json:"capabilities"`
 }
 
@@ -75,7 +78,7 @@ func directorySnapshot(t *testing.T, directory string) map[string]string {
 	return snapshot
 }
 
-func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
+func TestAgentsListShowsDiscoveredSessionsAndUsesExplicitAdoption(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
@@ -134,11 +137,12 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	if len(entries) != 3 {
 		t.Fatalf("agents list entries = %+v", entries)
 	}
-	order := []string{"codex-one", "claude-one", "codex-two"}
+	sessionIDs := []string{"codex-one", "claude-one", "codex-two"}
 	providers := []string{"codex", "claude", "codex"}
 	for index, entry := range entries {
-		if entry.ID != order[index] || entry.ProviderSessionID != order[index] {
-			t.Fatalf("discovered entry %d = %+v, want ID %q", index, entry, order[index])
+		wantID := agentservice.TranscriptReference(providers[index], sessionIDs[index])
+		if entry.ID != wantID || entry.ProviderSessionID != sessionIDs[index] {
+			t.Fatalf("discovered entry %d = %+v, want ID %q", index, entry, wantID)
 		}
 		if entry.Status != "discovered" || entry.Provider != providers[index] || entry.Label != providers[index] {
 			t.Fatalf("discovered entry = %+v", entry)
@@ -154,6 +158,19 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	if after := directorySnapshot(t, stateDir); !reflect.DeepEqual(before, after) {
 		t.Fatalf("agents list changed the state directory: %+v != %+v", before, after)
 	}
+	textOutput, textDiagnostics, err := executeRaw(t, options, "agents", "list", "--workspace", workspace.ID, "--output", "text")
+	if err != nil || !strings.Contains(textOutput, "transcript-v1-") || !strings.Contains(textDiagnostics, "discovery is incomplete") {
+		t.Fatalf("text discovery diagnostics: stdout=%q stderr=%q error=%v", textOutput, textDiagnostics, err)
+	}
+	ndjson := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--output", "ndjson")
+	lines := strings.Split(strings.TrimSpace(ndjson), "\n")
+	var summary struct {
+		Complete    bool     `json:"complete"`
+		Diagnostics []string `json:"diagnostics"`
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &summary); err != nil || summary.Complete || len(summary.Diagnostics) == 0 {
+		t.Fatalf("NDJSON discovery summary = %+v, error=%v\n%s", summary, err, ndjson)
+	}
 
 	// --registered and --live=false skip the provider scan.
 	registered := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--registered", "--output", "json")
@@ -166,7 +183,7 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	}
 
 	// rm does not adopt a discovered session.
-	_, _, err := executeRaw(t, options, "agents", "rm", "codex-one", "--workspace", workspace.ID)
+	_, _, err = executeRaw(t, options, "agents", "rm", "codex-one", "--workspace", workspace.ID)
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "is not registered") {
 		t.Fatalf("agents rm of a discovered session = %v", err)
 	}
@@ -190,11 +207,11 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("ambiguous discovered prefix error = %v", err)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "codex-one") || !strings.Contains(hint, "codex-two") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "transcript-v1-") {
 		t.Fatalf("ambiguous discovered prefix hint = %q", hint)
 	}
 
-	// A unique session ID prefix adopts the session and reads the transcript.
+	// Transcript show is read-only, also for one unique provider session.
 	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", "codex-o", "--workspace", workspace.ID, "--output", "json")
 	if !strings.Contains(shown, "Codex question") {
 		t.Fatalf("transcript show of a discovered session = %s", shown)
@@ -203,7 +220,12 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(adopted) != 1 || adopted[0].Provider != "codex" || adopted[0].ProviderSessionID != "codex-one" || adopted[0].Label != "codex" {
+	if len(adopted) != 0 {
+		t.Fatalf("transcript show adopted Agent Sessions = %+v", adopted)
+	}
+	executeWithOptions(t, options, nil, "agents", "adopt", "codex-o", "--workspace", workspace.ID, "--output", "json")
+	adopted, err = store.NewAgentStore(stateDir).List(workspace.ID)
+	if err != nil || len(adopted) != 1 || adopted[0].Provider != "codex" || adopted[0].ProviderSessionID != "codex-one" || adopted[0].Label != "codex" {
 		t.Fatalf("adopted Agent Session = %+v", adopted)
 	}
 	if strings.Join(adopted[0].ResumeCommand, " ") != "codex resume codex-one" {
@@ -219,7 +241,8 @@ func TestAgentsListShowsDiscoveredSessionsAndAdoptsOnFirstTouch(t *testing.T) {
 	if entries[0].ID != adopted[0].ID || entries[0].Status != "stopped" || entries[0].ProviderSessionID != "codex-one" {
 		t.Fatalf("adopted list entry = %+v", entries[0])
 	}
-	if entries[1].ID != "claude-one" || entries[1].Status != "discovered" || entries[2].ID != "codex-two" {
+	if entries[1].ID != agentservice.TranscriptReference("claude", "claude-one") || entries[1].Status != "discovered" ||
+		entries[2].ID != agentservice.TranscriptReference("codex", "codex-two") {
 		t.Fatalf("discovered entries after adopt = %+v", entries[1:])
 	}
 
@@ -328,6 +351,57 @@ func TestAgentsResumeAdoptsADiscoveredProviderSession(t *testing.T) {
 	}
 }
 
+func TestAgentsListKeepsAnOldLinkedTranscriptAvailable(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	repository := filepath.Join(root, "workspace", "app")
+	outside := filepath.Join(root, "outside")
+	for _, directory := range []string{home, repository, outside} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-old-link", Name: "old-link", Status: domain.WorkspaceActive,
+		Root: filepath.Dir(repository), TmuxSession: "old-link",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
+		CreatedAt:    now, UpdatedAt: now,
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	agent := domain.AgentSession{
+		Version: domain.AgentVersion, ID: "agent-old-link", WorkspaceID: workspace.ID,
+		Provider: "codex", Label: "codex", ProviderSessionID: "linked-old",
+		ResumeCommand: []string{"codex", "resume", "linked-old"}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
+		t.Fatal(err)
+	}
+	writeCodex := func(sessionID, cwd string, modTime time.Time) {
+		path := filepath.Join(home, ".codex", "sessions", "rollout-"+sessionID+".jsonl")
+		writeTestLines(t, path, `{"type":"session_meta","payload":{"id":"`+sessionID+`","cwd":`+quoteJSON(t, cwd)+`}}
+{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"question"}]}}
+`)
+		if err := os.Chtimes(path, modTime, modTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCodex("linked-old", repository, now.Add(-time.Hour))
+	for index := 0; index < 256; index++ {
+		writeCodex(fmt.Sprintf("outside-%03d", index), outside, now.Add(time.Duration(index)*time.Second))
+	}
+
+	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
+	entries := decodeAgentsList(t, executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--output", "json"))
+	if len(entries) != 1 || entries[0].ID != agent.ID || !entries[0].Capabilities.CanPreview || !entries[0].Capabilities.CanSnapshot {
+		t.Fatalf("old linked transcript entry = %+v", entries)
+	}
+}
+
 func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
@@ -365,7 +439,8 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 
 	listed := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--output", "json")
 	entries := decodeAgentsList(t, listed)
-	if len(entries) != 2 || entries[0].ID != "claude-new" || entries[0].Status != "discovered" {
+	claudeReference := agentservice.TranscriptReference("claude", "claude-new")
+	if len(entries) != 2 || entries[0].ID != claudeReference || entries[0].Status != "discovered" {
 		t.Fatalf("newest session was not first: %+v", entries)
 	}
 	if entries[1].ID != "agent-old" || entries[1].Status != "stopped" || entries[1].CreatedAt == "" {
@@ -380,7 +455,7 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 	if len(lines) != 3 || !strings.Contains(lines[0], "PROVIDER") || !strings.Contains(lines[0], "ID") {
 		t.Fatalf("agents list header = %q", text)
 	}
-	if !strings.HasPrefix(lines[1], "claude") || !strings.Contains(lines[1], "claude-new") || !strings.Contains(lines[1], "0m") {
+	if !strings.HasPrefix(lines[1], "claude") || !strings.Contains(lines[1], claudeReference) || !strings.Contains(lines[1], "0m") {
 		t.Fatalf("newest text line = %q", lines[1])
 	}
 	if !strings.HasPrefix(lines[2], "codex") || !strings.Contains(lines[2], "agent-old") || !strings.Contains(lines[2], "2h") {
@@ -393,7 +468,7 @@ func TestAgentsListSortsByRecencyAndWritesAge(t *testing.T) {
 		return 0, nil
 	}
 	executeWithOptions(t, options, nil, "agents", "open", "--dry-run")
-	if len(picked) != 2 || picked[0] != "claude\tclaude-new\t0m" || picked[1] != "codex\tagent-old\t2h" {
+	if len(picked) != 2 || picked[0] != "claude\t"+claudeReference+"\t0m" || picked[1] != "codex\tagent-old\t2h" {
 		t.Fatalf("open picker lines = %v", picked)
 	}
 }

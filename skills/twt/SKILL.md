@@ -206,26 +206,28 @@ Workspace ID. When `agents send` fails, read the liveness checks:
 twt agents show AGENT_ID --workspace WORKSPACE_ID --output json
 ```
 
-`twt agents list` shows discovered Codex, Claude, and Grok sessions of the Workspace
-automatically: an unregistered provider session appears with the status
-`discovered` and its provider session ID as `id`. The newest session comes
+`twt agents list` finds live Codex, Claude Code, Cursor Agent, and Grok
+processes. It also finds Codex, Claude, and Grok transcript sessions. An
+unregistered session appears with the status `discovered`. Its `id` is a
+provider-qualified candidate reference. The newest session comes
 first. Do not register it by hand.
-The first action on it adopts it: pass the session ID (or a unique prefix) to
-`resume`, `open`, `show`, `send`, or a `transcript` command, and twt registers
-the session before it proceeds. Use `--registered` when a scan of the provider
-stores is unwanted, and `--live=false` for the cheap statusline read.
+Use `agents adopt` to register it without another action. `resume`, `open`,
+and `send` also adopt before they act. Transcript show and picker preview stay
+read-only. Use `--registered` when a provider scan is unwanted, and use
+`--live=false` for the cheap statusline read.
 
 ```sh
 twt agents list --workspace current --output json
+twt agents adopt AGENT_ID --workspace current --output json
 twt agents resume PROVIDER_SESSION_ID --output json
 twt agents list --workspace current --registered --output json
 ```
 
 `twt agents open` is interactive. It shows an fzf Agent Session picker when
-fzf is installed, or a numbered list. The fzf preview shows the same
-transcript text as `twt agents transcript show`. A selection starts the
-provider resume command in the current pane. The preview never registers a
-discovered session.
+fzf is installed, or a numbered list. The fzf preview shows a verified
+transcript or a bounded visible-pane preview. A live selection focuses its
+pane. A stopped selection starts its provider resume command. Preview never
+registers a discovered session.
 
 ```sh
 twt agents open

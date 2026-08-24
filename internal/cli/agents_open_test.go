@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -91,7 +92,7 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 	if !strings.HasPrefix(pickedLines[0], "codex\t"+agentID+"\t") {
 		t.Fatalf("registered picker line = %q", pickedLines[0])
 	}
-	if !strings.HasPrefix(pickedLines[1], "claude\tclaude-one\t") {
+	if !strings.HasPrefix(pickedLines[1], "claude\t"+agentservice.TranscriptReference("claude", "claude-one")+"\t") {
 		t.Fatalf("discovered picker line = %q", pickedLines[1])
 	}
 	if !strings.Contains(output, "agents.open: valid") {

@@ -141,6 +141,67 @@ test("lists and selects Agents through exact Workspace context", function()
   assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --workspace workspace-1 --limit 40 --output json")
 end)
 
+test("selects and sends to a discovered live Cursor Agent without a transcript snapshot", function()
+  local saved = agents_response.agents
+  local candidate = {
+    id = "pane-v1-cursor-candidate",
+    workspaceId = "workspace-1",
+    provider = "cursor",
+    label = "cursor",
+    status = "discovered",
+    registration = "discovered",
+    runtime = "live",
+    capabilities = {
+      canResume = true,
+      canSend = true,
+      canFocus = true,
+      canPreview = true,
+      canReadTranscript = false,
+      canSnapshotTranscript = false,
+    },
+  }
+  local registered = vim.deepcopy(candidate)
+  registered.id = "cursor-agent-session"
+  registered.status = "live"
+  registered.registration = "registered"
+  agents_response.agents = { candidate }
+  local selected
+  local start = #calls
+  local adopt_calls = 0
+  with_config({
+    runner = function(argv, opts, done)
+      local joined = table.concat(argv, " ")
+		if joined:find(" agents adopt ", 1, true) then
+        adopt_calls = adopt_calls + 1
+        agents_response.agents = { registered }
+        done({
+          code = 0,
+          stdout = vim.json.encode({ schemaVersion = 2, agent = registered, liveness = {} }),
+          stderr = "",
+        })
+        return
+      end
+      runner(argv, opts, done)
+    end,
+  }, function()
+    require("twt").agents.pick(function(err, result)
+      assert(err == nil, err)
+      selected = result
+    end)
+    assert(selected.agent.id == registered.id, vim.inspect(selected))
+    assert(selected.path == nil, vim.inspect(selected))
+    assert(selected.message:find("selected Agent Session", 1, true), selected.message)
+    require("twt").agents.send("Cursor review", function(err) assert(err == nil, err) end)
+  end)
+  local commands = {}
+  for index = start + 1, #calls do commands[#commands + 1] = table.concat(calls[index].argv, " ") end
+  local joined = table.concat(commands, "\n")
+  agents_response.agents = saved
+  assert(adopt_calls == 1, tostring(adopt_calls))
+  assert(joined:find("agents send cursor%-agent%-session"), joined)
+  assert(not joined:find("agents transcript snapshot", 1, true), joined)
+end)
+
 test("gives duplicate Agent labels stable unique row identities and a visible Snacks preview", function()
   local saved = agents_response.agents
   agents_response.agents = {
@@ -204,6 +265,52 @@ test("rejects duplicate Agent Session IDs before opening the picker", function()
   agents_response.agents = saved
   assert(received == "twt returned duplicate Agent Session IDs", tostring(received))
   assert(not selected, "invalid Agent Sessions reached the picker")
+end)
+
+test("reports incomplete Agent Session discovery even when entries exist", function()
+  local old_complete, old_diagnostics = agents_response.complete, agents_response.diagnostics
+  agents_response.complete = false
+  agents_response.diagnostics = { "injected process scan failure" }
+  local selected = false
+  local received
+  with_config({ select = function() selected = true end }, function()
+    require("twt").agents.pick(function(err) received = err end)
+  end)
+  agents_response.complete, agents_response.diagnostics = old_complete, old_diagnostics
+  assert(received and received:find("injected process scan failure", 1, true), tostring(received))
+  assert(not selected, "an incomplete Agent Session list reached the picker")
+end)
+
+test("uses snapshot error codes for the live Agent fallback", function()
+  local function pick_with_error(code)
+    local received, result
+    with_config({
+      runner = function(argv, opts, done)
+        if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
+          done({
+            code = 1,
+            stdout = "",
+            stderr = vim.json.encode({ schemaVersion = 2, error = { code = code, message = "injected snapshot failure" } }),
+          })
+          return
+        end
+        runner(argv, opts, done)
+      end,
+    }, function()
+      require("twt").agents.pick(function(err, value)
+        received, result = err, value
+      end)
+    end)
+    return received, result
+  end
+
+  local internal_error, internal_result = pick_with_error("internal")
+  assert(internal_error == "injected snapshot failure", tostring(internal_error))
+  assert(internal_result == nil, vim.inspect(internal_result))
+
+  local missing_error, missing_result = pick_with_error("not_found")
+  assert(missing_error == nil, tostring(missing_error))
+  assert(missing_result and missing_result.agent.id == "agent-1" and missing_result.path == nil, vim.inspect(missing_result))
 end)
 
 test("loads only the latest Agent Transcript preview and caches successful results", function()
@@ -279,14 +386,14 @@ test("loads only the latest Agent Transcript preview and caches successful resul
     end
 
     opts.snacks.preview(context(items[1]))
-    assert(text():find("Loading Agent Transcript", 1, true), text())
+    assert(text():find("Loading Agent Preview", 1, true), text())
     assert(#pending == 0, "the first preview must start asynchronously")
     assert(vim.wait(1000, function() return #pending == 1 end), "the first preview did not start")
     assert(table.concat(pending[1].argv, " ") == "/test/twt agents open --preview preview-agent-a --workspace workspace-1 --output json")
     assert(pending[1].opts.cwd == "/work/app")
 
     opts.snacks.preview(context(items[2]))
-    assert(text():find("Loading Agent Transcript", 1, true), text())
+    assert(text():find("Loading Agent Preview", 1, true), text())
     vim.wait(20)
     assert(#pending == 1, "only one transcript process can run")
     finish(pending[1], first, "# First transcript\n\27[31mnot terminal code")
@@ -304,7 +411,7 @@ test("loads only the latest Agent Transcript preview and caches successful resul
     assert(#pending == process_count, "a cached transcript started another process")
 
     opts.snacks.preview(context(items[3]))
-    assert(text():find("has no linked transcript", 1, true), text())
+    assert(text():find("has no available preview", 1, true), text())
     vim.wait(20)
     assert(#pending == process_count, "a missing transcript started a process")
 

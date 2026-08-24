@@ -48,7 +48,7 @@ local specs = {
   },
   {
     cmd = "TwtReviewCopy",
-    lhs = { "<leader>arc", "<leader>ary" },
+    lhs = "<leader>ary",
     desc = "Yank review notes to the clipboard",
     fn = function(done) M.review.copy(done) end,
   },
@@ -112,6 +112,8 @@ local function runner(spec)
         report(err)
       elseif type(result) == "string" then
         report(nil, result)
+      elseif type(result) == "table" and result.message then
+        report(nil, result.message)
       elseif spec.ok then
         report(nil, spec.ok)
       end

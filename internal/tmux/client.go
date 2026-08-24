@@ -2,6 +2,8 @@ package tmux
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os/exec"
@@ -16,6 +18,8 @@ type Client struct {
 
 	// run overrides the tmux exec for tests; nil means real tmux.
 	run func(stdin io.Reader, args ...string) (string, error)
+	// runProcesses overrides the process-table read for tests; nil uses ps.
+	runProcesses func() (string, error)
 }
 
 func (c Client) PaneBelongsToWorkspace(pane, workspaceID string) bool {
@@ -71,8 +75,11 @@ func (c Client) ClaimAgentPane(pane, workspaceID, agentID string) error {
 	if !c.PaneBelongsToWorkspace(pane, workspaceID) {
 		return fmt.Errorf("the pane is not owned by this Workspace")
 	}
-	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
-	if err == nil && owner != "" && owner != agentID {
+	owner, err := c.output(nil, "show-options", "-q", "-p", "-t", pane, "-v", "@twt_agent_id")
+	if err != nil {
+		return fmt.Errorf("read Agent Session pane marker: %w", err)
+	}
+	if owner != "" && owner != agentID {
 		return fmt.Errorf("the pane is already owned by Agent Session %q", owner)
 	}
 	if _, err := c.output(nil, "set-option", "-p", "-t", pane, "@twt_agent_id", agentID); err != nil {
@@ -170,17 +177,77 @@ func (c Client) Send(pane, workspaceID, agentID, paneCommand, paneStart, text st
 	if !c.PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, paneStart) {
 		return NotLiveError(agentID)
 	}
-	buffer := "twt-feedback-" + strings.TrimPrefix(pane, "%")
+	return c.sendChecked(pane, text, func() error {
+		if !c.PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, paneStart) {
+			return NotLiveError(agentID)
+		}
+		return nil
+	})
+}
+
+// sendChecked loads the private buffer first, then runs the final liveness
+// check immediately before tmux pastes any text into the pane.
+func (c Client) sendChecked(pane, text string, finalCheck func() error) error {
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err != nil {
+		return fmt.Errorf("name Agent Session feedback buffer: %w", err)
+	}
+	buffer := "twt-feedback-" + strings.TrimPrefix(pane, "%") + "-" + hex.EncodeToString(random)
 	if _, err := c.output(strings.NewReader(text), "load-buffer", "-b", buffer, "-"); err != nil {
 		return fmt.Errorf("load Agent Session feedback: %w", err)
+	}
+	loaded := true
+	defer func() {
+		if loaded {
+			_, _ = c.output(nil, "delete-buffer", "-b", buffer)
+		}
+	}()
+	if finalCheck != nil {
+		if err := finalCheck(); err != nil {
+			return err
+		}
 	}
 	if _, err := c.output(nil, "paste-buffer", "-d", "-p", "-b", buffer, "-t", pane); err != nil {
 		return fmt.Errorf("paste Agent Session feedback: %w", err)
 	}
+	loaded = false
 	if _, err := c.output(nil, "send-keys", "-t", pane, "Enter"); err != nil {
 		return fmt.Errorf("submit Agent Session feedback: %w", err)
 	}
 	return nil
+}
+
+// ReleaseAgentPane removes this Agent Session's marker. It does not remove a
+// marker that another Agent Session owns.
+func (c Client) ReleaseAgentPane(pane, workspaceID, agentID string) error {
+	if !c.PaneBelongsToWorkspace(pane, workspaceID) {
+		return fmt.Errorf("the pane is not owned by this Workspace")
+	}
+	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
+	if err != nil {
+		return fmt.Errorf("read Agent Session pane marker: %w", err)
+	}
+	if owner != agentID {
+		return nil
+	}
+	if _, err := c.output(nil, "set-option", "-p", "-u", "-t", pane, "@twt_agent_id"); err != nil {
+		return fmt.Errorf("release Agent Session pane: %w", err)
+	}
+	return nil
+}
+
+// CaptureVisible returns only the pane's visible screen. It does not read the
+// scrollback history. The caller must treat and sanitize the result as
+// untrusted terminal text.
+func (c Client) CaptureVisible(pane, workspaceID string) (string, error) {
+	if !c.PaneBelongsToWorkspace(pane, workspaceID) {
+		return "", fmt.Errorf("the pane is not owned by this Workspace")
+	}
+	text, err := c.output(nil, "capture-pane", "-p", "-t", pane)
+	if err != nil {
+		return "", fmt.Errorf("capture Agent Session pane: %w", err)
+	}
+	return text, nil
 }
 
 func (c Client) workspaceSession(workspace domain.Workspace) (string, error) {

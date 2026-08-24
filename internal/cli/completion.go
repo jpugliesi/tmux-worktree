@@ -5,6 +5,7 @@ import (
 	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
+	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
@@ -21,7 +22,7 @@ const noFileCompletion = cobra.ShellCompDirectiveNoFileComp
 
 // agentProviderNames are the Agent Session provider values that twt
 // accepts for --provider and in the request schema.
-var agentProviderNames = []string{"codex", "claude", "cursor", "grok", "command"}
+var agentProviderNames = agentprovider.Names()
 
 // outputFormatNames are the values that --output accepts. Only list commands
 // accept ndjson.

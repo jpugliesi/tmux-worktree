@@ -30,14 +30,13 @@ Snacks options that show a preview.
 
 | Mapping | Action |
 | --- | --- |
-| `<leader>arp` | Select an Agent Session and open its transcript |
+| `<leader>arp` | Select an Agent Session and show its Agent Preview |
 | `<leader>an` | Add a review note, or open the note on this line |
 | `<leader>ad` | Delete the review note on this line |
 | `<leader>al` | List the Review Notes in this Neovim session |
 | `<leader>arl` | List the Review Notes in this Neovim session |
 | `<leader>arr` | Deliver the Review Batch to a tmux pane or the clipboard |
 | `<leader>ara` | Send the Review Batch to the selected Agent Session |
-| `<leader>arc` | Copy the Review Batch to the clipboard |
 | `<leader>ary` | Yank the Review Batch to the clipboard |
 | `<leader>art` | Send the Review Batch to a tmux pane |
 | `<leader>ars` | Write free text in a window and send it |
@@ -65,7 +64,7 @@ available:
 
 | Command | Action |
 | --- | --- |
-| `:TwtAgents` | Select an Agent Session and open its transcript |
+| `:TwtAgents` | Select an Agent Session and show its Agent Preview |
 | `:TwtNote` | Add a review note, or open the note on this line |
 | `:TwtNoteDelete` | Delete the review note on this line |
 | `:TwtReview` | Deliver the Review Batch to a tmux pane or the clipboard |
@@ -84,15 +83,17 @@ show the same messages.
 
 `<leader>arp` identifies each Agent Session with its label, provider when it
 adds information, shortest unique ID prefix, status, and last activity time.
-The Snacks picker shows the Agent Transcript for the highlighted row. It opens
-the picker before it reads a transcript, reads only the latest requested row,
-and runs at most one transcript read at a time. It keeps a small, bounded cache
+The Snacks picker shows the Agent Preview for the highlighted row. The preview
+is a verified transcript or the bounded visible screen of a verified live
+pane. It opens the picker before it reads preview text, reads only the latest
+requested row, and runs at most one preview read at a time. It keeps a bounded cache
 only while that picker is open. A picker without Snacks still shows the full
 row identity and can select the Agent Session.
 
 Preview is read-only. It does not register a discovered Agent Session and does
-not write a Transcript Snapshot. Confirming a row writes and opens its private
-Transcript Snapshot. That selection can register a discovered Agent Session.
+not write a Transcript Snapshot. A transcript row writes and opens its private
+Transcript Snapshot. A live-pane row adopts and selects the Agent Session, but
+it does not write a false Transcript Snapshot.
 
 `:TwtNotes`, `<leader>al`, and `<leader>arl` show all Review Notes in the
 current Neovim session. The Snacks picker preview shows the file, the selected
@@ -111,7 +112,7 @@ clear all review notes?` before it clears the session batch.
 the current pane and adds Clipboard as a destination. Each pane label shows
 the session and window, pane ID, current command, and current path. Outside
 tmux, it copies the batch immediately. `<leader>art` always asks for a tmux
-pane. `<leader>arc` and `<leader>ary` always yank to the clipboard. A canceled
+pane. `<leader>ary` always yanks to the clipboard. A canceled
 picker keeps the batch and shows no success message.
 
 Direct pane delivery loads the Review Batch through standard input, requests
@@ -170,8 +171,10 @@ names, so each Agent Session keeps its own file. If an older `twt` returns no
 the files. Applied Workspace removal deletes them. Register a new Agent Session
 with `--session SESSION_ID`, or use `twt agents transcript link` for an
 existing record.
-Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading stays
-off because its local records do not contain a safe, exact Workspace directory.
+Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading
+stays off because its local records do not contain a safe, exact Workspace
+directory. The picker can still preview, select, focus, and send to a verified
+live Cursor Agent pane.
 
 Older preview versions used the Neovim state directory. twt cannot reliably
 find that path when `NVIM_APPNAME` changes. You can remove those old preview
@@ -206,9 +209,9 @@ Each `done` is error-first: `done(err)` for a failure, or `done(nil, result)`
 for a success. `done` is optional. These modules show no message, so the caller
 decides what the user sees.
 
-`pick` and `refresh` give
-`done(nil, { agent = agent, path = path })` with the Agent Session and the
-snapshot file that they opened. A canceled picker gives `done(nil)` with no
+`pick` gives `done(nil, result)`. A transcript result has `agent` and `path`.
+A live-pane result has `agent` and `message`, but no `path`. `refresh` requires
+a transcript and gives `agent` and `path`. A canceled picker gives `done(nil)` with no
 result. A canceled text window gives no answer, so `prompt_add` and
 `prompt_send` show nothing after `q`.
 

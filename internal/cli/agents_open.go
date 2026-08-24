@@ -53,13 +53,13 @@ func newAgentsOpenCommand(options Options, agents *agentservice.Service, workspa
 				if len(args) == 0 {
 					return invalidUsage(command, "missing required argument AGENT_ID")
 				}
-				return previewAgentTranscript(command, agents, workspace, stateDir, args[0])
+				return previewAgent(command, agents, workspace, args[0])
 			}
 			reference := ""
 			if len(args) == 1 {
 				reference = args[0]
 			} else {
-				reference, err = pickOpenAgent(command, options, agents, workspace, stateDir)
+				reference, err = pickOpenAgent(command, options, agents, workspace)
 				if err != nil {
 					return err
 				}
@@ -68,7 +68,7 @@ func newAgentsOpenCommand(options Options, agents *agentservice.Service, workspa
 		},
 	}
 	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
-	command.Flags().BoolVar(&preview, "preview", false, "Preview the Agent Session transcript. Text output writes markdown. This path never registers a session and never writes a snapshot")
+	command.Flags().BoolVar(&preview, "preview", false, "Preview the Agent Session. Text output writes markdown. This path never registers a session and never writes a snapshot")
 	setArguments(command, optionalArgument("agent_id", "the interactive picker asks for it when absent. --preview requires it"))
 	command.ValidArgsFunction = agentReferenceCompletion(agents, workspaces, stateDir)
 	_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
@@ -88,6 +88,12 @@ func openAgentSession(command *cobra.Command, options Options, agents *agentserv
 	}
 	if _, err := findAgentWorkspace(workspaces, agent, workspaceReference); err != nil {
 		return err
+	}
+	if agents.IsLive(agent) {
+		if isDryRun(command) {
+			return writeMutation(command, "agents.open", statusValid, agent.ID, agent.Label)
+		}
+		return agents.Focus(agent)
 	}
 	resumeCommand := agentResumeCommand(agent)
 	if len(resumeCommand) == 0 {
@@ -130,8 +136,8 @@ func realAgentOpenExec(name string, argv []string, env []string) error {
 
 // pickOpenAgent shows the interactive Agent Session picker and returns the
 // selected Agent Session ID. The newest session comes first.
-func pickOpenAgent(command *cobra.Command, options Options, agents *agentservice.Service, workspace domain.Workspace, stateDir string) (string, error) {
-	outputs, err := workspaceAgentOutputs(agents, workspace, stateDir, true, false)
+func pickOpenAgent(command *cobra.Command, options Options, agents *agentservice.Service, workspace domain.Workspace) (string, error) {
+	outputs, _, _, err := workspaceAgentOutputs(agents, workspace, true, false)
 	if err != nil {
 		return "", err
 	}
@@ -184,31 +190,21 @@ func agentOpenPreviewCommand(workspaceID string) string {
 	return fmt.Sprintf("%s agents open --preview --workspace %s --output text '{2}'", shellQuote(executable), shellQuote(workspaceID))
 }
 
-// previewAgentTranscript writes the provider transcript of one Agent Session
-// as markdown. It never registers a discovered session, never writes a
-// snapshot, and never auto-saves a provider session link. A missing
-// transcript writes the error text so the fzf preview still has content.
-func previewAgentTranscript(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, reference string) error {
-	agent, err := findAgentForPreview(agents, workspace, stateDir, reference)
-	if err != nil {
-		return previewError(command, err)
-	}
-	if agent.ProviderSessionID == "" {
-		return previewError(command, clierr.WithHint(
-			clierr.New(clierr.PreconditionFailed, "Agent Session %q has no linked provider session ID", agent.ID),
-			"Run 'twt agents discover --workspace %s' to find sessions.", workspace.ID,
-		))
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("find home directory: %w", err)
-	}
-	value, err := transcriptservice.New(home, stateDir).Read(agent.Provider, agent.ProviderSessionID, workspace)
+// previewAgent writes a verified transcript or a bounded visible-pane preview
+// as markdown. It never registers a discovered session, writes a snapshot, or
+// saves a provider session link. An error becomes text for the fzf preview.
+func previewAgent(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, reference string) error {
+	value, err := agents.Preview(workspace, reference)
 	if err != nil {
 		return previewError(command, err)
 	}
 	if previewWantsJSON(command) {
-		return writeAgentTranscript(command, workspace.ID, agent.ID, value)
+		return writeReadJSON(command, agentTranscriptOutput{
+			SchemaVersion: jsonSchemaVersion, WorkspaceID: workspace.ID, AgentID: reference,
+			Provider: value.Provider, RepositoryName: value.RepositoryName,
+			UpdatedAt: value.UpdatedAt.Format(time.RFC3339), Source: value.Source,
+			Truncated: value.Truncated, Untrusted: true, Markdown: value.Markdown,
+		}, "")
 	}
 	_, err = io.WriteString(command.OutOrStdout(), value.Markdown)
 	return err
@@ -228,30 +224,6 @@ func previewError(command *cobra.Command, err error) error {
 func previewWantsJSON(command *cobra.Command) bool {
 	flag := command.Flags().Lookup("output")
 	return flag != nil && flag.Changed && flag.Value.String() == outputJSON
-}
-
-// findAgentForPreview resolves one AGENT reference without a write. A
-// registered Agent Session always wins. A discovered provider session returns
-// an unsaved record that still carries the provider session ID.
-func findAgentForPreview(agents *agentservice.Service, workspace domain.Workspace, stateDir, reference string) (domain.AgentSession, error) {
-	agent, err := agents.Find(reference)
-	if err == nil {
-		return agent, requireAgentInWorkspace(agent, workspace)
-	}
-	if clierr.CodeOf(err) != clierr.NotFound {
-		return domain.AgentSession{}, err
-	}
-	session, found, matchErr := matchDiscoveredSession(agents, workspace, stateDir, reference)
-	if matchErr != nil {
-		return domain.AgentSession{}, matchErr
-	}
-	if !found {
-		return domain.AgentSession{}, err
-	}
-	return domain.AgentSession{
-		ID: session.SessionID, WorkspaceID: workspace.ID, Provider: session.Provider,
-		ProviderSessionID: session.SessionID,
-	}, nil
 }
 
 // writePreviewMessage writes one error as preview text. The command still

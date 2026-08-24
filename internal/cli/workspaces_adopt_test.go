@@ -89,7 +89,7 @@ func TestWorkspacesAdoptTurnsATmuxSessionIntoAWorkspace(t *testing.T) {
 {"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Adopted question"}]}}
 `)
 	list := executeWithOptions(t, options, nil, "agents", "list", "--workspace", "handmade", "--output", "json")
-	if !strings.Contains(list, `"id":"codex-adopted"`) || !strings.Contains(list, `"status":"discovered"`) {
+	if !strings.Contains(list, `"providerSessionId":"codex-adopted"`) || !strings.Contains(list, `"status":"discovered"`) {
 		t.Fatalf("agents list for the adopted Workspace = %s", list)
 	}
 

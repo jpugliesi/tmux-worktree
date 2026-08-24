@@ -19,6 +19,13 @@ type AgentSession struct {
 	TmuxPane          string    `json:"tmuxPane,omitempty"`
 	PaneCommand       string    `json:"paneCommand,omitempty"`
 	PaneStart         string    `json:"paneStart,omitempty"`
+	RuntimeReference  string    `json:"runtimeReference,omitempty"`
+	PaneRootProcessID int       `json:"paneRootProcessId,omitempty"`
+	PaneRootStarted   string    `json:"paneRootStarted,omitempty"`
+	ProcessID         int       `json:"processId,omitempty"`
+	ProcessStarted    string    `json:"processStarted,omitempty"`
+	ProcessCommand    string    `json:"processCommand,omitempty"`
+	ProcessEvidence   string    `json:"processEvidence,omitempty"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }

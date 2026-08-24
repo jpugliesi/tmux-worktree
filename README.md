@@ -86,29 +86,33 @@ is provider, ID, and age:
 
 ```sh
 twt agents ls
-twt agents open            # fzf preview is the transcript. Enter resumes in this pane.
+twt agents open            # fzf shows an Agent Preview. Enter opens the session.
 twt agents open AGENT_ID   # skip the picker
 ```
 
-The preview shows the same markdown as `twt agents transcript show`. Preview
-of a discovered session does not register it. A selection registers it,
-then starts the provider resume command in this pane.
+The Agent Preview is a verified transcript when one is available. For a live
+pane without a transcript, it is a small view of the visible pane screen.
+Preview does not register the session. Adopt, resume, open, or send registers
+the selected candidate.
 
 Attach coding agents that already ran in the Workspace directories.
 Registration infers the provider and session ID from the resume command.
-`twt agents ls` also shows discovered Codex, Claude, and Grok sessions.
-The first action on a discovered session registers it:
+`twt agents ls` finds live Codex, Claude Code, Cursor Agent, and Grok
+processes. It also shows discovered Codex, Claude, and Grok transcripts.
+Use an operational action or `adopt` to register a discovered session:
 
 ```sh
 twt agents register -- codex resume SESSION_ID
+twt agents adopt AGENT_ID --workspace current
 twt agents discover --adopt
 twt agents resume AGENT_ID
 ```
 
 In Neovim, [twt.nvim](nvim/twt.nvim/README.md) picks an Agent Session with
-`<leader>arp`. The LazyVim Snacks picker shows the highlighted Agent Transcript
+`<leader>arp`. The LazyVim Snacks picker shows the highlighted Agent Preview
 before selection. Its rows include a unique Agent Session ID prefix, status,
-and activity time. Confirming a row opens its Transcript Snapshot. Collect
+and activity time. A transcript row opens its Transcript Snapshot. A live-pane
+row selects the Agent Session without a false snapshot. Collect
 Review Notes from any regular file buffer with `<leader>an`. Use `<leader>arr`
 to select a tmux pane or the clipboard. Use `<leader>ara` to send through the
 selected Agent Session. Log progress on the Ticket as you go:

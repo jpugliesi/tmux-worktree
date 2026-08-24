@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
@@ -163,6 +164,13 @@ func (s *Service) attachPane(workspace domain.Workspace, session *domain.AgentSe
 	}
 	session.TmuxPane = pane
 	session.PaneCommand, session.PaneStart = command, start
+	session.RuntimeReference = ""
+	session.PaneRootProcessID = 0
+	session.PaneRootStarted = ""
+	session.ProcessID = 0
+	session.ProcessStarted = ""
+	session.ProcessCommand = ""
+	session.ProcessEvidence = ""
 	return s.tmux.ClaimAgentPane(pane, workspace.ID, session.ID)
 }
 
@@ -255,12 +263,7 @@ func inferRegistration(provider, providerSessionID string, resumeCommand []strin
 // inferProvider reads the provider from the program name of the resume
 // command. A shell program name gives no provider.
 func inferProvider(resumeCommand []string) string {
-	for _, provider := range domain.AgentProviders {
-		if commandMatchesProvider(resumeCommand[0], provider, resumeCommand) {
-			return provider
-		}
-	}
-	return ""
+	return agentprovider.IdentifyCommand(resumeCommand)
 }
 
 // inferProviderSessionID reads the provider session ID from a resume command
@@ -360,8 +363,51 @@ func (s *Service) validateTranscriptLink(agentID, workspaceID, providerSessionID
 	return agent, nil
 }
 
+// ProbeResult is one reusable liveness observation for an Agent Session.
+type ProbeResult struct {
+	Live   bool
+	Ready  bool
+	Checks []tmuxclient.PaneCheck
+}
+
+// Probe reads all liveness checks once. Ready is stricter than Live for an
+// adopted shell-hosted process because sending needs the Agent input target.
+func (s *Service) Probe(agent domain.AgentSession) ProbeResult {
+	if binding, ok := processBinding(agent); ok {
+		workspace, err := store.NewWorkspaceStore(s.stateDir).Find(agent.WorkspaceID)
+		if err != nil {
+			return ProbeResult{Checks: []tmuxclient.PaneCheck{{Name: "Workspace", OK: false}}}
+		}
+		checks := s.tmux.ExplainProcessPane(workspace, agent.TmuxPane, agent.ID, binding, true)
+		live, ready := true, true
+		for index, check := range checks {
+			if index < len(checks)-1 && !check.OK {
+				live = false
+			}
+			if !check.OK {
+				ready = false
+			}
+		}
+		return ProbeResult{Live: live, Ready: ready, Checks: checks}
+	}
+	checks := s.tmux.ExplainPane(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	live := true
+	for _, check := range checks {
+		if !check.Advisory && !check.OK {
+			live = false
+		}
+	}
+	return ProbeResult{Live: live, Ready: live, Checks: checks}
+}
+
 func (s *Service) IsLive(agent domain.AgentSession) bool {
-	return s.tmux.PaneBelongsToAgent(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	return s.Probe(agent).Live
+}
+
+// CanSend reports whether the saved Agent Session is live and its provider
+// process is ready to receive terminal input.
+func (s *Service) CanSend(agent domain.AgentSession) bool {
+	return s.Probe(agent).Ready
 }
 
 func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) (domain.AgentSession, error) {
@@ -383,7 +429,7 @@ func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) 
 		return agent, err
 	}
 	if s.IsLive(agent) {
-		return agent, s.tmux.Focus(agent.TmuxPane, workspace.ID, agent.ID, agent.PaneCommand, agent.PaneStart)
+		return agent, s.Focus(agent)
 	}
 	return s.StartDeclared(workspace, agent, agent.ResumeCommand)
 }
@@ -423,7 +469,7 @@ func NotLiveError(agentID string) error { return tmuxclient.NotLiveError(agentID
 
 // ExplainLiveness returns one check for each Agent Session pane predicate.
 func (s *Service) ExplainLiveness(agent domain.AgentSession) []tmuxclient.PaneCheck {
-	return s.tmux.ExplainPane(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	return s.Probe(agent).Checks
 }
 
 // Remove deletes the Agent Session record. It does not stop a live process.
@@ -455,6 +501,13 @@ func (s *Service) ValidateRemove(reference, workspaceID string) (domain.AgentSes
 }
 
 func (s *Service) Focus(agent domain.AgentSession) error {
+	if binding, ok := processBinding(agent); ok {
+		workspace, err := store.NewWorkspaceStore(s.stateDir).Find(agent.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		return s.tmux.FocusProcess(workspace, agent.TmuxPane, agent.ID, binding)
+	}
 	return s.tmux.Focus(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
 }
 
@@ -465,7 +518,24 @@ func (s *Service) Send(agent domain.AgentSession, workspaceID, text string) erro
 	if text == "" {
 		return clierr.New(clierr.InvalidUsage, "feedback input is empty")
 	}
+	if binding, ok := processBinding(agent); ok {
+		workspace, err := store.NewWorkspaceStore(s.stateDir).Find(agent.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		return s.tmux.SendProcess(workspace, agent.TmuxPane, agent.ID, binding, text)
+	}
 	return s.tmux.Send(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart, text)
+}
+
+func processBinding(agent domain.AgentSession) (tmuxclient.ProcessBinding, bool) {
+	binding := tmuxclient.ProcessBinding{
+		PaneRootID: agent.PaneRootProcessID, PaneRootStarted: agent.PaneRootStarted,
+		ID: agent.ProcessID, Started: agent.ProcessStarted, Command: agent.ProcessCommand,
+		Evidence: agent.ProcessEvidence, ReadyCommand: agent.PaneCommand,
+	}
+	return binding, binding.PaneRootID > 0 && binding.PaneRootStarted != "" &&
+		binding.ID > 0 && binding.Started != "" && binding.Command != "" && binding.Evidence != ""
 }
 
 func startCommand(command string) string {
@@ -478,10 +548,7 @@ func startCommand(command string) string {
 
 func commandMatchesProvider(command, provider string, resumeCommand []string) bool {
 	command = strings.ToLower(filepath.Base(command))
-	switch provider {
-	case "codex", "claude", "cursor", "grok":
-		return strings.Contains(command, provider)
-	case "command":
+	if provider == "command" {
 		if len(resumeCommand) == 0 {
 			return false
 		}
@@ -495,9 +562,8 @@ func commandMatchesProvider(command, provider string, resumeCommand []string) bo
 		default:
 			return true
 		}
-	default:
-		return false
 	}
+	return agentprovider.IdentifyCommand([]string{command}) == provider
 }
 
 func validProvider(provider string) bool { return domain.ValidAgentProvider(provider) }

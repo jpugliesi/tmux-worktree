@@ -126,14 +126,17 @@ var commandHelp = map[string]helpContent{
 	"twt agents register": {
 		long: "Register a resumable coding Agent Session with a Workspace. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --workspace fix-auth --label review -- grok --resume SESSION_ID",
 	},
+	"twt agents adopt": {
+		long: "Register one discovered Agent Session. The reference can name a verified provider transcript or a verified live provider process. A dry run checks the same evidence and does not write state or claim a pane.", example: "  twt agents adopt AGENT_ID --workspace current\n  twt agents adopt AGENT_ID --workspace current --dry-run --output json",
+	},
 	"twt agents list": {
-		long: "List Agent Sessions for one Workspace, newest first. Text output is provider, ID, and age. twt asks tmux for the live state of each pane, and scans the Codex, Claude, and Grok stores for discovered sessions of the Workspace. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --workspace current --output json\n  twt agents list --workspace current --registered\n  twt agents list --workspace current --live=false",
+		long: "List Agent Sessions for one Workspace, newest first. Text output is provider, ID, and age. twt finds verified Codex, Claude Code, Cursor Agent, and Grok processes in live Workspace panes. It also scans the Codex, Claude, and Grok transcript stores. A discovered session has a provider-qualified candidate ID and status \"discovered\". Adopt, resume, open, or send registers it. List and preview do not write state. Use --registered to list saved Agent Sessions only. Use --live=false for a cheap read that does not probe tmux or scan provider stores.", example: "  twt agents list --workspace current --output json\n  twt agents list --workspace current --registered\n  twt agents list --workspace current --live=false",
 	},
 	"twt agents show": {
-		long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --workspace current --output json",
+		long: "Show one Agent Session record and each liveness check. A failed check tells you why twt does not send feedback. For an adopted shell-hosted process, twt checks the saved process ID, start time, provider, and current input target.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --workspace current --output json",
 	},
 	"twt agents discover": {
-		long: "Find the Codex, Claude, and Grok sessions that ran inside a repository of the Workspace and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command. 'twt agents list' also shows these sessions, and the first action on one adopts it; use discover --adopt for bulk adoption.", example: "  twt agents discover --workspace current\n  twt agents discover --workspace current --adopt --limit 3",
+		long: "Find the Codex, Claude, and Grok sessions that ran inside a repository of the Workspace and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command. 'twt agents list' also shows provider-qualified references for these sessions. Use discover --adopt for bulk adoption.", example: "  twt agents discover --workspace current\n  twt agents discover --workspace current --adopt --limit 3",
 	},
 	"twt agents rm": {
 		long: "Delete an Agent Session record. twt keeps the provider transcript and does not stop a live Agent process.", example: "  twt agents rm AGENT_ID\n  twt agents rm AGENT_ID --dry-run --output json",
@@ -145,10 +148,10 @@ var commandHelp = map[string]helpContent{
 		long: "Focus the tmux pane for a live Agent Session.", example: "  twt agents focus AGENT_ID",
 	},
 	"twt agents open": {
-		long: "Resume an Agent Session of the selected Workspace in the current pane. twt replaces this process with the provider resume command: 'codex resume', 'claude --resume', or 'grok --resume'. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection starts that resume command. --preview writes that transcript as markdown with text output or as a transcript envelope with explicit JSON output. It never registers a discovered session and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --workspace current",
+		long: "Open an Agent Session of the selected Workspace. A live session is focused. A stopped session starts its saved provider resume command in the current pane. Without AGENT_ID, twt shows an interactive picker. The fzf preview shows a verified transcript or the bounded visible screen of a verified live pane. --preview is read-only and never registers a session or writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --workspace current",
 	},
 	"twt agents send": {
-		long: "Send standard-input text to a live, owned Agent Session in the selected Workspace. twt never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --workspace current --stdin",
+		long: "Send standard-input text to a live, owned Agent Session in the selected Workspace. twt can adopt a verified provider process below a shell. Before each send, it checks the saved process identity and the current input target.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --workspace current --stdin",
 	},
 	"twt agents transcript show": {
 		long: "Read the provider transcript linked to one Agent Session. twt checks that the transcript belongs to the selected Workspace and does not return its source path.", example: "  twt agents transcript show AGENT_ID --workspace current --output json",

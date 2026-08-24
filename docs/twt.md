@@ -448,11 +448,13 @@ twt agents register \
   -- codex resume SESSION_ID
 ```
 
-For safe feedback delivery, a live pane must have started the Agent directly.
-A pane that started as a normal shell is not a valid feedback target, even if
-an Agent now runs as a child process. The safe common flow is to register a
-resume command without `--pane`, then run `agents resume`. twt starts that
-Agent in its own window and records its direct process identity.
+For safe feedback delivery, twt accepts a direct Agent process or a verified
+Agent process below a normal shell. Live process discovery supports Codex,
+Claude Code, Cursor Agent (`cursor-agent` and its verified `agent` alias), and
+Grok. A generic program named `agent` is not sufficient proof. twt checks the
+Cursor installation path and launcher script before it identifies that alias.
+Manual `register --pane` keeps its direct-process rule. For an Agent below a
+shell, use the candidate from `agents list` with `agents adopt`.
 
 List, inspect, pick, focus, resume, or send feedback:
 
@@ -468,38 +470,51 @@ printf '%s\n' 'Please fix the selected review note.' | \
 
 `agents open` shows an interactive Agent Session picker when AGENT_ID is
 absent. It uses `fzf` when `fzf` is installed, or a numbered list. The fzf
-preview shows the same transcript text as `twt agents transcript show`. A
-selection starts the provider resume command in the current pane:
-`codex resume`, `claude --resume`, or `grok --resume`. twt replaces this
-process with that command. It does not start a new tmux window.
-`--preview` writes that transcript as markdown with text output. An explicit
-`--output json` writes the normal transcript envelope. Preview never registers
-a discovered session and never writes a snapshot.
+preview shows an Agent Preview. It uses a verified transcript when one is
+available. Otherwise, it shows a bounded and sanitized view of the visible
+screen of a verified live pane. It does not read pane scrollback. A live
+selection focuses that pane. A stopped selection starts `codex resume`,
+`claude --resume`, or `grok --resume` in the current pane. Preview never
+registers a discovered session and never writes a snapshot.
 
-`agents list` also scans the Codex, Claude, and Grok stores. A provider
+`agents list` finds verified live processes for all four supported coding
+agents. It also scans the Codex, Claude, and Grok stores. A provider
 session that ran inside a repository of the Workspace, and that no Agent
-Session uses, appears with status `discovered` and its provider session ID
-as `id`. The newest session comes first. Registered and discovered sessions
+Session uses, appears with status `discovered` and a provider-qualified,
+versioned candidate value as `id`. The raw provider session ID stays in
+`providerSessionId`. The newest session comes first. Registered and discovered sessions
 share one recency order. Text output is provider, ID, and age. The list
 writes nothing.
 
-The first action on a discovered session adopts it: `resume`, `open`,
-`show`, `send`, and the `transcript` commands accept the provider session
-ID or a unique prefix, and register the session before they proceed. A
-picker preview is not an action. A manually started Codex or Claude session
-in a Workspace directory therefore needs no manual registration step.
+`adopt` registers a discovered session without another action. `resume`,
+`open`, and `send` also adopt before they act. They accept the versioned
+candidate reference or a unique prefix. Transcript show and every picker
+preview stay read-only. A manually started Codex, Claude Code, Cursor Agent,
+or Grok process in an owned Workspace pane needs no manual `register` step.
+
+```sh
+twt agents adopt AGENT_ID --workspace current
+```
 
 Use `--registered` in a script that must not scan the provider stores. Use
 `--live=false` for the cheap statusline path: it does not probe tmux and does
 not scan the provider stores.
 
-`agents show` gives each liveness check with its result. A failed check tells
-you why `twt` does not send feedback. The current command of the pane is an
-advisory check only.
+The JSON list has `complete` and `diagnostics` fields. A provider-store,
+process-table, or tmux scan failure sets `complete` to `false` and keeps valid
+results from the other sources. NDJSON puts the same fields in its final
+summary line. Text output writes a warning to standard error. The Neovim
+picker stops and shows the diagnostic, so it does not silently omit live
+agents.
+
+`agents show` gives each liveness check with its result. For an adopted
+shell-hosted process, twt checks the saved process ID, process start time,
+provider, pane marker, and current input target. Focus can work while the
+Agent uses a child tool. Send requires the Agent input target to be current.
 
 `send` works only when the Agent Session has a live tmux pane that belongs to
-the Workspace and still runs the registered direct Agent process. `resume`
-focuses a live pane. If the pane stopped, `resume` starts the saved command in
+the Workspace and still has the same verified process. `resume` focuses a
+live pane. If a saved resume command exists, it can start a stopped session in
 a new Workspace window.
 
 To read the discovered sessions alone, or to adopt many sessions at one time,
@@ -555,12 +570,14 @@ Linked transcript reading supports Codex, Claude, and Grok. twt does not read Cu
 transcripts because the local Cursor records do not give an exact Workspace
 directory that twt can verify.
 
-`<leader>arp` selects a linked Agent Session. twt writes the transcript of
-that Agent Session to
+`<leader>arp` shows all verified Agent Sessions. A transcript selection writes
+the transcript to
 `$TWT_STATE_DIR/snapshots/workspaces/WORKSPACE_ID/agents/AGENT_ID.md`, and writes
 `latest.md` in the Workspace directory as a copy of the most recent snapshot. If
 `TWT_STATE_DIR` is not set, twt uses the normal XDG state directory.
-Different Workspaces use different private files. Archive keeps these files.
+Different Workspaces use different private files. A live Cursor selection has
+no verified transcript, so it selects and adopts the pane without writing a
+Transcript Snapshot. Archive keeps the snapshot files.
 `twt workspaces remove WORKSPACE --apply` deletes the matching owned snapshots.
 For an older Agent Session, add the provider link:
 

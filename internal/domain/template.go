@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 )
 
 const TemplateVersion = 1
@@ -43,16 +45,12 @@ type TemplateAgent struct {
 }
 
 // AgentProviders are the supported Agent Session provider names.
-var AgentProviders = []string{"codex", "claude", "cursor", "grok", "command"}
+var AgentProviders = agentprovider.Names()
 
 // ValidAgentProvider reports whether the provider name is supported.
 func ValidAgentProvider(provider string) bool {
-	for _, known := range AgentProviders {
-		if provider == known {
-			return true
-		}
-	}
-	return false
+	_, valid := agentprovider.Lookup(provider)
+	return valid
 }
 
 // EffectivePoolDepth returns the number of ready Prepared Environments to keep.

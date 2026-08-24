@@ -1,6 +1,7 @@
 package transcript_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,52 @@ func TestDiscoverSkipsLinkedSessionsAndOtherProviders(t *testing.T) {
 	}
 	if len(found) != 1 || found[0].SessionID != "codex-free" {
 		t.Fatalf("Discover() = %+v", found)
+	}
+}
+
+func TestDiscoverKeepsOtherProviderResultsWhenOneStoreFails(t *testing.T) {
+	home := t.TempDir()
+	workspace, repository := discoverWorkspace(t)
+	writeCodexSession(t, home, "codex-valid", repository)
+	if err := os.WriteFile(filepath.Join(home, ".claude"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{})
+	if err == nil || !strings.Contains(err.Error(), "claude transcript discovery") {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if len(found) != 1 || found[0].Provider != "codex" || found[0].SessionID != "codex-valid" {
+		t.Fatalf("Discover() partial result = %+v", found)
+	}
+}
+
+func TestDiscoverIncludesALinkOutsideTheNewestDiscoveryWindowInOneScan(t *testing.T) {
+	home := t.TempDir()
+	workspace, repository := discoverWorkspace(t)
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := writeCodexSession(t, home, "linked-old", repository)
+	now := time.Now()
+	setModTime(t, old, now.Add(-time.Hour))
+	for index := 0; index < 256; index++ {
+		path := writeCodexSession(t, home, fmt.Sprintf("outside-%03d", index), outside)
+		setModTime(t, path, now.Add(time.Duration(index)*time.Second))
+	}
+
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 0 {
+		t.Fatalf("Discover() included a session outside its newest-file window: %+v", found)
+	}
+	linked := []domain.AgentSession{{Provider: "codex", ProviderSessionID: "linked-old"}}
+	verified, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{Linked: linked, IncludeLinked: true})
+	if err != nil || len(verified) != 1 || verified[0].SessionID != "linked-old" || verified[0].RepositoryName != "app" {
+		t.Fatalf("Discover(IncludeLinked) = %+v, %v", verified, err)
 	}
 }
 
@@ -182,6 +229,9 @@ func TestDiscoverFindsSessionsWhenTheTranscriptBodyExceedsTheReadLimit(t *testin
 }
 
 func TestResumeCommandUsesTheProviderFlag(t *testing.T) {
+	if err := transcript.ValidateProviders(); err != nil {
+		t.Fatal(err)
+	}
 	if got := transcript.ResumeCommand("codex", "session-one"); strings.Join(got, " ") != "codex resume session-one" {
 		t.Fatalf("ResumeCommand(codex) = %v", got)
 	}

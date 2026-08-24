@@ -71,12 +71,22 @@ func (s *Service) clearAgentPanes(workspaceID string) error {
 		return err
 	}
 	for _, agent := range agents {
-		if agent.TmuxPane == "" && agent.PaneCommand == "" && agent.PaneStart == "" {
+		if agent.TmuxPane == "" && agent.PaneCommand == "" && agent.PaneStart == "" &&
+			agent.RuntimeReference == "" && agent.PaneRootProcessID == 0 && agent.PaneRootStarted == "" &&
+			agent.ProcessID == 0 && agent.ProcessStarted == "" && agent.ProcessCommand == "" &&
+			agent.ProcessEvidence == "" {
 			continue
 		}
 		agent.TmuxPane = ""
 		agent.PaneCommand = ""
 		agent.PaneStart = ""
+		agent.RuntimeReference = ""
+		agent.PaneRootProcessID = 0
+		agent.PaneRootStarted = ""
+		agent.ProcessID = 0
+		agent.ProcessStarted = ""
+		agent.ProcessCommand = ""
+		agent.ProcessEvidence = ""
 		agent.UpdatedAt = s.now()
 		if err := agentStore.Save(agent); err != nil {
 			return fmt.Errorf("clear the stopped pane on Agent Session %q: %w", agent.ID, err)

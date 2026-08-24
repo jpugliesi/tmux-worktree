@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
@@ -19,6 +20,7 @@ func newAgentsCommand(options Options) *cobra.Command {
 	workspaces := options.workspaceService()
 	command := groupCommand(&cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Workspaces"})
 	command.AddCommand(newAgentsRegisterCommand(agents, workspaces))
+	command.AddCommand(newAgentsAdoptCommand(agents, workspaces, options.StateDir))
 	command.AddCommand(newAgentsListCommand(agents, workspaces, options.StateDir))
 	command.AddCommand(newAgentsShowCommand(agents, workspaces, options.StateDir))
 	command.AddCommand(newAgentsDiscoverCommand(agents, workspaces, options.StateDir))
@@ -28,6 +30,48 @@ func newAgentsCommand(options Options) *cobra.Command {
 	command.AddCommand(newAgentsOpenCommand(options, agents, workspaces, options.StateDir))
 	command.AddCommand(newAgentsSendCommand(agents, workspaces, options.StateDir))
 	command.AddCommand(newAgentTranscriptCommand(agents, workspaces, options.StateDir))
+	return command
+}
+
+func newAgentsAdoptCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
+	var workspaceReference string
+	command := &cobra.Command{
+		Use:   "adopt AGENT_ID",
+		Short: "Register one discovered Agent Session",
+		Args:  exactArgs("AGENT_ID"),
+		RunE: func(command *cobra.Command, args []string) error {
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
+			if err != nil {
+				return err
+			}
+			if existing, findErr := agents.Find(args[0]); findErr == nil {
+				return clierr.New(clierr.AlreadyExists, "Agent Session %q is already registered", existing.ID)
+			} else if clierr.CodeOf(findErr) != clierr.NotFound {
+				return findErr
+			}
+			agent, adopted, err := findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
+			if err != nil {
+				return err
+			}
+			if !adopted {
+				return clierr.New(clierr.NotFound, "discovered Agent Session %q does not exist", args[0])
+			}
+			if WantsJSON(command) {
+				return writeJSONOutput(command, agentActionOutput{
+					SchemaVersion: jsonSchemaVersion,
+					Agent:         toAgentOutput(agents, agent, workspace.Status == domain.WorkspaceActive, !isDryRun(command)),
+				})
+			}
+			if isDryRun(command) {
+				_, err = fmt.Fprintf(command.OutOrStdout(), "Agent Session %s is valid for adoption\n", agent.ID)
+			} else {
+				_, err = fmt.Fprintf(command.OutOrStdout(), "Adopted Agent Session %s (%s)\n", agent.ID, agent.Label)
+			}
+			return err
+		},
+	}
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
@@ -61,7 +105,7 @@ func newAgentsRegisterCommand(agents *agentservice.Service, workspaces *workspac
 		},
 	}
 	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
-	command.Flags().StringVar(&provider, "provider", "", "Set the provider: codex, claude, cursor, grok, or command. twt infers it from the resume command")
+	command.Flags().StringVar(&provider, "provider", "", fmt.Sprintf("Set the provider: %s. twt infers it from the resume command", strings.Join(agentProviderNames, ", ")))
 	command.Flags().StringVar(&label, "label", "", "Set the display label. The default label is the provider name")
 	command.Flags().StringVar(&pane, "pane", "", "Set an owned tmux pane ID, or use current")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading. twt infers it from the resume command")
@@ -131,7 +175,7 @@ func newAgentsListCommand(agents *agentservice.Service, workspaces *workspaceser
 			if err != nil {
 				return err
 			}
-			outputs, err := workspaceAgentOutputs(agents, workspace, stateDir, live, registered)
+			outputs, complete, diagnostics, err := workspaceAgentOutputs(agents, workspace, live, registered)
 			if err != nil {
 				return err
 			}
@@ -141,11 +185,11 @@ func newAgentsListCommand(agents *agentservice.Service, workspaces *workspaceser
 			}
 			if format := resolvedOutputFormat(command); format != outputText {
 				if format == outputNDJSON {
-					return writeNDJSONList(command, outputs, total, truncated)
+					return writeDiscoveryNDJSONList(command, outputs, total, truncated, complete, diagnostics)
 				}
 				return writeReadJSON(command, agentsListOutput{
 					SchemaVersion: jsonSchemaVersion, WorkspaceID: workspace.ID, Agents: outputs,
-					TotalCount: total, Truncated: truncated,
+					Complete: complete, Diagnostics: diagnostics, TotalCount: total, Truncated: truncated,
 				}, "agents")
 			}
 			now := time.Now()
@@ -153,7 +197,20 @@ func newAgentsListCommand(agents *agentservice.Service, workspaces *workspaceser
 			for _, output := range outputs {
 				rows = append(rows, []string{output.Provider, output.ID, formatAge(now.Sub(output.recency))})
 			}
-			return writeTable(command.OutOrStdout(), []string{"PROVIDER", "ID", "AGE"}, rows)
+			if err := writeTable(command.OutOrStdout(), []string{"PROVIDER", "ID", "AGE"}, rows); err != nil {
+				return err
+			}
+			if !complete {
+				if _, err := fmt.Fprintln(command.ErrOrStderr(), "Warning: Agent Session discovery is incomplete."); err != nil {
+					return err
+				}
+				for _, diagnostic := range diagnostics {
+					if _, err := fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", diagnostic); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
 		},
 	}
 	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
@@ -167,26 +224,29 @@ func newAgentsListCommand(agents *agentservice.Service, workspaces *workspaceser
 // workspaceAgentOutputs lists the Agent Sessions of one Workspace in the same
 // order as `twt agents list`: newest first. Registered and discovered
 // sessions share one recency order. The scan only reads.
-func workspaceAgentOutputs(agents *agentservice.Service, workspace domain.Workspace, stateDir string, live, registered bool) ([]agentOutput, error) {
+func workspaceAgentOutputs(agents *agentservice.Service, workspace domain.Workspace, live, registered bool) ([]agentOutput, bool, []string, error) {
+	if live && !registered {
+		catalog, err := agents.Catalog(workspace)
+		if err != nil {
+			return nil, false, nil, err
+		}
+		outputs := make([]agentOutput, 0, len(catalog.Entries))
+		for _, entry := range catalog.Entries {
+			outputs = append(outputs, catalogAgentOutput(workspace, entry))
+		}
+		sortAgentsForDisplay(outputs)
+		return outputs, catalog.Complete, catalog.Diagnostics, nil
+	}
 	values, err := agents.List(workspace.ID)
 	if err != nil {
-		return nil, err
+		return nil, false, nil, err
 	}
 	outputs := make([]agentOutput, 0, len(values))
 	for _, value := range values {
 		outputs = append(outputs, toAgentOutput(agents, value, workspace.Status == domain.WorkspaceActive, live))
 	}
-	if live && !registered {
-		found, err := discoverWorkspaceSessions(workspace, stateDir, values)
-		if err != nil {
-			return nil, err
-		}
-		for _, session := range found {
-			outputs = append(outputs, discoveredAgentOutput(workspace, session))
-		}
-	}
 	sortAgentsForDisplay(outputs)
-	return outputs, nil
+	return outputs, true, nil, nil
 }
 
 func newAgentsShowCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
@@ -200,16 +260,17 @@ func newAgentsShowCommand(agents *agentservice.Service, workspaces *workspaceser
 			if err != nil {
 				return err
 			}
-			agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
+			agent, err := agents.Find(args[0])
 			if err != nil {
 				return err
 			}
 			if err := requireAgentInWorkspace(agent, workspace); err != nil {
 				return err
 			}
-			output := toAgentOutput(agents, agent, workspace.Status == domain.WorkspaceActive, true)
+			probe := agents.Probe(agent)
+			output := toAgentOutputWithProbe(agent, workspace.Status == domain.WorkspaceActive, probe)
 			checks := []agentCheck{}
-			for _, check := range agents.ExplainLiveness(agent) {
+			for _, check := range probe.Checks {
 				checks = append(checks, agentCheck{Name: check.Name, OK: check.OK, Advisory: check.Advisory})
 			}
 			if WantsJSON(command) {
@@ -478,11 +539,22 @@ func newAgentsFocusCommand(agents *agentservice.Service, workspaces *workspacese
 		Args:  exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
 			agent, err := agents.Find(args[0])
+			adopted := false
+			if clierr.CodeOf(err) == clierr.NotFound {
+				workspace, workspaceErr := resolveWorkspace(workspaces, currentWorkspaceReference)
+				if workspaceErr != nil {
+					return err
+				}
+				agent, adopted, err = findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
+			}
 			if err != nil {
 				return err
 			}
 			return runMutation(command, "agents.focus",
 				func() (string, string, error) {
+					if adopted && isDryRun(command) {
+						return agent.ID, agent.Label, nil
+					}
 					if !agents.IsLive(agent) {
 						return "", "", agentservice.NotLiveError(agent.ID)
 					}
@@ -539,7 +611,10 @@ func newAgentsSendCommand(agents *agentservice.Service, workspaces *workspaceser
 // reference that names a discovered provider session adopts it first; the
 // send then reports that the Agent Session is not live, with the resume hint.
 func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, agentID, text string) error {
-	agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, agentID)
+	if text == "" {
+		return clierr.New(clierr.InvalidUsage, "feedback input is empty")
+	}
+	agent, adopted, err := findOrAdoptAgent(command, agents, workspace, stateDir, agentID)
 	if err != nil {
 		return err
 	}
@@ -550,7 +625,7 @@ func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, wor
 		if text == "" {
 			return clierr.New(clierr.InvalidUsage, "feedback input is empty")
 		}
-		if !agents.IsLive(agent) {
+		if !(adopted && agent.ProcessID > 0) && !agents.CanSend(agent) {
 			return agentservice.NotLiveError(agent.ID)
 		}
 		return writeMutation(command, "agents.send", statusValid, agent.ID, agent.Label)
