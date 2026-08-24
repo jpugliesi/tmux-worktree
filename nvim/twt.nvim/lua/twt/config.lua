@@ -3,11 +3,19 @@ local M = {}
 
 local defaults = {
   command = "twt",
+  tmux_command = "tmux",
   default_keymaps = true,
   max_agents = 40,
   clear_after_send = true,
   snapshot_split = "tab drop",
   runner = nil,
+  tmux_runner = nil,
+  clipboard = function(text)
+    if vim.fn.has("clipboard") ~= 1 and not vim.g.clipboard then
+      error("Neovim has no clipboard provider", 0)
+    end
+    vim.fn.setreg("+", text, "v")
+  end,
   select = function(items, opts, done)
     vim.ui.select(items, opts, done)
   end,

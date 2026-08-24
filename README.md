@@ -98,8 +98,9 @@ twt agents resume AGENT_ID
 ```
 
 In Neovim, [twt.nvim](nvim/twt.nvim/README.md) picks an Agent Session with
-`<leader>arp` and opens its transcript. Collect review notes with
-`<leader>an`. Send the batch to the agent's pane with `<leader>arr`. Log
+`<leader>arp` and opens its transcript. Collect Review Notes from any regular
+file buffer with `<leader>an`. Use `<leader>arr` to select a tmux pane or the
+clipboard. Use `<leader>ara` to send through the selected Agent Session. Log
 progress on the Ticket as you go:
 
 ```sh

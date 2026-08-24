@@ -51,6 +51,16 @@ A Workspace-scoped Markdown copy of an Agent Transcript for review and
 display. Archive keeps it. Workspace removal deletes it.
 _Avoid_: Agent Transcript, global latest.md
 
+**Review Note**:
+A Neovim-session annotation anchored to lines in one file. It does not belong
+to a Workspace, repository, or Agent Session.
+_Avoid_: Comment, Agent feedback
+
+**Review Batch**:
+All current Review Notes in one Neovim session. A user can copy it or send it
+to an Agent Session or tmux pane.
+_Avoid_: Workspace review, Agent feedback
+
 **Initialization**:
 A declared setup action that prepares a new physical Git worktree or Workspace
 for use. Repository initialization runs at most once on each physical worktree.
@@ -89,3 +99,11 @@ _Avoid_: Issue, task file, combined tickets note
 An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`.
 Not a Project.
 _Avoid_: Board
+
+## Example dialogue
+
+Developer: "Does this Review Note belong to the current Workspace?"
+
+Domain expert: "No. It belongs to the current Neovim Review Batch. You can
+send that batch to an Agent Session in a Workspace, to a tmux pane, or to the
+clipboard."

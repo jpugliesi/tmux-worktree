@@ -29,16 +29,34 @@ local specs = {
     cmd = "TwtNote",
     lhs = "<leader>an",
     modes = { "n", "v" },
-    desc = "Add or open a twt review note",
+    desc = "Add or open a review note",
     ok = "review note saved",
     fn = function(done) M.review.prompt_add(done) end,
   },
   {
     cmd = "TwtReview",
     lhs = "<leader>arr",
-    desc = "Send twt review notes",
+    desc = "Deliver review notes",
+    fn = function(done) M.review.deliver(done) end,
+  },
+  {
+    cmd = "TwtReviewAgent",
+    lhs = "<leader>ara",
+    desc = "Send review notes to the selected twt Agent Session",
     ok = "review notes sent",
     fn = function(done) M.review.send(done) end,
+  },
+  {
+    cmd = "TwtReviewCopy",
+    lhs = "<leader>arc",
+    desc = "Copy review notes to the clipboard",
+    fn = function(done) M.review.copy(done) end,
+  },
+  {
+    cmd = "TwtReviewPane",
+    lhs = "<leader>art",
+    desc = "Send review notes to a tmux pane",
+    fn = function(done) M.review.send_pane(done) end,
   },
   {
     cmd = "TwtSend",
@@ -50,14 +68,14 @@ local specs = {
   {
     cmd = "TwtNotes",
     lhs = { "<leader>al", "<leader>arl" },
-    desc = "List the twt review notes of this Workspace",
+    desc = "List review notes",
     fn = function(done) M.review.prompt_notes(done) end,
   },
   {
     cmd = "TwtNoteDelete",
     lhs = "<leader>ad",
     modes = { "n", "v" },
-    desc = "Delete the twt review note on this line",
+    desc = "Delete the review note on this line",
     fn = function(done) M.review.prompt_delete(done) end,
   },
   {
@@ -81,8 +99,8 @@ local specs = {
   {
     cmd = "TwtClear",
     lhs = "<leader>arx",
-    desc = "Clear twt review notes",
-    ok = "Workspace review notes cleared",
+    desc = "Clear review notes",
+    ok = "review notes cleared",
     fn = function(done) M.review.clear_current(done) end,
   },
 }

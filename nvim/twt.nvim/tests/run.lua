@@ -201,36 +201,373 @@ test("revalidates the selected Agent and sends feedback on standard input", func
   assert(sent.stdin == "review text")
 end)
 
-test("uses extmarks and repository names for current review lines", function()
+test("adds and formats one session batch without Git or twt", function()
+  local review = require("twt").review
+  review.clear()
   local root = vim.fn.tempname()
-  vim.fn.mkdir(root .. "/.git", "p")
-  vim.fn.mkdir(root .. "/src", "p")
-  local path = root .. "/src/file.go"
-  local buffer = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_buf_set_name(buffer, path)
-  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
-  vim.api.nvim_set_current_buf(buffer)
-  context.repositoryName = "app"
-  require("twt.config").get().directory = function()
-    return root .. "/src"
-  end
+  vim.fn.mkdir(root .. "/one", "p")
+  vim.fn.mkdir(root .. "/two", "p")
+  local first_path = root .. "/one/transcript.md"
+  local first = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(first, first_path)
+  vim.api.nvim_buf_set_lines(first, 0, -1, false, { "one", "```", "three" })
+  vim.api.nvim_set_current_buf(first)
+
+  local call_count = #calls
   local added
-  require("twt").review.add("change this", 2, 2, function(err)
-    assert(err == nil)
-    added = true
+  review.add("change this", 2, 2, function(err, note)
+    assert(err == nil, err)
+    added = note
   end)
-  assert(added)
-  vim.api.nvim_buf_set_lines(buffer, 0, 0, false, { "inserted" })
-  local format_err, batch = require("twt").review.format("workspace-1")
+  assert(added and added.workspace_id == nil, vim.inspect(added))
+  assert(#calls == call_count, "adding a note must not call twt")
+  vim.api.nvim_buf_set_lines(first, 0, 0, false, { "inserted" })
+  local renamed_path = root .. "/one/renamed transcript.md"
+  vim.api.nvim_buf_set_name(first, renamed_path)
+  renamed_path = vim.fs.normalize(vim.api.nvim_buf_get_name(first))
+
+  local second_path = root .. "/two/file.go"
+  local second = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(second, second_path)
+  vim.api.nvim_buf_set_lines(second, 0, -1, false, { "alpha", "beta" })
+  vim.api.nvim_set_current_buf(second)
+  review.add("keep this", 1, 1, function(err) assert(err == nil, err) end)
+  second_path = vim.fs.normalize(vim.api.nvim_buf_get_name(second))
+
+  local format_err, batch = review.format()
   assert(format_err == nil, format_err)
-  assert(#batch.note_ids == 1)
-  assert(batch.text:find("app:src/file.go#L3\n", 1, true))
-  assert(not batch.text:find("#L3-4", 1, true))
-  assert(batch.text:find("two", 1, true))
-  assert(not batch.text:find("three", 1, true))
+  assert(#batch.notes == 2, vim.inspect(batch))
+  assert(batch.text:find("@" .. renamed_path .. "#L3\n", 1, true), batch.text)
+  assert(batch.text:find("@" .. second_path .. "#L1\n", 1, true), batch.text)
+  assert(batch.text:find("````\n```\n````", 1, true), batch.text)
+  assert(batch.text:find("\ntwo\n", 1, true) == nil, batch.text)
+  assert(#calls == call_count, "formatting notes must not call twt")
+
+  review.clear()
+  vim.api.nvim_buf_delete(first, { force = true })
+  vim.api.nvim_buf_delete(second, { force = true })
+end)
+
+test("rejects unnamed and non-file review buffers without calling twt", function()
+  local review = require("twt").review
+  review.clear()
+  local call_count = #calls
+  local unnamed = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_set_current_buf(unnamed)
+  local unnamed_error
+  review.add("note", 1, 1, function(err) unnamed_error = err end)
+  assert(unnamed_error and unnamed_error:find("save the file", 1, true), unnamed_error)
+
+  local scratch = vim.api.nvim_create_buf(false, true)
+  vim.bo[scratch].buftype = "nofile"
+  vim.api.nvim_buf_set_name(scratch, "review-scratch")
+  vim.api.nvim_set_current_buf(scratch)
+  local scratch_error
+  review.add("note", 1, 1, function(err) scratch_error = err end)
+  assert(scratch_error and scratch_error:find("regular file", 1, true), scratch_error)
+  assert(#calls == call_count, "invalid review buffers must not call twt")
+  vim.api.nvim_buf_delete(unnamed, { force = true })
+  vim.api.nvim_buf_delete(scratch, { force = true })
+end)
+
+test("lists safe tmux pane targets and sends with a private bracketed buffer", function()
+  local old_tmux, old_pane = vim.env.TMUX, vim.env.TMUX_PANE
+  vim.env.TMUX, vim.env.TMUX_PANE = "/tmp/tmux/default,1,0", "%1"
+  local tmux_calls = {}
+  with_config({
+    tmux_runner = function(argv, opts, done)
+      tmux_calls[#tmux_calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin }
+      if argv[2] == "list-panes" then
+        local separator = string.char(31)
+        done({ code = 0, stdout = table.concat({
+          table.concat({ "%1", "dev:0.0", "zsh", "/work/current", "0" }, separator),
+          table.concat({ "%2", "dev:1.0", "codex", "/work/with spaces", "0" }, separator),
+          table.concat({ "%3", "other:0.1", "bash", "/work/dead", "1" }, separator),
+        }, "\n"), stderr = "" })
+      else
+        done({ code = 0, stdout = "", stderr = "" })
+      end
+    end,
+  }, function()
+    local panes
+    require("twt.tmux").list(function(err, value)
+      assert(err == nil, err)
+      panes = value
+    end)
+    assert(#panes == 1, vim.inspect(panes))
+    assert(panes[1].id == "%2", vim.inspect(panes[1]))
+    assert(panes[1].label == "dev:1.0 · %2 · codex · /work/with spaces", panes[1].label)
+
+    local call_count = #tmux_calls
+    local current_error
+    require("twt.tmux").send("%1", "do not send", function(err) current_error = err end)
+    assert(current_error and current_error:find("current Neovim pane", 1, true), current_error)
+    assert(#tmux_calls == call_count, "the current pane must not receive tmux commands")
+
+    local first_buffer, second_buffer
+    for index = 1, 2 do
+      require("twt.tmux").send("%2", "line one\nline two", function(err)
+        assert(err == nil, err)
+      end)
+      local load = tmux_calls[#tmux_calls - 2]
+      local paste = tmux_calls[#tmux_calls - 1]
+      local enter = tmux_calls[#tmux_calls]
+      assert(load.argv[2] == "load-buffer" and load.stdin == "line one\nline two", vim.inspect(load))
+      assert(paste.argv[2] == "paste-buffer", vim.inspect(paste.argv))
+      assert(vim.tbl_contains(paste.argv, "-d") and vim.tbl_contains(paste.argv, "-p"), vim.inspect(paste.argv))
+      assert(enter.argv[2] == "send-keys" and enter.argv[#enter.argv] == "Enter", vim.inspect(enter.argv))
+      local name
+      for i, value in ipairs(load.argv) do if value == "-b" then name = load.argv[i + 1] end end
+      if index == 1 then first_buffer = name else second_buffer = name end
+    end
+    assert(first_buffer and second_buffer and first_buffer ~= second_buffer, vim.inspect({ first_buffer, second_buffer }))
+  end)
+  vim.env.TMUX, vim.env.TMUX_PANE = old_tmux, old_pane
+end)
+
+test("cleans a tmux buffer when a pane paste fails", function()
+  local tmux_calls = {}
+  with_config({
+    tmux_runner = function(argv, opts, done)
+      tmux_calls[#tmux_calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin }
+      if argv[2] == "paste-buffer" then
+        done({ code = 1, stdout = "", stderr = "pane disappeared" })
+      else
+        done({ code = 0, stdout = "", stderr = "" })
+      end
+    end,
+  }, function()
+    local send_error
+    require("twt.tmux").send("%8", "review", function(err) send_error = err end)
+    assert(send_error and send_error:find("pane disappeared", 1, true), send_error)
+    assert(tmux_calls[#tmux_calls].argv[2] == "delete-buffer", vim.inspect(tmux_calls))
+  end)
+end)
+
+test("reports a tmux buffer cleanup failure", function()
+  with_config({
+    tmux_runner = function(argv, _, done)
+      if argv[2] == "paste-buffer" then
+        done({ code = 1, stdout = "", stderr = "paste failed" })
+      elseif argv[2] == "delete-buffer" then
+        done({ code = 1, stdout = "", stderr = "cleanup failed" })
+      else
+        done({ code = 0, stdout = "", stderr = "" })
+      end
+    end,
+  }, function()
+    local send_error
+    require("twt.tmux").send("%8", "review", function(err) send_error = err end)
+    assert(send_error and send_error:find("paste failed", 1, true), send_error)
+    assert(send_error:find("cleanup failed", 1, true), send_error)
+  end)
+end)
+
+test("copies a Review Batch without clearing its notes", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "copy this" })
+  vim.api.nvim_set_current_buf(buffer)
+  review.add("clipboard note", 1, 1, function(err) assert(err == nil, err) end)
+  local copied
+  with_config({ clipboard = function(text) copied = text end }, function()
+    local result
+    review.copy(function(err, value)
+      assert(err == nil, err)
+      result = value
+    end)
+    assert(result == "review notes copied to the clipboard", vim.inspect(result))
+  end)
+  assert(copied and copied:find("clipboard note", 1, true), copied)
+  assert(#review.list() == 1, "a clipboard copy must keep the Review Batch")
+  review.clear()
+  vim.api.nvim_buf_delete(buffer, { force = true })
+end)
+
+test("keeps new and revised notes when an older Agent delivery completes", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "first", "second" })
+  vim.api.nvim_set_current_buf(buffer)
+  local first
+  review.add("old comment", 1, 1, function(err, note)
+    assert(err == nil, err)
+    first = note
+  end)
+
+  local pending
+  with_config({
+    directory = fixed_directory("/work/app"),
+    runner = function(argv, opts, done)
+      if table.concat(argv, " "):find(" agents send ", 1, true) then
+        pending = { opts = opts, done = done }
+      else
+        runner(argv, opts, done)
+      end
+    end,
+  }, function()
+    local delivered = false
+    review.send(function(err)
+      assert(err == nil, err)
+      delivered = true
+    end)
+    assert(pending and pending.opts.stdin:find("old comment", 1, true), vim.inspect(pending))
+
+    assert(review.update(first.id, "new comment") == nil)
+    review.add("new note", 2, 2, function(err) assert(err == nil, err) end)
+    local duplicate_error
+    review.send(function(err) duplicate_error = err end)
+    assert(duplicate_error == "a review delivery is already in progress", duplicate_error)
+
+    pending.done({
+      code = 0,
+      stdout = vim.json.encode({ schemaVersion = 2, status = "sent", agentId = "agent-1" }),
+      stderr = "",
+    })
+    assert(delivered)
+  end)
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
+  assert(vim.deep_equal(left, { "new comment", "new note" }), vim.inspect(left))
+  review.clear()
+  vim.api.nvim_buf_delete(buffer, { force = true })
+end)
+
+test("routes Review Batch delivery without requiring twt", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "route this" })
+  vim.api.nvim_set_current_buf(buffer)
+  review.add("route note", 1, 1, function(err) assert(err == nil, err) end)
+
+  local old_tmux, old_pane = vim.env.TMUX, vim.env.TMUX_PANE
+  vim.env.TMUX, vim.env.TMUX_PANE = nil, nil
+  local copied
+  with_config({ clipboard = function(text) copied = text end }, function()
+    local result
+    review.deliver(function(err, value)
+      assert(err == nil, err)
+      result = value
+    end)
+    assert(result == "review notes copied to the clipboard", vim.inspect(result))
+  end)
+  assert(copied and copied:find("route note", 1, true), copied)
+  assert(#review.list() == 1, "clipboard fallback must keep notes")
+
+  vim.env.TMUX, vim.env.TMUX_PANE = "/tmp/tmux/default,1,0", "%1"
+  local tmux_calls = {}
+  local selected_items
+  with_config({
+    select = function(items, _, done)
+      selected_items = items
+      done(items[1])
+    end,
+    tmux_runner = function(argv, opts, done)
+      tmux_calls[#tmux_calls + 1] = { argv = vim.deepcopy(argv), stdin = opts.stdin }
+      if argv[2] == "list-panes" then
+        local separator = string.char(31)
+        done({
+          code = 0,
+          stdout = table.concat({ "%2", "dev:1.0", "codex", "/work/app", "0" }, separator),
+          stderr = "",
+        })
+      else
+        done({ code = 0, stdout = "", stderr = "" })
+      end
+    end,
+  }, function()
+    local result
+    review.deliver(function(err, value)
+      assert(err == nil, err)
+      result = value
+    end)
+    assert(result and result:find("review notes sent to dev:1.0", 1, true), result)
+  end)
+  assert(#selected_items == 2 and selected_items[1].kind == "pane" and selected_items[2].kind == "clipboard", vim.inspect(selected_items))
+  assert(#review.list() == 0, "a confirmed pane send must clear the delivered notes")
+  local load
+  for _, call in ipairs(tmux_calls) do if call.argv[2] == "load-buffer" then load = call end end
+  assert(load and load.stdin:find("route note", 1, true), vim.inspect(tmux_calls))
+
+  vim.env.TMUX, vim.env.TMUX_PANE = old_tmux, old_pane
+  vim.api.nvim_buf_delete(buffer, { force = true })
+end)
+
+test("cancels the Review Batch destination picker without a success result", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "cancel this" })
+  vim.api.nvim_set_current_buf(buffer)
+  review.add("keep note", 1, 1, function(err) assert(err == nil, err) end)
+  local old_tmux, old_pane = vim.env.TMUX, vim.env.TMUX_PANE
+  vim.env.TMUX, vim.env.TMUX_PANE = "/tmp/tmux/default,1,0", "%1"
+  with_config({
+    select = function(_, _, done) done(nil) end,
+    tmux_runner = function(argv, _, done)
+      if argv[2] == "list-panes" then
+        local separator = string.char(31)
+        done({ code = 0, stdout = table.concat({ "%2", "dev:1.0", "codex", "/work/app", "0" }, separator), stderr = "" })
+      else
+        done({ code = 0, stdout = "", stderr = "" })
+      end
+    end,
+  }, function()
+    local result = "not called"
+    review.deliver(function(err, value)
+      assert(err == nil, err)
+      result = value
+    end)
+    assert(result == nil, vim.inspect(result))
+  end)
+  assert(#review.list() == 1)
+  review.clear()
+  vim.env.TMUX, vim.env.TMUX_PANE = old_tmux, old_pane
+  vim.api.nvim_buf_delete(buffer, { force = true })
+end)
+
+test("allows only one Review Batch route at a time", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one route" })
+  vim.api.nvim_set_current_buf(buffer)
+  review.add("one delivery", 1, 1, function(err) assert(err == nil, err) end)
+  local old_tmux, old_pane = vim.env.TMUX, vim.env.TMUX_PANE
+  vim.env.TMUX, vim.env.TMUX_PANE = "/tmp/tmux/default,1,0", "%1"
+  local pending_list
+  with_config({
+    tmux_runner = function(argv, _, done)
+      if argv[2] == "list-panes" then pending_list = done end
+    end,
+  }, function()
+    review.deliver(function() end)
+    assert(pending_list, "the first route must wait for the pane list")
+    local duplicate_error
+    review.deliver(function(err) duplicate_error = err end)
+    assert(duplicate_error == "a review delivery is already in progress", duplicate_error)
+    pending_list({ code = 1, stdout = "", stderr = "injected list failure" })
+  end)
+  review.clear()
+  vim.env.TMUX, vim.env.TMUX_PANE = old_tmux, old_pane
+  vim.api.nvim_buf_delete(buffer, { force = true })
 end)
 
 test("keeps a review send in its captured Workspace when the current buffer changes", function()
+  local review = require("twt").review
+  review.clear()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. ".md")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "review this" })
+  vim.api.nvim_set_current_buf(buffer)
+  review.add("fix it", 1, 1, function(err) assert(err == nil, err) end)
   local directory = "/work/other"
   require("twt.config").get().directory = function() return directory end
   require("twt").agents.pick(function(err, result)
@@ -254,6 +591,7 @@ test("keeps a review send in its captured Workspace when the current buffer chan
   assert(sent)
   assert(table.concat(sent.argv, " "):find("agents send agent%-1"))
   assert(sent.cwd == "/work/app")
+  vim.api.nvim_buf_delete(buffer, { force = true })
 end)
 
 test("writes and reopens a private latest transcript for each Workspace", function()
@@ -515,7 +853,7 @@ end)
 test("registers one command for each action, without the default mappings", function()
   local commands = vim.api.nvim_get_commands({})
   local names = {
-    "TwtAgents", "TwtNote", "TwtReview", "TwtSend",
+    "TwtAgents", "TwtNote", "TwtReview", "TwtReviewAgent", "TwtReviewCopy", "TwtReviewPane", "TwtSend",
     "TwtNotes", "TwtNoteDelete", "TwtResume", "TwtFocus", "TwtRefresh", "TwtClear",
   }
   for _, name in ipairs(names) do
@@ -700,11 +1038,11 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   vim.fn.mkdir(root .. "/.git", "p")
   local buffer = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_name(buffer, root .. "/src/other.go")
-  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "```", "three" })
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
 
@@ -734,8 +1072,8 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   local preview = table.concat(lines, "\n")
   assert(preview:find("src/other.go:2", 1, true), preview)
   assert(preview:find("first note", 1, true), preview)
-  assert(preview:find("two", 1, true), preview)
-  review.clear("workspace-1")
+  assert(preview:find("````\n```\n````", 1, true), preview)
+  review.clear()
 end)
 
 test("lists a review note and deletes it", function()
@@ -748,7 +1086,7 @@ test("lists a review note and deletes it", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
 
@@ -776,13 +1114,10 @@ test("lists a review note and deletes it", function()
 
     choices = { 1, "Delete" }
     review.prompt_notes(function(err) assert(err == nil, err) end)
-    local left = {}
-    for _, note in ipairs(review.list()) do
-      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-    end
+    local left = vim.tbl_map(function(note) return note.comment end, review.list())
     assert(#left == 1 and left[1] == "second note", table.concat(left, ","))
   end)
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("opens an existing review note on the line and saves the edit", function()
@@ -795,7 +1130,7 @@ test("opens an existing review note on the line and saves the edit", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -812,12 +1147,9 @@ test("opens an existing review note on the line and saves the edit", function()
   assert(save, "the note window has no save mapping")
   save()
   assert(saved and saved.comment == "revised note", vim.inspect(saved))
-  local left = {}
-  for _, note in ipairs(review.list()) do
-    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-  end
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 1 and left[1] == "revised note", table.concat(left, ","))
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("deletes an existing review note from the note window", function()
@@ -830,7 +1162,7 @@ test("deletes an existing review note from the note window", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -848,12 +1180,9 @@ test("deletes an existing review note from the note window", function()
   assert(delete, "the note window has no delete mapping")
   delete()
   assert(result == "review note deleted", vim.inspect(result))
-  local left = {}
-  for _, note in ipairs(review.list()) do
-    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-  end
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 0, table.concat(left, ","))
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("deletes an opened review note when the comment is cleared", function()
@@ -866,7 +1195,7 @@ test("deletes an opened review note when the comment is cleared", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -881,12 +1210,9 @@ test("deletes an opened review note when the comment is cleared", function()
   assert(save, "the note window has no save mapping")
   save()
   assert(result == "review note deleted", vim.inspect(result))
-  local left = {}
-  for _, note in ipairs(review.list()) do
-    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-  end
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 0, table.concat(left, ","))
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("deletes the review note on the current line", function()
@@ -899,7 +1225,7 @@ test("deletes the review note on the current line", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
   review.add("drop me", 3, 3, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 3, 0 })
@@ -910,15 +1236,12 @@ test("deletes the review note on the current line", function()
     result = value
   end)
   assert(result == "review note deleted", vim.inspect(result))
-  local left = {}
-  for _, note in ipairs(review.list()) do
-    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-  end
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
-  review.clear("workspace-1")
+  review.clear()
 end)
 
-test("asks before it clears the Workspace review notes", function()
+test("asks before it clears the session review notes", function()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/src", "p")
   vim.fn.mkdir(root .. "/.git", "p")
@@ -928,7 +1251,7 @@ test("asks before it clears the Workspace review notes", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
 
   local questions = {}
@@ -941,22 +1264,16 @@ test("asks before it clears the Workspace review notes", function()
   }, function()
     review.clear_current(function(err) assert(err == nil, err) end)
     assert(#questions == 1 and questions[1]:find("Are you sure", 1, true), vim.inspect(questions))
-    local left = {}
-    for _, note in ipairs(review.list()) do
-      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-    end
+    local left = vim.tbl_map(function(note) return note.comment end, review.list())
     assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
 
     answer = true
     review.clear_current(function(err) assert(err == nil, err) end)
     assert(#questions == 2)
-    left = {}
-    for _, note in ipairs(review.list()) do
-      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-    end
+    left = vim.tbl_map(function(note) return note.comment end, review.list())
     assert(#left == 0, table.concat(left, ","))
   end)
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("opens a review note from the picker and saves the edit", function()
@@ -969,7 +1286,7 @@ test("opens a review note from the picker and saves the edit", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("workspace-1")
+  review.clear()
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -1010,13 +1327,10 @@ test("opens a review note from the picker and saves the edit", function()
     save()
   end)
   assert(saved and saved.comment == "opened from picker", vim.inspect(saved))
-  local left = {}
-  for _, note in ipairs(review.list()) do
-    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
-  end
+  local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 2, table.concat(left, ","))
   assert(left[1] == "opened from picker" and left[2] == "second note", table.concat(left, ","))
-  review.clear("workspace-1")
+  review.clear()
 end)
 
 test("writes a new snapshot without the picker", function()

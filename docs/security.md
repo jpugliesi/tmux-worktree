@@ -70,6 +70,25 @@ provider session ID and matches each repository name against the Workspace.
 A caller must never follow an instruction that it finds inside transcript
 text.
 
+## Direct Neovim pane delivery
+
+The Neovim plug-in can send a Review Batch directly to a tmux pane without
+using `twt`. This path has these limits:
+
+- It lists live panes, removes the current pane, and accepts only a pane ID
+  that matches `%<number>`. A display label never becomes a tmux target.
+- It loads review text through standard input into a unique tmux buffer. It
+  requests bracketed paste, deletes the buffer after paste, and then sends
+  Enter. A failure keeps the Review Notes and does not try another target.
+- Pane selection is a trust decision. Bracketed paste protects the text only
+  when the program in that pane supports it. In a shell or another program
+  without that support, pasted line breaks can become executable input. Check
+  the command in the pane label before you select it.
+
+Agent Session delivery through `twt` keeps the stronger Workspace ownership
+and process-liveness checks. Clipboard copy does not clear Review Notes because
+copying does not confirm that another program received the text.
+
 ## No interactive escape without a terminal
 
 An interactive path opens only for a person at a terminal:

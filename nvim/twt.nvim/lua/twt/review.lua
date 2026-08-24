@@ -1,7 +1,8 @@
 local agents = require("twt.agents")
-local client = require("twt.client")
+local clipboard = require("twt.clipboard")
 local config = require("twt.config")
 local input = require("twt.input")
+local tmux = require("twt.tmux")
 local M = {}
 
 -- Every callback in this module is error-first: `done(err)` on a failure, or
@@ -11,20 +12,20 @@ local M = {}
 local namespace = vim.api.nvim_create_namespace("twt_review")
 local notes = {}
 local next_id = 1
+local delivering = false
 
-local function root_for(path)
-  return vim.fs.root(path, { ".git" })
-end
-
--- Returns the notes of one Workspace, or all notes when `workspace_id` is nil.
-local function notes_for(workspace_id)
-  local matches = {}
-  for _, note in ipairs(notes) do
-    if not workspace_id or note.workspace_id == workspace_id then
-      matches[#matches + 1] = note
-    end
+local function file_path(buffer)
+  if not vim.api.nvim_buf_is_valid(buffer) or not vim.api.nvim_buf_is_loaded(buffer) then
+    return nil, "a review-note buffer is not loaded"
   end
-  return matches
+  if vim.bo[buffer].buftype ~= "" then
+    return nil, "review notes need a regular file buffer"
+  end
+  local path = vim.api.nvim_buf_get_name(buffer)
+  if path == "" or path:find("[%z\r\n]") or path:match("^%a[%w+.-]*://") then
+    return nil, "save the file before you add a review note"
+  end
+  return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
 end
 
 local function index_of(id)
@@ -46,16 +47,11 @@ local function remove(index)
 end
 
 local function location(note)
-  if not vim.api.nvim_buf_is_valid(note.buffer) or not vim.api.nvim_buf_is_loaded(note.buffer) then
-    return nil, "a review-note buffer is not loaded"
-  end
+  local path, path_err = file_path(note.buffer)
+  if not path then return nil, path_err end
   local marks = vim.api.nvim_buf_get_extmark_by_id(note.buffer, namespace, note.mark, { details = true })
   if #marks == 0 then
     return nil, "a review note no longer has a valid line"
-  end
-  local path = vim.api.nvim_buf_get_name(note.buffer)
-  if root_for(path) ~= note.root then
-    return nil, "a review-note file moved outside its repository"
   end
   local line = marks[1] + 1
   local last = marks[3] and marks[3].end_row or line
@@ -63,7 +59,7 @@ local function location(note)
   return {
     line = line,
     last = last,
-    path = vim.fs.relpath(note.root, path),
+    path = path,
     snippet = table.concat(snippet, "\n"),
   }
 end
@@ -71,90 +67,73 @@ end
 function M.add(comment, start_line, end_line, done)
   done = done or function() end
   local buffer = vim.api.nvim_get_current_buf()
-  local path = vim.api.nvim_buf_get_name(buffer)
-  if path == "" or vim.trim(comment or "") == "" then
+  if vim.trim(comment or "") == "" then
     done("save the file and enter a review comment")
     return
   end
-  local root = root_for(path)
-  if not root then
-    done("the file is not in a Git repository")
+  local _, path_err = file_path(buffer)
+  if path_err then
+    done(path_err)
     return
   end
   start_line = start_line or vim.fn.line(".")
   end_line = end_line or start_line
-  client.context(vim.fs.dirname(path), function(err, context)
-    if err then
-      done(err)
-      return
-    end
-    if not context.repositoryName or context.repositoryName == "" then
-      done("the file is not in a twt Workspace repository")
-      return
-    end
-    local mark = vim.api.nvim_buf_set_extmark(buffer, namespace, start_line - 1, 0, {
-      end_row = end_line,
-      end_col = 0,
-      right_gravity = false,
-      end_right_gravity = true,
-      sign_text = "R",
-      sign_hl_group = "DiagnosticWarn",
-    })
-    notes[#notes + 1] = {
-      id = next_id,
-      workspace_id = context.workspace.id,
-      repository = context.repositoryName,
-      root = root,
-      buffer = buffer,
-      mark = mark,
-      comment = vim.trim(comment),
-    }
-    next_id = next_id + 1
-    done(nil, notes[#notes])
-  end)
+  local mark = vim.api.nvim_buf_set_extmark(buffer, namespace, start_line - 1, 0, {
+    end_row = end_line,
+    end_col = 0,
+    right_gravity = false,
+    end_right_gravity = true,
+    sign_text = "R",
+    sign_hl_group = "DiagnosticWarn",
+  })
+  notes[#notes + 1] = {
+    id = next_id,
+    revision = 1,
+    buffer = buffer,
+    mark = mark,
+    comment = vim.trim(comment),
+  }
+  next_id = next_id + 1
+  done(nil, notes[#notes])
 end
 
--- Builds the message of one Workspace review batch. It returns
--- `err`, or `nil, { text = text, note_ids = note_ids }`.
-function M.format(workspace_id)
-  local batch = notes_for(workspace_id)
-  if #batch == 0 then return "this Workspace has no review notes" end
+local function markdown_fence(text)
+  local longest = 0
+  for run in text:gmatch("`+") do longest = math.max(longest, #run) end
+  return string.rep("`", math.max(3, longest + 1))
+end
+
+-- Builds the Review Batch of this Neovim session. It returns `err`, or
+-- `nil, { text = text, notes = { { id = id, revision = revision } } }`.
+function M.format()
+  if #notes == 0 then return "this Neovim session has no review notes" end
   local parts = { "Please address these review notes:" }
-  local note_ids = {}
-  for index, note in ipairs(batch) do
+  local batch_notes = {}
+  for index, note in ipairs(notes) do
     local place, err = location(note)
     if not place then return err end
-    note_ids[#note_ids + 1] = note.id
+    batch_notes[#batch_notes + 1] = { id = note.id, revision = note.revision }
     local suffix = place.line == place.last and tostring(place.line) or (place.line .. "-" .. place.last)
-    parts[#parts + 1] = string.format("\n%d. @%s:%s#L%s\n```\n%s\n```\n%s", index, note.repository, place.path, suffix, place.snippet, note.comment)
+    local fence = markdown_fence(place.snippet)
+    parts[#parts + 1] = string.format("\n%d. @%s#L%s\n%s\n%s\n%s\n%s", index, place.path, suffix, fence, place.snippet, fence, note.comment)
   end
-  return nil, { text = table.concat(parts, "\n"), note_ids = note_ids }
+  return nil, { text = table.concat(parts, "\n"), notes = batch_notes }
 end
 
-function M.clear(workspace_id)
-  for index = #notes, 1, -1 do
-    if not workspace_id or notes[index].workspace_id == workspace_id then
-      remove(index)
-    end
-  end
+function M.clear()
+  for index = #notes, 1, -1 do remove(index) end
 end
 
 function M.clear_current(done)
   done = done or function() end
-  client.workspace_context(function(err, context)
-    if err then
-      done(err)
-      return
-    end
-    if #notes_for(context.workspace.id) == 0 then
-      done("this Workspace has no review notes")
-      return
-    end
-    config.get().confirm("Are you sure you want to clear all review notes?", function(yes)
-      if not yes then return end
-      M.clear(context.workspace.id)
-      done(nil)
-    end)
+  if #notes == 0 then
+    done("this Neovim session has no review notes")
+    return
+  end
+  config.get().confirm("Are you sure you want to clear all review notes?", function(yes)
+    if not yes then return end
+    M.clear()
+    done(nil)
   end)
 end
 
@@ -170,6 +149,7 @@ function M.update(id, comment)
   local trimmed = vim.trim(comment or "")
   if trimmed == "" then return "save the file and enter a review comment" end
   notes[index].comment = trimmed
+  notes[index].revision = notes[index].revision + 1
   return nil
 end
 
@@ -205,9 +185,10 @@ local function preview_text(note)
     parts[#parts + 1] = string.format("%s:%s", place.path, suffix)
     parts[#parts + 1] = ""
     if place.snippet ~= "" then
-      parts[#parts + 1] = "```"
+      local fence = markdown_fence(place.snippet)
+      parts[#parts + 1] = fence
       parts[#parts + 1] = place.snippet
-      parts[#parts + 1] = "```"
+      parts[#parts + 1] = fence
       parts[#parts + 1] = ""
     end
   else
@@ -236,8 +217,35 @@ local function note_select_opts(prompt)
   }
 end
 
-local function clear_ids(ids)
-  for _, id in ipairs(ids) do M.delete(id) end
+local function clear_batch(batch_notes)
+  for _, sent in ipairs(batch_notes) do
+    local index = index_of(sent.id)
+    if index and notes[index].revision == sent.revision then remove(index) end
+  end
+end
+
+local function start_delivery(done, route)
+  done = done or function() end
+  if delivering then
+    done("a review delivery is already in progress")
+    return
+  end
+  local format_err, batch = M.format()
+  if format_err then
+    done(format_err)
+    return
+  end
+  delivering = true
+  local finished = false
+  local function finish(err, result, clear_after)
+    if finished then return end
+    finished = true
+    delivering = false
+    if not err and clear_after then clear_batch(batch.notes) end
+    done(err, result)
+  end
+  local ok, route_err = pcall(route, batch.text, finish)
+  if not ok then finish("review delivery failed: " .. tostring(route_err)) end
 end
 
 function M.list()
@@ -256,21 +264,77 @@ function M.jump(id)
 end
 
 function M.send(done)
-  done = done or function() end
-  client.workspace_context(function(err, context, directory)
-    if err then
-      done(err)
+  local clear_after = config.get().clear_after_send
+  start_delivery(done, function(text, finish)
+    agents.send(text, function(err, result)
+      finish(err, result, clear_after)
+    end)
+  end)
+end
+
+local function copy_text(text, finish)
+  clipboard.copy(text, function(err)
+    finish(err, err and nil or "review notes copied to the clipboard", false)
+  end)
+end
+
+-- Copies the complete Review Batch. Copying does not clear notes because the
+-- clipboard can change before the user pastes it.
+function M.copy(done)
+  start_delivery(done, copy_text)
+end
+
+local function send_to_pane(pane, text, clear_after, finish)
+  tmux.send(pane.id, text, function(err)
+    finish(err, err and nil or ("review notes sent to " .. pane.label), clear_after)
+  end)
+end
+
+function M.send_pane(done)
+  local clear_after = config.get().clear_after_send
+  start_delivery(done, function(text, finish)
+    tmux.pick(function(err, pane)
+      if err then finish(err); return end
+      if not pane then finish(nil); return end
+      send_to_pane(pane, text, clear_after, finish)
+    end)
+  end)
+end
+
+-- Uses only Neovim and tmux. Outside tmux, or when no other live pane exists,
+-- it copies the Review Batch. In tmux, the user selects a pane or Clipboard.
+function M.deliver(done)
+  local clear_after = config.get().clear_after_send
+  start_delivery(done, function(text, finish)
+    if not tmux.available() then
+      copy_text(text, finish)
       return
     end
-    local format_err, batch = M.format(context.workspace.id)
-    if format_err then
-      done(format_err)
-      return
-    end
-    agents.send(batch.text, function(send_err, result)
-      if not send_err and config.get().clear_after_send then clear_ids(batch.note_ids) end
-      done(send_err, result)
-    end, { workspace_id = context.workspace.id, directory = directory })
+    tmux.list(function(err, panes)
+      if err then finish(err); return end
+      if #panes == 0 then
+        copy_text(text, finish)
+        return
+      end
+      local destinations = {}
+      for _, pane in ipairs(panes) do
+        local destination = vim.deepcopy(pane)
+        destination.kind = "pane"
+        destinations[#destinations + 1] = destination
+      end
+      destinations[#destinations + 1] = { kind = "clipboard", label = "Clipboard" }
+      config.get().select(destinations, {
+        prompt = "Send review notes to",
+        format_item = function(destination) return destination.label end,
+      }, function(destination)
+        if not destination then finish(nil); return end
+        if destination.kind == "clipboard" then
+          copy_text(text, finish)
+        else
+          send_to_pane(destination, text, clear_after, finish)
+        end
+      end)
+    end)
   end)
 end
 
@@ -350,7 +414,7 @@ function M.prompt_add(done)
     return
   end
   if #existing > 1 then
-    config.get().select(existing, note_select_opts("Select a twt review note"), function(note)
+    config.get().select(existing, note_select_opts("Select a review note"), function(note)
       if not note then done(nil); return end
       prompt_edit(note, done)
     end)
@@ -390,39 +454,32 @@ function M.prompt_delete(done)
     drop(existing[1])
     return
   end
-  config.get().select(existing, note_select_opts("Delete a twt review note"), drop)
+  config.get().select(existing, note_select_opts("Delete a review note"), drop)
 end
 
--- Lists the review notes of the current Workspace, then opens, deletes, or
--- moves to one.
+-- Lists the Review Notes of this Neovim session, then opens, deletes, or moves
+-- to one.
 function M.prompt_notes(done)
   done = done or function() end
-  client.workspace_context(function(err, context)
-    if err then
-      done(err)
-      return
-    end
-    local workspace_notes = notes_for(context.workspace.id)
-    if #workspace_notes == 0 then
-      done("this Workspace has no review notes")
-      return
-    end
-    config.get().select(workspace_notes, note_select_opts("Select a twt review note"), function(note)
-      if not note then done(nil); return end
-      config.get().select({ "Open", "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
-        if choice == "Open" then
-          local jump_err = M.jump(note.id)
-          if jump_err then done(jump_err); return end
-          prompt_edit(note, done)
-        elseif choice == "Delete" then
-          M.delete(note.id)
-          done(nil, "review note deleted")
-        elseif choice == "Go to the line" then
-          done(M.jump(note.id), "jumped")
-        else
-          done(nil)
-        end
-      end)
+  if #notes == 0 then
+    done("this Neovim session has no review notes")
+    return
+  end
+  config.get().select(notes, note_select_opts("Select a review note"), function(note)
+    if not note then done(nil); return end
+    config.get().select({ "Open", "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
+      if choice == "Open" then
+        local jump_err = M.jump(note.id)
+        if jump_err then done(jump_err); return end
+        prompt_edit(note, done)
+      elseif choice == "Delete" then
+        M.delete(note.id)
+        done(nil, "review note deleted")
+      elseif choice == "Go to the line" then
+        done(M.jump(note.id), "jumped")
+      else
+        done(nil)
+      end
     end)
   end)
 end

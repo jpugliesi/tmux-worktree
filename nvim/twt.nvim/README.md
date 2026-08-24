@@ -1,9 +1,12 @@
 # twt.nvim preview
 
-This Neovim plug-in connects review notes to the Agent Sessions of the current
-`twt` Workspace. It does not read twt state files or call tmux. All Workspace,
-Agent Session, resume, focus, and feedback work goes through the versioned
-`twt` JSON interface.
+This Neovim plug-in collects one Review Batch from regular file buffers in the
+current Neovim session. Review Notes do not need a Git repository or a `twt`
+Workspace. You can copy the batch or send it directly to a tmux pane.
+
+The Agent Session, transcript, resume, focus, and Agent feedback features are
+optional `twt` integrations. They use the versioned `twt` JSON interface and
+never read `twt` state files directly.
 
 ## Install with lazy.nvim
 
@@ -16,10 +19,12 @@ Agent Session, resume, focus, and feedback work goes through the versioned
 }
 ```
 
-The plug-in needs Neovim 0.10 or later and a `twt` executable in `PATH`.
-It uses core `vim.ui.select`, so a picker provider is optional. LazyVim
-replaces that call with the Snacks picker. The notes list passes Snacks
-options so the picker shows a preview of the highlighted note.
+The plug-in needs Neovim 0.10 or later. Direct pane delivery also needs tmux.
+Agent Session features need a `twt` executable in `PATH`. Review Note and
+clipboard features do not need either executable. The plug-in uses core
+`vim.ui.select`, so a picker provider is optional. LazyVim replaces that call
+with the Snacks picker. The notes list passes Snacks options so the picker
+shows a preview of the highlighted note.
 
 ## Main mappings
 
@@ -28,9 +33,12 @@ options so the picker shows a preview of the highlighted note.
 | `<leader>arp` | Select an Agent Session and open its transcript |
 | `<leader>an` | Add a review note, or open the note on this line |
 | `<leader>ad` | Delete the review note on this line |
-| `<leader>al` | List the review notes of this Workspace |
-| `<leader>arl` | List the review notes of this Workspace |
-| `<leader>arr` | Send the current Workspace review batch |
+| `<leader>al` | List the Review Notes in this Neovim session |
+| `<leader>arl` | List the Review Notes in this Neovim session |
+| `<leader>arr` | Deliver the Review Batch to a tmux pane or the clipboard |
+| `<leader>ara` | Send the Review Batch to the selected Agent Session |
+| `<leader>arc` | Copy the Review Batch to the clipboard |
+| `<leader>art` | Send the Review Batch to a tmux pane |
 | `<leader>ars` | Write free text in a window and send it |
 | `<leader>aru` | Resume the selected Agent Session |
 | `<leader>arf` | Focus the selected Agent Session |
@@ -59,9 +67,12 @@ available:
 | `:TwtAgents` | Select an Agent Session and open its transcript |
 | `:TwtNote` | Add a review note, or open the note on this line |
 | `:TwtNoteDelete` | Delete the review note on this line |
-| `:TwtReview` | Send the current Workspace review batch |
+| `:TwtReview` | Deliver the Review Batch to a tmux pane or the clipboard |
+| `:TwtReviewAgent` | Send the Review Batch to the selected Agent Session |
+| `:TwtReviewCopy` | Copy the Review Batch to the clipboard |
+| `:TwtReviewPane` | Send the Review Batch to a tmux pane |
 | `:TwtSend` | Write free text in a window and send it |
-| `:TwtNotes` | List the review notes of this Workspace |
+| `:TwtNotes` | List the Review Notes in this Neovim session |
 | `:TwtResume` | Resume the selected Agent Session |
 | `:TwtFocus` | Focus the selected Agent Session |
 | `:TwtRefresh` | Write a new transcript snapshot for the selected Agent Session |
@@ -70,17 +81,35 @@ available:
 Each mapping has a command. The commands and the mappings do the same work and
 show the same messages.
 
-`:TwtNotes`, `<leader>al`, and `<leader>arl` show the notes of the current Workspace. The
-Snacks picker preview shows the file, the selected lines, and the note
-comment. Select a note, then select `Open`, `Delete`, or `Go to the line`.
-`Open` moves to the line and opens the note window with the current comment.
+`:TwtNotes`, `<leader>al`, and `<leader>arl` show all Review Notes in the
+current Neovim session. The Snacks picker preview shows the file, the selected
+lines, and the note comment. Select a note, then select `Open`, `Delete`, or
+`Go to the line`. `Open` moves to the line and opens the note window with the
+current comment.
 
 `<leader>an` on a line that already has a note opens that note. Save updates
 the comment. Press `<C-d>` in that window to delete the note. Clear the
 comment and press `<C-s>` to delete it. `<leader>ad` deletes the note on
 this line without opening the window. A line with more than one note asks
 which note to open or delete. `<leader>arx` asks `Are you sure you want to
-clear all review notes?` before it clears the Workspace batch.
+clear all review notes?` before it clears the session batch.
+
+`<leader>arr` uses no `twt` command. In tmux, it lists all live panes except
+the current pane and adds Clipboard as a destination. Each pane label shows
+the session and window, pane ID, current command, and current path. Outside
+tmux, it copies the batch immediately. `<leader>art` always asks for a tmux
+pane. `<leader>arc` always copies. A canceled picker keeps the batch and shows
+no success message.
+
+Direct pane delivery loads the Review Batch through standard input, requests
+a bracketed paste, and submits it with Enter. A confirmed pane or Agent send
+clears only the unchanged notes that it sent. Notes added or edited during the
+send stay in the batch. A clipboard copy always keeps the notes. A failed or
+uncertain send also keeps them. The plug-in does not retry a send.
+
+Select pane targets carefully. If the selected program does not support
+bracketed paste, pasted line breaks can become input. A shell pane can run that
+input. See [the security guide](../../docs/security.md#direct-neovim-pane-delivery).
 
 If the selected Agent Session is not live, but it can resume, a send asks you
 first: `The Agent Session is not live. Resume and send?`. Answer yes to resume
@@ -112,10 +141,11 @@ A snapshot buffer sets `autoread`, and the plug-in runs `checktime` on
 `FocusGained` and `CursorHold`. A snapshot buffer shows the new text without a
 manual reload.
 
-Agent selection, transcript snapshots, and review notes are scoped by immutable Workspace ID. Each note
-also contains the repository name. Extmarks keep note lines current after file
-edits. A successful send completes and clears the batch. A failed or uncertain
-send keeps the batch. The plug-in does not retry a send.
+Agent selection and transcript snapshots are scoped by immutable Workspace ID.
+Review Notes are scoped only to the current Neovim session. Each formatted note
+uses the absolute file path. Extmarks keep its line range current after file
+edits, and a renamed buffer uses its new path. An unloaded or invalid buffer
+stops formatting with an error, so the plug-in does not send a stale location.
 
 `twt` reads the linked provider transcript, checks its Workspace, and writes
 the private Markdown snapshot to
@@ -148,6 +178,9 @@ twt.agents.status()
 twt.review.prompt_add(done)
 twt.review.prompt_delete(done)
 twt.review.prompt_notes(done)
+twt.review.deliver(done)
+twt.review.copy(done)
+twt.review.send_pane(done)
 twt.review.send(done)
 twt.review.list()
 twt.review.delete(note_id)
@@ -166,18 +199,25 @@ snapshot file that they opened. A canceled picker gives `done(nil)` with no
 result. A canceled text window gives no answer, so `prompt_add` and
 `prompt_send` show nothing after `q`.
 
-`setup` accepts a `confirm` function for the resume question and for
-clearing review notes:
+`review.deliver` is the `twt`-independent route. `review.send` keeps its prior
+meaning: it sends to the selected Agent Session through `twt`.
+
+`setup` accepts a `confirm` function for the resume question and for clearing
+review notes. It also accepts clipboard and tmux adapters for custom setups or
+tests:
 
 ```lua
 require("twt").setup({
+  clipboard = function(text) vim.fn.setreg("+", text, "v") end,
   confirm = function(question, done)
     done(vim.fn.confirm(question, "&Yes\n&No", 2) == 1)
   end,
+  tmux_command = "tmux",
 })
 ```
 
-Run both headless tests. The second test uses the real `twt` binary and two separate Workspaces:
+Run all headless tests. They include a standalone real-tmux review flow and a
+real `twt` flow with two separate Workspaces:
 
 ```sh
 ./nvim/twt.nvim/tests/test.sh
