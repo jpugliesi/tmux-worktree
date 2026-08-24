@@ -95,7 +95,7 @@ func saveEnvironmentRecord(t *testing.T, options cli.Options, id string, status 
 				BaseCommit: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
 			})
 		}
-		environment.Steps = []domain.SetupStep{{ID: "environment_root", Kind: domain.StepProjectRoot, Status: domain.StepSucceeded}}
+		environment.Steps = []domain.SetupStep{{ID: "environment_root", Kind: domain.StepWorkspaceRoot, Status: domain.StepSucceeded}}
 	}
 	if status == domain.EnvironmentReady {
 		readyAt := now
@@ -116,8 +116,8 @@ func saveEnvironmentRecord(t *testing.T, options cli.Options, id string, status 
 	return environment
 }
 
-// saveProjectRecord writes one Project record and gives its root some bytes.
-func saveProjectRecord(t *testing.T, options cli.Options, id, name string, status domain.ProjectStatus, size int) domain.Project {
+// saveWorkspaceRecord writes one Workspace record and gives its root some bytes.
+func saveWorkspaceRecord(t *testing.T, options cli.Options, id, name string, status domain.WorkspaceStatus, size int) domain.Workspace {
 	t.Helper()
 	now := time.Now().UTC()
 	root := filepath.Join(options.DataDir, "projects", id)
@@ -127,19 +127,19 @@ func saveProjectRecord(t *testing.T, options cli.Options, id, name string, statu
 	if err := os.WriteFile(filepath.Join(root, "content"), bytes.Repeat([]byte("y"), size), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: id, Name: name, TemplateName: "example",
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: id, Name: name, TemplateName: "example",
 		Status: status, Root: root, CreatedAt: now, UpdatedAt: now,
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: filepath.Join(root, "app")}},
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: filepath.Join(root, "app")}},
 	}
-	if status == domain.ProjectArchived {
+	if status == domain.WorkspaceArchived {
 		archived := now
-		project.ArchivedAt = &archived
+		workspace.ArchivedAt = &archived
 	}
-	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	return project
+	return workspace
 }
 
 func writePrepareLog(t *testing.T, stateDir, environmentID string) string {
@@ -169,16 +169,16 @@ func TestStorageShowReplacesStorageStatus(t *testing.T) {
 	}
 }
 
-func TestStorageShowSeparatesActiveAndArchivedProjects(t *testing.T) {
+func TestStorageShowSeparatesActiveAndArchivedWorkspaces(t *testing.T) {
 	options := maintenanceOptions(t)
-	saveProjectRecord(t, options, "active-id", "active-project", domain.ProjectActive, 4096)
-	saveProjectRecord(t, options, "archived-id", "archived-project", domain.ProjectArchived, 2048)
+	saveWorkspaceRecord(t, options, "active-id", "active-workspace", domain.WorkspaceActive, 4096)
+	saveWorkspaceRecord(t, options, "archived-id", "archived-workspace", domain.WorkspaceArchived, 2048)
 
 	text, _, err := runCLI(t, options, "storage", "show")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Projects (active)", "4.0 KiB (1)", "Projects (archived)", "2.0 KiB (1)", "Worktrees", "2"} {
+	for _, want := range []string{"Workspaces (active)", "4.0 KiB (1)", "Workspaces (archived)", "2.0 KiB (1)", "Worktrees", "2"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("storage show text does not contain %q:\n%s", want, text)
 		}
@@ -191,23 +191,23 @@ func TestStorageShowSeparatesActiveAndArchivedProjects(t *testing.T) {
 	var result struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Storage       struct {
-			ActiveProjectBytes   int64 `json:"activeProjectBytes"`
-			ArchivedProjectBytes int64 `json:"archivedProjectBytes"`
-			ActiveProjectCount   int   `json:"activeProjectCount"`
-			ArchivedProjectCount int   `json:"archivedProjectCount"`
-			ProjectCount         int   `json:"projectCount"`
+			ActiveWorkspaceBytes   int64 `json:"activeWorkspaceBytes"`
+			ArchivedWorkspaceBytes int64 `json:"archivedWorkspaceBytes"`
+			ActiveWorkspaceCount   int   `json:"activeWorkspaceCount"`
+			ArchivedWorkspaceCount int   `json:"archivedWorkspaceCount"`
+			WorkspaceCount         int   `json:"workspaceCount"`
 		} `json:"storage"`
 	}
 	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
 		t.Fatalf("decode storage JSON: %v\n%s", err, encoded)
 	}
-	if result.SchemaVersion != 1 || result.Storage.ActiveProjectBytes != 4096 || result.Storage.ArchivedProjectBytes != 2048 ||
-		result.Storage.ActiveProjectCount != 1 || result.Storage.ArchivedProjectCount != 1 || result.Storage.ProjectCount != 2 {
+	if result.SchemaVersion != 2 || result.Storage.ActiveWorkspaceBytes != 4096 || result.Storage.ArchivedWorkspaceBytes != 2048 ||
+		result.Storage.ActiveWorkspaceCount != 1 || result.Storage.ArchivedWorkspaceCount != 1 || result.Storage.WorkspaceCount != 2 {
 		t.Fatalf("storage JSON = %s", encoded)
 	}
 }
 
-func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
+func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 	options := maintenanceOptions(t)
 	template := maintenanceTemplate("example", 0)
 	writeTemplateFile(t, options.ConfigDir, template)
@@ -218,9 +218,9 @@ func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
 	log := writePrepareLog(t, options.StateDir, failed.ID)
 	claimed := saveEnvironmentRecord(t, options, "claimed000000000000000000000000ef", domain.EnvironmentClaimed, template, 2048, func(environment *domain.PreparedEnvironment) {
 		environment.ClaimReservation = &domain.EnvironmentClaim{
-			Project: domain.Project{
-				Version: domain.ProjectVersion, ID: "project-id", EnvironmentID: environment.ID, Name: "fix-auth",
-				TemplateName: template.Name, Status: domain.ProjectActive,
+			Workspace: domain.Workspace{
+				Version: domain.WorkspaceVersion, ID: "workspace-id", EnvironmentID: environment.ID, Name: "fix-auth",
+				TemplateName: template.Name, Status: domain.WorkspaceActive,
 			},
 			ReservedAt: time.Now().UTC(),
 		}
@@ -237,7 +237,7 @@ func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
 		failed.ID[:8] + "  failed",
 		"log: " + log,
 		claimed.ID[:8] + "  claimed",
-		"Project fix-auth (active)",
+		"Workspace fix-auth (active)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("environments list text does not contain %q:\n%s", want, text)
@@ -247,14 +247,14 @@ func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
 		t.Fatalf("environments list text is not a tree:\n%s", text)
 	}
 
-	// A live Project record replaces the claim reservation snapshot.
-	saveProjectRecord(t, options, "project-id", "fix-auth", domain.ProjectArchived, 512)
+	// A live Workspace record replaces the claim reservation snapshot.
+	saveWorkspaceRecord(t, options, "workspace-id", "fix-auth", domain.WorkspaceArchived, 512)
 	text, _, err = runCLI(t, options, "environments", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text, "Project fix-auth (archived)") {
-		t.Fatalf("environments list does not use the live Project status:\n%s", text)
+	if !strings.Contains(text, "Workspace fix-auth (archived)") {
+		t.Fatalf("environments list does not use the live Workspace status:\n%s", text)
 	}
 
 	encoded, _, err := runCLI(t, options, "environments", "list", "--output", "json")
@@ -274,17 +274,17 @@ func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
 			BaseCommits map[string]string `json:"baseCommits"`
 			Failure     string            `json:"failure"`
 			Log         string            `json:"log"`
-			Project     *struct {
+			Workspace   *struct {
 				ID     string `json:"id"`
 				Name   string `json:"name"`
 				Status string `json:"status"`
-			} `json:"project"`
+			} `json:"workspace"`
 		} `json:"environments"`
 	}
 	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
 		t.Fatalf("decode environments JSON: %v\n%s", err, encoded)
 	}
-	if result.SchemaVersion != 1 || result.TotalCount != 3 || len(result.Environments) != 3 {
+	if result.SchemaVersion != 2 || result.TotalCount != 3 || len(result.Environments) != 3 {
 		t.Fatalf("environments JSON = %s", encoded)
 	}
 	found := map[string]bool{}
@@ -303,7 +303,7 @@ func TestEnvironmentsListGroupsEnvironmentsByProjectTemplate(t *testing.T) {
 				t.Fatalf("failed environment JSON = %+v", environment)
 			}
 		case "claimed":
-			if environment.Project == nil || environment.Project.Name != "fix-auth" || environment.Project.Status != "archived" {
+			if environment.Workspace == nil || environment.Workspace.Name != "fix-auth" || environment.Workspace.Status != "archived" {
 				t.Fatalf("claimed environment JSON = %+v", environment)
 			}
 		}
@@ -328,7 +328,7 @@ func TestEnvironmentsListMarksObsoleteOnlyWhenTheTemplateLoads(t *testing.T) {
 	options := maintenanceOptions(t)
 	template := maintenanceTemplate("example", 0)
 	ready := saveEnvironmentRecord(t, options, "obsolete00000000000000000000000ab", domain.EnvironmentReady, template, 1024, nil)
-	// The saved Project Template now clones with a different depth, so the
+	// The saved Workspace Template now clones with a different depth, so the
 	// prepared worktrees are obsolete.
 	writeTemplateFile(t, options.ConfigDir, maintenanceTemplate("example", 1))
 
@@ -340,14 +340,14 @@ func TestEnvironmentsListMarksObsoleteOnlyWhenTheTemplateLoads(t *testing.T) {
 		t.Fatalf("environments list does not mark the obsolete environment:\n%s", text)
 	}
 
-	// twt cannot compare an invalid Project Template, so the status stays.
+	// twt cannot compare an invalid Workspace Template, so the status stays.
 	writeConfigFile(t, options.ConfigDir, "example", "version: 1\nname: example\nrepositories: [\n")
 	text, _, err = runCLI(t, options, "environments", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(text, ready.ID[:8]+"  ready") {
-		t.Fatalf("environments list changed the status of an invalid Project Template:\n%s", text)
+		t.Fatalf("environments list changed the status of an invalid Workspace Template:\n%s", text)
 	}
 }
 
@@ -395,7 +395,7 @@ func TestEnvironmentsShowAcceptsAnIDPrefix(t *testing.T) {
 	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
 		t.Fatalf("decode environment JSON: %v\n%s", err, encoded)
 	}
-	if result.SchemaVersion != 1 || result.Environment.ID != environment.ID || len(result.Environment.Steps) != 1 {
+	if result.SchemaVersion != 2 || result.Environment.ID != environment.ID || len(result.Environment.Steps) != 1 {
 		t.Fatalf("environment JSON = %s", encoded)
 	}
 
@@ -458,7 +458,7 @@ func TestStorageCleanReportsAnEmptyPlan(t *testing.T) {
 	}
 }
 
-func TestStorageCleanKeepsEnvironmentsOfAnInvalidProjectTemplate(t *testing.T) {
+func TestStorageCleanKeepsEnvironmentsOfAnInvalidWorkspaceTemplate(t *testing.T) {
 	options := maintenanceOptions(t)
 	template := maintenanceTemplate("example", 0)
 	environment := saveEnvironmentRecord(t, options, "keepable00000000000000000000000ab", domain.EnvironmentReady, template, 1024, nil)
@@ -469,9 +469,9 @@ func TestStorageCleanKeepsEnvironmentsOfAnInvalidProjectTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if text != "Nothing to clean.\n" {
-		t.Fatalf("storage clean removed the environments of an invalid Project Template: %q", text)
+		t.Fatalf("storage clean removed the environments of an invalid Workspace Template: %q", text)
 	}
-	if warnings != "Warning: Project Template \"example\" is not valid. twt kept its Prepared Environments.\n" {
+	if warnings != "Warning: Workspace Template \"example\" is not valid. twt kept its Prepared Environments.\n" {
 		t.Fatalf("storage clean warning = %q", warnings)
 	}
 	if _, err := store.NewEnvironmentStore(options.StateDir).Find(environment.ID); err != nil {
@@ -491,7 +491,7 @@ func TestStorageCleanPlanCountsEnvironmentBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Remove failed Prepared Environment \"" + failed.ID + "\" for Project Template \"example\" (4.0 KiB)"
+	want := "Remove failed Prepared Environment \"" + failed.ID + "\" for Workspace Template \"example\" (4.0 KiB)"
 	if !strings.Contains(text, want) {
 		t.Fatalf("storage clean text does not contain %q:\n%s", want, text)
 	}
@@ -518,17 +518,17 @@ func TestStorageCleanPlanCountsEnvironmentBytes(t *testing.T) {
 
 func TestStorageCleanRemovesOrphanAgentRecords(t *testing.T) {
 	options := maintenanceOptions(t)
-	saveProjectRecord(t, options, "live-project", "live-project", domain.ProjectActive, 512)
+	saveWorkspaceRecord(t, options, "live-workspace", "live-workspace", domain.WorkspaceActive, 512)
 	now := time.Now().UTC()
 	agents := store.NewAgentStore(options.StateDir)
 	if err := agents.Save(domain.AgentSession{
-		Version: domain.AgentVersion, ID: "live-agent", ProjectID: "live-project", Provider: "codex",
+		Version: domain.AgentVersion, ID: "live-agent", WorkspaceID: "live-workspace", Provider: "codex",
 		Label: "review", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := agents.Save(domain.AgentSession{
-		Version: domain.AgentVersion, ID: "orphan-agent", ProjectID: "removed-project", Provider: "codex",
+		Version: domain.AgentVersion, ID: "orphan-agent", WorkspaceID: "removed-workspace", Provider: "codex",
 		Label: "old", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
@@ -538,7 +538,7 @@ func TestStorageCleanRemovesOrphanAgentRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text, "Remove orphan Agent Session record \"orphan-agent\" for missing Project \"removed-project\"") ||
+	if !strings.Contains(text, "Remove orphan Agent Session record \"orphan-agent\" for missing Workspace \"removed-workspace\"") ||
 		strings.Contains(text, "live-agent") {
 		t.Fatalf("storage clean plan = %q", text)
 	}

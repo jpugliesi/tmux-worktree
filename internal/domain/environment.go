@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 )
 
@@ -49,11 +51,35 @@ type PreparedRepository struct {
 	BaseCommit string `json:"baseCommit"`
 }
 
-// EnvironmentClaim records the complete Project reserved for one claim. Code
+// EnvironmentClaim records the complete Workspace reserved for one claim. Code
 // that resumes an interrupted claim must use this value without changing it.
 type EnvironmentClaim struct {
-	Project    Project   `json:"project"`
+	Workspace  Workspace `json:"workspace"`
 	ReservedAt time.Time `json:"reservedAt"`
+}
+
+// UnmarshalJSON accepts the version-one project key. New records always use
+// workspace. A record with two different owners is invalid.
+func (c *EnvironmentClaim) UnmarshalJSON(data []byte) error {
+	var value struct {
+		Workspace  *Workspace `json:"workspace"`
+		Project    *Workspace `json:"project"`
+		ReservedAt time.Time  `json:"reservedAt"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if value.Workspace != nil && value.Project != nil && !reflect.DeepEqual(value.Workspace, value.Project) {
+		return fmt.Errorf("Prepared Environment claim has conflicting workspace and project values")
+	}
+	switch {
+	case value.Workspace != nil:
+		c.Workspace = *value.Workspace
+	case value.Project != nil:
+		c.Workspace = *value.Project
+	}
+	c.ReservedAt = value.ReservedAt
+	return nil
 }
 
 func (e PreparedEnvironment) Validate() error {
@@ -67,16 +93,16 @@ func (e PreparedEnvironment) Validate() error {
 		return fmt.Errorf("Prepared Environment ID is empty")
 	}
 	if e.TemplateName == "" {
-		return fmt.Errorf("Prepared Environment %q has no Project Template name", e.ID)
+		return fmt.Errorf("Prepared Environment %q has no Workspace Template name", e.ID)
 	}
 	if e.TemplateDigest == "" {
-		return fmt.Errorf("Prepared Environment %q has no Project Template digest", e.ID)
+		return fmt.Errorf("Prepared Environment %q has no Workspace Template digest", e.ID)
 	}
 	if e.TemplateSnapshot.Name != e.TemplateName {
-		return fmt.Errorf("Prepared Environment %q has Project Template name %q but its snapshot has name %q", e.ID, e.TemplateName, e.TemplateSnapshot.Name)
+		return fmt.Errorf("Prepared Environment %q has Workspace Template name %q but its snapshot has name %q", e.ID, e.TemplateName, e.TemplateSnapshot.Name)
 	}
 	if err := e.TemplateSnapshot.Validate(); err != nil {
-		return fmt.Errorf("Prepared Environment %q has an invalid Project Template: %w", e.ID, err)
+		return fmt.Errorf("Prepared Environment %q has an invalid Workspace Template: %w", e.ID, err)
 	}
 	if !validPreparedEnvironmentStatus(e.Status) {
 		return fmt.Errorf("Prepared Environment %q has invalid status %q", e.ID, e.Status)
@@ -99,11 +125,11 @@ func (e PreparedEnvironment) Validate() error {
 		return fmt.Errorf("Prepared Environment %q has an empty ready time", e.ID)
 	}
 	if e.ClaimReservation != nil {
-		if e.ClaimReservation.Project.ID == "" || e.ClaimReservation.Project.Version != ProjectVersion {
-			return fmt.Errorf("Prepared Environment %q has an invalid Project claim reservation", e.ID)
+		if e.ClaimReservation.Workspace.ID == "" || e.ClaimReservation.Workspace.Version != WorkspaceVersion {
+			return fmt.Errorf("Prepared Environment %q has an invalid Workspace claim reservation", e.ID)
 		}
-		if e.ClaimReservation.Project.EnvironmentID != e.ID {
-			return fmt.Errorf("Prepared Environment %q has a claim reservation for environment %q", e.ID, e.ClaimReservation.Project.EnvironmentID)
+		if e.ClaimReservation.Workspace.EnvironmentID != e.ID {
+			return fmt.Errorf("Prepared Environment %q has a claim reservation for environment %q", e.ID, e.ClaimReservation.Workspace.EnvironmentID)
 		}
 		if e.ClaimReservation.ReservedAt.IsZero() {
 			return fmt.Errorf("Prepared Environment %q has no claim reservation time", e.ID)
@@ -112,11 +138,11 @@ func (e PreparedEnvironment) Validate() error {
 	switch e.Status {
 	case EnvironmentClaiming, EnvironmentClaimed:
 		if e.ClaimReservation == nil {
-			return fmt.Errorf("Prepared Environment %q has status %q without a Project claim reservation", e.ID, e.Status)
+			return fmt.Errorf("Prepared Environment %q has status %q without a Workspace claim reservation", e.ID, e.Status)
 		}
 	case EnvironmentQueued, EnvironmentPreparing, EnvironmentReady, EnvironmentFailed:
 		if e.ClaimReservation != nil {
-			return fmt.Errorf("Prepared Environment %q has status %q with a Project claim reservation", e.ID, e.Status)
+			return fmt.Errorf("Prepared Environment %q has status %q with a Workspace claim reservation", e.ID, e.Status)
 		}
 	}
 	if e.Status == EnvironmentReady || e.Status == EnvironmentClaiming || e.Status == EnvironmentClaimed {

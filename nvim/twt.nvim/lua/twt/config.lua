@@ -15,7 +15,7 @@ local defaults = {
     done(vim.fn.confirm(question, "&Yes\n&No", 2) == 1)
   end,
   directory = function()
-    local fixed = vim.b[buffers.project_directory]
+    local fixed = vim.b[buffers.workspace_directory]
     if fixed and fixed ~= "" then return fixed end
     local name = vim.api.nvim_buf_get_name(0)
     return name ~= "" and vim.fs.dirname(name) or vim.fn.getcwd()

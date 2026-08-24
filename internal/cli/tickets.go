@@ -35,18 +35,6 @@ type ticketShowOutput struct {
 	Ticket        ticketShowDetail `json:"ticket"`
 }
 
-type boardsListOutput struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	Boards        []domain.Board `json:"boards"`
-	TotalCount    int            `json:"totalCount"`
-	Truncated     bool           `json:"truncated,omitempty"`
-}
-
-type boardShowOutput struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	Board         domain.Board `json:"board"`
-}
-
 func newTicketsCommand(options Options) *cobra.Command {
 	tickets := groupCommand(&cobra.Command{
 		Use:   "tickets",
@@ -64,7 +52,6 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsUnclaimCommand(options))
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
-	tickets.AddCommand(newTicketsBoardsCommand(options))
 	return tickets
 }
 
@@ -205,7 +192,7 @@ func newTicketsHomeCommand(options Options) *cobra.Command {
 }
 
 func newTicketsCreateCommand(options Options) *cobra.Command {
-	var board, title, slug, status string
+	var project, title, slug, status string
 	var fromStdin bool
 	command := &cobra.Command{
 		Use:   "create [DESCRIPTION...]",
@@ -219,7 +206,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 			request := ticketservice.CreateRequest{
 				Title:    title,
 				Slug:     slug,
-				Board:    board,
+				Project:  project,
 				Status:   domain.TicketStatus(status),
 				Priority: -1,
 			}
@@ -259,14 +246,14 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 			return createTicket(command, service, request)
 		},
 	}
-	command.Flags().StringVar(&board, "board", "", "Put the Ticket in this Board")
+	command.Flags().StringVar(&project, "project", "", "Put the Ticket in this Project")
 	command.Flags().StringVar(&title, "title", "", "Set the Ticket title")
 	command.Flags().StringVar(&slug, "slug", "", "Set the file slug; empty derives it from the title")
 	command.Flags().StringVar(&status, "status", "", "Set the initial status; empty selects needs-triage")
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the Ticket body from standard input; requires --title")
 	setArguments(command, variadicArgument("description", false, "the body; the first line becomes the title when --title is absent"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
-	registerBoardFlagCompletion(command, options)
+	registerProjectFlagCompletion(command, options)
 	return command
 }
 
@@ -282,8 +269,8 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 			return writeMutation(command, "tickets.create", statusValid, result.Ticket.Slug, result.Ticket.Title)
 		}
 		out := command.OutOrStdout()
-		if request.EnsureBoard && request.Board != "" {
-			if _, err := fmt.Fprintf(out, "Would create Board %q\n", request.Board); err != nil {
+		if request.EnsureProject && request.Project != "" {
+			if _, err := fmt.Fprintf(out, "Would create Project %q\n", request.Project); err != nil {
 				return err
 			}
 		}
@@ -298,8 +285,8 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 		return writeMutation(command, "tickets.create", statusApplied, result.Ticket.Slug, result.Ticket.Title)
 	}
 	out := command.OutOrStdout()
-	if request.EnsureBoard && request.Board != "" {
-		if _, err := fmt.Fprintf(out, "Created Board %q\n", request.Board); err != nil {
+	if request.EnsureProject && request.Project != "" {
+		if _, err := fmt.Fprintf(out, "Created Project %q\n", request.Project); err != nil {
 			return err
 		}
 	}
@@ -308,7 +295,7 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 }
 
 func newTicketsListCommand(options Options) *cobra.Command {
-	var board, status string
+	var project, status string
 	var ready, all bool
 	var limit, offset int
 	command := &cobra.Command{
@@ -322,11 +309,11 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				return err
 			}
 			tickets, err := service.List(ticketservice.ListFilter{
-				Board:    board,
-				BoardSet: command.Flags().Changed("board"),
-				Status:   status,
-				Ready:    ready,
-				All:      all,
+				Project:    project,
+				ProjectSet: command.Flags().Changed("project"),
+				Status:     status,
+				Ready:      ready,
+				All:        all,
 			})
 			if err != nil {
 				return err
@@ -347,22 +334,22 @@ func newTicketsListCommand(options Options) *cobra.Command {
 			}
 			rows := make([][]string, 0, len(tickets))
 			for _, ticket := range tickets {
-				boardName := ticket.Board
-				if boardName == "" {
-					boardName = "-"
+				projectName := ticket.Project
+				if projectName == "" {
+					projectName = "-"
 				}
-				rows = append(rows, []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), boardName, ticket.Title})
+				rows = append(rows, []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), projectName, ticket.Title})
 			}
-			return writeTable(command.OutOrStdout(), []string{"SLUG", "STATUS", "PRIORITY", "BOARD", "TITLE"}, rows)
+			return writeTable(command.OutOrStdout(), []string{"SLUG", "STATUS", "PRIORITY", "PROJECT", "TITLE"}, rows)
 		},
 	}
-	command.Flags().StringVar(&board, "board", "", "List one Board; an empty value lists ungrouped Tickets")
+	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
-	registerBoardFlagCompletion(command, options)
+	registerProjectFlagCompletion(command, options)
 	return command
 }
 
@@ -397,7 +384,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 				{"Title", ticket.Title},
 				{"Status", string(ticket.Status)},
 				{"Priority", fmt.Sprintf("%d", ticket.Priority)},
-				{"Board", ticket.Board},
+				{"Project", ticket.Project},
 				{"Path", ticket.Path},
 			}
 			if ticket.ClaimedBy != "" {
@@ -497,10 +484,10 @@ func editTicket(command *cobra.Command, service *ticketservice.Service, ref, bod
 }
 
 func newTicketsSetCommand(options Options) *cobra.Command {
-	var status, board string
+	var status, project string
 	var priority int
 	command := &cobra.Command{
-		Use:   "set TICKET [--status STATUS] [--priority N] [--board BOARD]",
+		Use:   "set TICKET [--status STATUS] [--priority N] [--project PROJECT]",
 		Short: "Change Ticket fields",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -513,21 +500,21 @@ func newTicketsSetCommand(options Options) *cobra.Command {
 				StatusSet:   command.Flags().Changed("status"),
 				Priority:    priority,
 				PrioritySet: command.Flags().Changed("priority"),
-				Board:       board,
-				BoardSet:    command.Flags().Changed("board"),
+				Project:     project,
+				ProjectSet:  command.Flags().Changed("project"),
 			}
-			if !request.StatusSet && !request.PrioritySet && !request.BoardSet {
-				return invalidUsage(command, "pass at least one of --status, --priority, or --board")
+			if !request.StatusSet && !request.PrioritySet && !request.ProjectSet {
+				return invalidUsage(command, "pass at least one of --status, --priority, or --project")
 			}
 			return setTicket(command, service, args[0], request)
 		},
 	}
 	command.Flags().StringVar(&status, "status", "", "Set the status")
 	command.Flags().IntVar(&priority, "priority", 2, "Set the priority, 0 (highest) to 4 (lowest)")
-	command.Flags().StringVar(&board, "board", "", "Move the Ticket to this Board")
+	command.Flags().StringVar(&project, "project", "", "Move the Ticket to this Project")
 	setArguments(command, requiredArgument("ticket"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
-	registerBoardFlagCompletion(command, options)
+	registerProjectFlagCompletion(command, options)
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }
@@ -572,83 +559,6 @@ func newTicketsClaimCommand(options Options) *cobra.Command {
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
-}
-
-func newTicketsStartCommand(options Options) *cobra.Command {
-	var name, templateName, as string
-	var keepCurrent bool
-	command := &cobra.Command{
-		Use:     "start TICKET [--name NAME] [--template TEMPLATE] [--as NAME]",
-		Short:   "Claim a Ticket and start a Project for it",
-		Args:    exactArgs("TICKET"),
-		PreRunE: refuseJSONQuickCreate,
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			ticket, err := service.Resolve(args[0])
-			if err != nil {
-				return err
-			}
-			return startFromTicket(command, options, ticket, quickCreateRequest{
-				Name:         name,
-				TemplateName: templateName,
-				KeepCurrent:  keepCurrent,
-			}, as)
-		},
-	}
-	command.Flags().StringVar(&name, "name", "", "Set the Project name; empty uses the Ticket slug")
-	command.Flags().StringVar(&templateName, "template", "", "Select the Project Template instead of the current Project's template")
-	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
-	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
-	setArguments(command, requiredArgument("ticket"))
-	command.ValidArgsFunction = ticketSlugCompletion(options)
-	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
-	return command
-}
-
-// startFromTicket claims one Ticket, then runs the quick-create flow and
-// links the new Project to that Ticket.
-func startFromTicket(command *cobra.Command, options Options, ticket domain.Ticket, request quickCreateRequest, as string) error {
-	if ticket.Status == domain.TicketDone || ticket.Status == domain.TicketWontfix {
-		return clierr.WithHint(
-			clierr.New(clierr.PreconditionFailed, "the Ticket is closed"),
-			"Select a Ticket from 'twt tickets list --ready'.")
-	}
-	service, err := options.ticketService()
-	if err != nil {
-		return err
-	}
-	claimant, err := resolveClaimant(command, as)
-	if err != nil {
-		return err
-	}
-	// The claim comes first: a Ticket that a different claimant
-	// holds aborts before any Project work.
-	if err := claimTicket(command, service, ticket.Slug, claimant); err != nil {
-		return err
-	}
-	projectName := strings.TrimSpace(request.Name)
-	if projectName == "" {
-		projectName = ticket.Slug
-	}
-	request.Name = projectName
-	request.Ticket = ticket.Slug
-	// A create failure keeps the claim: the create error already
-	// tells how to retry the setup.
-	if err := runQuickCreate(command, options, request); err != nil {
-		return err
-	}
-	if isDryRun(command) {
-		return nil
-	}
-	// The start comment is best-effort: a comment failure must not
-	// fail the start.
-	if err := commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Project %s.", projectName)); err != nil {
-		_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not add the start comment to Ticket %q: %v\n", ticket.Slug, err)
-	}
-	return nil
 }
 
 func newTicketsUnclaimCommand(options Options) *cobra.Command {
@@ -825,123 +735,6 @@ func commentTicket(command *cobra.Command, service *ticketservice.Service, ref, 
 		})
 }
 
-func newTicketsBoardsCommand(options Options) *cobra.Command {
-	boards := groupCommand(&cobra.Command{
-		Use:   "boards",
-		Short: "Manage Ticket Boards",
-	})
-	boards.AddCommand(newTicketsBoardsCreateCommand(options))
-	boards.AddCommand(newTicketsBoardsListCommand(options))
-	boards.AddCommand(newTicketsBoardsShowCommand(options))
-	return boards
-}
-
-func newTicketsBoardsCreateCommand(options Options) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "create NAME",
-		Short: "Create a Board directory",
-		Args:  exactArgs("NAME"),
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			return createBoard(command, service, args[0])
-		},
-	}
-	setArguments(command, requiredArgument("name"))
-	return command
-}
-
-// createBoard creates one Board. Both the boards create command and apply use
-// it.
-func createBoard(command *cobra.Command, service *ticketservice.Service, name string) error {
-	return runMutation(command, "tickets.boards.create",
-		func() (string, string, error) {
-			board, err := service.CreateBoard(name, true)
-			return "", board.Name, err
-		},
-		func() (string, string, error) {
-			board, err := service.CreateBoard(name, false)
-			return "", board.Name, err
-		},
-		func(out io.Writer, _, boardName string) error {
-			_, err := fmt.Fprintf(out, "Created Board %q\n", boardName)
-			return err
-		})
-}
-
-func newTicketsBoardsListCommand(options Options) *cobra.Command {
-	var limit, offset int
-	command := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List Boards",
-		Args:    noArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			boards, err := service.Boards()
-			if err != nil {
-				return err
-			}
-			boards, total, truncated, err := applyWindow(boards, offset, limit)
-			if err != nil {
-				return err
-			}
-			if format := resolvedOutputFormat(command); format != outputText {
-				if format == outputNDJSON {
-					return writeNDJSONList(command, boards, total, truncated)
-				}
-				return writeReadJSON(command, boardsListOutput{SchemaVersion: jsonSchemaVersion, Boards: boards, TotalCount: total, Truncated: truncated}, "boards")
-			}
-			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Boards exist. Run 'twt tickets boards create NAME'.")
-				return err
-			}
-			rows := make([][]string, 0, len(boards))
-			for _, board := range boards {
-				rows = append(rows, []string{board.Name, fmt.Sprintf("%d", board.Tickets)})
-			}
-			return writeTable(command.OutOrStdout(), []string{"NAME", "TICKETS"}, rows)
-		},
-	}
-	addListReadFlags(command, &limit, &offset, domain.Board{})
-	return command
-}
-
-func newTicketsBoardsShowCommand(options Options) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "show NAME",
-		Short: "Show a Board",
-		Args:  exactArgs("NAME"),
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			board, err := service.Board(args[0])
-			if err != nil {
-				return err
-			}
-			if WantsJSON(command) {
-				return writeReadJSON(command, boardShowOutput{SchemaVersion: jsonSchemaVersion, Board: board}, "board")
-			}
-			return writeFields(command.OutOrStdout(), [][2]string{
-				{"Board", board.Name},
-				{"Path", board.Path},
-				{"Tickets", fmt.Sprintf("%d", board.Tickets)},
-			})
-		},
-	}
-	setArguments(command, requiredArgument("name"))
-	addFieldsFlag(command, domain.Board{})
-	command.ValidArgsFunction = ticketBoardNameCompletion(options)
-	return command
-}
-
 // ticketSlugCompletion completes the first positional TICKET reference. A
 // missing or unset Tickets home completes to nothing.
 func ticketSlugCompletion(options Options) completionFunc {
@@ -961,37 +754,61 @@ func ticketSlugCompletion(options Options) completionFunc {
 	}
 }
 
-// ticketBoardNames lists every Board name. A missing or unset Tickets home
+func ticketSlugsCompletion(options Options) completionFunc {
+	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		service, err := options.ticketService()
+		if err != nil {
+			return nil, noFileCompletion
+		}
+		slugs, err := service.Slugs()
+		if err != nil {
+			return nil, noFileCompletion
+		}
+		used := map[string]bool{}
+		for _, arg := range args {
+			used[arg] = true
+		}
+		candidates := make([]string, 0, len(slugs))
+		for _, slug := range matching(slugs, toComplete) {
+			if !used[slug] {
+				candidates = append(candidates, slug)
+			}
+		}
+		return candidates, noFileCompletion
+	}
+}
+
+// ticketProjectNames lists every Project name. A missing or unset Tickets home
 // completes to nothing.
-func ticketBoardNames(options Options, toComplete string) []string {
+func ticketProjectNames(options Options, toComplete string) []string {
 	service, err := options.ticketService()
 	if err != nil {
 		return nil
 	}
-	boards, err := service.Boards()
+	projects, err := service.Projects()
 	if err != nil {
 		return nil
 	}
-	names := make([]string, 0, len(boards))
-	for _, board := range boards {
-		names = append(names, board.Name)
+	names := make([]string, 0, len(projects))
+	for _, project := range projects {
+		names = append(names, project.Name)
 	}
 	return matching(names, toComplete)
 }
 
-// ticketBoardNameCompletion completes the first positional Board name.
-func ticketBoardNameCompletion(options Options) completionFunc {
+// ticketProjectNameCompletion completes the first positional Project name.
+func ticketProjectNameCompletion(options Options) completionFunc {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
 		}
-		return ticketBoardNames(options, toComplete), noFileCompletion
+		return ticketProjectNames(options, toComplete), noFileCompletion
 	}
 }
 
-// registerBoardFlagCompletion completes a --board flag value.
-func registerBoardFlagCompletion(command *cobra.Command, options Options) {
-	_ = command.RegisterFlagCompletionFunc("board", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return ticketBoardNames(options, toComplete), noFileCompletion
+// registerProjectFlagCompletion completes a --project flag value.
+func registerProjectFlagCompletion(command *cobra.Command, options Options) {
+	_ = command.RegisterFlagCompletionFunc("project", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return ticketProjectNames(options, toComplete), noFileCompletion
 	})
 }

@@ -8,8 +8,8 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +41,7 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	templateStore := options.templateStore()
 	templates := groupCommand(&cobra.Command{
 		Use:   "templates",
-		Short: "Manage Project Templates",
+		Short: "Manage Workspace Templates",
 	})
 	templates.AddCommand(newTemplatesCreateCommand(options))
 	templates.AddCommand(newTemplatesListCommand(templateStore))
@@ -77,7 +77,7 @@ func newTemplatePrepareCommand(options Options, templateStore store.TemplateStor
 }
 
 // prepareTemplateEnvironments fills the Prepared Environment pool of one
-// Project Template. Both the templates prepare command and apply use it.
+// Workspace Template. Both the templates prepare command and apply use it.
 func prepareTemplateEnvironments(command *cobra.Command, options Options, templateStore store.TemplateStore, name string) error {
 	template, err := templateStore.Load(name)
 	if err != nil {
@@ -89,13 +89,13 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 		}
 		return writeMutation(command, "templates.prepare", statusValid, "", name)
 	}
-	serviceOptions := options.projectServiceOptions()
+	serviceOptions := options.workspaceServiceOptions()
 	if !WantsJSON(command) {
 		serviceOptions.Progress = func(message string) {
 			_, _ = fmt.Fprintln(command.ErrOrStderr(), message)
 		}
 	}
-	service := projectservice.NewService(serviceOptions)
+	service := workspaceservice.NewService(serviceOptions)
 	queued, err := service.TopUpPool(name, template, template.EffectivePoolDepth())
 	if err != nil {
 		return err
@@ -112,11 +112,11 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 		return writeJSONOutput(command, templatePrepareOutput{SchemaVersion: jsonSchemaVersion, Template: name, Environments: prepared})
 	}
 	if len(prepared) == 0 {
-		_, err = fmt.Fprintf(command.OutOrStdout(), "The Prepared Environment pool for Project Template %q is full\n", name)
+		_, err = fmt.Fprintf(command.OutOrStdout(), "The Prepared Environment pool for Workspace Template %q is full\n", name)
 		return err
 	}
 	for _, id := range prepared {
-		if _, err := fmt.Fprintf(command.OutOrStdout(), "Prepared Environment %q for Project Template %q\n", id, name); err != nil {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Prepared Environment %q for Workspace Template %q\n", id, name); err != nil {
 			return err
 		}
 	}
@@ -128,7 +128,7 @@ func newTemplatesCreateCommand(options Options) *cobra.Command {
 	var fromStdin bool
 	command := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Create an empty Project Template",
+		Short: "Create an empty Workspace Template",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			if fromFile != "" && fromStdin {
@@ -141,7 +141,7 @@ func newTemplatesCreateCommand(options Options) *cobra.Command {
 					return err
 				}
 				if decoded.Name != "" && decoded.Name != args[0] {
-					return invalidUsage(command, "the Project Template document contains name %q; the NAME argument is %q", decoded.Name, args[0])
+					return invalidUsage(command, "the Workspace Template document contains name %q; the NAME argument is %q", decoded.Name, args[0])
 				}
 				decoded.Name = args[0]
 				template = decoded
@@ -149,13 +149,13 @@ func newTemplatesCreateCommand(options Options) *cobra.Command {
 			return createTemplate(command, options, template)
 		},
 	}
-	command.Flags().StringVar(&fromFile, "from-file", "", "Read the Project Template YAML from this file")
-	command.Flags().BoolVar(&fromStdin, "from-stdin", false, "Read the Project Template YAML from standard input")
+	command.Flags().StringVar(&fromFile, "from-file", "", "Read the Workspace Template YAML from this file")
+	command.Flags().BoolVar(&fromStdin, "from-stdin", false, "Read the Workspace Template YAML from standard input")
 	setArguments(command, requiredArgument("name"))
 	return command
 }
 
-// createTemplate validates and saves one Project Template under the mutation
+// createTemplate validates and saves one Workspace Template under the mutation
 // lock. Both the templates create command and apply use it.
 func createTemplate(command *cobra.Command, options Options, template domain.Template) error {
 	templateStore := options.templateStore()
@@ -175,12 +175,12 @@ func createTemplate(command *cobra.Command, options Options, template domain.Tem
 			return "", template.Name, templateStore.Create(template)
 		},
 		func(out io.Writer, _, name string) error {
-			_, err := fmt.Fprintf(out, "Created Project Template %q\n", name)
+			_, err := fmt.Fprintf(out, "Created Workspace Template %q\n", name)
 			return err
 		})
 }
 
-// readTemplateDocument decodes one strict Project Template YAML document from
+// readTemplateDocument decodes one strict Workspace Template YAML document from
 // a file or from standard input.
 func readTemplateDocument(command *cobra.Command, path string, useStdin bool) (domain.Template, error) {
 	if useStdin {
@@ -188,7 +188,7 @@ func readTemplateDocument(command *cobra.Command, path string, useStdin bool) (d
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return domain.Template{}, clierr.New(clierr.NotFound, "read Project Template file %q: %v", path, err)
+		return domain.Template{}, clierr.New(clierr.NotFound, "read Workspace Template file %q: %v", path, err)
 	}
 	defer file.Close()
 	return store.DecodeTemplate(file, fmt.Sprintf("%q", path))
@@ -199,7 +199,7 @@ func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List Project Templates",
+		Short:   "List Workspace Templates",
 		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			names, err := templateStore.List()
@@ -226,7 +226,7 @@ func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 				}
 			}
 			if total == 0 {
-				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Project Templates exist. Run 'twt templates create NAME'.")
+				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Workspace Templates exist. Run 'twt templates create NAME'.")
 				return err
 			}
 			return nil
@@ -239,7 +239,7 @@ func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 func newTemplatesShowCommand(templateStore store.TemplateStore) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "show NAME",
-		Short: "Show a Project Template",
+		Short: "Show a Workspace Template",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			template, err := templateStore.Load(args[0])
@@ -266,7 +266,7 @@ func newTemplatesShowCommand(templateStore store.TemplateStore) *cobra.Command {
 func newTemplatesPathCommand(templateStore store.TemplateStore) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "path NAME",
-		Short: "Print the Project Template YAML path",
+		Short: "Print the Workspace Template YAML path",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			path, err := templateStore.Path(args[0])
@@ -285,7 +285,7 @@ func newTemplatesPathCommand(templateStore store.TemplateStore) *cobra.Command {
 func newTemplatesValidateCommand(templateStore store.TemplateStore) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "validate NAME",
-		Short: "Validate a Project Template",
+		Short: "Validate a Workspace Template",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			template, err := templateStore.Load(args[0])
@@ -302,7 +302,7 @@ func newTemplatesValidateCommand(templateStore store.TemplateStore) *cobra.Comma
 					Status: statusValid, Name: args[0], Warnings: warnings,
 				})
 			}
-			if _, err := fmt.Fprintf(command.OutOrStdout(), "Project Template %q is valid\n", args[0]); err != nil {
+			if _, err := fmt.Fprintf(command.OutOrStdout(), "Workspace Template %q is valid\n", args[0]); err != nil {
 				return err
 			}
 			for _, warning := range warnings {
@@ -321,7 +321,7 @@ func newTemplatesValidateCommand(templateStore store.TemplateStore) *cobra.Comma
 func newTemplatesEditCommand(templateStore store.TemplateStore, options Options) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "edit NAME",
-		Short: "Edit a Project Template YAML file in your editor",
+		Short: "Edit a Workspace Template YAML file in your editor",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			// The editor is an interactive escape: it opens only for a person
@@ -355,7 +355,7 @@ func newTemplatesEditCommand(templateStore store.TemplateStore, options Options)
 					return "", args[0], nil
 				},
 				func(out io.Writer, _, name string) error {
-					_, err := fmt.Fprintf(out, "Project Template %q is valid\n", name)
+					_, err := fmt.Fprintf(out, "Workspace Template %q is valid\n", name)
 					return err
 				})
 		},
@@ -369,7 +369,7 @@ func newTemplatesRemoveCommand(templateStore store.TemplateStore, options Option
 	command := &cobra.Command{
 		Use:     "remove NAME",
 		Aliases: []string{"rm"},
-		Short:   "Delete a Project Template YAML file",
+		Short:   "Delete a Workspace Template YAML file",
 		Args:    exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			return removeTemplate(command, options, templateStore, args[0])
@@ -380,8 +380,8 @@ func newTemplatesRemoveCommand(templateStore store.TemplateStore, options Option
 	return command
 }
 
-// removeTemplate deletes one Project Template YAML file. No Project record
-// can name the Project Template. Both the templates remove command and apply
+// removeTemplate deletes one Workspace Template YAML file. No Workspace record
+// can name the Workspace Template. Both the templates remove command and apply
 // use it.
 func removeTemplate(command *cobra.Command, options Options, templateStore store.TemplateStore, name string) error {
 	if _, err := templateStore.Path(name); err != nil {
@@ -406,30 +406,30 @@ func removeTemplate(command *cobra.Command, options Options, templateStore store
 			return "", name, templateStore.Delete(name)
 		},
 		func(out io.Writer, _, removed string) error {
-			_, err := fmt.Fprintf(out, "Removed Project Template %q\n", removed)
+			_, err := fmt.Fprintf(out, "Removed Workspace Template %q\n", removed)
 			return err
 		})
 }
 
-// checkTemplateIsUnused refuses Project Template removal while a Project
-// record still names the Project Template.
+// checkTemplateIsUnused refuses Workspace Template removal while a Workspace
+// record still names the Workspace Template.
 func checkTemplateIsUnused(options Options, name string) error {
-	projects, err := store.NewProjectStore(options.StateDir).List()
+	workspaces, err := store.NewWorkspaceStore(options.StateDir).List()
 	if err != nil {
 		return err
 	}
-	users := make([]string, 0, len(projects))
-	for _, project := range projects {
-		if project.TemplateName == name {
-			users = append(users, project.Name)
+	users := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if workspace.TemplateName == name {
+			users = append(users, workspace.Name)
 		}
 	}
 	if len(users) == 0 {
 		return nil
 	}
 	return clierr.WithHint(
-		clierr.New(clierr.PreconditionFailed, "Project Template %q is used by %d Projects: %s", name, len(users), strings.Join(users, ", ")),
-		"Remove these Projects first with 'twt projects remove PROJECT --apply'.")
+		clierr.New(clierr.PreconditionFailed, "Workspace Template %q is used by %d Workspaces: %s", name, len(users), strings.Join(users, ", ")),
+		"Remove these Workspaces first with 'twt workspaces remove WORKSPACE --apply'.")
 }
 
 func newTemplateRepositoriesCommand(options Options, templateStore store.TemplateStore) *cobra.Command {
@@ -517,17 +517,17 @@ func addRepositoryToTemplate(command *cobra.Command, options Options, templateNa
 			return "", repository.Name, templateStore.Save(updated)
 		},
 		func(out io.Writer, _, name string) error {
-			_, err := fmt.Fprintf(out, "Added repository %q to Project Template %q\n", name, templateName)
+			_, err := fmt.Fprintf(out, "Added repository %q to Workspace Template %q\n", name, templateName)
 			return err
 		})
 }
 
-// addTemplateRepository adds one repository specification to a Project
+// addTemplateRepository adds one repository specification to a Workspace
 // Template and validates the result.
 func addTemplateRepository(template domain.Template, repository domain.RepositorySpec) (domain.Template, error) {
 	for _, existing := range template.Repositories {
 		if existing.Name == repository.Name {
-			return template, clierr.New(clierr.AlreadyExists, "repository %q already exists in Project Template %q", repository.Name, template.Name)
+			return template, clierr.New(clierr.AlreadyExists, "repository %q already exists in Workspace Template %q", repository.Name, template.Name)
 		}
 	}
 	template.Repositories = append(template.Repositories, repository)
@@ -572,7 +572,7 @@ func removeRepositoryFromTemplate(command *cobra.Command, templateStore store.Te
 		}
 	}
 	if len(kept) == len(template.Repositories) {
-		return clierr.New(clierr.NotFound, "repository %q does not exist in Project Template %q", repositoryName, templateName)
+		return clierr.New(clierr.NotFound, "repository %q does not exist in Workspace Template %q", repositoryName, templateName)
 	}
 	template.Repositories = kept
 	if err := template.Validate(); err != nil {
@@ -586,7 +586,7 @@ func removeRepositoryFromTemplate(command *cobra.Command, templateStore store.Te
 			return "", repositoryName, templateStore.Save(template)
 		},
 		func(out io.Writer, _, name string) error {
-			_, err := fmt.Fprintf(out, "Removed repository %q from Project Template %q\n", name, templateName)
+			_, err := fmt.Fprintf(out, "Removed repository %q from Workspace Template %q\n", name, templateName)
 			return err
 		})
 }
@@ -594,13 +594,13 @@ func removeRepositoryFromTemplate(command *cobra.Command, templateStore store.Te
 func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
 	initialize := groupCommand(&cobra.Command{
 		Use:   "init",
-		Short: "Manage Project Template initialization",
+		Short: "Manage Workspace Template initialization",
 	})
 	var workingDirectory string
 	var repository string
 	set := &cobra.Command{
 		Use:   "set TEMPLATE [--repo REPO] [--cwd PATH] -- COMMAND...",
-		Short: "Set a Project or repository initialization command",
+		Short: "Set a Workspace or repository initialization command",
 		Args: func(command *cobra.Command, args []string) error {
 			if strings.TrimSpace(repository) != "" && command.Flags().Changed("cwd") {
 				return invalidUsage(command, "do not use --cwd together with --repo; repository initialization runs in the repository worktree")
@@ -617,8 +617,8 @@ func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir st
 			return setTemplateInitialization(command, templateStore, stateDir, args[0], repository, workingDirectory, args[1:])
 		},
 	}
-	set.Flags().StringVar(&workingDirectory, "cwd", "", "Set the Project initialization working directory, relative to the Project root")
-	set.Flags().StringVar(&repository, "repo", "", "Set repository initialization for this repository instead of Project initialization")
+	set.Flags().StringVar(&workingDirectory, "cwd", "", "Set the Workspace initialization working directory, relative to the Workspace root")
+	set.Flags().StringVar(&repository, "repo", "", "Set repository initialization for this repository instead of Workspace initialization")
 	setArguments(set, requiredArgument("template"), variadicArgument("command", true, ""))
 	set.ValidArgsFunction = templateNameCompletion(templateStore)
 	_ = set.RegisterFlagCompletionFunc("repo", func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -631,10 +631,10 @@ func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir st
 	return initialize
 }
 
-// setTemplateInitialization sets the initialization command of one Project
+// setTemplateInitialization sets the initialization command of one Workspace
 // Template under the mutation lock. A set repository name sets repository
 // initialization, which runs in the repository worktree; an empty repository
-// name sets Project initialization, which runs in workingDirectory. Both the
+// name sets Workspace initialization, which runs in workingDirectory. Both the
 // templates init set command and apply use it.
 func setTemplateInitialization(command *cobra.Command, templateStore store.TemplateStore, stateDir, templateName, repository, workingDirectory string, initializeCommand []string) error {
 	lock, err := store.AcquireMutationLock(stateDir)
@@ -663,7 +663,7 @@ func setTemplateInitialization(command *cobra.Command, templateStore store.Templ
 			break
 		}
 		if !found {
-			return clierr.New(clierr.NotFound, "repository %q does not exist in Project Template %q", repository, templateName)
+			return clierr.New(clierr.NotFound, "repository %q does not exist in Workspace Template %q", repository, templateName)
 		}
 	} else {
 		template.Initialize = &domain.InitializeSpec{
@@ -683,10 +683,10 @@ func setTemplateInitialization(command *cobra.Command, templateStore store.Templ
 		},
 		func(out io.Writer, _, _ string) error {
 			if operation == "templates.repos.init.set" {
-				_, err := fmt.Fprintf(out, "Set initialization for repository %q in Project Template %q\n", repository, templateName)
+				_, err := fmt.Fprintf(out, "Set initialization for repository %q in Workspace Template %q\n", repository, templateName)
 				return err
 			}
-			_, err := fmt.Fprintf(out, "Set initialization for Project Template %q\n", templateName)
+			_, err := fmt.Fprintf(out, "Set initialization for Workspace Template %q\n", templateName)
 			return err
 		})
 }

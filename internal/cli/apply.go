@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -18,21 +18,21 @@ import (
 type applyRequest struct {
 	Operation string          `json:"operation"`
 	Template  json.RawMessage `json:"template,omitempty"`
-	Project   json.RawMessage `json:"project,omitempty"`
+	Workspace json.RawMessage `json:"workspace,omitempty"`
 	Agent     json.RawMessage `json:"agent,omitempty"`
 	Storage   json.RawMessage `json:"storage,omitempty"`
 	Ticket    json.RawMessage `json:"ticket,omitempty"`
-	Board     json.RawMessage `json:"board,omitempty"`
+	Project   json.RawMessage `json:"project,omitempty"`
 }
 
 // templateNameRequest is the payload of each operation that only names a
-// Project Template.
+// Workspace Template.
 type templateNameRequest struct {
 	Name string `json:"name"`
 }
 
-// templateInitializeSetRequest sets Project or repository initialization. A
-// set repo selects repository initialization; an empty repo selects Project
+// templateInitializeSetRequest sets Workspace or repository initialization. A
+// set repo selects repository initialization; an empty repo selects Workspace
 // initialization in cwd.
 type templateInitializeSetRequest struct {
 	Name             string   `json:"name"`
@@ -60,26 +60,27 @@ type applyRepositoryRequest struct {
 	WindowName    string            `json:"windowName,omitempty"`
 }
 
-type projectCreateRequest struct {
-	Name     string `json:"name"`
-	Template string `json:"template"`
-	NoOpen   *bool  `json:"noOpen,omitempty"`
+type workspaceCreateRequest struct {
+	Name     string   `json:"name"`
+	Template string   `json:"template"`
+	NoOpen   *bool    `json:"noOpen,omitempty"`
+	Tickets  []string `json:"tickets,omitempty"`
 }
 
-// projectReferenceRequest is the payload of each operation that only names a
-// Project.
-type projectReferenceRequest struct {
+// workspaceReferenceRequest is the payload of each operation that only names a
+// Workspace.
+type workspaceReferenceRequest struct {
 	Reference string `json:"reference"`
 }
 
-// projectOpenRequest opens or repairs one Project tmux session. Apply never
+// workspaceOpenRequest opens or repairs one Workspace tmux session. Apply never
 // attaches a tmux client, so noAttach must be true or absent.
-type projectOpenRequest struct {
+type workspaceOpenRequest struct {
 	Reference string `json:"reference"`
 	NoAttach  *bool  `json:"noAttach,omitempty"`
 }
 
-type projectRemoveRequest struct {
+type workspaceRemoveRequest struct {
 	Reference string `json:"reference"`
 	Apply     bool   `json:"apply,omitempty"`
 	Force     bool   `json:"force,omitempty"`
@@ -94,7 +95,7 @@ type storageCleanApplyRequest struct {
 type ticketCreateApplyRequest struct {
 	Title    string `json:"title"`
 	Body     string `json:"body,omitempty"`
-	Board    string `json:"board,omitempty"`
+	Project  string `json:"project,omitempty"`
 	Slug     string `json:"slug,omitempty"`
 	Status   string `json:"status,omitempty"`
 	Priority *int   `json:"priority,omitempty"`
@@ -106,7 +107,7 @@ type ticketSetApplyRequest struct {
 	Reference string  `json:"reference"`
 	Status    *string `json:"status,omitempty"`
 	Priority  *int    `json:"priority,omitempty"`
-	Board     *string `json:"board,omitempty"`
+	Project   *string `json:"project,omitempty"`
 }
 
 // ticketEditApplyRequest replaces the body of one Ticket. Body is a pointer,
@@ -126,12 +127,12 @@ type ticketCommentApplyRequest struct {
 	Text      string `json:"text"`
 }
 
-type boardCreateApplyRequest struct {
+type projectCreateApplyRequest struct {
 	Name string `json:"name"`
 }
 
 type agentRegisterRequest struct {
-	Project           string   `json:"project"`
+	Workspace         string   `json:"workspace"`
 	Provider          string   `json:"provider"`
 	Label             string   `json:"label,omitempty"`
 	Pane              string   `json:"pane,omitempty"`
@@ -140,23 +141,23 @@ type agentRegisterRequest struct {
 }
 
 // agentReferenceRequest is the payload of each operation that only names one
-// Agent Session of a Project.
+// Agent Session of a Workspace.
 type agentReferenceRequest struct {
 	Reference string `json:"reference"`
-	Project   string `json:"project,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // agentSendRequest sends feedback to one Agent Session. The text replaces the
 // standard input of the agents send command.
 type agentSendRequest struct {
 	Reference string `json:"reference"`
-	Project   string `json:"project,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 	Text      string `json:"text"`
 }
 
 type agentTranscriptLinkRequest struct {
 	Reference string `json:"reference"`
-	Project   string `json:"project,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 	Session   string `json:"session"`
 }
 
@@ -175,7 +176,7 @@ func applyOperations() []applyOperation {
 			{Path: "template.name", Type: "string", Required: true},
 		}}, applyTemplatesCreate},
 		{applyOperationSchema{Operation: "templates.remove", Payload: "template", Fields: []requestFieldSchema{
-			{Path: "template.name", Type: "string", Required: true, Condition: "no Project record can name the Project Template"},
+			{Path: "template.name", Type: "string", Required: true, Condition: "no Workspace record can name the Workspace Template"},
 		}}, applyTemplatesRemove},
 		{applyOperationSchema{Operation: "templates.prepare", Payload: "template", Fields: []requestFieldSchema{
 			{Path: "template.name", Type: "string", Required: true},
@@ -184,7 +185,7 @@ func applyOperations() []applyOperation {
 			{Path: "template.name", Type: "string", Required: true},
 			{Path: "template.command", Type: "array[string]", Required: true},
 			{Path: "template.repo", Type: "string", Required: false, Condition: "sets repository initialization, which runs in the repository worktree"},
-			{Path: "template.cwd", Type: "string", Required: false, Condition: "required when template.repo is empty; the path is relative to the Project root"},
+			{Path: "template.cwd", Type: "string", Required: false, Condition: "required when template.repo is empty; the path is relative to the Workspace root"},
 		}}, applyTemplatesInitSet},
 		{applyOperationSchema{Operation: "templates.repos.add", Payload: "template", Fields: []requestFieldSchema{
 			{Path: "template.name", Type: "string", Required: true},
@@ -199,28 +200,29 @@ func applyOperations() []applyOperation {
 			{Path: "template.name", Type: "string", Required: true},
 			{Path: "template.repo", Type: "string", Required: true},
 		}}, applyTemplatesReposRemove},
-		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
-			{Path: "project.name", Type: "string", Required: true},
-			{Path: "project.template", Type: "string", Required: true},
-			{Path: "project.noOpen", Type: "boolean", Required: false, Condition: "must be true or absent; apply never opens a tmux session"},
-		}}, applyProjectsCreate},
-		{applyOperationSchema{Operation: "projects.open", Payload: "project", Fields: []requestFieldSchema{
-			{Path: "project.reference", Type: "string", Required: true},
-			{Path: "project.noAttach", Type: "boolean", Required: false, Condition: "must be true or absent; apply repairs the tmux session but attaches no tmux client"},
-		}}, applyProjectsOpen},
-		{applyOperationSchema{Operation: "projects.setup.retry", Payload: "project", Fields: []requestFieldSchema{
-			{Path: "project.reference", Type: "string", Required: true},
-		}}, applyProjectsSetupRetry},
-		{applyOperationSchema{Operation: "projects.archive", Payload: "project", Fields: []requestFieldSchema{
-			{Path: "project.reference", Type: "string", Required: true},
-		}}, applyProjectsArchive},
-		{applyOperationSchema{Operation: "projects.remove", Payload: "project", Fields: []requestFieldSchema{
-			{Path: "project.reference", Type: "string", Required: true},
-			{Path: "project.apply", Type: "boolean", Required: false, Condition: "false or absent returns the removal plan only"},
-			{Path: "project.force", Type: "boolean", Required: false},
-		}}, applyProjectsRemove},
+		{applyOperationSchema{Operation: "workspaces.create", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.name", Type: "string", Required: true},
+			{Path: "workspace.template", Type: "string", Required: true},
+			{Path: "workspace.noOpen", Type: "boolean", Required: false, Condition: "must be true or absent; apply never opens a tmux session"},
+			{Path: "workspace.tickets", Type: "array[string]", Required: false, Condition: "all Tickets must be open and belong to one Project"},
+		}}, applyWorkspacesCreate},
+		{applyOperationSchema{Operation: "workspaces.open", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.noAttach", Type: "boolean", Required: false, Condition: "must be true or absent; apply repairs the tmux session but attaches no tmux client"},
+		}}, applyWorkspacesOpen},
+		{applyOperationSchema{Operation: "workspaces.setup.retry", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+		}}, applyWorkspacesSetupRetry},
+		{applyOperationSchema{Operation: "workspaces.archive", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+		}}, applyWorkspacesArchive},
+		{applyOperationSchema{Operation: "workspaces.remove", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.apply", Type: "boolean", Required: false, Condition: "false or absent returns the removal plan only"},
+			{Path: "workspace.force", Type: "boolean", Required: false},
+		}}, applyWorkspacesRemove},
 		{applyOperationSchema{Operation: "agents.register", Payload: "agent", Fields: []requestFieldSchema{
-			{Path: "agent.project", Type: "string", Required: true},
+			{Path: "agent.workspace", Type: "string", Required: true},
 			{Path: "agent.provider", Type: "string", Required: true, Enum: agentProviderNames},
 			{Path: "agent.label", Type: "string", Required: false},
 			{Path: "agent.pane", Type: "string", Required: false, Condition: "required when agent.resumeCommand is empty; a tmux pane ID, because apply cannot use the value current"},
@@ -230,20 +232,20 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "agents.send", Payload: "agent", Fields: []requestFieldSchema{
 			{Path: "agent.reference", Type: "string", Required: true, Condition: "the Agent Session pane must be live"},
 			{Path: "agent.text", Type: "string", Required: true, Condition: "the text replaces the standard input of 'twt agents send'"},
-			{Path: "agent.project", Type: "string", Required: false, Condition: "absent selects the current Project"},
+			{Path: "agent.workspace", Type: "string", Required: false, Condition: "absent selects the current Workspace"},
 		}}, applyAgentsSend},
 		{applyOperationSchema{Operation: "agents.resume", Payload: "agent", Fields: []requestFieldSchema{
 			{Path: "agent.reference", Type: "string", Required: true},
-			{Path: "agent.project", Type: "string", Required: false, Condition: "absent selects the Project of the Agent Session"},
+			{Path: "agent.workspace", Type: "string", Required: false, Condition: "absent selects the Workspace of the Agent Session"},
 		}}, applyAgentsResume},
 		{applyOperationSchema{Operation: "agents.rm", Payload: "agent", Fields: []requestFieldSchema{
 			{Path: "agent.reference", Type: "string", Required: true},
-			{Path: "agent.project", Type: "string", Required: false, Condition: "absent selects the current Project"},
+			{Path: "agent.workspace", Type: "string", Required: false, Condition: "absent selects the current Workspace"},
 		}}, applyAgentsRemove},
 		{applyOperationSchema{Operation: "agents.transcript.link", Payload: "agent", Fields: []requestFieldSchema{
 			{Path: "agent.reference", Type: "string", Required: true},
 			{Path: "agent.session", Type: "string", Required: true},
-			{Path: "agent.project", Type: "string", Required: false, Condition: "absent selects the current Project"},
+			{Path: "agent.workspace", Type: "string", Required: false, Condition: "absent selects the current Workspace"},
 		}}, applyAgentsTranscriptLink},
 		{applyOperationSchema{Operation: "storage.clean", Payload: "storage", Fields: []requestFieldSchema{
 			{Path: "storage.apply", Type: "boolean", Required: false, Condition: "false or absent returns the cleanup plan only"},
@@ -252,7 +254,7 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "tickets.create", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.title", Type: "string", Required: true},
 			{Path: "ticket.body", Type: "string", Required: false},
-			{Path: "ticket.board", Type: "string", Required: false, Condition: "the Board must exist"},
+			{Path: "ticket.project", Type: "string", Required: false, Condition: "the Project must exist"},
 			{Path: "ticket.slug", Type: "string", Required: false, Condition: "absent derives the slug from the title"},
 			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "absent selects needs-triage"},
 			{Path: "ticket.priority", Type: "integer", Required: false, Condition: "0 (highest) to 4 (lowest); absent selects 2"},
@@ -263,9 +265,9 @@ func applyOperations() []applyOperation {
 		}}, applyTicketsEdit},
 		{applyOperationSchema{Operation: "tickets.set", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
-			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, or ticket.board"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, or ticket.project"},
 			{Path: "ticket.priority", Type: "integer", Required: false},
-			{Path: "ticket.board", Type: "string", Required: false},
+			{Path: "ticket.project", Type: "string", Required: false},
 		}}, applyTicketsSet},
 		{applyOperationSchema{Operation: "tickets.claim", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
@@ -283,9 +285,9 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
 		}}, applyTicketsComment},
-		{applyOperationSchema{Operation: "tickets.boards.create", Payload: "board", Fields: []requestFieldSchema{
-			{Path: "board.name", Type: "string", Required: true},
-		}}, applyTicketsBoardsCreate},
+		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+		}}, applyTicketsProjectsCreate},
 	}
 }
 
@@ -368,7 +370,7 @@ func decodeApplyPayload(operation, payload string, raw json.RawMessage, value an
 	return nil
 }
 
-// decodeTemplateNamePayload decodes one payload that only names a Project
+// decodeTemplateNamePayload decodes one payload that only names a Workspace
 // Template.
 func decodeTemplateNamePayload(operation string, raw json.RawMessage) (templateNameRequest, error) {
 	var payload templateNameRequest
@@ -381,11 +383,11 @@ func decodeTemplateNamePayload(operation string, raw json.RawMessage) (templateN
 	return payload, nil
 }
 
-// applyProjectReference maps the optional project field of a payload to a
-// PROJECT reference. An empty value selects the current Project.
-func applyProjectReference(value string) string {
+// applyWorkspaceReference maps the optional workspace field of a payload to a
+// WORKSPACE reference. An empty value selects the current Workspace.
+func applyWorkspaceReference(value string) string {
 	if strings.TrimSpace(value) == "" {
-		return currentProjectReference
+		return currentWorkspaceReference
 	}
 	return value
 }
@@ -428,7 +430,7 @@ func applyTemplatesInitSet(command *cobra.Command, options Options, request appl
 		return fmt.Errorf("do not set template.cwd together with template.repo; repository initialization runs in the repository worktree")
 	}
 	if repository == "" && workingDirectory == "" {
-		return fmt.Errorf("template.cwd is required for Project initialization; set template.repo for repository initialization")
+		return fmt.Errorf("template.cwd is required for Workspace initialization; set template.repo for repository initialization")
 	}
 	return setTemplateInitialization(command, options.templateStore(), options.StateDir, payload.Name, repository, workingDirectory, payload.Command)
 }
@@ -465,99 +467,103 @@ func applyTemplatesReposAdd(command *cobra.Command, options Options, request app
 	})
 }
 
-func applyProjectsCreate(command *cobra.Command, options Options, request applyRequest) error {
-	var payload projectCreateRequest
-	if err := decodeApplyPayload("projects.create", "project", request.Project, &payload); err != nil {
+func applyWorkspacesCreate(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceCreateRequest
+	if err := decodeApplyPayload("workspaces.create", "workspace", request.Workspace, &payload); err != nil {
 		return err
 	}
 	if payload.Name == "" || payload.Template == "" {
-		return fmt.Errorf("project.name and project.template are required for projects.create")
+		return fmt.Errorf("workspace.name and workspace.template are required for workspaces.create")
 	}
 	if payload.NoOpen != nil && !*payload.NoOpen {
-		return fmt.Errorf("apply never opens a tmux session; project.noOpen must be true or absent")
+		return fmt.Errorf("apply never opens a tmux session; workspace.noOpen must be true or absent")
+	}
+	project, tickets, err := resolveWorkspaceTicketLinks(options, payload.Tickets)
+	if err != nil {
+		return err
 	}
 	template, err := options.templateStore().Load(payload.Template)
 	if err != nil {
 		return err
 	}
 	if isDryRun(command) {
-		if err := validateCreate(options, options.projectService(), payload.Name, payload.Template, template, projectservice.CreateOptions{}); err != nil {
+		if err := validateCreate(options, options.workspaceService(), payload.Name, payload.Template, template, workspaceservice.CreateOptions{Project: project, Tickets: tickets}); err != nil {
 			return err
 		}
-		return writeMutation(command, "projects.create", statusValid, "", payload.Name)
+		return writeMutation(command, "workspaces.create", statusValid, "", payload.Name)
 	}
-	project, err := createProject(command, options, payload.Name, payload.Template, template, projectservice.CreateOptions{})
+	workspace, err := createWorkspace(command, options, payload.Name, payload.Template, template, workspaceservice.CreateOptions{Project: project, Tickets: tickets})
 	if err != nil {
 		return err
 	}
-	return writeMutation(command, "projects.create", statusApplied, project.ID, project.Name)
+	return writeMutation(command, "workspaces.create", statusApplied, workspace.ID, workspace.Name)
 }
 
-// resolveApplyProjectReference decodes one payload that only names a Project
-// and maps it to a stable Project reference.
-func resolveApplyProjectReference(operation string, raw json.RawMessage, service *projectservice.Service) (string, error) {
-	var payload projectReferenceRequest
-	if err := decodeApplyPayload(operation, "project", raw, &payload); err != nil {
+// resolveApplyWorkspaceReference decodes one payload that only names a Workspace
+// and maps it to a stable Workspace reference.
+func resolveApplyWorkspaceReference(operation string, raw json.RawMessage, service *workspaceservice.Service) (string, error) {
+	var payload workspaceReferenceRequest
+	if err := decodeApplyPayload(operation, "workspace", raw, &payload); err != nil {
 		return "", err
 	}
 	if payload.Reference == "" {
-		return "", fmt.Errorf("project.reference is required for %s", operation)
+		return "", fmt.Errorf("workspace.reference is required for %s", operation)
 	}
-	return resolveProjectReference(service, payload.Reference)
+	return resolveWorkspaceReference(service, payload.Reference)
 }
 
-func applyProjectsOpen(command *cobra.Command, options Options, request applyRequest) error {
-	var payload projectOpenRequest
-	if err := decodeApplyPayload("projects.open", "project", request.Project, &payload); err != nil {
+func applyWorkspacesOpen(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceOpenRequest
+	if err := decodeApplyPayload("workspaces.open", "workspace", request.Workspace, &payload); err != nil {
 		return err
 	}
 	if payload.Reference == "" {
-		return fmt.Errorf("project.reference is required for projects.open")
+		return fmt.Errorf("workspace.reference is required for workspaces.open")
 	}
 	if payload.NoAttach != nil && !*payload.NoAttach {
-		return fmt.Errorf("apply never attaches a tmux client; project.noAttach must be true or absent")
+		return fmt.Errorf("apply never attaches a tmux client; workspace.noAttach must be true or absent")
 	}
-	service := options.projectService()
-	reference, err := resolveProjectReference(service, payload.Reference)
+	service := options.workspaceService()
+	reference, err := resolveWorkspaceReference(service, payload.Reference)
 	if err != nil {
 		return err
 	}
-	_, err = openProjectSession(command, service, reference)
+	_, err = openWorkspaceSession(command, service, reference)
 	return err
 }
 
-func applyProjectsSetupRetry(command *cobra.Command, options Options, request applyRequest) error {
-	service := options.projectService()
-	reference, err := resolveApplyProjectReference("projects.setup.retry", request.Project, service)
+func applyWorkspacesSetupRetry(command *cobra.Command, options Options, request applyRequest) error {
+	service := options.workspaceService()
+	reference, err := resolveApplyWorkspaceReference("workspaces.setup.retry", request.Workspace, service)
 	if err != nil {
 		return err
 	}
-	return retryProjectSetup(command, service, reference)
+	return retryWorkspaceSetup(command, service, reference)
 }
 
-func applyProjectsArchive(command *cobra.Command, options Options, request applyRequest) error {
-	service := options.projectService()
-	reference, err := resolveApplyProjectReference("projects.archive", request.Project, service)
+func applyWorkspacesArchive(command *cobra.Command, options Options, request applyRequest) error {
+	service := options.workspaceService()
+	reference, err := resolveApplyWorkspaceReference("workspaces.archive", request.Workspace, service)
 	if err != nil {
 		return err
 	}
-	return archiveProjectRecord(command, service, reference)
+	return archiveWorkspaceRecord(command, service, reference)
 }
 
-func applyProjectsRemove(command *cobra.Command, options Options, request applyRequest) error {
-	var payload projectRemoveRequest
-	if err := decodeApplyPayload("projects.remove", "project", request.Project, &payload); err != nil {
+func applyWorkspacesRemove(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceRemoveRequest
+	if err := decodeApplyPayload("workspaces.remove", "workspace", request.Workspace, &payload); err != nil {
 		return err
 	}
 	if payload.Reference == "" {
-		return fmt.Errorf("project.reference is required for projects.remove")
+		return fmt.Errorf("workspace.reference is required for workspaces.remove")
 	}
-	service := options.projectService()
-	reference, err := resolveProjectReference(service, payload.Reference)
+	service := options.workspaceService()
+	reference, err := resolveWorkspaceReference(service, payload.Reference)
 	if err != nil {
 		return err
 	}
-	return runProjectRemoval(command, service, reference, payload.Apply, projectservice.RemovalOptions{AllowUnpublished: payload.Force})
+	return runWorkspaceRemoval(command, service, reference, payload.Apply, workspaceservice.RemovalOptions{AllowUnpublished: payload.Force})
 }
 
 func applyAgentsRegister(command *cobra.Command, options Options, request applyRequest) error {
@@ -568,15 +574,15 @@ func applyAgentsRegister(command *cobra.Command, options Options, request applyR
 	if payload.Pane == currentPaneReference {
 		return fmt.Errorf("apply cannot use the pane value %q, because it needs the tmux pane of a terminal; set agent.pane to a tmux pane ID", currentPaneReference)
 	}
-	project, err := resolveProject(options.projectService(), payload.Project)
+	workspace, err := resolveWorkspace(options.workspaceService(), payload.Workspace)
 	if err != nil {
 		return err
 	}
-	return registerAgent(command, options.agentService(), project, payload.Provider, payload.Label, payload.Pane, payload.ProviderSessionID, payload.ResumeCommand)
+	return registerAgent(command, options.agentService(), workspace, payload.Provider, payload.Label, payload.Pane, payload.ProviderSessionID, payload.ResumeCommand)
 }
 
 // decodeAgentReferencePayload decodes one payload that only names an Agent
-// Session of a Project.
+// Session of a Workspace.
 func decodeAgentReferencePayload(operation string, raw json.RawMessage) (agentReferenceRequest, error) {
 	var payload agentReferenceRequest
 	if err := decodeApplyPayload(operation, "agent", raw, &payload); err != nil {
@@ -596,11 +602,11 @@ func applyAgentsSend(command *cobra.Command, options Options, request applyReque
 	if payload.Reference == "" || payload.Text == "" {
 		return fmt.Errorf("agent.reference and agent.text are required for agents.send")
 	}
-	project, err := resolveProject(options.projectService(), applyProjectReference(payload.Project))
+	workspace, err := resolveWorkspace(options.workspaceService(), applyWorkspaceReference(payload.Workspace))
 	if err != nil {
 		return err
 	}
-	return sendAgentFeedback(command, options.agentService(), project, options.StateDir, payload.Reference, payload.Text)
+	return sendAgentFeedback(command, options.agentService(), workspace, options.StateDir, payload.Reference, payload.Text)
 }
 
 func applyAgentsResume(command *cobra.Command, options Options, request applyRequest) error {
@@ -608,7 +614,7 @@ func applyAgentsResume(command *cobra.Command, options Options, request applyReq
 	if err != nil {
 		return err
 	}
-	return resumeAgentSession(command, options.agentService(), options.projectService(), options.StateDir, payload.Reference, strings.TrimSpace(payload.Project))
+	return resumeAgentSession(command, options.agentService(), options.workspaceService(), options.StateDir, payload.Reference, strings.TrimSpace(payload.Workspace))
 }
 
 func applyAgentsRemove(command *cobra.Command, options Options, request applyRequest) error {
@@ -616,11 +622,11 @@ func applyAgentsRemove(command *cobra.Command, options Options, request applyReq
 	if err != nil {
 		return err
 	}
-	project, err := resolveProject(options.projectService(), applyProjectReference(payload.Project))
+	workspace, err := resolveWorkspace(options.workspaceService(), applyWorkspaceReference(payload.Workspace))
 	if err != nil {
 		return err
 	}
-	return removeAgentSession(command, options.agentService(), payload.Reference, project, options.StateDir)
+	return removeAgentSession(command, options.agentService(), payload.Reference, workspace, options.StateDir)
 }
 
 func applyAgentsTranscriptLink(command *cobra.Command, options Options, request applyRequest) error {
@@ -631,11 +637,11 @@ func applyAgentsTranscriptLink(command *cobra.Command, options Options, request 
 	if payload.Reference == "" || payload.Session == "" {
 		return fmt.Errorf("agent.reference and agent.session are required for agents.transcript.link")
 	}
-	project, err := resolveProject(options.projectService(), applyProjectReference(payload.Project))
+	workspace, err := resolveWorkspace(options.workspaceService(), applyWorkspaceReference(payload.Workspace))
 	if err != nil {
 		return err
 	}
-	return linkAgentTranscript(command, options.agentService(), project, options.StateDir, payload.Reference, payload.Session)
+	return linkAgentTranscript(command, options.agentService(), workspace, options.StateDir, payload.Reference, payload.Session)
 }
 
 func applyStorageClean(command *cobra.Command, options Options, request applyRequest) error {
@@ -688,7 +694,7 @@ func applyTicketsCreate(command *cobra.Command, options Options, request applyRe
 	return createTicket(command, service, ticketservice.CreateRequest{
 		Title:    payload.Title,
 		Slug:     payload.Slug,
-		Board:    payload.Board,
+		Project:  payload.Project,
 		Body:     payload.Body,
 		Status:   domain.TicketStatus(payload.Status),
 		Priority: priority,
@@ -710,11 +716,11 @@ func applyTicketsSet(command *cobra.Command, options Options, request applyReque
 	if payload.Priority != nil {
 		setRequest.Priority, setRequest.PrioritySet = *payload.Priority, true
 	}
-	if payload.Board != nil {
-		setRequest.Board, setRequest.BoardSet = *payload.Board, true
+	if payload.Project != nil {
+		setRequest.Project, setRequest.ProjectSet = *payload.Project, true
 	}
-	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.BoardSet {
-		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, or ticket.board")
+	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.ProjectSet {
+		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, or ticket.project")
 	}
 	service, err := options.ticketService()
 	if err != nil {
@@ -787,17 +793,17 @@ func applyTicketsComment(command *cobra.Command, options Options, request applyR
 	return commentTicket(command, service, payload.Reference, payload.Text)
 }
 
-func applyTicketsBoardsCreate(command *cobra.Command, options Options, request applyRequest) error {
-	var payload boardCreateApplyRequest
-	if err := decodeApplyPayload("tickets.boards.create", "board", request.Board, &payload); err != nil {
+func applyTicketsProjectsCreate(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectCreateApplyRequest
+	if err := decodeApplyPayload("projects.create", "project", request.Project, &payload); err != nil {
 		return err
 	}
 	if payload.Name == "" {
-		return fmt.Errorf("board.name is required for tickets.boards.create")
+		return fmt.Errorf("project.name is required for projects.create")
 	}
 	service, err := options.ticketService()
 	if err != nil {
 		return err
 	}
-	return createBoard(command, service, payload.Name)
+	return createProject(command, service, payload.Name)
 }

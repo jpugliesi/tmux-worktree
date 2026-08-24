@@ -133,6 +133,20 @@ func findMapValue(mapping *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+// deleteMapKey removes one known legacy key and its value. Other mapping
+// nodes, styles, and comments stay unchanged.
+func deleteMapKey(mapping *yaml.Node, key string) {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return
+		}
+	}
+}
+
 // mapValueForUpdate returns the value node of key and appends a new pair when
 // the key is absent. It keeps the key node and its comments in place.
 func mapValueForUpdate(mapping *yaml.Node, key string) *yaml.Node {

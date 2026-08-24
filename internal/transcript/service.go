@@ -15,7 +15,7 @@ type Service struct {
 	stateDir string
 }
 
-// Transcript is one provider transcript that twt read for a Project.
+// Transcript is one provider transcript that twt read for a Workspace.
 type Transcript struct {
 	Provider       string
 	SessionID      string
@@ -36,63 +36,63 @@ type event struct {
 
 func New(home, stateDir string) *Service { return &Service{home: home, stateDir: stateDir} }
 
-// NotInProjectError reports that an Agent Session does not belong to the
-// given Project. Every call path returns this one code and message.
-func NotInProjectError(agentID, projectRef string) error {
-	return clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Project %q", agentID, projectRef)
+// NotInWorkspaceError reports that an Agent Session does not belong to the
+// given Workspace. Every call path returns this one code and message.
+func NotInWorkspaceError(agentID, workspaceRef string) error {
+	return clierr.New(clierr.PreconditionFailed, "Agent Session %q does not belong to Workspace %q", agentID, workspaceRef)
 }
 
-func (s *Service) Read(provider, sessionID string, project domain.Project) (Transcript, error) {
+func (s *Service) Read(provider, sessionID string, workspace domain.Workspace) (Transcript, error) {
 	if err := ValidateSessionID(sessionID); err != nil {
 		return Transcript{}, err
 	}
 	if descriptor, ok := providers[provider]; ok {
-		return descriptor.read(s, sessionID, project)
+		return descriptor.read(s, sessionID, workspace)
 	}
 	if provider == "cursor" {
-		return Transcript{}, clierr.New(clierr.InvalidUsage, "Cursor transcripts cannot verify an exact Project directory")
+		return Transcript{}, clierr.New(clierr.InvalidUsage, "Cursor transcripts cannot verify an exact Workspace directory")
 	}
 	return Transcript{}, clierr.New(clierr.InvalidUsage, "provider %q does not support transcripts", provider)
 }
 
-func (s *Service) ReadLinked(agent domain.AgentSession, project domain.Project) (Transcript, error) {
-	agent, err := s.LinkedAgent(agent, project)
+func (s *Service) ReadLinked(agent domain.AgentSession, workspace domain.Workspace) (Transcript, error) {
+	agent, err := s.LinkedAgent(agent, workspace)
 	if err != nil {
 		return Transcript{}, err
 	}
-	return s.Read(agent.Provider, agent.ProviderSessionID, project)
+	return s.Read(agent.Provider, agent.ProviderSessionID, workspace)
 }
 
 // LinkedAgent returns the Agent Session with a provider session ID. When the
-// record has no link, twt discovers the provider sessions of the Project. It
+// record has no link, twt discovers the provider sessions of the Workspace. It
 // saves the link when exactly one new provider session matches.
-func (s *Service) LinkedAgent(agent domain.AgentSession, project domain.Project) (domain.AgentSession, error) {
-	if agent.ProjectID != project.ID {
-		return domain.AgentSession{}, NotInProjectError(agent.ID, project.Name)
+func (s *Service) LinkedAgent(agent domain.AgentSession, workspace domain.Workspace) (domain.AgentSession, error) {
+	if agent.WorkspaceID != workspace.ID {
+		return domain.AgentSession{}, NotInWorkspaceError(agent.ID, workspace.Name)
 	}
 	if agent.ProviderSessionID != "" {
 		return agent, nil
 	}
 	if !SupportsProvider(agent.Provider) {
-		return domain.AgentSession{}, notLinkedError(agent, project)
+		return domain.AgentSession{}, notLinkedError(agent, workspace)
 	}
-	agents, err := store.NewAgentStore(s.stateDir).List(project.ID)
+	agents, err := store.NewAgentStore(s.stateDir).List(workspace.ID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	found, err := s.Discover(project, DiscoverOptions{Provider: agent.Provider, Linked: agents, Since: agent.CreatedAt})
+	found, err := s.Discover(workspace, DiscoverOptions{Provider: agent.Provider, Linked: agents, Since: agent.CreatedAt})
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	switch len(found) {
 	case 0:
-		return domain.AgentSession{}, notLinkedError(agent, project)
+		return domain.AgentSession{}, notLinkedError(agent, workspace)
 	case 1:
-		return s.saveLink(agent, project, found[0].SessionID)
+		return s.saveLink(agent, workspace, found[0].SessionID)
 	default:
 		return domain.AgentSession{}, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "Agent Session %q matches %d provider sessions: %s", agent.ID, len(found), strings.Join(sessionIDs(found), ", ")),
-			"Run 'twt agents transcript link %s --project %s --session SESSION_ID' to select one.", agent.ID, project.ID,
+			"Run 'twt agents transcript link %s --workspace %s --session SESSION_ID' to select one.", agent.ID, workspace.ID,
 		)
 	}
 }
@@ -100,13 +100,13 @@ func (s *Service) LinkedAgent(agent domain.AgentSession, project domain.Project)
 // saveLink writes the discovered provider session ID. It reads the record
 // again inside the mutation lock, because another twt process can change or
 // delete the record while twt reads the provider files.
-func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, providerSessionID string) (domain.AgentSession, error) {
+func (s *Service) saveLink(agent domain.AgentSession, workspace domain.Workspace, providerSessionID string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLockBlocking(s.stateDir)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	defer lock.Release()
-	if _, err := store.NewProjectStore(s.stateDir).Find(project.ID); err != nil {
+	if _, err := store.NewWorkspaceStore(s.stateDir).Find(workspace.ID); err != nil {
 		return domain.AgentSession{}, err
 	}
 	agents := store.NewAgentStore(s.stateDir)
@@ -114,13 +114,13 @@ func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, pr
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	if current.ProjectID != agent.ProjectID || current.Provider != agent.Provider {
+	if current.WorkspaceID != agent.WorkspaceID || current.Provider != agent.Provider {
 		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt read its provider sessions", agent.ID)
 	}
 	if current.ProviderSessionID != "" {
 		return current, nil
 	}
-	linked, err := agents.List(project.ID)
+	linked, err := agents.List(workspace.ID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
@@ -137,10 +137,10 @@ func (s *Service) saveLink(agent domain.AgentSession, project domain.Project, pr
 	return current, nil
 }
 
-func notLinkedError(agent domain.AgentSession, project domain.Project) error {
+func notLinkedError(agent domain.AgentSession, workspace domain.Workspace) error {
 	return clierr.WithHint(
 		clierr.New(clierr.PreconditionFailed, "Agent Session %q has no linked provider session ID", agent.ID),
-		"Run 'twt agents discover --project %s' to find sessions.", project.ID,
+		"Run 'twt agents discover --workspace %s' to find sessions.", workspace.ID,
 	)
 }
 
@@ -154,7 +154,7 @@ func sessionIDs(sessions []DiscoveredSession) []string {
 
 // SnapshotResult gives the transcript, its Agent Session, and the files that
 // twt wrote. Path is the private file of the Agent Session. LatestPath is a
-// plain copy of this most recent Project snapshot. Both paths are empty when
+// plain copy of this most recent Workspace snapshot. Both paths are empty when
 // twt does not save.
 type SnapshotResult struct {
 	Transcript Transcript
@@ -163,8 +163,8 @@ type SnapshotResult struct {
 	LatestPath string
 }
 
-func (s *Service) Snapshot(agentReference, projectID string, save bool) (SnapshotResult, error) {
-	project, err := store.NewProjectStore(s.stateDir).Find(projectID)
+func (s *Service) Snapshot(agentReference, workspaceID string, save bool) (SnapshotResult, error) {
+	workspace, err := store.NewWorkspaceStore(s.stateDir).Find(workspaceID)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
@@ -172,11 +172,11 @@ func (s *Service) Snapshot(agentReference, projectID string, save bool) (Snapsho
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	agent, err = s.LinkedAgent(agent, project)
+	agent, err = s.LinkedAgent(agent, workspace)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	value, err := s.Read(agent.Provider, agent.ProviderSessionID, project)
+	value, err := s.Read(agent.Provider, agent.ProviderSessionID, workspace)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
@@ -188,19 +188,19 @@ func (s *Service) Snapshot(agentReference, projectID string, save bool) (Snapsho
 		return SnapshotResult{}, err
 	}
 	defer lock.Release()
-	if _, err := store.NewProjectStore(s.stateDir).Find(project.ID); err != nil {
+	if _, err := store.NewWorkspaceStore(s.stateDir).Find(workspace.ID); err != nil {
 		return SnapshotResult{}, err
 	}
 	currentAgent, err := store.NewAgentStore(s.stateDir).Find(agent.ID)
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	if currentAgent.ProjectID != agent.ProjectID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
+	if currentAgent.WorkspaceID != agent.WorkspaceID || currentAgent.Provider != agent.Provider || currentAgent.ProviderSessionID != agent.ProviderSessionID {
 		return SnapshotResult{}, clierr.New(clierr.PreconditionFailed, "Agent Session %q changed while twt read its transcript", agent.ID)
 	}
 	// A snapshot file goes into a person or agent context, so it holds the
 	// same sanitized text as the command output.
-	paths, err := store.NewSnapshotStore(s.stateDir).Save(project.ID, agent.ID, sanitizeUntrusted(value.Markdown))
+	paths, err := store.NewSnapshotStore(s.stateDir).Save(workspace.ID, agent.ID, sanitizeUntrusted(value.Markdown))
 	if err != nil {
 		return SnapshotResult{}, err
 	}

@@ -12,7 +12,7 @@ func (s *Service) codexRoot() string { return filepath.Join(s.home, ".codex", "s
 
 // discoverCodex reads the session ID and the repository name of one Codex
 // provider file for discovery.
-func discoverCodex(path string, project domain.Project) (string, string, bool) {
+func discoverCodex(path string, workspace domain.Workspace) (string, string, bool) {
 	id, cwd := "", ""
 	err := scanJSONLines(path, maxDiscoverScanBytes, func(line map[string]any) bool {
 		if stringValue(line["type"]) != "session_meta" {
@@ -26,10 +26,10 @@ func discoverCodex(path string, project domain.Project) (string, string, bool) {
 	if err != nil || ValidateSessionID(id) != nil {
 		return "", "", false
 	}
-	return id, repositoryForDirectory(project, cwd), true
+	return id, repositoryForDirectory(workspace, cwd), true
 }
 
-func (s *Service) readCodex(sessionID string, project domain.Project) (Transcript, error) {
+func (s *Service) readCodex(sessionID string, workspace domain.Workspace) (Transcript, error) {
 	paths, err := matchingFiles(s.codexRoot(), sessionID, func(name string) bool { return strings.HasSuffix(name, sessionID) })
 	if err != nil {
 		return Transcript{}, err
@@ -46,9 +46,9 @@ func (s *Service) readCodex(sessionID string, project domain.Project) (Transcrip
 		if id != sessionID {
 			continue
 		}
-		repositoryName := repositoryForDirectory(project, cwd)
+		repositoryName := repositoryForDirectory(workspace, cwd)
 		if repositoryName == "" {
-			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Codex transcript %q does not belong to Project %q", sessionID, project.Name)
+			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Codex transcript %q does not belong to Workspace %q", sessionID, workspace.Name)
 		}
 		return makeTranscript("codex", sessionID, repositoryName, info.ModTime(), codexEvents(lines))
 	}

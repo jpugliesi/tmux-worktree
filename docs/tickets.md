@@ -16,23 +16,22 @@ The tracker is local. It is not Linear, GitHub Issues, or Origin issues.
 
 ## Language
 
-Keep the existing twt **Project**. Do not rename it to workspace in this
-slice. A Project is a live work environment. A ticket folder is a durable
-backlog group. Those objects have different lifetimes. One Board can feed
-many Projects over time.
+A **Workspace** is a temporary live work environment. A **Project** is a
+durable backlog group. These objects have different lifetimes. One Project
+can feed many Workspaces over time.
 
 | Term | Meaning | Avoid |
 |---|---|---|
 | **Tickets home** | Configured root directory of ticket Markdown files. Default personal value: `~/Vaults/spacexai/tickets/`. | Vault, issues dir |
-| **Board** | One directory under Tickets home, with `index.md`. Groups tickets. Outlives any checkout. | Project, workspace, epic folder |
+| **Project** | One directory under Tickets home, with `index.md`. Groups tickets. Outlives any checkout. | Board, workspace, epic folder |
 | **Ticket** | One Markdown file with YAML frontmatter. | Issue, task file, combined tickets note |
-| **Topic note** | An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`. Not a Board. | Project |
+| **Topic note** | An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`. Not a Project. | Board |
 
-Do not put `project:` in ticket frontmatter. Use `board:` for the folder.
+Do not put `workspace:` in ticket frontmatter. Use `project:` for the folder.
 Link Topic notes in the ticket body.
 
-Do not merge Ticket objects with Project objects in v1. A Ticket does not
-require a live Project. You can file work before any worktree exists.
+Do not merge Ticket objects with Workspace objects in v1. A Ticket does not
+require a live Workspace. You can file work before any worktree exists.
 
 ## File layout
 
@@ -44,7 +43,7 @@ $TICKETS_HOME/
   templates/ticket.md      # create template, scaffold once
   some-ticket.md           # ungrouped ticket
   change-monitor/
-    index.md               # board hub, scaffold once
+    index.md               # project hub, scaffold once
     some-ticket.md
 ```
 
@@ -55,7 +54,7 @@ Rules:
   `reconnect-change-monitor-vfs-tools.md`.
 - A slug is unique across the whole Tickets home, so `[[some-ticket]]` is
   unambiguous in Obsidian.
-- A Board is one directory segment. No nested Boards in v1.
+- A Project is one directory segment. No nested Projects in v1.
 - `index.md` and files under `templates/` are not Tickets.
 - Closed Tickets stay in place so wiki-links stay stable.
 - Existing files such as `tkt-cm-001.md` stay valid. The resolver accepts any
@@ -65,7 +64,7 @@ Rules:
 `index.md` and `templates/ticket.md` only when those files are missing. It
 does not overwrite notes.
 
-`twt tickets boards create NAME` creates the Board directory and writes
+`twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing.
 
 Do not rewrite Bases queries on each ticket write. Obsidian Bases owns the
@@ -76,7 +75,7 @@ view. The CLI scaffolds the hub once.
 Recent, Ready, Blocked, Claimed. Filter to Markdown files under Tickets home.
 Exclude `index.md` and `templates/`.
 
-### Board `index.md` views
+### Project `index.md` views
 
 The same views, filtered with `file.folder == this.file.folder`.
 
@@ -96,7 +95,7 @@ tags:
   - tickets
 status: needs-triage
 priority: 2
-board: change-monitor
+project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
@@ -105,7 +104,7 @@ updated: 2026-08-20
 ---
 ```
 
-Ungrouped tickets omit `board` or leave it empty.
+Ungrouped tickets omit `project` or leave it empty.
 
 `blocked_by` holds wiki-links, for example `["[[some-ticket]]"]`. Body links
 use the same form. Do not write a bare slug in prose.
@@ -122,7 +121,7 @@ Statuses:
 - `wontfix`
 - `done` (shipped work. Extra value. Not a triage role.)
 
-Not in v1: `parent`, `type`, `category`, `twtProjectId`, sequential IDs
+Not in v1: `parent`, `type`, `category`, `twtWorkspaceId`, sequential IDs
 such as `tkt-cm-001`.
 
 ### Body
@@ -169,21 +168,21 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 ```
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--board BOARD] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
-twt tickets list [--board BOARD] [--status STATUS] [--ready] [--limit N]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
+twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
-twt tickets set TICKET [--status STATUS] [--priority N] [--board BOARD]
+twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT]
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets comment TICKET --stdin
-twt tickets boards create NAME
-twt tickets boards list [--limit N]
-twt tickets boards show NAME
+twt projects create NAME
+twt projects list [--limit N]
+twt projects show NAME
 ```
 
 Register the group under Workflows in `internal/cli/root.go`. Declare
-`setArguments` for every placeholder. Complete Board names and Ticket slugs
+`setArguments` for every placeholder. Complete Project names and Ticket slugs
 from the store.
 
 `twt tickets home` opens the Tickets home directory in `$VISUAL` or
@@ -204,24 +203,24 @@ An ambiguous prefix is `invalid_usage`. Put the candidate slugs in `hint`.
 
 | Input | Behavior |
 |---|---|
-| No args, stdout is a TTY, stdin is a TTY | Ask `Title: `. Then pick a Board with fzf when `fzf` is installed, or a numbered list. The first row is `(none)` for an ungrouped Ticket. A typed name that is not a Board asks `Board "NAME" does not exist. Create it? [Y/n]`. Enter means yes. Then open `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. An empty title or an empty save is `invalid_usage`. `--title` skips the title prompt. `--board` skips the picker. |
+| No args, stdout is a TTY, stdin is a TTY | Ask `Title: `. Then pick a Project with fzf when `fzf` is installed, or a numbered list. The first row is `(none)` for an ungrouped Ticket. A typed name that is not a Project asks `Project "NAME" does not exist. Create it? [Y/n]`. Enter means yes. Then open `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. An empty title or an empty save is `invalid_usage`. `--title` skips the title prompt. `--project` skips the picker. |
 | No args, not a TTY | Exit 2. Hint: pass DESCRIPTION, `--title`, or `--stdin`. |
 | DESCRIPTION args | Join as the body. Derive `title` from the first line if `--title` is absent. Derive the slug from the title. Never open the wizard, even on a TTY. |
 | `--stdin` | Read the body from stdin. Require `--title`. Never open the wizard. |
 
 Default status is `needs-triage`. `--status ready-for-agent` is allowed.
 `--dry-run` prints the file that would be written and does not write it.
-When the wizard would create a Board, text dry-run prints that Board first,
+When the wizard would create a Project, text dry-run prints that Project first,
 then the Ticket file. JSON dry-run stays one `tickets.create` envelope.
 
 Slug rule: lowercase, hyphenate, strip characters that are not ASCII letters
 or digits, cap at 60 characters. If the slug exists anywhere under Tickets
 home, return `already_exists` and hint `--slug`.
 
-If `--board` names a missing Board, return `not_found` and hint
-`twt tickets boards create NAME`. `--board` never creates a Board. The
-interactive picker may create a Board after confirm. Apply `tickets.create`
-still requires an existing Board.
+If `--project` names a missing Project, return `not_found` and hint
+`twt projects create NAME`. `--project` never creates a Project. The
+interactive picker may create a Project after confirm. Apply `tickets.create`
+still requires an existing Project.
 
 ### `tickets list --ready`
 
@@ -298,7 +297,7 @@ Add:
 - `tickets.claim`
 - `tickets.unclaim`
 - `tickets.comment`
-- `tickets.boards.create`
+- `projects.create`
 
 `twt schema` must list every new command and these operations. Update
 `TestSchemaDescribesCommandsFlagsAndRawApplyOperations`. That test currently
@@ -310,13 +309,13 @@ TTY path, so it has no OS-username default.
 ### JSON envelopes
 
 ```json
-{"schemaVersion":1,"ticket":{...}}
-{"schemaVersion":1,"tickets":[...],"totalCount":0,"truncated":false}
-{"schemaVersion":1,"board":{...}}
-{"schemaVersion":1,"boards":[...],"totalCount":0,"truncated":false}
+{"schemaVersion":2,"ticket":{...}}
+{"schemaVersion":2,"tickets":[...],"totalCount":0,"truncated":false}
+{"schemaVersion":2,"project":{...}}
+{"schemaVersion":2,"projects":[...],"totalCount":0,"truncated":false}
 ```
 
-A ticket object includes `slug`, `title`, `status`, `priority`, `board`,
+A ticket object includes `slug`, `title`, `status`, `priority`, `project`,
 `path`, `claimedBy`, `blockedBy`, `created`, `updated`. `show` also includes
 `body`.
 
@@ -334,7 +333,7 @@ ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
 ```
 
 `TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
-and more than one document, matching Project Template loading.
+and more than one document, matching Workspace Template loading.
 
 `twt config` shows the resolved Tickets home and its source. `twt doctor`
 reports whether Tickets home is set, exists, and is writable.
@@ -364,7 +363,7 @@ Skill rules:
 4. Pass `--dry-run` before every mutation.
 5. Pass `--limit` on list commands.
 6. Create with a DESCRIPTION or `--stdin`. Do not rely on `$EDITOR`.
-   `--board` does not create a Board.
+   `--project` does not create a Project.
 7. Claim before work with `--as NAME`. Resolve with `set --status done`
    and `unclaim --as NAME`.
 8. Link tickets with `[[slug]]`.
@@ -373,7 +372,7 @@ Skill rules:
 Description trigger (keep third person):
 
 > Manage personal Markdown tickets through `twt tickets`. Use when creating,
-> listing, claiming, or updating tickets, boards, or a tickets home in an
+> listing, claiming, or updating tickets, projects, or a tickets home in an
 > Obsidian vault.
 
 This workflow is the tracker. Do not create Linear, GitHub, or Origin issues
@@ -384,10 +383,10 @@ follow-up rewrites that file so publish and fetch go through `twt tickets`.
 
 ## Later work (not this slice)
 
-- `twt tickets claim TICKET --project current` stamps `twtProjectId`
+- `twt tickets claim TICKET --workspace current` stamps `twtWorkspaceId`
 - `twt context` lists `--ready` tickets
-- `twt projects create` takes `--ticket TICKET` and copies the title
-- Nested Boards
+- `twt workspaces create` takes `--ticket TICKET` and copies the title
+- Nested Projects
 - Field masks on `tickets show`
 
 ## Implementation
@@ -395,14 +394,14 @@ follow-up rewrites that file so publish and fetch go through `twt tickets`.
 Work in this repository. Follow existing packages, tests, and
 [agent-dx.md](agent-dx.md).
 
-1. Add Board, Ticket, and Tickets home to `CONTEXT.md`. Avoid calling a Board
-   a Project. Avoid calling a Project a workspace in new text.
+1. Add Project, Ticket, and Tickets home to `CONTEXT.md`. Keep Project and
+   Workspace as separate terms.
 2. Add `internal/domain/ticket.go` with status constants and structs.
 3. Load `config.yaml` plus `TWT_TICKETS_HOME`.
 4. Add `internal/ticket/service.go`. Walk Tickets home. Parse YAML
-   frontmatter. Create Boards and Tickets. Claim and comment. Atomic writes
+   frontmatter. Create Projects and Tickets. Claim and comment. Atomic writes
    via `store.WriteFileAtomic`. State-dir lock for claim.
-5. Add `internal/cli/tickets.go`. Wire dry-run and JSON like `projects`.
+5. Add `internal/cli/tickets.go`. Wire dry-run and JSON like `workspaces`.
 6. Extend `applyRequest` and `applyOperations()`.
 7. Embed the `index.md` Bases block and `templates/ticket.md`.
 8. Isolate `$EDITOR` behind `openEditor`. Tests inject a fake editor. The
@@ -411,13 +410,13 @@ Work in this repository. Follow existing packages, tests, and
    three-path user install.
 10. Tests listed below.
 
-Do not edit everysphere. Do not rename `projects` commands. Do not add MCP.
+Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 
 ### Tests
 
 - Create writes one Obsidian-valid note
 - Duplicate slug returns `already_exists`
-- Missing Board returns `not_found`
+- Missing Project returns `not_found`
 - Create with no args in a non-TTY returns `invalid_usage`
 - Claim by a second claimant returns `locked`
 - Non-TTY claim without `--as` or `TWT_CLAIMANT` returns `invalid_usage`
@@ -432,10 +431,10 @@ Do not edit everysphere. Do not rename `projects` commands. Do not add MCP.
 
 ### Success criteria
 
-- `twt tickets create "fix the vfs tools" --board change-monitor --output json`
+- `twt tickets create "fix the vfs tools" --project change-monitor --output json`
   writes one Obsidian-valid note under the configured home.
 - `twt tickets create` with no args in a terminal asks for a title and a
-  Board, then opens the editor on an empty description. The same command in
+  Project, then opens the editor on an empty description. The same command in
   a pipe exits 2 with a hint.
 - `twt tickets list --ready --output json` returns only unblocked,
   unclaimed, `ready-for-agent` tickets.

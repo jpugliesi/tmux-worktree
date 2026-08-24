@@ -50,7 +50,7 @@ local specs = {
   {
     cmd = "TwtNotes",
     lhs = { "<leader>al", "<leader>arl" },
-    desc = "List the twt review notes of this Project",
+    desc = "List the twt review notes of this Workspace",
     fn = function(done) M.review.prompt_notes(done) end,
   },
   {
@@ -82,7 +82,7 @@ local specs = {
     cmd = "TwtClear",
     lhs = "<leader>arx",
     desc = "Clear twt review notes",
-    ok = "Project review notes cleared",
+    ok = "Workspace review notes cleared",
     fn = function(done) M.review.clear_current(done) end,
   },
 }
@@ -112,7 +112,7 @@ function M.setup(options)
   vim.api.nvim_create_autocmd({ "FocusGained", "CursorHold" }, {
     group = group,
     callback = function(event)
-      if vim.b[event.buf][buffers.project_id] then
+      if vim.b[event.buf][buffers.workspace_id] then
         pcall(vim.cmd, "checktime " .. event.buf)
       end
     end,

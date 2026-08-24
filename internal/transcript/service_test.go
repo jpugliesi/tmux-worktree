@@ -12,13 +12,13 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
-func TestReadReturnsLinkedProviderTranscriptInsideProject(t *testing.T) {
+func TestReadReturnsLinkedProviderTranscriptInsideWorkspace(t *testing.T) {
 	home := t.TempDir()
 	repository := filepath.Join(t.TempDir(), "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
+	workspace := domain.Workspace{ID: "workspace-1", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}}
 
 	tests := []struct {
 		provider string
@@ -48,7 +48,7 @@ func TestReadReturnsLinkedProviderTranscriptInsideProject(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.provider, func(t *testing.T) {
 			writeLines(t, test.path, test.lines)
-			got, err := transcript.New(home, "").Read(test.provider, test.session, project)
+			got, err := transcript.New(home, "").Read(test.provider, test.session, workspace)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -69,13 +69,13 @@ func TestReadFindsClaudeTranscriptLaunchedFromRepositorySubdirectory(t *testing.
 	if err := os.MkdirAll(subdirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
+	workspace := domain.Workspace{ID: "workspace-1", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}}
 	path := filepath.Join(home, ".claude", "projects", "-Users-alex-code-app-internal-cli", "claude-subdir-session.jsonl")
 	writeLines(t, path, []string{
 		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"user","message":{"role":"user","content":"Claude question"}}`,
 		`{"sessionId":"claude-subdir-session","cwd":` + quoted(subdirectory) + `,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Claude answer"}]}}`,
 	})
-	got, err := transcript.New(home, "").Read("claude", "claude-subdir-session", project)
+	got, err := transcript.New(home, "").Read("claude", "claude-subdir-session", workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,28 +97,28 @@ func TestReadRejectsClaudePathEncodingCollisionAndUnverifiableCursorTranscript(t
 	writeLines(t, path, []string{
 		`{"sessionId":"shared-session","cwd":` + quoted(firstRepository) + `,"type":"user","message":{"role":"user","content":"private"}}`,
 	})
-	secondProject := domain.Project{ID: "project-two", Name: "project-two", Repositories: []domain.ProjectRepository{{Name: "app", Path: secondRepository}}}
-	if _, err := transcript.New(home, "").Read("claude", "shared-session", secondProject); err == nil || !strings.Contains(err.Error(), "does not belong") {
+	secondWorkspace := domain.Workspace{ID: "workspace-two", Name: "workspace-two", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: secondRepository}}}
+	if _, err := transcript.New(home, "").Read("claude", "shared-session", secondWorkspace); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("Claude collision error = %v", err)
 	}
-	if _, err := transcript.New(home, "").Read("cursor", "cursor-session", secondProject); err == nil || !strings.Contains(err.Error(), "cannot verify") {
+	if _, err := transcript.New(home, "").Read("cursor", "cursor-session", secondWorkspace); err == nil || !strings.Contains(err.Error(), "cannot verify") {
 		t.Fatalf("Cursor ownership error = %v", err)
 	}
 }
 
-func TestReadRejectsCodexTranscriptFromAnotherProject(t *testing.T) {
+func TestReadRejectsCodexTranscriptFromAnotherWorkspace(t *testing.T) {
 	home := t.TempDir()
 	repository := filepath.Join(t.TempDir(), "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "20", "rollout-wrong-project.jsonl")
+	path := filepath.Join(home, ".codex", "sessions", "2026", "08", "20", "rollout-wrong-workspace.jsonl")
 	writeLines(t, path, []string{
-		`{"type":"session_meta","payload":{"id":"wrong-project","cwd":"/different/project"}}`,
+		`{"type":"session_meta","payload":{"id":"wrong-workspace","cwd":"/different/workspace"}}`,
 		`{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"secret"}]}}`,
 	})
-	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
-	if _, err := transcript.New(home, "").Read("codex", "wrong-project", project); err == nil || !strings.Contains(err.Error(), "does not belong") {
+	workspace := domain.Workspace{ID: "workspace-1", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}}
+	if _, err := transcript.New(home, "").Read("codex", "wrong-workspace", workspace); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("Read() error = %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	project := domain.Project{ID: "project-1", Name: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
+	workspace := domain.Workspace{ID: "workspace-1", Name: "workspace-1", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}}
 
 	codexPath := filepath.Join(home, ".codex", "sessions", "rollout-codex-mixed.jsonl")
 	writeLines(t, codexPath, []string{
@@ -140,7 +140,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 		`{"type":"session_meta","payload":{"id":"another-session","cwd":` + quoted(otherRepository) + `}}`,
 		`{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"private"}]}}`,
 	})
-	if _, err := transcript.New(home, "").Read("codex", "codex-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
+	if _, err := transcript.New(home, "").Read("codex", "codex-mixed", workspace); err == nil || !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("mixed Codex transcript error = %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestReadRejectsMixedSessionAndDirectoryRecords(t *testing.T) {
 		`{"sessionId":"claude-mixed","cwd":` + quoted(repository) + `,"type":"user","message":{"role":"user","content":"allowed"}}`,
 		`{"sessionId":"another-session","cwd":` + quoted(otherRepository) + `,"type":"assistant","message":{"role":"assistant","content":"private"}}`,
 	})
-	if _, err := transcript.New(home, "").Read("claude", "claude-mixed", project); err == nil || !strings.Contains(err.Error(), "conflicting") {
+	if _, err := transcript.New(home, "").Read("claude", "claude-mixed", workspace); err == nil || !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("mixed Claude transcript error = %v", err)
 	}
 }
@@ -160,9 +160,9 @@ func TestReadRejectsUnsafeTranscriptSourcesAndSessionIDs(t *testing.T) {
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{ID: "project-1", Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}}
+	workspace := domain.Workspace{ID: "workspace-1", Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}}
 	service := transcript.New(home, "")
-	if _, err := service.Read("codex", "../outside", project); err == nil || !strings.Contains(err.Error(), "invalid") {
+	if _, err := service.Read("codex", "../outside", workspace); err == nil || !strings.Contains(err.Error(), "invalid") {
 		t.Fatalf("traversal session ID error = %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestReadRejectsUnsafeTranscriptSourcesAndSessionIDs(t *testing.T) {
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Read("codex", "linked-session", project); err == nil || !strings.Contains(err.Error(), "does not exist") {
+	if _, err := service.Read("codex", "linked-session", workspace); err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("linked transcript error = %v", err)
 	}
 
@@ -186,32 +186,32 @@ func TestReadRejectsUnsafeTranscriptSourcesAndSessionIDs(t *testing.T) {
 	if err := os.Truncate(large, 33<<20); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Read("codex", "large-session", project); err == nil || !strings.Contains(err.Error(), "safe regular file") {
+	if _, err := service.Read("codex", "large-session", workspace); err == nil || !strings.Contains(err.Error(), "safe regular file") {
 		t.Fatalf("large transcript error = %v", err)
 	}
 }
 
-func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
+func TestSnapshotDoesNotCommitAfterConcurrentWorkspaceRemoval(t *testing.T) {
 	home := t.TempDir()
 	stateDir := t.TempDir()
 	repository := filepath.Join(t.TempDir(), "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-concurrent", Name: "concurrent",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}, CreatedAt: time.Now().UTC(),
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-concurrent", Name: "concurrent",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}, CreatedAt: time.Now().UTC(),
 	}
 	agent := domain.AgentSession{
-		Version: domain.AgentVersion, ID: "agent-concurrent", ProjectID: project.ID,
+		Version: domain.AgentVersion, ID: "agent-concurrent", WorkspaceID: workspace.ID,
 		Provider: "codex", ProviderSessionID: "session-concurrent", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	writeLines(t, filepath.Join(home, ".codex", "sessions", "rollout-session-concurrent.jsonl"), []string{
 		`{"type":"session_meta","payload":{"id":"session-concurrent","cwd":` + quoted(repository) + `}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"private"}]}}`,
 	})
-	projects := store.NewProjectStore(stateDir)
-	if err := projects.Save(project); err != nil {
+	workspaces := store.NewWorkspaceStore(stateDir)
+	if err := workspaces.Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
@@ -223,16 +223,16 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		_, err := transcript.New(home, stateDir).Snapshot(agent.ID, project.ID, true)
+		_, err := transcript.New(home, stateDir).Snapshot(agent.ID, workspace.ID, true)
 		result <- err
 	}()
 	select {
 	case err := <-result:
 		removalLock.Release()
-		t.Fatalf("snapshot returned while Project removal held the mutation lock: %v", err)
+		t.Fatalf("snapshot returned while Workspace removal held the mutation lock: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
-	if err := projects.Delete(project.ID); err != nil {
+	if err := workspaces.Delete(workspace.ID); err != nil {
 		removalLock.Release()
 		t.Fatal(err)
 	}
@@ -242,17 +242,17 @@ func TestSnapshotDoesNotCommitAfterConcurrentProjectRemoval(t *testing.T) {
 	select {
 	case err := <-result:
 		if err == nil || !strings.Contains(err.Error(), "does not exist") {
-			t.Fatalf("snapshot after Project removal error = %v", err)
+			t.Fatalf("snapshot after Workspace removal error = %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("snapshot did not finish after Project removal released the mutation lock")
+		t.Fatal("snapshot did not finish after Workspace removal released the mutation lock")
 	}
-	directory, err := store.NewSnapshotStore(stateDir).ProjectDir(project.ID)
+	directory, err := store.NewSnapshotStore(stateDir).WorkspaceDir(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {
-		t.Fatalf("snapshot was committed after Project removal: %v", err)
+		t.Fatalf("snapshot was committed after Workspace removal: %v", err)
 	}
 }
 
@@ -264,11 +264,11 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-two-agents", Name: "two-agents",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}}, CreatedAt: now, UpdatedAt: now,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-two-agents", Name: "two-agents",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}}, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	agents := store.NewAgentStore(stateDir)
@@ -282,7 +282,7 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 	}
 	for _, session := range sessions {
 		record := domain.AgentSession{
-			Version: domain.AgentVersion, ID: session.agentID, ProjectID: project.ID, Provider: "codex",
+			Version: domain.AgentVersion, ID: session.agentID, WorkspaceID: workspace.ID, Provider: "codex",
 			ProviderSessionID: session.sessionID, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := agents.Save(record); err != nil {
@@ -295,15 +295,15 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 	}
 
 	service := transcript.New(home, stateDir)
-	first, err := service.Snapshot(sessions[0].agentID, project.ID, true)
+	first, err := service.Snapshot(sessions[0].agentID, workspace.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Snapshot(sessions[1].agentID, project.ID, true)
+	second, err := service.Snapshot(sessions[1].agentID, workspace.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	directory, err := store.NewSnapshotStore(stateDir).ProjectDir(project.ID)
+	directory, err := store.NewSnapshotStore(stateDir).WorkspaceDir(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestSnapshotKeepsOneFilePerAgentSession(t *testing.T) {
 		t.Fatalf("latest Transcript Snapshot = %q", saved[second.LatestPath])
 	}
 
-	read, err := service.Snapshot(sessions[0].agentID, project.ID, false)
+	read, err := service.Snapshot(sessions[0].agentID, workspace.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

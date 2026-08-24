@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ func newStorageCommand(options Options) *cobra.Command {
 	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt storage"})
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "Show Project and repository storage use",
+		Short: "Show Workspace and repository storage use",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			result, err := service.StorageStatus()
@@ -44,8 +44,8 @@ func newStorageCommand(options Options) *cobra.Command {
 			return writeFields(command.OutOrStdout(), [][2]string{
 				{"Total", formatBytes(result.TotalBytes)},
 				{"Caches", fmt.Sprintf("%s (%d)", formatBytes(result.CacheBytes), result.CacheCount)},
-				{"Projects (active)", fmt.Sprintf("%s (%d)", formatBytes(result.ActiveProjectBytes), result.ActiveProjectCount)},
-				{"Projects (archived)", fmt.Sprintf("%s (%d)", formatBytes(result.ArchivedProjectBytes), result.ArchivedProjectCount)},
+				{"Workspaces (active)", fmt.Sprintf("%s (%d)", formatBytes(result.ActiveWorkspaceBytes), result.ActiveWorkspaceCount)},
+				{"Workspaces (archived)", fmt.Sprintf("%s (%d)", formatBytes(result.ArchivedWorkspaceBytes), result.ArchivedWorkspaceCount)},
 				{"Worktrees", fmt.Sprintf("%d", result.WorktreeCount)},
 				{"Prepared", prepared},
 				{"Snapshots", formatBytes(result.SnapshotBytes)},
@@ -58,9 +58,9 @@ func newStorageCommand(options Options) *cobra.Command {
 }
 
 type storageCleanupOutput struct {
-	SchemaVersion int                               `json:"schemaVersion"`
-	Applied       bool                              `json:"applied"`
-	Plan          projectservice.StorageCleanupPlan `json:"plan"`
+	SchemaVersion int                                 `json:"schemaVersion"`
+	Applied       bool                                `json:"applied"`
+	Plan          workspaceservice.StorageCleanupPlan `json:"plan"`
 }
 
 func newStorageCleanCommand(options Options) *cobra.Command {
@@ -84,7 +84,7 @@ func cleanStorage(command *cobra.Command, options Options, apply bool) error {
 	if err != nil {
 		return err
 	}
-	service := options.projectService()
+	service := options.workspaceService()
 	plan, err := service.StorageCleanupPlan(templates)
 	if err != nil {
 		return err
@@ -104,12 +104,12 @@ func cleanStorage(command *cobra.Command, options Options, apply bool) error {
 		return err
 	}
 	for _, item := range plan.Environments {
-		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Project Template %q (%s)\n", item.Reason, item.ID, item.TemplateName, formatBytes(item.Bytes)); err != nil {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for Workspace Template %q (%s)\n", item.Reason, item.ID, item.TemplateName, formatBytes(item.Bytes)); err != nil {
 			return err
 		}
 	}
 	for _, item := range plan.Snapshots {
-		target := item.ProjectID
+		target := item.WorkspaceID
 		if target == "" {
 			target = item.Root
 		}
@@ -118,7 +118,7 @@ func cleanStorage(command *cobra.Command, options Options, apply bool) error {
 		}
 	}
 	for _, item := range plan.Agents {
-		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for missing Project %q\n", item.Reason, item.ID, item.ProjectID); err != nil {
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "Remove %s %q for missing Workspace %q\n", item.Reason, item.ID, item.WorkspaceID); err != nil {
 			return err
 		}
 	}
@@ -130,17 +130,17 @@ func cleanStorage(command *cobra.Command, options Options, apply bool) error {
 	return err
 }
 
-// currentTemplateDigests reads the digests of the current Project Templates. A
-// Project Template that twt cannot load gives a warning, and twt keeps its
+// currentTemplateDigests reads the digests of the current Workspace Templates. A
+// Workspace Template that twt cannot load gives a warning, and twt keeps its
 // Prepared Environments.
-func currentTemplateDigests(command *cobra.Command, configDir string) (projectservice.TemplateDigests, error) {
+func currentTemplateDigests(command *cobra.Command, configDir string) (workspaceservice.TemplateDigests, error) {
 	catalog, warnings, err := store.LoadTemplateCatalog(configDir)
 	if err != nil {
-		return projectservice.TemplateDigests{}, err
+		return workspaceservice.TemplateDigests{}, err
 	}
 	for _, warning := range warnings {
 		if _, writeErr := fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", warning); writeErr != nil {
-			return projectservice.TemplateDigests{}, writeErr
+			return workspaceservice.TemplateDigests{}, writeErr
 		}
 	}
 	return catalog, nil

@@ -1,12 +1,48 @@
 package tmux
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
+
+func TestWorkspaceSessionAcceptsATrimmedCurrentOwnerRow(t *testing.T) {
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		if args[0] == "list-sessions" {
+			return "$1\tworkspace-one", nil
+		}
+		return "", nil
+	}}
+	sessionID, err := client.workspaceSession(domain.Workspace{ID: "workspace-one", Name: "one"})
+	if err != nil || sessionID != "$1" {
+		t.Fatalf("workspaceSession() = %q, %v", sessionID, err)
+	}
+}
+
+func TestPaneBelongsToWorkspaceAcceptsTheLegacyTmuxOption(t *testing.T) {
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		switch args[0] {
+		case "display-message":
+			return "$1", nil
+		case "show-options":
+			if args[len(args)-1] == "@twt_workspace_id" {
+				return "", errors.New("missing option")
+			}
+			if args[len(args)-1] == "@twt_project_id" {
+				return "workspace-one", nil
+			}
+		}
+		return "", nil
+	}}
+
+	if !client.PaneBelongsToWorkspace("%1", "workspace-one") {
+		t.Fatal("a pane with the legacy tmux option does not belong to its Workspace")
+	}
+}
 
 func TestSendPastesFeedbackBracketed(t *testing.T) {
 	var calls [][]string
@@ -19,15 +55,15 @@ func TestSendPastesFeedbackBracketed(t *testing.T) {
 			}
 			return "0\tclaude\tclaude --resume abc", nil
 		case "show-options":
-			if args[len(args)-1] == "@twt_project_id" {
-				return "project-1", nil
+			if args[len(args)-1] == "@twt_workspace_id" {
+				return "workspace-1", nil
 			}
 			return "agent-1", nil
 		}
 		return "", nil
 	}}
 
-	err := client.Send("%5", "project-1", "agent-1", "claude", "claude --resume abc", "line one\nline two")
+	err := client.Send("%5", "workspace-1", "agent-1", "claude", "claude --resume abc", "line one\nline two")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -73,8 +109,8 @@ func TestPaneLivenessIgnoresTheCurrentCommandOfThePane(t *testing.T) {
 				}
 				return paneDead + "\t" + current + "\t" + start, nil
 			case "show-options":
-				if args[len(args)-1] == "@twt_project_id" {
-					return "project-1", nil
+				if args[len(args)-1] == "@twt_workspace_id" {
+					return "workspace-1", nil
 				}
 				return agentOwner, nil
 			}
@@ -94,10 +130,10 @@ func TestPaneLivenessIgnoresTheCurrentCommandOfThePane(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if live := test.client.PaneBelongsToAgent("%5", "project-1", "agent-1", "claude", "claude --resume abc"); live != test.wantLive {
+			if live := test.client.PaneBelongsToAgent("%5", "workspace-1", "agent-1", "claude", "claude --resume abc"); live != test.wantLive {
 				t.Fatalf("PaneBelongsToAgent() = %v, want %v", live, test.wantLive)
 			}
-			checks := test.client.ExplainPane("%5", "project-1", "agent-1", "claude", "claude --resume abc")
+			checks := test.client.ExplainPane("%5", "workspace-1", "agent-1", "claude", "claude --resume abc")
 			if len(checks) != 5 {
 				t.Fatalf("ExplainPane() checks = %+v", checks)
 			}

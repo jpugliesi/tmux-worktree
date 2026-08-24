@@ -208,7 +208,7 @@ func TestLoadTemplateCatalogWarnsAboutUnreadableTemplates(t *testing.T) {
 }
 
 // A session command is presentation. An edit to it must keep each ready
-// Prepared Environment of the Project Template usable.
+// Prepared Environment of the Workspace Template usable.
 func TestSessionCommandEditKeepsPreparedEnvironments(t *testing.T) {
 	prepared, err := Digests(digestTemplate())
 	if err != nil {
@@ -230,7 +230,7 @@ func TestSessionCommandEditKeepsPreparedEnvironments(t *testing.T) {
 }
 
 // A branch pattern is presentation. An edit to it must keep each ready
-// Prepared Environment of the Project Template claimable.
+// Prepared Environment of the Workspace Template claimable.
 func TestBranchPatternEditKeepsPreparedEnvironments(t *testing.T) {
 	prepared, err := Digests(digestTemplate())
 	if err != nil {

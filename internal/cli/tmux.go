@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 )
 
 const quickCreateWorkerArgument = "__twt_quick_create_worker"
@@ -77,16 +77,16 @@ func realQuickCreateSwitch(options Options) func(clientName, session string) err
 }
 
 // realQuickCreateArchive returns the tmux implementation of the
-// QuickCreateArchive hook. It starts the archive worker in the new Project
-// session and signals it. The worker archives the old Project and keeps its
+// QuickCreateArchive hook. It starts the archive worker in the new Workspace
+// session and signals it. The worker archives the old Workspace and keeps its
 // window visible on failure.
-func realQuickCreateArchive(options Options) func(clientName, oldProjectID, newProjectID string) error {
-	return func(clientName, oldProjectID, newProjectID string) error {
-		hostSessionID, err := options.projectService().OwnedSessionID(newProjectID)
+func realQuickCreateArchive(options Options) func(clientName, oldWorkspaceID, newWorkspaceID string) error {
+	return func(clientName, oldWorkspaceID, newWorkspaceID string) error {
+		hostSessionID, err := options.workspaceService().OwnedSessionID(newWorkspaceID)
 		if err != nil {
 			return err
 		}
-		helper, err := startRelocationHelper(options, quickCreateWorker, hostSessionID, clientName, []string{oldProjectID, newProjectID})
+		helper, err := startRelocationHelper(options, quickCreateWorker, hostSessionID, clientName, []string{oldWorkspaceID, newWorkspaceID})
 		if err != nil {
 			return err
 		}
@@ -148,27 +148,27 @@ func (h *relocationHelper) cancel() {
 	_ = runCommand("tmux", tmuxCommandArgs(h.options, "kill-window", "-t", h.windowID)...)
 }
 
-// runRelocationWorker waits for the relocation signal, archives the Project,
+// runRelocationWorker waits for the relocation signal, archives the Workspace,
 // and runs the completion step of one worker. It shows the result message on
 // the moved client. On failure it renames its window and pulls the client
 // back to it.
-func runRelocationWorker(options Options, spec workerSpec, projectID, channel, clientName, retry string, complete func(*projectservice.Service, projectservice.ArchiveResult) (string, error)) error {
+func runRelocationWorker(options Options, spec workerSpec, workspaceID, channel, clientName, retry string, complete func(*workspaceservice.Service, workspaceservice.ArchiveResult) (string, error)) error {
 	if !strings.HasPrefix(channel, spec.channelPrefix) {
 		return fmt.Errorf("invalid relocation signal")
 	}
 	if err := waitForRelocationSignal(options, channel); err != nil {
 		showRelocationFailureWindow(options, clientName, spec.failedWindow)
-		return fmt.Errorf("the relocation signal timed out: %w; the Project did not change; run '%s' to retry", err, retry)
+		return fmt.Errorf("the relocation signal timed out: %w; the Workspace did not change; run '%s' to retry", err, retry)
 	}
-	service := options.projectService()
-	result := projectservice.ArchiveResult{}
-	_, err := service.Find(projectID)
+	service := options.workspaceService()
+	result := workspaceservice.ArchiveResult{}
+	_, err := service.Find(workspaceID)
 	if err == nil {
-		result, err = service.Archive(projectID, os.Getenv("TMUX_PANE"))
+		result, err = service.Archive(workspaceID, os.Getenv("TMUX_PANE"))
 	}
 	if err != nil {
 		showRelocationFailureWindow(options, clientName, spec.failedWindow)
-		return fmt.Errorf("archive Project: %w; run '%s' to retry", err, retry)
+		return fmt.Errorf("archive Workspace: %w; run '%s' to retry", err, retry)
 	}
 	message, err := complete(service, result)
 	if err != nil {
@@ -180,17 +180,17 @@ func runRelocationWorker(options Options, spec workerSpec, projectID, channel, c
 }
 
 // RunQuickCreateWorker runs the private __twt_quick_create_worker argv
-// mode. It waits for the relocation signal and archives the old Project.
+// mode. It waits for the relocation signal and archives the old Workspace.
 func RunQuickCreateWorker(options Options, args []string) error {
 	if len(args) != 4 {
 		return fmt.Errorf("invalid quick create worker request")
 	}
-	oldProjectID, newProjectID, channel, clientName := args[0], args[1], args[2], args[3]
-	retry := "twt archive " + oldProjectID
-	err := runRelocationWorker(options, quickCreateWorker, oldProjectID, channel, clientName, retry,
-		func(service *projectservice.Service, result projectservice.ArchiveResult) (string, error) {
-			newProject, _ := service.Find(newProjectID)
-			return fmt.Sprintf("Created Project %s; archived Project %s", newProject.Name, result.Project.Name), nil
+	oldWorkspaceID, newWorkspaceID, channel, clientName := args[0], args[1], args[2], args[3]
+	retry := "twt archive " + oldWorkspaceID
+	err := runRelocationWorker(options, quickCreateWorker, oldWorkspaceID, channel, clientName, retry,
+		func(service *workspaceservice.Service, result workspaceservice.ArchiveResult) (string, error) {
+			newWorkspace, _ := service.Find(newWorkspaceID)
+			return fmt.Sprintf("Created Workspace %s; archived Workspace %s", newWorkspace.Name, result.Workspace.Name), nil
 		})
 	if err != nil {
 		return err
@@ -206,7 +206,7 @@ func clearRelocationWindow(options Options) error {
 func callingTmuxClient(options Options, pane string) (string, error) {
 	sourceSession, err := commandOutput("tmux", tmuxCommandArgs(options, "display-message", "-p", "-t", pane, "#{session_id}")...)
 	if err != nil {
-		return "", fmt.Errorf("find the source Project session: %w", err)
+		return "", fmt.Errorf("find the source Workspace session: %w", err)
 	}
 	rows, err := commandOutput("tmux", tmuxCommandArgs(options, "list-clients", "-F", "#{client_name}\t#{pane_id}\t#{session_id}")...)
 	if err != nil {
@@ -234,7 +234,7 @@ func callingTmuxClient(options Options, pane string) (string, error) {
 	if len(sessionMatches) == 1 {
 		return sessionMatches[0], nil
 	}
-	return "", fmt.Errorf("tmux pane %q is not active in a client, and %d clients are attached to its Project session; quick create requires exactly 1", pane, len(sessionMatches))
+	return "", fmt.Errorf("tmux pane %q is not active in a client, and %d clients are attached to its Workspace session; quick create requires exactly 1", pane, len(sessionMatches))
 }
 
 func switchTmuxClient(options Options, clientName, sessionID string) error {

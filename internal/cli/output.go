@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const jsonSchemaVersion = 1
+const jsonSchemaVersion = 2
 
 // The --output values. When --output is not set and standard output is not a
 // terminal, twt uses json.
@@ -60,16 +60,17 @@ type commandError struct {
 	HelpCommand string `json:"helpCommand,omitempty"`
 }
 
-type projectOutput struct {
-	ID       string               `json:"id"`
-	Name     string               `json:"name"`
-	Template string               `json:"template"`
-	Status   domain.ProjectStatus `json:"status"`
-	// Adopted marks a Project that twt made from an existing tmux session.
+type workspaceOutput struct {
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	Template string                 `json:"template"`
+	Status   domain.WorkspaceStatus `json:"status"`
+	// Adopted marks a Workspace that twt made from an existing tmux session.
 	// Removal never deletes its directories.
-	Adopted bool `json:"adopted,omitempty"`
-	// Ticket is the slug of the Ticket that the Project works on.
-	Ticket       string             `json:"ticket,omitempty"`
+	Adopted bool   `json:"adopted,omitempty"`
+	Project string `json:"project,omitempty"`
+	// Tickets are the Ticket slugs that the Workspace works on.
+	Tickets      []string           `json:"tickets,omitempty"`
 	CreatedAt    string             `json:"createdAt"`
 	ArchivedAt   string             `json:"archivedAt,omitempty"`
 	Root         string             `json:"root"`
@@ -81,61 +82,62 @@ type repositoryOutput struct {
 	WindowName string `json:"windowName"`
 }
 
-type projectsListOutput struct {
+type workspacesListOutput struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	Workspaces    []workspaceOutput `json:"workspaces"`
+	TotalCount    int               `json:"totalCount"`
+	Truncated     bool              `json:"truncated,omitempty"`
+}
+
+type workspaceShowOutput struct {
 	SchemaVersion int             `json:"schemaVersion"`
-	Projects      []projectOutput `json:"projects"`
-	TotalCount    int             `json:"totalCount"`
-	Truncated     bool            `json:"truncated,omitempty"`
+	Workspace     workspaceOutput `json:"workspace"`
 }
 
-type projectShowOutput struct {
-	SchemaVersion int           `json:"schemaVersion"`
-	Project       projectOutput `json:"project"`
-}
-
-func toProjectOutput(project domain.Project) projectOutput {
-	repositories := make([]repositoryOutput, 0, len(project.Repositories))
-	for _, repository := range project.Repositories {
+func toWorkspaceOutput(workspace domain.Workspace) workspaceOutput {
+	repositories := make([]repositoryOutput, 0, len(workspace.Repositories))
+	for _, repository := range workspace.Repositories {
 		repositories = append(repositories, repositoryOutput{Name: repository.Name, WindowName: repository.WindowName})
 	}
-	result := projectOutput{
-		ID:           project.ID,
-		Name:         project.Name,
-		Template:     project.TemplateName,
-		Status:       project.Status,
-		Adopted:      project.Adopted,
-		Ticket:       project.Ticket,
-		CreatedAt:    project.CreatedAt.Format(time.RFC3339),
-		Root:         project.Root,
+	result := workspaceOutput{
+		ID:           workspace.ID,
+		Name:         workspace.Name,
+		Template:     workspace.TemplateName,
+		Status:       workspace.Status,
+		Adopted:      workspace.Adopted,
+		Project:      workspace.Project,
+		Tickets:      append([]string(nil), workspace.Tickets...),
+		CreatedAt:    workspace.CreatedAt.Format(time.RFC3339),
+		Root:         workspace.Root,
 		Repositories: repositories,
 	}
-	if project.ArchivedAt != nil {
-		result.ArchivedAt = project.ArchivedAt.Format(time.RFC3339)
+	if workspace.ArchivedAt != nil {
+		result.ArchivedAt = workspace.ArchivedAt.Format(time.RFC3339)
 	}
 	return result
 }
 
-// sortProjectsForDisplay puts active Projects before archived Projects, and
-// the most recent Projects first. The projects list and the switch picker
+// sortWorkspacesForDisplay puts active Workspaces before archived Workspaces, and
+// the most recent Workspaces first. The workspaces list and the switch picker
 // use the same order.
-func sortProjectsForDisplay(projects []domain.Project) {
-	sort.SliceStable(projects, func(i, j int) bool {
-		iArchived := projects[i].Status == domain.ProjectArchived
-		jArchived := projects[j].Status == domain.ProjectArchived
+func sortWorkspacesForDisplay(workspaces []domain.Workspace) {
+	sort.SliceStable(workspaces, func(i, j int) bool {
+		iArchived := workspaces[i].Status == domain.WorkspaceArchived
+		jArchived := workspaces[j].Status == domain.WorkspaceArchived
 		if iArchived != jArchived {
 			return !iArchived
 		}
-		return projects[i].CreatedAt.After(projects[j].CreatedAt)
+		return workspaces[i].CreatedAt.After(workspaces[j].CreatedAt)
 	})
 }
 
-// projectAgeReference returns the time that the age column reports: the
-// archive time for an archived Project, else the create time.
-func projectAgeReference(project domain.Project) time.Time {
-	if project.Status == domain.ProjectArchived && project.ArchivedAt != nil {
-		return *project.ArchivedAt
+// workspaceAgeReference returns the time that the age column reports: the
+// archive time for an archived Workspace, else the create time.
+func workspaceAgeReference(workspace domain.Workspace) time.Time {
+	if workspace.Status == domain.WorkspaceArchived && workspace.ArchivedAt != nil {
+		return *workspace.ArchivedAt
 	}
-	return project.CreatedAt
+	return workspace.CreatedAt
 }
 
 func isDryRun(command *cobra.Command) bool {

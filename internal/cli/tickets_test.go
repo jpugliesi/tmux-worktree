@@ -102,7 +102,7 @@ func TestTicketsInitScaffoldsOnceAndKeepsNotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := decodeTicketMutation(t, jsonOut)
-	if result.SchemaVersion != 1 || result.Operation != "tickets.init" || result.Status != "applied" {
+	if result.SchemaVersion != 2 || result.Operation != "tickets.init" || result.Status != "applied" {
 		t.Fatalf("init envelope = %+v", result)
 	}
 }
@@ -112,16 +112,16 @@ func TestTicketsCreateWritesAnObsidianNote(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	stdout, _, err := executeCollectingInput(t, options, nil,
-		"tickets", "create", "fix the vfs tools", "--board", "change-monitor", "--output", "json")
+		"tickets", "create", "fix the vfs tools", "--project", "change-monitor", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := decodeTicketMutation(t, stdout)
-	if result.SchemaVersion != 1 || result.Operation != "tickets.create" || result.Status != "applied" || result.ID != "fix-the-vfs-tools" {
+	if result.SchemaVersion != 2 || result.Operation != "tickets.create" || result.Status != "applied" || result.ID != "fix-the-vfs-tools" {
 		t.Fatalf("create envelope = %+v", result)
 	}
 	content := readTicketFile(t, filepath.Join(home, "change-monitor", "fix-the-vfs-tools.md"))
@@ -130,7 +130,7 @@ func TestTicketsCreateWritesAnObsidianNote(t *testing.T) {
 		"title: \"fix the vfs tools\"",
 		"status: needs-triage",
 		"priority: 2",
-		"board: change-monitor",
+		"project: change-monitor",
 		"blocked_by: []",
 		"# fix the vfs tools",
 		"## Comments",
@@ -145,9 +145,9 @@ func TestTicketsCreateWritesAnObsidianNote(t *testing.T) {
 		t.Fatalf("duplicate slug = %v (code %q, hint %q)", err, clierr.CodeOf(err), clierr.HintOf(err))
 	}
 
-	_, _, err = executeCollectingInput(t, options, nil, "tickets", "create", "another one", "--board", "missing")
-	if err == nil || clierr.CodeOf(err) != clierr.NotFound || !strings.Contains(clierr.HintOf(err), "boards create") {
-		t.Fatalf("missing Board = %v (code %q, hint %q)", err, clierr.CodeOf(err), clierr.HintOf(err))
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "create", "another one", "--project", "missing")
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound || !strings.Contains(clierr.HintOf(err), "projects create") {
+		t.Fatalf("missing Project = %v (code %q, hint %q)", err, clierr.CodeOf(err), clierr.HintOf(err))
 	}
 }
 
@@ -217,13 +217,13 @@ func TestTicketsCreateDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-// wizardOptions seeds an interactive tickets create: the Board picker and the
+// wizardOptions seeds an interactive tickets create: the Project picker and the
 // editor are injected so tests never start fzf or VISUAL.
-func wizardOptions(t *testing.T, boardChoice, body string) (cli.Options, string) {
+func wizardOptions(t *testing.T, projectChoice, body string) (cli.Options, string) {
 	t.Helper()
 	options, home := ticketTestOptions(t)
-	options.PickTicketBoard = func(_ *cobra.Command, _ []string) (string, error) {
-		return boardChoice, nil
+	options.PickTicketProject = func(_ *cobra.Command, _ []string) (string, error) {
+		return projectChoice, nil
 	}
 	options.OpenEditor = func(path string) error {
 		return os.WriteFile(path, []byte(body), 0o644)
@@ -251,7 +251,7 @@ func TestTicketsCreateWizardWritesDescriptionOnly(t *testing.T) {
 		"title: \"Editor ticket\"",
 		"status: needs-triage",
 		"priority: 2",
-		"board:",
+		"project:",
 		"# Editor ticket",
 		"Reconnect the vfs tools.",
 	} {
@@ -295,49 +295,49 @@ func TestTicketsCreateWizardEmptyEditorCancels(t *testing.T) {
 	}
 }
 
-func TestTicketsCreateWizardPicksAnExistingBoard(t *testing.T) {
+func TestTicketsCreateWizardPicksAnExistingProject(t *testing.T) {
 	options, home := wizardOptions(t, "change-monitor", "Do the work.\n")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader("Grouped work\n"), "tickets", "create"); err != nil {
 		t.Fatal(err)
 	}
 	content := readTicketFile(t, filepath.Join(home, "change-monitor", "grouped-work.md"))
-	if !strings.Contains(content, "board: change-monitor") || !strings.Contains(content, "Do the work.") {
-		t.Fatalf("existing Board ticket:\n%s", content)
+	if !strings.Contains(content, "project: change-monitor") || !strings.Contains(content, "Do the work.") {
+		t.Fatalf("existing Project ticket:\n%s", content)
 	}
 }
 
-func TestTicketsCreateWizardCreatesABoardAfterConfirm(t *testing.T) {
-	options, home := wizardOptions(t, "new-board", "From the editor.\n")
+func TestTicketsCreateWizardCreatesAProjectAfterConfirm(t *testing.T) {
+	options, home := wizardOptions(t, "new-project", "From the editor.\n")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("New board work\n\n"), "tickets", "create")
+	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("New project work\n\n"), "tickets", "create")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr, `Board "new-board" does not exist. Create it? [Y/n]`) {
+	if !strings.Contains(stderr, `Project "new-project" does not exist. Create it? [Y/n]`) {
 		t.Fatalf("confirm stderr = %q", stderr)
 	}
-	if !strings.Contains(stdout, `Created Board "new-board"`) || !strings.Contains(stdout, `Created ticket "new-board-work"`) {
+	if !strings.Contains(stdout, `Created Project "new-project"`) || !strings.Contains(stdout, `Created ticket "new-project-work"`) {
 		t.Fatalf("create stdout = %q", stdout)
 	}
-	if _, err := os.Stat(filepath.Join(home, "new-board", "index.md")); err != nil {
-		t.Fatalf("missing Board index: %v", err)
+	if _, err := os.Stat(filepath.Join(home, "new-project", "index.md")); err != nil {
+		t.Fatalf("missing Project index: %v", err)
 	}
-	content := readTicketFile(t, filepath.Join(home, "new-board", "new-board-work.md"))
-	if !strings.Contains(content, "board: new-board") {
-		t.Fatalf("new Board ticket:\n%s", content)
+	content := readTicketFile(t, filepath.Join(home, "new-project", "new-project-work.md"))
+	if !strings.Contains(content, "project: new-project") {
+		t.Fatalf("new Project ticket:\n%s", content)
 	}
 }
 
-func TestTicketsCreateWizardDryRunCreatesNeitherBoardNorTicket(t *testing.T) {
-	options, home := wizardOptions(t, "preview-board", "Dry body.\n")
+func TestTicketsCreateWizardDryRunCreatesNeitherProjectNorTicket(t *testing.T) {
+	options, home := wizardOptions(t, "preview-project", "Dry body.\n")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestTicketsCreateWizardDryRunCreatesNeitherBoardNorTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout, `Would create Board "preview-board"`) || !strings.Contains(stdout, "title: \"Preview work\"") {
+	if !strings.Contains(stdout, `Would create Project "preview-project"`) || !strings.Contains(stdout, "title: \"Preview work\"") {
 		t.Fatalf("dry-run stdout = %q", stdout)
 	}
 	jsonOut, _, err := executeCollectingInput(t, options, strings.NewReader("Preview work\n\n"),
@@ -368,31 +368,31 @@ func TestTicketsCreateWizardDryRunCreatesNeitherBoardNorTicket(t *testing.T) {
 	}
 }
 
-func TestTicketsCreateWizardRejectsNewBoardConfirm(t *testing.T) {
-	options, home := wizardOptions(t, "rejected-board", "body")
+func TestTicketsCreateWizardRejectsNewProjectConfirm(t *testing.T) {
+	options, home := wizardOptions(t, "rejected-project", "body")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err := executeCollectingInput(t, options, strings.NewReader("Rejected\nn\n"), "tickets", "create")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("declined Board = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("declined Project = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if _, err := os.Stat(filepath.Join(home, "rejected-board")); !os.IsNotExist(err) {
-		t.Fatalf("declined Board still exists: %v", err)
+	if _, err := os.Stat(filepath.Join(home, "rejected-project")); !os.IsNotExist(err) {
+		t.Fatalf("declined Project still exists: %v", err)
 	}
 }
 
-func TestTicketsCreateWizardRejectsInvalidNewBoardName(t *testing.T) {
+func TestTicketsCreateWizardRejectsInvalidNewProjectName(t *testing.T) {
 	options, _ := wizardOptions(t, "../escape", "body")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
 	_, stderr, err := executeCollectingInput(t, options, strings.NewReader("Bad name\n"), "tickets", "create")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("invalid Board name = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("invalid Project name = %v (code %q)", err, clierr.CodeOf(err))
 	}
 	if strings.Contains(stderr, "Create it?") {
-		t.Fatalf("confirmed an invalid Board name: %q", stderr)
+		t.Fatalf("confirmed an invalid Project name: %q", stderr)
 	}
 
 	options, _ = wizardOptions(t, "templates", "body")
@@ -401,38 +401,38 @@ func TestTicketsCreateWizardRejectsInvalidNewBoardName(t *testing.T) {
 	}
 	_, stderr, err = executeCollectingInput(t, options, strings.NewReader("Reserved\n"), "tickets", "create")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("reserved Board = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("reserved Project = %v (code %q)", err, clierr.CodeOf(err))
 	}
 	if strings.Contains(stderr, "Create it?") {
-		t.Fatalf("confirmed reserved Board: %q", stderr)
+		t.Fatalf("confirmed reserved Project: %q", stderr)
 	}
 }
 
-func TestTicketsCreateWizardBoardFlagDoesNotCreate(t *testing.T) {
+func TestTicketsCreateWizardProjectFlagDoesNotCreate(t *testing.T) {
 	options, _ := wizardOptions(t, "ignored", "From editor.\n")
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err := executeCollectingInput(t, options, strings.NewReader("Flag missing\n"),
-		"tickets", "create", "--board", "missing")
-	if err == nil || clierr.CodeOf(err) != clierr.NotFound || !strings.Contains(clierr.HintOf(err), "boards create") {
-		t.Fatalf("missing --board = %v (code %q, hint %q)", err, clierr.CodeOf(err), clierr.HintOf(err))
+		"tickets", "create", "--project", "missing")
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound || !strings.Contains(clierr.HintOf(err), "projects create") {
+		t.Fatalf("missing --project = %v (code %q, hint %q)", err, clierr.CodeOf(err), clierr.HintOf(err))
 	}
 
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	called := false
-	options.PickTicketBoard = func(_ *cobra.Command, _ []string) (string, error) {
+	options.PickTicketProject = func(_ *cobra.Command, _ []string) (string, error) {
 		called = true
 		return "ignored", nil
 	}
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader("Flag existing\n"),
-		"tickets", "create", "--board", "change-monitor"); err != nil {
+		"tickets", "create", "--project", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	if called {
-		t.Fatal("--board still opened the Board picker")
+		t.Fatal("--project still opened the Project picker")
 	}
 }
 
@@ -650,7 +650,7 @@ func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	applied := decodeTicketMutation(t, stdout)
-	if applied.SchemaVersion != 1 || applied.Operation != "tickets.close" || applied.Status != "applied" || applied.ID != "ship-it" {
+	if applied.SchemaVersion != 2 || applied.Operation != "tickets.close" || applied.Status != "applied" || applied.ID != "ship-it" {
 		t.Fatalf("close envelope = %+v\n%s", applied, stdout)
 	}
 }
@@ -773,7 +773,7 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &list); err != nil {
 		t.Fatalf("decode list: %v\n%s", err, stdout)
 	}
-	if list.SchemaVersion != 1 || list.TotalCount != 1 || len(list.Tickets) != 1 || list.Truncated {
+	if list.SchemaVersion != 2 || list.TotalCount != 1 || len(list.Tickets) != 1 || list.Truncated {
 		t.Fatalf("ready list = %s", stdout)
 	}
 	if list.Tickets[0]["slug"] != "ready-work" {
@@ -784,7 +784,7 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	want := "blockedBy,board,claimedBy,created,path,priority,slug,status,title,updated"
+	want := "blockedBy,claimedBy,created,path,priority,project,slug,status,title,updated"
 	if strings.Join(keys, ",") != want {
 		t.Fatalf("ticket object keys = %v, want %s", keys, want)
 	}
@@ -869,7 +869,7 @@ func TestTicketsShowRendersOpenBlockersAndBody(t *testing.T) {
 	if err := json.Unmarshal([]byte(jsonOut), &show); err != nil {
 		t.Fatalf("decode show: %v\n%s", err, jsonOut)
 	}
-	if show.SchemaVersion != 1 || show.Ticket.Slug != "blocked-work" || show.Ticket.Ready ||
+	if show.SchemaVersion != 2 || show.Ticket.Slug != "blocked-work" || show.Ticket.Ready ||
 		!strings.Contains(show.Ticket.Body, "The body text.") ||
 		len(show.Ticket.BlockedByOpen) != 1 || !show.Ticket.BlockedByOpen[0].Missing {
 		t.Fatalf("show envelope = %s", jsonOut)
@@ -881,7 +881,7 @@ func TestTicketsSetChangesFields(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "move me"); err != nil {
@@ -892,17 +892,17 @@ func TestTicketsSetChangesFields(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("set without a flag = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	_, _, err = executeCollectingInput(t, options, nil, "tickets", "set", "move-me", "--board", "missing")
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "set", "move-me", "--project", "missing")
 	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("set to a missing Board = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("set to a missing Project = %v (code %q)", err, clierr.CodeOf(err))
 	}
 	if _, _, err := executeCollectingInput(t, options, nil,
-		"tickets", "set", "move-me", "--status", "done", "--board", "change-monitor"); err != nil {
+		"tickets", "set", "move-me", "--status", "done", "--project", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	moved := filepath.Join(home, "change-monitor", "move-me.md")
 	content := readTicketFile(t, moved)
-	if !strings.Contains(content, "status: done") || !strings.Contains(content, "board: change-monitor") {
+	if !strings.Contains(content, "status: done") || !strings.Contains(content, "project: change-monitor") {
 		t.Fatalf("set result:\n%s", content)
 	}
 	if _, err := os.Stat(filepath.Join(home, "move-me.md")); !os.IsNotExist(err) {
@@ -1057,7 +1057,7 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "fix the vfs tools"); err != nil {
@@ -1081,18 +1081,18 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 		t.Fatalf("close completion = %v", names)
 	}
 	create := findCommand(command, "tickets", "create")
-	boardFlag, found := create.GetFlagCompletionFunc("board")
+	projectFlag, found := create.GetFlagCompletionFunc("project")
 	if !found {
-		t.Fatal("--board has no completion function")
+		t.Fatal("--project has no completion function")
 	}
-	names, _ = boardFlag(create, nil, "")
+	names, _ = projectFlag(create, nil, "")
 	if strings.Join(names, ",") != "change-monitor" {
-		t.Fatalf("--board completion = %v", names)
+		t.Fatalf("--project completion = %v", names)
 	}
-	boardsShow := findCommand(command, "tickets", "boards", "show")
-	names, _ = boardsShow.ValidArgsFunction(boardsShow, nil, "")
+	projectsShow := findCommand(command, "projects", "show")
+	names, _ = projectsShow.ValidArgsFunction(projectsShow, nil, "")
 	if strings.Join(names, ",") != "change-monitor" {
-		t.Fatalf("Board completion = %v", names)
+		t.Fatalf("Project completion = %v", names)
 	}
 
 	// Completions are silent when no Tickets home is set.
@@ -1104,50 +1104,50 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	}
 }
 
-func TestTicketsBoardsCommands(t *testing.T) {
+func TestTicketsProjectsCommands(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "create", "change-monitor", "--output", "json")
+	jsonOut, _, err := executeCollectingInput(t, options, nil, "projects", "create", "change-monitor", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	created := decodeTicketMutation(t, jsonOut)
-	if created.Operation != "tickets.boards.create" || created.Status != "applied" || created.Name != "change-monitor" {
-		t.Fatalf("boards create envelope = %+v", created)
+	if created.Operation != "projects.create" || created.Status != "applied" || created.Name != "change-monitor" {
+		t.Fatalf("projects create envelope = %+v", created)
 	}
 	if _, statErr := os.Stat(filepath.Join(home, "change-monitor", "index.md")); statErr != nil {
-		t.Fatalf("boards create did not scaffold index.md: %v", statErr)
+		t.Fatalf("projects create did not scaffold index.md: %v", statErr)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "grouped work", "--board", "change-monitor"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "grouped work", "--project", "change-monitor"); err != nil {
 		t.Fatal(err)
 	}
-	listOut, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "list", "--output", "json")
+	listOut, _, err := executeCollectingInput(t, options, nil, "projects", "list", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var boards struct {
+	var projects struct {
 		SchemaVersion int `json:"schemaVersion"`
-		Boards        []struct {
+		Projects      []struct {
 			Name    string `json:"name"`
 			Tickets int    `json:"tickets"`
-		} `json:"boards"`
+		} `json:"projects"`
 		TotalCount int `json:"totalCount"`
 	}
-	if err := json.Unmarshal([]byte(listOut), &boards); err != nil {
-		t.Fatalf("decode boards list: %v\n%s", err, listOut)
+	if err := json.Unmarshal([]byte(listOut), &projects); err != nil {
+		t.Fatalf("decode projects list: %v\n%s", err, listOut)
 	}
-	if boards.SchemaVersion != 1 || boards.TotalCount != 1 || len(boards.Boards) != 1 ||
-		boards.Boards[0].Name != "change-monitor" || boards.Boards[0].Tickets != 1 {
-		t.Fatalf("boards list = %s", listOut)
+	if projects.SchemaVersion != 2 || projects.TotalCount != 1 || len(projects.Projects) != 1 ||
+		projects.Projects[0].Name != "change-monitor" || projects.Projects[0].Tickets != 1 {
+		t.Fatalf("projects list = %s", listOut)
 	}
-	showOut, _, err := executeCollectingInput(t, options, nil, "tickets", "boards", "show", "change-monitor", "--output", "json")
+	showOut, _, err := executeCollectingInput(t, options, nil, "projects", "show", "change-monitor", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(showOut, `"board":{`) || !strings.Contains(showOut, `"name":"change-monitor"`) {
-		t.Fatalf("boards show = %s", showOut)
+	if !strings.Contains(showOut, `"project":{`) || !strings.Contains(showOut, `"name":"change-monitor"`) {
+		t.Fatalf("projects show = %s", showOut)
 	}
 }
 
@@ -1159,8 +1159,8 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	for _, command := range []string{
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
-		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets boards create"`,
-		`"twt tickets boards list"`, `"twt tickets boards show"`,
+		`"twt tickets close"`, `"twt tickets comment"`, `"twt projects create"`,
+		`"twt projects list"`, `"twt projects show"`,
 	} {
 		if !strings.Contains(output, command) {
 			t.Fatalf("schema misses %s", command)
@@ -1168,7 +1168,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	}
 	for _, operation := range []string{
 		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`,
-		`"tickets.close"`, `"tickets.comment"`, `"tickets.boards.create"`,
+		`"tickets.close"`, `"tickets.comment"`, `"projects.create"`,
 	} {
 		if !strings.Contains(output, operation) {
 			t.Fatalf("schema misses the apply operation %s", operation)
@@ -1182,12 +1182,12 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options,
-		strings.NewReader(`{"operation":"tickets.boards.create","board":{"name":"change-monitor"}}`),
+		strings.NewReader(`{"operation":"projects.create","project":{"name":"change-monitor"}}`),
 		"apply", "--stdin", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	stdout, _, err := executeCollectingInput(t, options,
-		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"apply work","board":"change-monitor","status":"ready-for-agent","priority":1,"body":"From apply."}}`),
+		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"apply work","project":"change-monitor","status":"ready-for-agent","priority":1,"body":"From apply."}}`),
 		"apply", "--stdin", "--output", "json")
 	if err != nil {
 		t.Fatal(err)

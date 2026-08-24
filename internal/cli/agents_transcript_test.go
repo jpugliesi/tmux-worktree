@@ -13,22 +13,22 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
+func TestAgentTranscriptUsesExplicitProviderSessionAndWorkspace(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
-	repository := filepath.Join(root, "project", "app")
+	repository := filepath.Join(root, "workspace", "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one",
-		Status: domain.ProjectActive, Root: filepath.Dir(repository), TmuxSession: "project-one",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one",
+		Status: domain.WorkspaceActive, Root: filepath.Dir(repository), TmuxSession: "workspace-one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt:    time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	stateDir := filepath.Join(root, "state")
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	transcriptPath := filepath.Join(home, ".codex", "sessions", "2026", "08", "20", "rollout-session-one.jsonl")
@@ -36,15 +36,15 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := `{"type":"session_meta","payload":{"id":"session-one","cwd":` + quoteJSON(t, repository) + `}}
-{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Project question"}]}}
-{"type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"Project answer"}]}}
+{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Workspace question"}]}}
+{"type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"Workspace answer"}]}}
 `
 	if err := os.WriteFile(transcriptPath, []byte(lines), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 	registration := executeWithOptions(t, options, nil,
-		"agents", "register", "--project", project.ID, "--provider", "codex", "--label", "review",
+		"agents", "register", "--workspace", workspace.ID, "--provider", "codex", "--label", "review",
 		"--session", "session-one", "--", "codex", "resume", "session-one",
 	)
 	fields := strings.Fields(registration)
@@ -53,7 +53,7 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	}
 	agentID := fields[3]
 
-	list := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--output", "json")
+	list := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--output", "json")
 	if strings.Contains(list, transcriptPath) || strings.Contains(list, "tmuxPane") {
 		t.Fatalf("Agent JSON exposes an internal path or tmux target: %s", list)
 	}
@@ -72,26 +72,26 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 		t.Fatalf("agents list = %+v", listed)
 	}
 
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--project", project.ID, "--output", "json")
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID, "--output", "json")
 	if strings.Contains(shown, transcriptPath) {
 		t.Fatalf("transcript JSON exposes its source path: %s", shown)
 	}
 	var result struct {
 		SchemaVersion int    `json:"schemaVersion"`
-		ProjectID     string `json:"projectId"`
+		WorkspaceID   string `json:"workspaceId"`
 		AgentID       string `json:"agentId"`
 		Markdown      string `json:"markdown"`
 	}
 	if err := json.Unmarshal([]byte(shown), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.SchemaVersion != 1 || result.ProjectID != project.ID || result.AgentID != agentID || !strings.Contains(result.Markdown, "Project question") {
+	if result.SchemaVersion != 2 || result.WorkspaceID != workspace.ID || result.AgentID != agentID || !strings.Contains(result.Markdown, "Workspace question") {
 		t.Fatalf("transcript show = %+v", result)
 	}
 
-	snapshotDirectory := filepath.Join(stateDir, "snapshots", "projects", project.ID)
-	drySnapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID, "--dry-run", "--output", "json")
-	if !strings.Contains(drySnapshot, `"status":"valid"`) || strings.Contains(drySnapshot, "Project question") {
+	snapshotDirectory := filepath.Join(stateDir, "snapshots", "projects", workspace.ID)
+	drySnapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--workspace", workspace.ID, "--dry-run", "--output", "json")
+	if !strings.Contains(drySnapshot, `"status":"valid"`) || strings.Contains(drySnapshot, "Workspace question") {
 		t.Fatalf("dry-run transcript snapshot output = %s", drySnapshot)
 	}
 	if strings.Contains(drySnapshot, `"path"`) {
@@ -101,8 +101,8 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 		t.Fatalf("dry-run created a Transcript Snapshot: %v", err)
 	}
 
-	snapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID, "--output", "json")
-	if !strings.Contains(snapshot, `"status":"applied"`) || strings.Contains(snapshot, "Project question") {
+	snapshot := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--workspace", workspace.ID, "--output", "json")
+	if !strings.Contains(snapshot, `"status":"applied"`) || strings.Contains(snapshot, "Workspace question") {
 		t.Fatalf("transcript snapshot output = %s", snapshot)
 	}
 	if strings.Contains(snapshot, filepath.Join(home, ".codex")) || strings.Contains(snapshot, filepath.Join(home, ".claude")) {
@@ -123,20 +123,20 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(perAgent), "Project question") {
+	if !strings.Contains(string(perAgent), "Workspace question") {
 		t.Fatalf("Agent Session Transcript Snapshot = %q", perAgent)
 	}
 	saved, err := os.ReadFile(filepath.Join(snapshotDirectory, "latest.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(saved), "Project question") {
+	if !strings.Contains(string(saved), "Workspace question") {
 		t.Fatalf("saved Transcript Snapshot = %q", saved)
 	}
 	if string(saved) != string(perAgent) {
 		t.Fatalf("latest Transcript Snapshot is not a copy of the Agent Session file: %q", saved)
 	}
-	text := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--project", project.ID)
+	text := executeWithOptions(t, options, nil, "agents", "transcript", "snapshot", agentID, "--workspace", workspace.ID)
 	if !strings.Contains(text, "Snapshot: "+agentSnapshotPath) {
 		t.Fatalf("transcript snapshot text = %q", text)
 	}
@@ -144,7 +144,7 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(marker), `"projectId":"project-one"`) {
+	if !strings.Contains(string(marker), `"workspaceId":"workspace-one"`) {
 		t.Fatalf("Transcript Snapshot marker = %s", marker)
 	}
 }
@@ -153,15 +153,15 @@ func TestAgentTranscriptLinkUpdatesAnExistingAgentSession(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
-		Root: filepath.Join(root, "project"), TmuxSession: "project-one", CreatedAt: now, UpdatedAt: now,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
+		Root: filepath.Join(root, "workspace"), TmuxSession: "workspace-one", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	agent := domain.AgentSession{
-		Version: domain.AgentVersion, ID: "agent-one", ProjectID: project.ID, Provider: "codex",
+		Version: domain.AgentVersion, ID: "agent-one", WorkspaceID: workspace.ID, Provider: "codex",
 		Label: "review", ResumeCommand: []string{"codex", "resume", "session-one"}, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
@@ -169,7 +169,7 @@ func TestAgentTranscriptLinkUpdatesAnExistingAgentSession(t *testing.T) {
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 	executeWithOptions(t, options, nil,
-		"agents", "transcript", "link", agent.ID, "--project", project.ID, "--session", "session-one",
+		"agents", "transcript", "link", agent.ID, "--workspace", workspace.ID, "--session", "session-one",
 	)
 	linked, err := store.NewAgentStore(stateDir).Find(agent.ID)
 	if err != nil {
@@ -184,15 +184,15 @@ func TestAgentTranscriptRejectsUnsupportedCursorLink(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
-		Root: filepath.Join(root, "project"), TmuxSession: "project-one", CreatedAt: now, UpdatedAt: now,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
+		Root: filepath.Join(root, "workspace"), TmuxSession: "workspace-one", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	agent := domain.AgentSession{
-		Version: domain.AgentVersion, ID: "cursor-agent", ProjectID: project.ID, Provider: "cursor",
+		Version: domain.AgentVersion, ID: "cursor-agent", WorkspaceID: workspace.ID, Provider: "cursor",
 		Label: "cursor", ResumeCommand: []string{"cursor-agent", "resume"}, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
@@ -200,7 +200,7 @@ func TestAgentTranscriptRejectsUnsupportedCursorLink(t *testing.T) {
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"agents", "transcript", "link", agent.ID, "--project", project.ID, "--session", "cursor-session"}))
+	command.SetArgs(forceTextOutput([]string{"agents", "transcript", "link", agent.ID, "--workspace", workspace.ID, "--session", "cursor-session"}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "does not support verifiable linked transcripts") {
 		t.Fatalf("Cursor transcript link error = %v", err)
 	}
@@ -218,19 +218,19 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
-	repository := filepath.Join(root, "project", "app")
+	repository := filepath.Join(root, "workspace", "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one",
-		Status: domain.ProjectActive, Root: filepath.Dir(repository), TmuxSession: "project-one",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one",
+		Status: domain.WorkspaceActive, Root: filepath.Dir(repository), TmuxSession: "workspace-one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt:    now, UpdatedAt: now,
 	}
 	stateDir := filepath.Join(root, "state")
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	codexPath := filepath.Join(home, ".codex", "sessions", "2026", "08", "20", "rollout-codex-one.jsonl")
@@ -242,7 +242,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 `)
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 
-	text := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID)
+	text := executeWithOptions(t, options, nil, "agents", "discover", "--workspace", workspace.ID)
 	if strings.Contains(text, "\t") {
 		t.Fatalf("agents discover text still contains tabs: %q", text)
 	}
@@ -255,7 +255,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("agents discover text exposes a provider path: %q", text)
 	}
 
-	listed := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID, "--limit", "1", "--output", "json")
+	listed := executeWithOptions(t, options, nil, "agents", "discover", "--workspace", workspace.ID, "--limit", "1", "--output", "json")
 	if strings.Contains(listed, home) {
 		t.Fatalf("agents discover JSON exposes a provider path: %s", listed)
 	}
@@ -273,18 +273,18 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	if err := json.Unmarshal([]byte(listed), &discovered); err != nil {
 		t.Fatal(err)
 	}
-	if discovered.SchemaVersion != 1 || discovered.TotalCount != 2 || !discovered.Truncated || len(discovered.Sessions) != 1 {
+	if discovered.SchemaVersion != 2 || discovered.TotalCount != 2 || !discovered.Truncated || len(discovered.Sessions) != 1 {
 		t.Fatalf("agents discover JSON = %+v", discovered)
 	}
 	if discovered.Sessions[0].Repository != "app" || discovered.Sessions[0].LastActivity == "" {
 		t.Fatalf("discovered session = %+v", discovered.Sessions[0])
 	}
 
-	dry := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID, "--adopt", "--dry-run", "--output", "json")
+	dry := executeWithOptions(t, options, nil, "agents", "discover", "--workspace", workspace.ID, "--adopt", "--dry-run", "--output", "json")
 	if !strings.Contains(dry, `"status":"valid"`) || strings.Contains(dry, `"adopted"`) {
 		t.Fatalf("dry-run adopt output = %s", dry)
 	}
-	stored, err := store.NewAgentStore(stateDir).List(project.ID)
+	stored, err := store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("dry-run adopt registered Agent Sessions: %+v", stored)
 	}
 
-	adopted := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID, "--adopt", "--output", "json")
+	adopted := executeWithOptions(t, options, nil, "agents", "discover", "--workspace", workspace.ID, "--adopt", "--output", "json")
 	var adoption struct {
 		Adopted []string `json:"adopted"`
 		Status  string   `json:"status"`
@@ -303,7 +303,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	if adoption.Status != "applied" || len(adoption.Adopted) != 2 {
 		t.Fatalf("adopt output = %+v", adoption)
 	}
-	stored, err = store.NewAgentStore(stateDir).List(project.ID)
+	stored, err = store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("adopted Claude resume command = %v", sessions["claude"])
 	}
 
-	empty := executeWithOptions(t, options, nil, "agents", "discover", "--project", project.ID, "--output", "json")
+	empty := executeWithOptions(t, options, nil, "agents", "discover", "--workspace", workspace.ID, "--output", "json")
 	if !strings.Contains(empty, `"totalCount":0`) {
 		t.Fatalf("agents discover after adopt = %s", empty)
 	}
@@ -333,13 +333,13 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	if codexAgent.Provider != "codex" {
 		codexAgent = stored[1]
 	}
-	shown := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--project", project.ID)
-	for _, want := range []string{"Provider", "codex", "Provider session", "codex-one", "project pane", "fail", "current command", "fail (advisory)", "Can read transcript", "yes"} {
+	shown := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--workspace", workspace.ID)
+	for _, want := range []string{"Provider", "codex", "Provider session", "codex-one", "workspace pane", "fail", "current command", "fail (advisory)", "Can read transcript", "yes"} {
 		if !strings.Contains(shown, want) {
 			t.Fatalf("agents show text = %q, want %q", shown, want)
 		}
 	}
-	showJSON := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--project", project.ID, "--output", "json")
+	showJSON := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--workspace", workspace.ID, "--output", "json")
 	if strings.Contains(showJSON, home) {
 		t.Fatalf("agents show JSON exposes a provider path: %s", showJSON)
 	}
@@ -366,7 +366,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("agents show JSON liveness = %+v", show.Liveness)
 	}
 
-	unknown := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--live=false", "--output", "json")
+	unknown := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--live=false", "--output", "json")
 	if !strings.Contains(unknown, `"status":"unknown"`) || !strings.Contains(unknown, `"providerSessionId":"codex-one"`) {
 		t.Fatalf("agents list --live=false = %s", unknown)
 	}
@@ -374,11 +374,11 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("agents list JSON exposes an internal path or tmux target: %s", unknown)
 	}
 
-	removed := executeWithOptions(t, options, nil, "agents", "rm", codexAgent.ID, "--project", project.ID)
+	removed := executeWithOptions(t, options, nil, "agents", "rm", codexAgent.ID, "--workspace", workspace.ID)
 	if !strings.Contains(removed, "Removed Agent Session "+codexAgent.ID) {
 		t.Fatalf("agents rm output = %q", removed)
 	}
-	stored, err = store.NewAgentStore(stateDir).List(project.ID)
+	stored, err = store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 		t.Fatalf("Agent Sessions after rm = %+v", stored)
 	}
 	command := cli.New(cli.Options{StateDir: stateDir, DataDir: options.DataDir})
-	command.SetArgs(forceTextOutput([]string{"agents", "rm", codexAgent.ID, "--project", project.ID}))
+	command.SetArgs(forceTextOutput([]string{"agents", "rm", codexAgent.ID, "--workspace", workspace.ID}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("agents rm of a missing record error = %v", err)
 	}
@@ -396,17 +396,17 @@ func TestAgentsRegisterInfersTheProviderAndSessionFromTheResumeCommand(t *testin
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
-		Root: filepath.Join(root, "project"), TmuxSession: "project-one", CreatedAt: now, UpdatedAt: now,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
+		Root: filepath.Join(root, "workspace"), TmuxSession: "workspace-one", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
-	executeWithOptions(t, options, nil, "agents", "register", "--project", project.ID, "--", "codex", "resume", "session-one")
-	executeWithOptions(t, options, nil, "agents", "register", "--project", project.ID, "--", "claude", "--resume=session-two")
-	stored, err := store.NewAgentStore(stateDir).List(project.ID)
+	executeWithOptions(t, options, nil, "agents", "register", "--workspace", workspace.ID, "--", "codex", "resume", "session-one")
+	executeWithOptions(t, options, nil, "agents", "register", "--workspace", workspace.ID, "--", "claude", "--resume=session-two")
+	stored, err := store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestAgentsRegisterInfersTheProviderAndSessionFromTheResumeCommand(t *testin
 	}
 
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"agents", "register", "--project", project.ID}))
+	command.SetArgs(forceTextOutput([]string{"agents", "register", "--workspace", workspace.ID}))
 	if _, err := command.ExecuteC(); err == nil || !strings.Contains(err.Error(), "set --provider PROVIDER") {
 		t.Fatalf("register without a provider or resume command error = %v", err)
 	}
@@ -434,23 +434,23 @@ func TestAgentTranscriptShowLinksTheOnlyNewProviderSession(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
-	repository := filepath.Join(root, "project", "app")
+	repository := filepath.Join(root, "workspace", "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
-		Root: filepath.Dir(repository), TmuxSession: "project-one",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
+		Root: filepath.Dir(repository), TmuxSession: "workspace-one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt:    now, UpdatedAt: now,
 	}
 	stateDir := filepath.Join(root, "state")
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
-	registration := executeWithOptions(t, options, nil, "agents", "register", "--project", project.ID, "--", "codex", "--continue")
+	registration := executeWithOptions(t, options, nil, "agents", "register", "--workspace", workspace.ID, "--", "codex", "--continue")
 	fields := strings.Fields(registration)
 	if len(fields) < 4 {
 		t.Fatalf("registration output = %q", registration)
@@ -459,7 +459,7 @@ func TestAgentTranscriptShowLinksTheOnlyNewProviderSession(t *testing.T) {
 	writeTestLines(t, filepath.Join(home, ".codex", "sessions", "rollout-late-session.jsonl"), `{"type":"session_meta","payload":{"id":"late-session","cwd":`+quoteJSON(t, repository)+`}}
 {"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Late question"}]}}
 `)
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--project", project.ID, "--output", "json")
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID, "--output", "json")
 	if !strings.Contains(shown, "Late question") {
 		t.Fatalf("transcript show after the lazy link = %s", shown)
 	}

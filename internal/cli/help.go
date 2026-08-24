@@ -11,153 +11,153 @@ type helpContent struct {
 // checks that every key matches a command and that every command has a key.
 var commandHelp = map[string]helpContent{
 	"twt templates": {
-		long: "Create and maintain reusable YAML Project Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create everysphere\n  twt templates show everysphere",
+		long: "Create and maintain reusable YAML Workspace Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create everysphere\n  twt templates show everysphere",
 	},
-	"twt projects": {
-		long: "Create and manage change-focused Projects. Each Project owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt projects create fix-auth --template everysphere\n  twt projects open fix-auth",
+	"twt workspaces": {
+		long: "Create and manage change-focused Workspaces. Each Workspace owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt workspaces create fix-auth --template everysphere\n  twt workspaces open fix-auth",
 	},
 	"twt start": {
-		long: "Create a new Project from the latest saved version of the current Project Template. twt switches the calling client to the new Project, then archives the old Project. If NAME is a Ticket slug, twt claims that Ticket and links the new Project to it. If NAME is absent and open Tickets exist, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Project name. Use 'twt projects create' for automation.", example: "  twt start\n  twt start fix-auth",
+		long: "Create a new Workspace from the latest saved version of the current Workspace Template. twt switches the calling client to the new Workspace, then archives the old Workspace. One or more Ticket slugs claim those Tickets and link the new Workspace to them; all Tickets must belong to one Project. With no argument and open Tickets, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Workspace name. Use 'twt workspaces create' for automation.", example: "  twt start\n  twt start fix-auth\n  twt start fix-auth add-auth-tests",
 	},
 	"twt switch": {
-		long: "Switch the calling tmux client to the session of a Project. An archived Project opens first. Without PROJECT, twt shows an interactive Project picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
+		long: "Switch the calling tmux client to the session of a Workspace. An archived Workspace opens first. Without WORKSPACE, twt shows an interactive Workspace picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
 	},
 	"twt archive": {
-		long: "Archive the current Project or a Project that you specify. twt keeps its worktrees, branches, Project Template snapshot, and Agent Session records.", example: "  twt archive\n  twt archive fix-auth",
+		long: "Archive the current Workspace or a Workspace that you specify. twt keeps its worktrees, branches, Workspace Template snapshot, and Agent Session records.", example: "  twt archive\n  twt archive fix-auth",
 	},
 	"twt done": {
-		long: "Archive the current Project or a Project that you specify, then remove its worktrees, branches, and state. From inside the Project tmux session, twt moves your tmux client to the most recent other active Project, or detaches the client. Use --keep to stop after the archive. Use --force to remove a branch with unpublished commits. When the Project links an open Ticket, twt asks in an interactive terminal whether it must also close that Ticket.", example: "  twt done\n  twt done fix-auth --keep",
+		long: "Archive the current Workspace or a Workspace that you specify, then remove its worktrees, branches, and state. From inside the Workspace tmux session, twt moves your tmux client to the most recent other active Workspace, or detaches the client. Use --keep to stop after the archive. Use --force to remove a branch with unpublished commits. When the Workspace links one open Ticket, twt asks whether it must close that Ticket. With many open Tickets, twt keeps them open and prints one close command for each Ticket.", example: "  twt done\n  twt done fix-auth --keep",
 	},
 	"twt agents": {
-		long: "Register and control coding Agent Sessions that belong to a Project. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --project current\n  twt agents open\n  twt agents resume AGENT_ID",
+		long: "Register and control coding Agent Sessions that belong to a Workspace. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --workspace current\n  twt agents open\n  twt agents resume AGENT_ID",
 	},
 	"twt storage": {
-		long: "Inspect the disk space used by twt Projects, worktrees, and shared repository caches.", example: "  twt storage show",
+		long: "Inspect the disk space used by twt Workspaces, worktrees, and shared repository caches.", example: "  twt storage show",
 	},
 	"twt environments": {
-		long: "Inspect the Prepared Environments that twt keeps for the next Project. A Prepared Environment holds initialized worktrees before a Project claims them.", example: "  twt environments list\n  twt environments show ENVIRONMENT_ID",
+		long: "Inspect the Prepared Environments that twt keeps for the next Workspace. A Prepared Environment holds initialized worktrees before a Workspace claims them.", example: "  twt environments list\n  twt environments show ENVIRONMENT_ID",
 	},
 	"twt templates create": {
-		long: "Create an empty Project Template.\n\nNAME is the reusable template name. After creation, add one or more " +
-			"repository specifications.\n\nWith --from-file or --from-stdin, twt reads one strict Project Template " +
+		long: "Create an empty Workspace Template.\n\nNAME is the reusable template name. After creation, add one or more " +
+			"repository specifications.\n\nWith --from-file or --from-stdin, twt reads one strict Workspace Template " +
 			"YAML document. NAME stays required: it sets the template name, and a different name in the document is an error.",
 		example: "  twt templates create everysphere\n  twt templates repos add everysphere app git@github.com:acme/app.git\n  twt templates create everysphere --from-file ./everysphere.yaml",
 	},
 	"twt templates list": {
-		long: "List all saved Project Templates.", example: "  twt templates list\n  twt templates list --output json",
+		long: "List all saved Workspace Templates.", example: "  twt templates list\n  twt templates list --output json",
 	},
 	"twt templates show": {
-		long: "Show one Project Template and its repository specifications.", example: "  twt templates show everysphere\n  twt templates show everysphere --output json",
+		long: "Show one Workspace Template and its repository specifications.", example: "  twt templates show everysphere\n  twt templates show everysphere --output json",
 	},
 	"twt templates validate": {
-		long: "Validate the YAML and all fields in one Project Template.", example: "  twt templates validate everysphere",
+		long: "Validate the YAML and all fields in one Workspace Template.", example: "  twt templates validate everysphere",
 	},
 	"twt templates prepare": {
-		long: "Create and initialize one Prepared Environment for the next Project. Repository initialization does not run again when a Project claims it.", example: "  twt templates prepare everysphere",
+		long: "Create and initialize one Prepared Environment for the next Workspace. Repository initialization does not run again when a Workspace claims it.", example: "  twt templates prepare everysphere",
 	},
 	"twt templates repos": {
-		long: "Manage the repository specifications inside one Project Template.", example: "  twt templates repos add everysphere app https://example.com/app.git\n  twt templates repos remove everysphere app",
+		long: "Manage the repository specifications inside one Workspace Template.", example: "  twt templates repos add everysphere app https://example.com/app.git\n  twt templates repos remove everysphere app",
 	},
 	"twt templates init": {
-		long: "Manage the initialization commands of a Project Template. One command runs for the Project, and one command runs for each repository.", example: "  twt templates init set product --cwd web -- ./scripts/init-project.sh\n  twt templates init set product --repo web -- ./init.sh",
+		long: "Manage the initialization commands of a Workspace Template. One command runs for the Workspace, and one command runs for each repository.", example: "  twt templates init set product --cwd web -- ./scripts/init-workspace.sh\n  twt templates init set product --repo web -- ./init.sh",
 	},
 	"twt templates path": {
-		long: "Print the YAML file path of one Project Template. The output is one bare path for command substitution.", example: "  twt templates path everysphere\n  $EDITOR $(twt templates path everysphere)",
+		long: "Print the YAML file path of one Workspace Template. The output is one bare path for command substitution.", example: "  twt templates path everysphere\n  $EDITOR $(twt templates path everysphere)",
 	},
 	"twt templates edit": {
-		long: "Open the Project Template YAML file in VISUAL or EDITOR, then validate the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  twt templates edit everysphere",
+		long: "Open the Workspace Template YAML file in VISUAL or EDITOR, then validate the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  twt templates edit everysphere",
 	},
 	"twt templates remove": {
-		long: "Delete the YAML file of a Project Template. twt refuses removal while a Project record still uses the Project Template.", example: "  twt templates remove everysphere\n  twt templates remove everysphere --dry-run --output json",
+		long: "Delete the YAML file of a Workspace Template. twt refuses removal while a Workspace record still uses the Workspace Template.", example: "  twt templates remove everysphere\n  twt templates remove everysphere --dry-run --output json",
 	},
 	"twt templates repos remove": {
-		long: "Remove one repository specification from a Project Template. Existing Projects keep their saved Project Template snapshot.", example: "  twt templates repos remove everysphere app",
+		long: "Remove one repository specification from a Workspace Template. Existing Workspaces keep their saved Workspace Template snapshot.", example: "  twt templates repos remove everysphere app",
 	},
-	"twt projects setup": {
-		long: "Manage Project setup steps.", example: "  twt projects setup retry fix-auth",
+	"twt workspaces setup": {
+		long: "Manage Workspace setup steps.", example: "  twt workspaces setup retry fix-auth",
 	},
 	"twt agents transcript": {
-		long: "Read, link, and snapshot provider transcripts for Agent Sessions.", example: "  twt agents transcript show AGENT_ID --project current",
+		long: "Read, link, and snapshot provider transcripts for Agent Sessions.", example: "  twt agents transcript show AGENT_ID --workspace current",
 	},
 	"twt templates repos add": {
-		long:    "Add one repository specification to a Project Template. Flags define clone depth, remotes, default branch, and tmux window name.",
+		long:    "Add one repository specification to a Workspace Template. Flags define clone depth, remotes, default branch, and tmux window name.",
 		example: "  twt templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --depth 1 \\\n    --remote github=https://github.com/anysphere/everysphere.git",
 	},
 	"twt templates init set": {
 		long: "Set one initialization command. Put the command and its arguments after --.\n\n" +
 			"With --repo REPO, the command is repository initialization: twt runs it one time on each new physical worktree of that repository.\n\n" +
-			"Without --repo, the command is Project initialization: twt runs it after all repository worktrees exist, and --cwd PATH must give its working directory inside the Project root.",
-		example: "  twt templates init set product --cwd web -- ./scripts/init-project.sh\n  twt templates init set product --repo web -- ./init.sh",
+			"Without --repo, the command is Workspace initialization: twt runs it after all repository worktrees exist, and --cwd PATH must give its working directory inside the Workspace root.",
+		example: "  twt templates init set product --cwd web -- ./scripts/init-workspace.sh\n  twt templates init set product --repo web -- ./init.sh",
 	},
-	"twt projects create": {
-		long:    "Create a Project from a saved Project Template. twt claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session. The Project branch name comes from --branch, then the branch_pattern of the Project Template, then the default pattern {prefix}{name}. Without a branch prefix (TWT_BRANCH_PREFIX or the branchPrefix value of config.yaml) the default is the Project name.",
-		example: "  twt projects create fix-auth --template everysphere\n  twt projects create fix-auth --template everysphere --dry-run --output json",
+	"twt workspaces create": {
+		long:    "Create a Workspace from a saved Workspace Template. Repeat --ticket to link one or more open Tickets from one Project. twt claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session. The Workspace branch name comes from --branch, then the branch_pattern of the Workspace Template, then the default pattern {prefix}{name}. Without a branch prefix (TWT_BRANCH_PREFIX or the branchPrefix value of config.yaml) the default is the Workspace name.",
+		example: "  twt workspaces create fix-auth --template everysphere\n  twt workspaces create auth-work --ticket fix-auth --ticket add-auth-tests --dry-run --output json",
 	},
-	"twt projects list": {
-		long: "List all Projects and their setup state.", example: "  twt projects list\n  twt projects list --limit 10 --output json",
+	"twt workspaces list": {
+		long: "List all Workspaces and their setup state.", example: "  twt workspaces list\n  twt workspaces list --limit 10 --output json",
 	},
-	"twt projects show": {
-		long: "Show one Project by name or immutable ID.", example: "  twt projects show fix-auth --output json",
+	"twt workspaces show": {
+		long: "Show one Workspace by name or immutable ID.", example: "  twt workspaces show fix-auth --output json",
 	},
-	"twt projects current": {
-		long: "Find the Project for the current directory or tmux pane.", example: "  twt projects current",
+	"twt workspaces current": {
+		long: "Find the Workspace for the current directory or tmux pane.", example: "  twt workspaces current",
 	},
-	"twt projects path": {
-		long: "Print the root path of a Project, or the checkout path of one repository in it. The output is one bare path for command substitution.", example: "  cd $(twt projects path fix-auth)\n  cd $(twt projects path fix-auth app)",
+	"twt workspaces path": {
+		long: "Print the root path of a Workspace, or the checkout path of one repository in it. The output is one bare path for command substitution.", example: "  cd $(twt workspaces path fix-auth)\n  cd $(twt workspaces path fix-auth app)",
 	},
-	"twt projects open": {
-		long: "Open a Project tmux session. twt makes an archived Project active. It also repairs missing managed windows.", example: "  twt projects open fix-auth\n  twt projects open fix-auth --no-attach",
+	"twt workspaces open": {
+		long: "Open a Workspace tmux session. twt makes an archived Workspace active. It also repairs missing managed windows.", example: "  twt workspaces open fix-auth\n  twt workspaces open fix-auth --no-attach",
 	},
-	"twt projects archive": {
-		long: "Archive a Project and stop its owned tmux session. twt keeps the Project data so that you can open it again.", example: "  twt projects archive fix-auth\n  twt projects open fix-auth",
+	"twt workspaces archive": {
+		long: "Archive a Workspace and stop its owned tmux session. twt keeps the Workspace data so that you can open it again.", example: "  twt workspaces archive fix-auth\n  twt workspaces open fix-auth",
 	},
-	"twt projects setup retry": {
-		long: "Retry failed or interrupted setup steps from the saved Project Template snapshot.", example: "  twt projects setup retry fix-auth",
+	"twt workspaces setup retry": {
+		long: "Retry failed or interrupted setup steps from the saved Workspace Template snapshot.", example: "  twt workspaces setup retry fix-auth",
 	},
-	"twt projects adopt": {
-		long: "Adopt an existing tmux session as a Project. twt records the git repositories that the panes of the session sit in, and marks the session with the Project ID. twt did not create the directories of an adopted Project, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt projects adopt\n  twt projects adopt my-session --name fix-auth",
+	"twt workspaces adopt": {
+		long: "Adopt an existing tmux session as a Workspace. twt records the git repositories that the panes of the session sit in, and marks the session with the Workspace ID. twt did not create the directories of an adopted Workspace, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt workspaces adopt\n  twt workspaces adopt my-session --name fix-auth",
 	},
-	"twt projects remove": {
-		long: "Show a safe removal plan for an archived Project. Add --apply to remove clean, published Project worktrees and state. Use --force to also remove a branch with unpublished commits. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Projects; apply skips blocked Projects.", example: "  twt projects archive fix-auth\n  twt projects remove fix-auth --apply\n  twt projects remove --all-archived --older-than 14d --apply",
+	"twt workspaces remove": {
+		long: "Show a safe removal plan for an archived Workspace. Add --apply to remove clean, published Workspace worktrees and state. Use --force to also remove a branch with unpublished commits. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Workspaces; apply skips blocked Workspaces.", example: "  twt workspaces archive fix-auth\n  twt workspaces remove fix-auth --apply\n  twt workspaces remove --all-archived --older-than 14d --apply",
 	},
 	"twt agents register": {
-		long: "Register a resumable coding Agent Session with a Project. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --project fix-auth --label review -- grok --resume SESSION_ID",
+		long: "Register a resumable coding Agent Session with a Workspace. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --workspace fix-auth --label review -- grok --resume SESSION_ID",
 	},
 	"twt agents list": {
-		long: "List Agent Sessions for one Project, newest first. Text output is provider, ID, and age. twt asks tmux for the live state of each pane, and scans the Codex, Claude, and Grok stores for discovered sessions of the Project. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --project current --output json\n  twt agents list --project current --registered\n  twt agents list --project current --live=false",
+		long: "List Agent Sessions for one Workspace, newest first. Text output is provider, ID, and age. twt asks tmux for the live state of each pane, and scans the Codex, Claude, and Grok stores for discovered sessions of the Workspace. A discovered session has status \"discovered\"; the first action on it registers it. The list writes nothing. Use --registered to not scan the providers. Use --live=false for a cheap read that does not probe tmux and does not scan the providers.", example: "  twt agents list --workspace current --output json\n  twt agents list --workspace current --registered\n  twt agents list --workspace current --live=false",
 	},
 	"twt agents show": {
-		long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --project current --output json",
+		long: "Show one Agent Session record and the result of each liveness check. A failed check tells you why twt does not send feedback to the Agent Session. The current command of the pane is advisory only.", example: "  twt agents show AGENT_ID\n  twt agents show AGENT_ID --workspace current --output json",
 	},
 	"twt agents discover": {
-		long: "Find the Codex, Claude, and Grok sessions that ran inside a repository of the Project and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command. 'twt agents list' also shows these sessions, and the first action on one adopts it; use discover --adopt for bulk adoption.", example: "  twt agents discover --project current\n  twt agents discover --project current --adopt --limit 3",
+		long: "Find the Codex, Claude, and Grok sessions that ran inside a repository of the Workspace and that no Agent Session uses. The newest session comes first. Add --adopt to register each session with a resume command. 'twt agents list' also shows these sessions, and the first action on one adopts it; use discover --adopt for bulk adoption.", example: "  twt agents discover --workspace current\n  twt agents discover --workspace current --adopt --limit 3",
 	},
 	"twt agents rm": {
 		long: "Delete an Agent Session record. twt keeps the provider transcript and does not stop a live Agent process.", example: "  twt agents rm AGENT_ID\n  twt agents rm AGENT_ID --dry-run --output json",
 	},
 	"twt agents resume": {
-		long: "Focus a live Agent Session or start its saved resume command in a new Project window. A discovered provider session ID also resumes: twt registers it first.", example: "  twt agents resume AGENT_ID\n  twt agents resume PROVIDER_SESSION_ID",
+		long: "Focus a live Agent Session or start its saved resume command in a new Workspace window. A discovered provider session ID also resumes: twt registers it first.", example: "  twt agents resume AGENT_ID\n  twt agents resume PROVIDER_SESSION_ID",
 	},
 	"twt agents focus": {
 		long: "Focus the tmux pane for a live Agent Session.", example: "  twt agents focus AGENT_ID",
 	},
 	"twt agents open": {
-		long: "Resume an Agent Session of the selected Project in the current pane. twt replaces this process with the provider resume command: 'codex resume', 'claude --resume', or 'grok --resume'. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection starts that resume command. --preview writes that transcript as markdown, never registers a discovered session, and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --project current",
+		long: "Resume an Agent Session of the selected Workspace in the current pane. twt replaces this process with the provider resume command: 'codex resume', 'claude --resume', or 'grok --resume'. Without AGENT_ID, twt shows an interactive Agent Session picker. It uses fzf when fzf is installed, or a numbered list. The fzf preview shows the same transcript text as 'twt agents transcript show'. A selection starts that resume command. --preview writes that transcript as markdown, never registers a discovered session, and never writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --workspace current",
 	},
 	"twt agents send": {
-		long: "Send standard-input text to a live, owned Agent Session in the selected Project. twt never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --project current --stdin",
+		long: "Send standard-input text to a live, owned Agent Session in the selected Workspace. twt never sends to an unverified shell pane.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --workspace current --stdin",
 	},
 	"twt agents transcript show": {
-		long: "Read the provider transcript linked to one Agent Session. twt checks that the transcript belongs to the selected Project and does not return its source path.", example: "  twt agents transcript show AGENT_ID --project current --output json",
+		long: "Read the provider transcript linked to one Agent Session. twt checks that the transcript belongs to the selected Workspace and does not return its source path.", example: "  twt agents transcript show AGENT_ID --workspace current --output json",
 	},
 	"twt agents transcript snapshot": {
-		long: "Read a linked provider transcript and save a private Project-owned Markdown snapshot. Each Agent Session has its own file, and twt also writes latest.md as a copy of the most recent snapshot. The result gives the file path. Project removal deletes these snapshots.", example: "  twt agents transcript snapshot AGENT_ID --project current --output json",
+		long: "Read a linked provider transcript and save a private Workspace-owned Markdown snapshot. Each Agent Session has its own file, and twt also writes latest.md as a copy of the most recent snapshot. The result gives the file path. Workspace removal deletes these snapshots.", example: "  twt agents transcript snapshot AGENT_ID --workspace current --output json",
 	},
 	"twt agents transcript link": {
-		long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt agents transcript link AGENT_ID --project current --session SESSION_ID",
+		long: "Link an existing Agent Session to its provider session ID. This enables transcript loading without changing its resume command.", example: "  twt agents transcript link AGENT_ID --workspace current --session SESSION_ID",
 	},
 	"twt tickets": {
-		long: "Create and manage Markdown tickets in the configured Tickets home. Each Ticket is one Obsidian note with YAML frontmatter, and the CLI owns every mutation.", example: "  twt tickets create \"fix the vfs tools\" --board change-monitor\n  twt tickets list --ready --output json",
+		long: "Create and manage Markdown tickets in the configured Tickets home. Each Ticket is one Obsidian note with YAML frontmatter, and the CLI owns every mutation.", example: "  twt tickets create \"fix the vfs tools\" --project change-monitor\n  twt tickets list --ready --output json",
 	},
 	"twt tickets init": {
 		long: "Create the Tickets home directory with its hub index.md and its create template. twt writes each file only when that file is missing. It never overwrites notes.", example: "  twt tickets init\n  twt tickets init --dry-run --output json",
@@ -166,10 +166,10 @@ var commandHelp = map[string]helpContent{
 		long: "Open the Tickets home directory in VISUAL or EDITOR. Tickets home is the ticketsHome value of config.yaml, or TWT_TICKETS_HOME.", example: "  twt tickets home",
 	},
 	"twt tickets create": {
-		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt reads the body from standard input and --title is required. With no DESCRIPTION and no --stdin in an interactive terminal, twt asks for a title, then a Board, then opens VISUAL or EDITOR on an empty file for the description. A typed Board name that does not exist is created only after confirm. --board never creates a missing Board.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --board change-monitor --output json\n  printf '%s\\n' 'Steps...' | twt tickets create --title \"Fix auth\" --stdin",
+		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt reads the body from standard input and --title is required. With no DESCRIPTION and no --stdin in an interactive terminal, twt asks for a title, then a Project, then opens VISUAL or EDITOR on an empty file for the description. A typed Project name that does not exist is created only after confirm. --project never creates a missing Project.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --project change-monitor --output json\n  printf '%s\\n' 'Steps...' | twt tickets create --title \"Fix auth\" --stdin",
 	},
 	"twt tickets list": {
-		long: "List Tickets sorted by priority, then by slug. The list hides done and wontfix Tickets by default; --all includes them, and an explicit --status shows that status. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --status is a raw filter; do not use it together with --ready.", example: "  twt tickets list --ready --output json\n  twt tickets list --all --output json\n  twt tickets list --board change-monitor --limit 10",
+		long: "List Tickets sorted by priority, then by slug. The list hides done and wontfix Tickets by default; --all includes them, and an explicit --status shows that status. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --status is a raw filter; do not use it together with --ready.", example: "  twt tickets list --ready --output json\n  twt tickets list --all --output json\n  twt tickets list --project change-monitor --limit 10",
 	},
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
@@ -178,13 +178,13 @@ var commandHelp = map[string]helpContent{
 		long: "Replace the body of one Ticket. With --stdin, twt reads the new body from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on the Ticket file and then validates the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  printf '%s\\n' '# Title' 'New body' | twt tickets edit fix-the-vfs-tools --stdin\n  twt tickets edit fix-the-vfs-tools",
 	},
 	"twt tickets set": {
-		long: "Change the status, the priority, or the Board of one Ticket. Pass at least one flag. A Board change moves the Ticket file into the Board directory.", example: "  twt tickets set fix-the-vfs-tools --status done\n  twt tickets set fix-the-vfs-tools --priority 1 --board change-monitor",
+		long: "Change the status, the priority, or the Project of one Ticket. Pass at least one flag. A Project change moves the Ticket file into the Project directory.", example: "  twt tickets set fix-the-vfs-tools --status done\n  twt tickets set fix-the-vfs-tools --priority 1 --project change-monitor",
 	},
 	"twt tickets claim": {
 		long: "Claim one Ticket for a work session. The claimant comes from --as, then TWT_CLAIMANT, then the OS username in an interactive terminal. A Ticket that a different claimant holds returns the locked error.", example: "  twt tickets claim fix-the-vfs-tools --as codex-fix-auth\n  twt tickets claim fix-the-vfs-tools --as codex-fix-auth --output json",
 	},
 	"twt tickets start": {
-		long: "Claim one Ticket and start a Project for it. twt refuses a closed Ticket and claims the Ticket first: a Ticket that a different claimant holds aborts before any Project work. Then twt runs the same flow as 'twt start' and links the new Project to the Ticket. The Project name is --name, or the Ticket slug. On success twt appends a start comment to the Ticket. A create failure keeps the claim.", example: "  twt tickets start fix-auth-tokens\n  twt tickets start fix-auth-tokens --name auth-fix",
+		long: "Claim one or more Tickets and start one Workspace for them. All Tickets must be open and belong to one Project. twt claims every Ticket before Workspace work starts. The Workspace name is --name, or the first Ticket slug. On success twt appends a start comment to each Ticket. A create failure keeps the claims.", example: "  twt tickets start fix-auth-tokens\n  twt tickets start fix-auth-tokens add-auth-tests --name auth-fix",
 	},
 	"twt tickets unclaim": {
 		long: "Remove the claim on one Ticket. The claimant resolution is the same as claim, and only the current claimant can remove its claim. An unclaimed Ticket succeeds without a change.", example: "  twt tickets unclaim fix-the-vfs-tools --as codex-fix-auth",
@@ -195,38 +195,38 @@ var commandHelp = map[string]helpContent{
 	"twt tickets comment": {
 		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt creates that heading when it is missing.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt tickets comment fix-the-vfs-tools --stdin",
 	},
-	"twt tickets boards": {
-		long: "Manage Boards. A Board is one directory under the Tickets home that groups Tickets and outlives any checkout.", example: "  twt tickets boards create change-monitor\n  twt tickets boards list --output json",
+	"twt projects": {
+		long: "Manage Projects. A Project is one directory under the Tickets home that groups Tickets and outlives any Workspace.", example: "  twt projects create change-monitor\n  twt projects list --output json",
 	},
-	"twt tickets boards create": {
-		long: "Create one Board directory and write its index.md only when that file is missing.", example: "  twt tickets boards create change-monitor",
+	"twt projects create": {
+		long: "Create one Project directory and write its index.md only when that file is missing.", example: "  twt projects create change-monitor",
 	},
-	"twt tickets boards list": {
-		long: "List every Board with its Ticket count.", example: "  twt tickets boards list\n  twt tickets boards list --output json",
+	"twt projects list": {
+		long: "List every Project with its Ticket count.", example: "  twt projects list\n  twt projects list --output json",
 	},
-	"twt tickets boards show": {
-		long: "Show one Board: its path, its Ticket count, and whether it has an index.md.", example: "  twt tickets boards show change-monitor --output json",
+	"twt projects show": {
+		long: "Show one Project: its path, its Ticket count, and whether it has an index.md.", example: "  twt projects show change-monitor --output json",
 	},
 	"twt context": {
-		long: "Show the Project and repository context for a directory or the current tmux pane.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
+		long: "Show the Workspace and repository context for a directory or the current tmux pane.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
 	},
 	"twt config": {
 		long: "Show every resolved twt setting, including defaults. Each setting reports its value and its source: env for an environment variable, file for config.yaml, or default.", example: "  twt config\n  twt config --output json",
 	},
 	"twt storage show": {
-		long: "Show the disk space used by active Projects, archived Projects, Prepared Environments, worktrees, and shared repository caches.", example: "  twt storage show\n  twt storage show --output json",
+		long: "Show the disk space used by active Workspaces, archived Workspaces, Prepared Environments, worktrees, and shared repository caches.", example: "  twt storage show\n  twt storage show --output json",
 	},
 	"twt storage clean": {
 		long: "Show a safe cleanup plan for failed and obsolete Prepared Environments, orphan Transcript Snapshots, and orphan Agent Session records. Add --apply to remove only twt-owned data.", example: "  twt storage clean\n  twt storage clean --apply",
 	},
 	"twt environments list": {
-		long: "List the Prepared Environments of each Project Template, with status, age, and disk space. A ready Prepared Environment that no longer matches its Project Template has status obsolete.", example: "  twt environments list\n  twt environments list --limit 10 --output json",
+		long: "List the Prepared Environments of each Workspace Template, with status, age, and disk space. A ready Prepared Environment that no longer matches its Workspace Template has status obsolete.", example: "  twt environments list\n  twt environments list --limit 10 --output json",
 	},
 	"twt environments show": {
-		long: "Show one Prepared Environment, its preparation steps, its base commit for each repository, and the Project that claims it. ENVIRONMENT_ID accepts a unique ID prefix.", example: "  twt environments show 1a2b3c4d\n  twt environments show ENVIRONMENT_ID --output json",
+		long: "Show one Prepared Environment, its preparation steps, its base commit for each repository, and the Workspace that claims it. ENVIRONMENT_ID accepts a unique ID prefix.", example: "  twt environments show 1a2b3c4d\n  twt environments show ENVIRONMENT_ID --output json",
 	},
 	"twt doctor": {
-		long: "Check required tools, Project Templates, Project state, and ownership markers.", example: "  twt doctor\n  twt doctor --output json",
+		long: "Check required tools, Workspace Templates, Workspace state, and ownership markers.", example: "  twt doctor\n  twt doctor --output json",
 	},
 	"twt skills": {
 		long: "Install the twt agent skill that this build carries. The skill tells an agent how to call twt: JSON output, dry runs, limits, and untrusted transcript text.", example: "  twt skills install\n  twt skills show",

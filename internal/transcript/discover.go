@@ -13,7 +13,7 @@ import (
 // discovery. twt inspects the newest files first.
 const maxDiscoverFiles = 256
 
-// DiscoveredSession is one provider session that belongs to a Project. Path
+// DiscoveredSession is one provider session that belongs to a Workspace. Path
 // stays inside twt. The JSON interface never shows a provider file path.
 type DiscoveredSession struct {
 	Provider       string
@@ -28,7 +28,7 @@ type DiscoverOptions struct {
 	// Provider limits the result to one provider. An empty value reads all
 	// providers that support verifiable linked transcripts.
 	Provider string
-	// Linked holds the Agent Sessions of the Project. Discover does not
+	// Linked holds the Agent Sessions of the Workspace. Discover does not
 	// return a provider session that one of these records uses.
 	Linked []domain.AgentSession
 	// Since drops each provider session with an older last activity time.
@@ -36,14 +36,14 @@ type DiscoverOptions struct {
 }
 
 // Discover finds the provider sessions that ran inside a repository of the
-// Project. The result is sorted from the newest last activity to the oldest.
-func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]DiscoveredSession, error) {
+// Workspace. The result is sorted from the newest last activity to the oldest.
+func (s *Service) Discover(workspace domain.Workspace, options DiscoverOptions) ([]DiscoveredSession, error) {
 	sessions := []DiscoveredSession{}
 	for _, provider := range providerNames() {
 		if options.Provider != "" && options.Provider != provider {
 			continue
 		}
-		found, err := s.discoverProvider(provider, project, options.Since)
+		found, err := s.discoverProvider(provider, workspace, options.Since)
 		if err != nil {
 			return nil, err
 		}
@@ -66,7 +66,7 @@ func (s *Service) Discover(project domain.Project, options DiscoverOptions) ([]D
 	return result, nil
 }
 
-func (s *Service) discoverProvider(provider string, project domain.Project, since time.Time) ([]DiscoveredSession, error) {
+func (s *Service) discoverProvider(provider string, workspace domain.Workspace, since time.Time) ([]DiscoveredSession, error) {
 	descriptor := providers[provider]
 	files, err := newestTranscriptFiles(descriptor.root(s), since, descriptor.transcriptName)
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *Service) discoverProvider(provider string, project domain.Project, sinc
 	}
 	sessions := []DiscoveredSession{}
 	for _, file := range files {
-		session, ok := readDiscovered(provider, descriptor, file, project)
+		session, ok := readDiscovered(provider, descriptor, file, workspace)
 		if !ok {
 			continue
 		}
@@ -83,11 +83,11 @@ func (s *Service) discoverProvider(provider string, project domain.Project, sinc
 	return sessions, nil
 }
 
-// readDiscovered verifies one provider file against the Project. A file that
+// readDiscovered verifies one provider file against the Workspace. A file that
 // twt cannot verify is not an error: discovery drops it. Discovery reads
 // session metadata only.
-func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, project domain.Project) (DiscoveredSession, bool) {
-	sessionID, repositoryName, ok := descriptor.discover(file.path, project)
+func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, workspace domain.Workspace) (DiscoveredSession, bool) {
+	sessionID, repositoryName, ok := descriptor.discover(file.path, workspace)
 	if !ok || sessionID == "" || repositoryName == "" {
 		return DiscoveredSession{}, false
 	}

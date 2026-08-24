@@ -45,7 +45,7 @@ repositories:
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(encoded), "pool_depth: 2") {
-		t.Fatalf("saved Project Template does not keep pool_depth:\n%s", encoded)
+		t.Fatalf("saved Workspace Template does not keep pool_depth:\n%s", encoded)
 	}
 	again, err := templates.Load("example")
 	if err != nil {
@@ -100,7 +100,7 @@ agents:
 	}
 	for _, want := range []string{"agents:", "label: review", "provider: codex", "start:"} {
 		if !strings.Contains(string(encoded), want) {
-			t.Fatalf("saved Project Template does not keep %q:\n%s", want, encoded)
+			t.Fatalf("saved Workspace Template does not keep %q:\n%s", want, encoded)
 		}
 	}
 	again, err := templates.Load("example")
@@ -153,7 +153,7 @@ session:
 	}
 	for _, want := range []string{"session:", "command:", "./scripts/layout.sh", "cwd: app"} {
 		if !strings.Contains(string(encoded), want) {
-			t.Fatalf("saved Project Template does not keep %q:\n%s", want, encoded)
+			t.Fatalf("saved Workspace Template does not keep %q:\n%s", want, encoded)
 		}
 	}
 	again, err := templates.Load("example")

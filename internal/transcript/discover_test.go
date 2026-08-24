@@ -13,9 +13,9 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
-func TestDiscoverFindsProjectSessionsFromTheNewestToTheOldest(t *testing.T) {
+func TestDiscoverFindsWorkspaceSessionsFromTheNewestToTheOldest(t *testing.T) {
 	home := t.TempDir()
-	project, repository := discoverProject(t)
+	workspace, repository := discoverWorkspace(t)
 	otherRepository := filepath.Join(t.TempDir(), "other")
 	if err := os.MkdirAll(otherRepository, 0o755); err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestDiscoverFindsProjectSessionsFromTheNewestToTheOldest(t *testing.T) {
 	setModTime(t, claudePath, time.Now().Add(-1*time.Hour))
 	setModTime(t, outsidePath, time.Now())
 
-	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{})
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,13 +47,13 @@ func TestDiscoverFindsProjectSessionsFromTheNewestToTheOldest(t *testing.T) {
 
 func TestDiscoverSkipsLinkedSessionsAndOtherProviders(t *testing.T) {
 	home := t.TempDir()
-	project, repository := discoverProject(t)
+	workspace, repository := discoverWorkspace(t)
 	writeCodexSession(t, home, "codex-linked", repository)
 	writeCodexSession(t, home, "codex-free", repository)
 	writeClaudeSession(t, home, "claude-free", repository)
-	linked := []domain.AgentSession{{ID: "agent-one", ProjectID: project.ID, Provider: "codex", ProviderSessionID: "codex-linked"}}
+	linked := []domain.AgentSession{{ID: "agent-one", WorkspaceID: workspace.ID, Provider: "codex", ProviderSessionID: "codex-linked"}}
 
-	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{Provider: "codex", Linked: linked})
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{Provider: "codex", Linked: linked})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,12 +65,12 @@ func TestDiscoverSkipsLinkedSessionsAndOtherProviders(t *testing.T) {
 func TestReadLinkedSavesTheOnlyNewProviderSession(t *testing.T) {
 	home := t.TempDir()
 	stateDir := t.TempDir()
-	project, repository := discoverProject(t)
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	workspace, repository := discoverWorkspace(t)
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	agent := domain.AgentSession{
-		Version: domain.AgentVersion, ID: "agent-one", ProjectID: project.ID, Provider: "codex",
+		Version: domain.AgentVersion, ID: "agent-one", WorkspaceID: workspace.ID, Provider: "codex",
 		Label: "codex", CreatedAt: time.Now().Add(-time.Hour).UTC(), UpdatedAt: time.Now().Add(-time.Hour).UTC(),
 	}
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
@@ -78,7 +78,7 @@ func TestReadLinkedSavesTheOnlyNewProviderSession(t *testing.T) {
 	}
 	writeCodexSession(t, home, "codex-one", repository)
 
-	value, err := transcript.New(home, stateDir).ReadLinked(agent, project)
+	value, err := transcript.New(home, stateDir).ReadLinked(agent, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,13 +97,13 @@ func TestReadLinkedSavesTheOnlyNewProviderSession(t *testing.T) {
 func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 	home := t.TempDir()
 	stateDir := t.TempDir()
-	project, repository := discoverProject(t)
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	workspace, repository := discoverWorkspace(t)
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	created := time.Now().Add(-time.Hour).UTC()
 	agent := domain.AgentSession{
-		Version: domain.AgentVersion, ID: "agent-one", ProjectID: project.ID, Provider: "codex",
+		Version: domain.AgentVersion, ID: "agent-one", WorkspaceID: workspace.ID, Provider: "codex",
 		Label: "codex", CreatedAt: created, UpdatedAt: created,
 	}
 	if err := store.NewAgentStore(stateDir).Save(agent); err != nil {
@@ -111,24 +111,24 @@ func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 	}
 	service := transcript.New(home, stateDir)
 
-	_, err := service.ReadLinked(agent, project)
+	_, err := service.ReadLinked(agent, workspace)
 	if err == nil || !strings.Contains(err.Error(), "has no linked provider session ID") {
 		t.Fatalf("ReadLinked() without candidates error = %v", err)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt agents discover --project "+project.ID) {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt agents discover --workspace "+workspace.ID) {
 		t.Fatalf("ReadLinked() hint = %q", hint)
 	}
 
 	// An older provider session does not belong to this Agent Session.
 	old := writeCodexSession(t, home, "codex-old", repository)
 	setModTime(t, old, created.Add(-time.Hour))
-	if _, err := service.ReadLinked(agent, project); err == nil || !strings.Contains(err.Error(), "has no linked provider session ID") {
+	if _, err := service.ReadLinked(agent, workspace); err == nil || !strings.Contains(err.Error(), "has no linked provider session ID") {
 		t.Fatalf("ReadLinked() with an older session error = %v", err)
 	}
 
 	writeCodexSession(t, home, "codex-one", repository)
 	writeCodexSession(t, home, "codex-two", repository)
-	_, err = service.ReadLinked(agent, project)
+	_, err = service.ReadLinked(agent, workspace)
 	if err == nil || !strings.Contains(err.Error(), "matches 2 provider sessions") {
 		t.Fatalf("ReadLinked() with several candidates error = %v", err)
 	}
@@ -148,7 +148,7 @@ func TestReadLinkedExplainsZeroAndSeveralCandidates(t *testing.T) {
 
 func TestDiscoverFindsSessionsWhenTheTranscriptBodyExceedsTheReadLimit(t *testing.T) {
 	home := t.TempDir()
-	project, repository := discoverProject(t)
+	workspace, repository := discoverWorkspace(t)
 	codexPath := writeCodexSession(t, home, "codex-large", repository)
 	claudePath := writeClaudeSession(t, home, "claude-large", repository)
 	grokPath := writeGrokSession(t, home, "01a02626-4685-7c72-9679-cccccccccccc", repository, "Q", "A")
@@ -158,7 +158,7 @@ func TestDiscoverFindsSessionsWhenTheTranscriptBodyExceedsTheReadLimit(t *testin
 		extendFile(t, path, 32<<20+1)
 	}
 
-	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{})
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,16 +196,16 @@ func TestResumeCommandUsesTheProviderFlag(t *testing.T) {
 	}
 }
 
-func discoverProject(t *testing.T) (domain.Project, string) {
+func discoverWorkspace(t *testing.T) (domain.Workspace, string) {
 	t.Helper()
 	repository := filepath.Join(t.TempDir(), "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	return domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
-		Root: filepath.Dir(repository), Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	return domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
+		Root: filepath.Dir(repository), Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt: now, UpdatedAt: now,
 	}, repository
 }

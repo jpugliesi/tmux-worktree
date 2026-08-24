@@ -9,17 +9,17 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
-	projectID := "project-one"
+func TestSnapshotStoreRejectsUnownedOrUnsafeWorkspaceDirectories(t *testing.T) {
+	workspaceID := "workspace-one"
 	tests := []struct {
 		name  string
 		setup func(t *testing.T, directory string)
 		want  string
 	}{
 		{
-			name: "wrong Project marker",
+			name: "wrong Workspace marker",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-two"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","workspaceId":"workspace-two"}`)
 			},
 			want: "conflicting ownership marker",
 		},
@@ -27,7 +27,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 			name: "marker symlink",
 			setup: func(t *testing.T, directory string) {
 				outside := filepath.Join(t.TempDir(), "marker.json")
-				if err := os.WriteFile(outside, []byte(`{"version":1,"owner":"twt","projectId":"project-one"}`), 0o600); err != nil {
+				if err := os.WriteFile(outside, []byte(`{"version":1,"owner":"twt","workspaceId":"workspace-one"}`), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				if err := os.Symlink(outside, filepath.Join(directory, ".twt-snapshot.json")); err != nil {
@@ -39,7 +39,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "unexpected file",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","workspaceId":"workspace-one"}`)
 				writeSnapshotFixture(t, directory, "keep.txt", "keep")
 			},
 			want: "unexpected item",
@@ -56,7 +56,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "unexpected Agent Session item",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","workspaceId":"workspace-one"}`)
 				agents := makeSnapshotAgentsDir(t, directory)
 				writeSnapshotFixture(t, agents, "evil.txt", "evil")
 			},
@@ -65,7 +65,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "Agent Session snapshot symlink",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","workspaceId":"workspace-one"}`)
 				agents := makeSnapshotAgentsDir(t, directory)
 				outside := filepath.Join(t.TempDir(), "outside.md")
 				if err := os.WriteFile(outside, []byte("outside\n"), 0o600); err != nil {
@@ -80,7 +80,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		{
 			name: "Agent Session directory is a file",
 			setup: func(t *testing.T, directory string) {
-				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"project-one"}`)
+				writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","workspaceId":"workspace-one"}`)
 				writeSnapshotFixture(t, directory, "agents", "not a directory")
 			},
 			want: "not a safe directory",
@@ -91,7 +91,7 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stateDir := t.TempDir()
 			snapshots := store.NewSnapshotStore(stateDir)
-			directory, err := snapshots.ProjectDir(projectID)
+			directory, err := snapshots.WorkspaceDir(workspaceID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,17 +99,34 @@ func TestSnapshotStoreRejectsUnownedOrUnsafeProjectDirectories(t *testing.T) {
 				t.Fatal(err)
 			}
 			test.setup(t, directory)
-			if _, err := snapshots.ValidateProject(projectID, false); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("ValidateProject() error = %v; want %q", err, test.want)
+			if _, err := snapshots.ValidateWorkspace(workspaceID, false); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ValidateWorkspace() error = %v; want %q", err, test.want)
 			}
 		})
 	}
 }
 
-func TestSnapshotStoreRejectsProjectDirectorySymlink(t *testing.T) {
+func TestSnapshotStoreAcceptsALegacyWorkspaceMarker(t *testing.T) {
 	stateDir := t.TempDir()
 	snapshots := store.NewSnapshotStore(stateDir)
-	directory, err := snapshots.ProjectDir("project-one")
+	directory, err := snapshots.WorkspaceDir("workspace-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeSnapshotFixture(t, directory, ".twt-snapshot.json", `{"version":1,"owner":"twt","projectId":"workspace-one"}`)
+
+	if _, err := snapshots.ValidateWorkspace("workspace-one", true); err != nil {
+		t.Fatalf("ValidateWorkspace() with a legacy marker = %v", err)
+	}
+}
+
+func TestSnapshotStoreRejectsWorkspaceDirectorySymlink(t *testing.T) {
+	stateDir := t.TempDir()
+	snapshots := store.NewSnapshotStore(stateDir)
+	directory, err := snapshots.WorkspaceDir("workspace-one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +136,8 @@ func TestSnapshotStoreRejectsProjectDirectorySymlink(t *testing.T) {
 	if err := os.Symlink(t.TempDir(), directory); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := snapshots.ValidateProject("project-one", false); err == nil || !strings.Contains(err.Error(), "not a safe directory") {
-		t.Fatalf("ValidateProject() error = %v", err)
+	if _, err := snapshots.ValidateWorkspace("workspace-one", false); err == nil || !strings.Contains(err.Error(), "not a safe directory") {
+		t.Fatalf("ValidateWorkspace() error = %v", err)
 	}
 }
 
@@ -136,7 +153,7 @@ func TestSnapshotStoreRejectsSymlinkedStateAncestors(t *testing.T) {
 			if err := os.Symlink(outside, path); err != nil {
 				t.Fatal(err)
 			}
-			_, err := store.NewSnapshotStore(stateDir).Save("project-one", "aa11bb22", "private\n")
+			_, err := store.NewSnapshotStore(stateDir).Save("workspace-one", "aa11bb22", "private\n")
 			if err == nil || !strings.Contains(err.Error(), "not a safe directory") {
 				t.Fatalf("Save() error = %v", err)
 			}
@@ -151,16 +168,16 @@ func TestSnapshotStoreRejectsSymlinkedStateAncestors(t *testing.T) {
 func TestSnapshotStoreWritesOneFilePerAgentSessionAndOneLatestCopy(t *testing.T) {
 	stateDir := t.TempDir()
 	snapshots := store.NewSnapshotStore(stateDir)
-	directory, err := snapshots.ProjectDir("project-one")
+	directory, err := snapshots.WorkspaceDir("workspace-one")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	first, err := snapshots.Save("project-one", "aa11bb22", "first agent\n")
+	first, err := snapshots.Save("workspace-one", "aa11bb22", "first agent\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := snapshots.Save("project-one", "cc33dd44", "second agent\n")
+	second, err := snapshots.Save("workspace-one", "cc33dd44", "second agent\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,14 +210,14 @@ func TestSnapshotStoreWritesOneFilePerAgentSessionAndOneLatestCopy(t *testing.T)
 		t.Fatalf("Agent Session snapshot permissions = %v", info.Mode().Perm())
 	}
 
-	if exists, err := snapshots.ValidateProject("project-one", false); err != nil || !exists {
-		t.Fatalf("ValidateProject() = %v, %v", exists, err)
+	if exists, err := snapshots.ValidateWorkspace("workspace-one", false); err != nil || !exists {
+		t.Fatalf("ValidateWorkspace() = %v, %v", exists, err)
 	}
-	if _, err := snapshots.Save("project-one", "not-hex", "third agent\n"); err == nil || !strings.Contains(err.Error(), "invalid Agent Session ID") {
+	if _, err := snapshots.Save("workspace-one", "not-hex", "third agent\n"); err == nil || !strings.Contains(err.Error(), "invalid Agent Session ID") {
 		t.Fatalf("Save() with an invalid Agent Session ID error = %v", err)
 	}
 
-	if err := snapshots.DeleteProject("project-one", false); err != nil {
+	if err := snapshots.DeleteWorkspace("workspace-one", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(directory, "agents")); !os.IsNotExist(err) {
@@ -214,14 +231,14 @@ func TestSnapshotStoreWritesOneFilePerAgentSessionAndOneLatestCopy(t *testing.T)
 func TestSnapshotStoreListMeasuresAgentSessionSnapshots(t *testing.T) {
 	stateDir := t.TempDir()
 	snapshots := store.NewSnapshotStore(stateDir)
-	if _, err := snapshots.Save("project-one", "aa11bb22", "first agent\n"); err != nil {
+	if _, err := snapshots.Save("workspace-one", "aa11bb22", "first agent\n"); err != nil {
 		t.Fatal(err)
 	}
 	listed, err := snapshots.List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) != 1 || listed[0].ProjectID != "project-one" {
+	if len(listed) != 1 || listed[0].WorkspaceID != "workspace-one" {
 		t.Fatalf("List() = %+v", listed)
 	}
 	if listed[0].Bytes < int64(2*len("first agent\n")) {

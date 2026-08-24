@@ -12,23 +12,23 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/jpugliesi/tmux-worktree/internal/version"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	skillasset "github.com/jpugliesi/tmux-worktree/skills"
 	"github.com/spf13/cobra"
 )
 
 // RelocationRequest describes one archive or removal that must move the
-// calling tmux client out of the Project session first.
+// calling tmux client out of the Workspace session first.
 type RelocationRequest struct {
-	// ProjectID is the Project that twt archives or removes.
-	ProjectID string
-	// DestinationProjectID is the Project that receives the tmux client. It
-	// is empty when no other active Project exists; twt then detaches the
+	// WorkspaceID is the Workspace that twt archives or removes.
+	WorkspaceID string
+	// DestinationWorkspaceID is the Workspace that receives the tmux client. It
+	// is empty when no other active Workspace exists; twt then detaches the
 	// client.
-	DestinationProjectID string
+	DestinationWorkspaceID string
 	// Keep stops the operation after the archive.
 	Keep bool
 	// AllowUnpublished permits removal of a branch with unpublished commits.
@@ -52,7 +52,7 @@ type Options struct {
 	// of config.yaml at command time.
 	TicketsHome string
 	// BranchPrefix is the user branch prefix for the {prefix} token of
-	// Project branch patterns. When it is empty, twt resolves
+	// Workspace branch patterns. When it is empty, twt resolves
 	// TWT_BRANCH_PREFIX and then the branchPrefix value of config.yaml at
 	// command time.
 	BranchPrefix string
@@ -66,14 +66,14 @@ type Options struct {
 	// installs the real tmux implementation when it is nil; tests replace it
 	// with a fake.
 	QuickCreateSwitch func(clientName, session string) error
-	// QuickCreateArchive archives the old Project after the client switch.
+	// QuickCreateArchive archives the old Workspace after the client switch.
 	// New installs the real relocation worker implementation when it is nil.
-	QuickCreateArchive func(clientName, oldProjectID, newProjectID string) error
-	// DoneRelocate moves the calling tmux client out of the Project session
+	QuickCreateArchive func(clientName, oldWorkspaceID, newWorkspaceID string) error
+	// DoneRelocate moves the calling tmux client out of the Workspace session
 	// and completes the archive or removal. New installs the real relocation
 	// worker implementation when it is nil.
 	DoneRelocate func(request RelocationRequest) error
-	// SwitchPick selects one line index from the switch Project picker. New
+	// SwitchPick selects one line index from the switch Workspace picker. New
 	// installs the real fzf or numbered-list implementation when it is nil.
 	SwitchPick func(command *cobra.Command, lines []string) (int, error)
 	// AgentPick selects one line index from the agents open picker. New uses
@@ -85,23 +85,23 @@ type Options struct {
 	// TicketPick selects one line index from the start Ticket picker. New
 	// uses the real fzf or numbered-list implementation when it is nil.
 	TicketPick func(command *cobra.Command, lines []string) (int, error)
-	// PickTicketBoard selects one Board picker line. The result is "(none)",
-	// an existing Board name, or a typed new name. New installs the real fzf
+	// PickTicketProject selects one Project picker line. The result is "(none)",
+	// an existing Project name, or a typed new name. New installs the real fzf
 	// or numbered-list implementation when it is nil.
-	PickTicketBoard        func(command *cobra.Command, lines []string) (string, error)
+	PickTicketProject      func(command *cobra.Command, lines []string) (string, error)
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
 }
 
-// projectService builds the Project service for these Options.
-func (o Options) projectService() *projectservice.Service {
-	return projectservice.NewService(o.projectServiceOptions())
+// workspaceService builds the Workspace service for these Options.
+func (o Options) workspaceService() *workspaceservice.Service {
+	return workspaceservice.NewService(o.workspaceServiceOptions())
 }
 
-// projectServiceOptions builds the base Project service configuration.
-func (o Options) projectServiceOptions() projectservice.Options {
-	return projectservice.Options{StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket}
+// workspaceServiceOptions builds the base Workspace service configuration.
+func (o Options) workspaceServiceOptions() workspaceservice.Options {
+	return workspaceservice.Options{StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket}
 }
 
 // agentService builds the Agent Session service for these Options.
@@ -109,7 +109,7 @@ func (o Options) agentService() *agentservice.Service {
 	return agentservice.NewService(o.StateDir, o.TmuxSocket)
 }
 
-// templateStore builds the Project Template store for these Options.
+// templateStore builds the Workspace Template store for these Options.
 func (o Options) templateStore() store.TemplateStore {
 	return store.NewTemplateStore(o.ConfigDir)
 }
@@ -216,8 +216,8 @@ func withRealWorkflows(options Options) Options {
 	if options.SwitchPick == nil {
 		options.SwitchPick = realSwitchPick
 	}
-	if options.PickTicketBoard == nil {
-		options.PickTicketBoard = realPickTicketBoard
+	if options.PickTicketProject == nil {
+		options.PickTicketProject = realPickTicketProject
 	}
 	if options.OpenEditor == nil {
 		options.OpenEditor = realOpenEditor(options)
@@ -259,21 +259,21 @@ func New(options Options) *cobra.Command {
 	root := &cobra.Command{
 		Use:     "twt",
 		Version: version.Version,
-		Short:   "Manage task-focused Projects with Git worktrees and tmux",
-		Long: `Create task-focused Projects from reusable YAML templates.
+		Short:   "Manage task-focused Workspaces with Git worktrees and tmux",
+		Long: `Create task-focused Workspaces from reusable YAML templates.
 
-Each Project can own multiple Git worktrees, one tmux window for each
+Each Workspace can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
 		Example: `  # File work, then pick a ticket.
   twt tickets create "Fix auth token refresh"
   twt tickets ls --ready
   twt tickets claim fix-auth-tokens
 
-  # Start the Project and work in it.
+  # Start the Workspace and work in it.
   twt start fix-auth-tokens
   twt agents ls
 
-  # Close the ticket and remove the Project.
+  # Close the ticket and remove the Workspace.
   twt tickets close fix-auth-tokens
   twt done`,
 		SilenceErrors: true,
@@ -310,6 +310,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	)
 	templates := newTemplatesCommand(options)
 	templates.GroupID = "workflows"
+	workspaces := newWorkspacesCommand(options)
+	workspaces.GroupID = "workflows"
 	projects := newProjectsCommand(options)
 	projects.GroupID = "workflows"
 	quickCreate := newQuickCreateCommand(options)
@@ -340,7 +342,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	skillsCommand.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
+	root.AddCommand(templates, workspaces, projects, quickCreate, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

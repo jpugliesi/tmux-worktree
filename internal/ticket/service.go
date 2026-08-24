@@ -27,7 +27,7 @@ type Options struct {
 // Service owns every ticket read and write.
 type Service struct {
 	options Options
-	// now uses local time, not the UTC of the Project service. Ticket dates
+	// now uses local time, not the UTC of the Workspace service. Ticket dates
 	// are human-facing vault dates, so they follow the user's wall clock.
 	now func() time.Time
 }
@@ -91,45 +91,45 @@ func (s *Service) Init(dryRun bool) (InitResult, error) {
 	return result, nil
 }
 
-// CreateBoard creates one Board directory and writes its index.md only when
+// CreateProject creates one Project directory and writes its index.md only when
 // that file is missing.
-func (s *Service) CreateBoard(name string, dryRun bool) (domain.Board, error) {
+func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error) {
 	home, err := s.home()
 	if err != nil {
-		return domain.Board{}, err
+		return domain.Project{}, err
 	}
 	if err := store.ValidateResourceName(name); err != nil {
-		return domain.Board{}, clierr.Wrap(clierr.InvalidUsage, err)
+		return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
 	}
 	if name == "templates" {
-		return domain.Board{}, clierr.New(clierr.InvalidUsage, "the Board name %q is reserved", name)
+		return domain.Project{}, clierr.New(clierr.InvalidUsage, "the Project name %q is reserved", name)
 	}
 	path := filepath.Join(home, name)
 	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
-		return domain.Board{}, clierr.New(clierr.UnsafeState, "the Board path %q is a file, not a directory", path)
+		return domain.Project{}, clierr.New(clierr.UnsafeState, "the Project path %q is a file, not a directory", path)
 	}
 	indexPath := filepath.Join(path, "index.md")
 	if dryRun {
-		board, boardErr := s.boardInfo(home, name)
-		if boardErr != nil {
-			board = domain.Board{Name: name, Path: path}
+		project, projectErr := s.projectInfo(home, name)
+		if projectErr != nil {
+			project = domain.Project{Name: name, Path: path}
 		}
-		board.HasIndex = true
-		return board, nil
+		project.HasIndex = true
+		return project, nil
 	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
-		return domain.Board{}, fmt.Errorf("create Board directory: %w", err)
+		return domain.Project{}, fmt.Errorf("create Project directory: %w", err)
 	}
 	if !fileExists(indexPath) {
-		if err := store.WriteFileAtomic(indexPath, boardIndexContent(name, s.today()), 0o644, "Board index"); err != nil {
-			return domain.Board{}, err
+		if err := store.WriteFileAtomic(indexPath, projectIndexContent(name, s.today()), 0o644, "Project index"); err != nil {
+			return domain.Project{}, err
 		}
 	}
-	return s.boardInfo(home, name)
+	return s.projectInfo(home, name)
 }
 
-// Boards lists every Board directory sorted by name.
-func (s *Service) Boards() ([]domain.Board, error) {
+// Projects lists every Project directory sorted by name.
+func (s *Service) Projects() ([]domain.Project, error) {
 	home, err := s.home()
 	if err != nil {
 		return nil, err
@@ -139,58 +139,58 @@ func (s *Service) Boards() ([]domain.Board, error) {
 		return nil, homeMissing(home)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list Boards: %w", err)
+		return nil, fmt.Errorf("list Projects: %w", err)
 	}
-	boards := []domain.Board{}
+	projects := []domain.Project{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if !entry.IsDir() || name == "templates" || strings.HasPrefix(name, ".") {
 			continue
 		}
-		board, err := s.boardInfo(home, name)
+		project, err := s.projectInfo(home, name)
 		if err != nil {
 			return nil, err
 		}
-		boards = append(boards, board)
+		projects = append(projects, project)
 	}
-	sort.Slice(boards, func(i, j int) bool { return boards[i].Name < boards[j].Name })
-	return boards, nil
+	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
+	return projects, nil
 }
 
-// Board returns one Board by name.
-func (s *Service) Board(name string) (domain.Board, error) {
+// Project returns one Project by name.
+func (s *Service) Project(name string) (domain.Project, error) {
 	home, err := s.home()
 	if err != nil {
-		return domain.Board{}, err
+		return domain.Project{}, err
 	}
 	info, statErr := os.Stat(filepath.Join(home, name))
 	if statErr != nil || !info.IsDir() {
-		return domain.Board{}, boardMissing(name)
+		return domain.Project{}, projectMissing(name)
 	}
-	return s.boardInfo(home, name)
+	return s.projectInfo(home, name)
 }
 
-func (s *Service) boardInfo(home, name string) (domain.Board, error) {
+func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 	path := filepath.Join(home, name)
-	board := domain.Board{Name: name, Path: path}
+	project := domain.Project{Name: name, Path: path}
 	entries, err := os.ReadDir(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return board, nil
+		return project, nil
 	}
 	if err != nil {
-		return domain.Board{}, fmt.Errorf("read Board %q: %w", name, err)
+		return domain.Project{}, fmt.Errorf("read Project %q: %w", name, err)
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
 		}
 		if entry.Name() == "index.md" {
-			board.HasIndex = true
+			project.HasIndex = true
 			continue
 		}
-		board.Tickets++
+		project.Tickets++
 	}
-	return board, nil
+	return project, nil
 }
 
 // CreateRequest describes one new Ticket. Priority -1 selects the default
@@ -199,13 +199,13 @@ func (s *Service) boardInfo(home, name string) (domain.Board, error) {
 type CreateRequest struct {
 	Title    string
 	Slug     string
-	Board    string
+	Project  string
 	Body     string
 	Status   domain.TicketStatus
 	Priority int
-	// EnsureBoard creates Board when it is missing. The interactive create
-	// wizard sets this after confirm. --board and apply never set it.
-	EnsureBoard bool
+	// EnsureProject creates Project when it is missing. The interactive create
+	// wizard sets this after confirm. --project and apply never set it.
+	EnsureProject bool
 }
 
 // CreateResult is the created Ticket plus the rendered file content. A dry
@@ -250,7 +250,7 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 		Aliases:   []string{title},
 		Status:    status,
 		Priority:  priority,
-		Board:     req.Board,
+		Project:   req.Project,
 		BlockedBy: []string{},
 		Created:   s.today(),
 		Updated:   s.today(),
@@ -268,21 +268,21 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 			"Pass --slug to select a different slug.")
 	}
 	directory := home
-	if req.Board != "" {
-		if req.EnsureBoard {
-			if _, err := s.CreateBoard(req.Board, dryRun); err != nil {
+	if req.Project != "" {
+		if req.EnsureProject {
+			if _, err := s.CreateProject(req.Project, dryRun); err != nil {
 				return CreateResult{}, err
 			}
 		}
-		info, statErr := os.Stat(filepath.Join(home, req.Board))
+		info, statErr := os.Stat(filepath.Join(home, req.Project))
 		if statErr != nil || !info.IsDir() {
-			if dryRun && req.EnsureBoard {
-				directory = filepath.Join(home, req.Board)
+			if dryRun && req.EnsureProject {
+				directory = filepath.Join(home, req.Project)
 			} else {
-				return CreateResult{}, boardMissing(req.Board)
+				return CreateResult{}, projectMissing(req.Project)
 			}
 		} else {
-			directory = filepath.Join(home, req.Board)
+			directory = filepath.Join(home, req.Project)
 		}
 	}
 	path := filepath.Join(directory, slug+".md")
@@ -322,10 +322,10 @@ func renderNewTicket(ticket domain.Ticket, body string) ([]byte, error) {
 	setMapStringList(mapping, "tags", []string{"tickets"})
 	setMapString(mapping, "status", string(ticket.Status))
 	setMapInt(mapping, "priority", ticket.Priority)
-	if ticket.Board == "" {
-		setMapNull(mapping, "board")
+	if ticket.Project == "" {
+		setMapNull(mapping, "project")
 	} else {
-		setMapString(mapping, "board", ticket.Board)
+		setMapString(mapping, "project", ticket.Project)
 	}
 	setMapStringList(mapping, "blocked_by", nil)
 	setMapNull(mapping, "claimed_by")
@@ -359,15 +359,15 @@ None - can start immediately
 	return "\n# " + title + "\n\n" + strings.Trim(body, "\n") + "\n"
 }
 
-// ListFilter selects Tickets. BoardSet with an empty Board selects only
+// ListFilter selects Tickets. ProjectSet with an empty Project selects only
 // ungrouped Tickets. All includes the closed Tickets that the default list
 // hides.
 type ListFilter struct {
-	Board    string
-	BoardSet bool
-	Status   string
-	Ready    bool
-	All      bool
+	Project    string
+	ProjectSet bool
+	Status     string
+	Ready      bool
+	All        bool
 }
 
 // closedStatus reports whether a status resolves a Ticket. The default list
@@ -396,7 +396,7 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 	hideClosed := !filter.All && filter.Status == ""
 	tickets := []domain.Ticket{}
 	for _, ticket := range idx.tickets {
-		if filter.BoardSet && ticket.Board != filter.Board {
+		if filter.ProjectSet && ticket.Project != filter.Project {
 			continue
 		}
 		if filter.Status != "" && string(ticket.Status) != filter.Status {
@@ -507,11 +507,11 @@ type SetRequest struct {
 	StatusSet   bool
 	Priority    int
 	PrioritySet bool
-	Board       string
-	BoardSet    bool
+	Project     string
+	ProjectSet  bool
 }
 
-// Set changes status, priority, or Board of one Ticket. A Board change moves
+// Set changes status, priority, or Project of one Ticket. A Project change moves
 // the file. Set with StatusSet is the escape hatch for a Ticket that carries
 // an unrecognized status.
 func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, error) {
@@ -527,15 +527,15 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	if req.BoardSet {
-		if req.Board == "" {
+	if req.ProjectSet {
+		if req.Project == "" {
 			return domain.Ticket{}, clierr.WithHint(
-				clierr.New(clierr.InvalidUsage, "the Board name is empty"),
-				"Pass a Board name.")
+				clierr.New(clierr.InvalidUsage, "the Project name is empty"),
+				"Pass a Project name.")
 		}
-		info, statErr := os.Stat(filepath.Join(home, req.Board))
+		info, statErr := os.Stat(filepath.Join(home, req.Project))
 		if statErr != nil || !info.IsDir() {
-			return domain.Ticket{}, boardMissing(req.Board)
+			return domain.Ticket{}, projectMissing(req.Project)
 		}
 	}
 	return s.mutate(ref, dryRun, req.StatusSet, func(m *mutation) error {
@@ -545,8 +545,8 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 		if req.PrioritySet {
 			setMapInt(m.mapping, "priority", req.Priority)
 		}
-		if req.BoardSet {
-			destination := filepath.Join(home, req.Board, m.ticket.Slug+".md")
+		if req.ProjectSet {
+			destination := filepath.Join(home, req.Project, m.ticket.Slug+".md")
 			if destination != m.destPath {
 				if fileExists(destination) {
 					return clierr.New(clierr.AlreadyExists, "ticket file %q already exists", destination)
@@ -647,7 +647,7 @@ func (s *Service) Comment(ref, text string, dryRun bool) (domain.Ticket, error) 
 }
 
 // Edit replaces the whole body of one Ticket. The frontmatter stays as it
-// is, except the updated date and the board heal.
+// is, except the updated date and the project heal.
 func (s *Service) Edit(ref, body string, dryRun bool) (domain.Ticket, error) {
 	if strings.TrimSpace(body) == "" {
 		return domain.Ticket{}, clierr.WithHint(
@@ -672,7 +672,7 @@ type mutation struct {
 }
 
 // mutate is the shared write path: resolve, lock, re-read under the lock,
-// apply, bump updated, heal board, render, and write atomically. A dry run
+// apply, bump updated, heal project, render, and write atomically. A dry run
 // performs every check and skips only the write and the source removal.
 func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func(*mutation) error) (domain.Ticket, error) {
 	home, err := s.home()
@@ -708,7 +708,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	ticket.Board = boardOf(home, path)
+	ticket.Project = projectOf(home, path)
 	if !allowUnknownStatus && !domain.ValidTicketStatus(ticket.Status) {
 		return domain.Ticket{}, clierr.WithHint(
 			clierr.New(clierr.UnsafeState, "ticket %q has unrecognized status %q", slug, ticket.Status),
@@ -723,7 +723,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 		return m.ticket, nil
 	}
 	setMapDate(m.mapping, "updated", s.today())
-	healBoard(m.mapping, home, m.destPath)
+	healProject(m.mapping, home, m.destPath)
 	data, err := m.file.Render()
 	if err != nil {
 		return domain.Ticket{}, err
@@ -733,7 +733,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 		return domain.Ticket{}, err
 	}
 	result.Path = m.destPath
-	result.Board = boardOf(home, m.destPath)
+	result.Project = projectOf(home, m.destPath)
 	if dryRun {
 		return result, nil
 	}
@@ -788,8 +788,8 @@ func bodyTitle(body, slug string) string {
 	return slug
 }
 
-// boardOf derives the Board of a ticket path from its directory.
-func boardOf(home, path string) string {
+// projectOf derives the Project of a ticket path from its directory.
+func projectOf(home, path string) string {
 	directory := filepath.Dir(path)
 	if directory == filepath.Clean(home) {
 		return ""
@@ -797,14 +797,15 @@ func boardOf(home, path string) string {
 	return filepath.Base(directory)
 }
 
-// healBoard writes the path-derived Board into the frontmatter. An ungrouped
-// ticket gets a null board.
-func healBoard(mapping *yaml.Node, home, path string) {
-	if board := boardOf(home, path); board != "" {
-		setMapString(mapping, "board", board)
+// healProject writes the path-derived Project into the frontmatter. An ungrouped
+// ticket gets a null project.
+func healProject(mapping *yaml.Node, home, path string) {
+	deleteMapKey(mapping, "board")
+	if project := projectOf(home, path); project != "" {
+		setMapString(mapping, "project", project)
 		return
 	}
-	setMapNull(mapping, "board")
+	setMapNull(mapping, "project")
 }
 
 // validClaimant checks the claimant name against the twt resource-name
@@ -828,10 +829,10 @@ func claimedByOther(slug, current string) error {
 		"Select a ticket from 'twt tickets list --ready'.")
 }
 
-func boardMissing(name string) error {
+func projectMissing(name string) error {
 	return clierr.WithHint(
-		clierr.New(clierr.NotFound, "Board %q does not exist", name),
-		"Run 'twt tickets boards create %s'.", name)
+		clierr.New(clierr.NotFound, "Project %q does not exist", name),
+		"Run 'twt projects create %s'.", name)
 }
 
 func homeMissing(home string) error {

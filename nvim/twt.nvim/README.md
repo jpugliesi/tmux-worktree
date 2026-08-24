@@ -1,7 +1,7 @@
 # twt.nvim preview
 
 This Neovim plug-in connects review notes to the Agent Sessions of the current
-`twt` Project. It does not read twt state files or call tmux. All Project,
+`twt` Workspace. It does not read twt state files or call tmux. All Workspace,
 Agent Session, resume, focus, and feedback work goes through the versioned
 `twt` JSON interface.
 
@@ -28,9 +28,9 @@ options so the picker shows a preview of the highlighted note.
 | `<leader>arp` | Select an Agent Session and open its transcript |
 | `<leader>an` | Add a review note, or open the note on this line |
 | `<leader>ad` | Delete the review note on this line |
-| `<leader>al` | List the review notes of this Project |
-| `<leader>arl` | List the review notes of this Project |
-| `<leader>arr` | Send the current Project review batch |
+| `<leader>al` | List the review notes of this Workspace |
+| `<leader>arl` | List the review notes of this Workspace |
+| `<leader>arr` | Send the current Workspace review batch |
 | `<leader>ars` | Write free text in a window and send it |
 | `<leader>aru` | Resume the selected Agent Session |
 | `<leader>arf` | Focus the selected Agent Session |
@@ -59,9 +59,9 @@ available:
 | `:TwtAgents` | Select an Agent Session and open its transcript |
 | `:TwtNote` | Add a review note, or open the note on this line |
 | `:TwtNoteDelete` | Delete the review note on this line |
-| `:TwtReview` | Send the current Project review batch |
+| `:TwtReview` | Send the current Workspace review batch |
 | `:TwtSend` | Write free text in a window and send it |
-| `:TwtNotes` | List the review notes of this Project |
+| `:TwtNotes` | List the review notes of this Workspace |
 | `:TwtResume` | Resume the selected Agent Session |
 | `:TwtFocus` | Focus the selected Agent Session |
 | `:TwtRefresh` | Write a new transcript snapshot for the selected Agent Session |
@@ -70,7 +70,7 @@ available:
 Each mapping has a command. The commands and the mappings do the same work and
 show the same messages.
 
-`:TwtNotes`, `<leader>al`, and `<leader>arl` show the notes of the current Project. The
+`:TwtNotes`, `<leader>al`, and `<leader>arl` show the notes of the current Workspace. The
 Snacks picker preview shows the file, the selected lines, and the note
 comment. Select a note, then select `Open`, `Delete`, or `Go to the line`.
 `Open` moves to the line and opens the note window with the current comment.
@@ -80,7 +80,7 @@ the comment. Press `<C-d>` in that window to delete the note. Clear the
 comment and press `<C-s>` to delete it. `<leader>ad` deletes the note on
 this line without opening the window. A line with more than one note asks
 which note to open or delete. `<leader>arx` asks `Are you sure you want to
-clear all review notes?` before it clears the Project batch.
+clear all review notes?` before it clears the Workspace batch.
 
 If the selected Agent Session is not live, but it can resume, a send asks you
 first: `The Agent Session is not live. Resume and send?`. Answer yes to resume
@@ -112,23 +112,23 @@ A snapshot buffer sets `autoread`, and the plug-in runs `checktime` on
 `FocusGained` and `CursorHold`. A snapshot buffer shows the new text without a
 manual reload.
 
-Agent selection, transcript snapshots, and review notes are scoped by immutable Project ID. Each note
+Agent selection, transcript snapshots, and review notes are scoped by immutable Workspace ID. Each note
 also contains the repository name. Extmarks keep note lines current after file
 edits. A successful send completes and clears the batch. A failed or uncertain
 send keeps the batch. The plug-in does not retry a send.
 
-`twt` reads the linked provider transcript, checks its Project, and writes
+`twt` reads the linked provider transcript, checks its Workspace, and writes
 the private Markdown snapshot to
-`$TWT_STATE_DIR/snapshots/projects/PROJECT_ID/agents/AGENT_ID.md`. The
+`$TWT_STATE_DIR/snapshots/projects/WORKSPACE_ID/agents/AGENT_ID.md`. The
 plug-in opens the exact file that the `path` field of the snapshot response
 names, so each Agent Session keeps its own file. If an older `twt` returns no
 `path`, the plug-in falls back to the shared
-`$TWT_STATE_DIR/snapshots/projects/PROJECT_ID/latest.md` file. Archive keeps
-the files. Applied Project removal deletes them. Register a new Agent Session
+`$TWT_STATE_DIR/snapshots/projects/WORKSPACE_ID/latest.md` file. Archive keeps
+the files. Applied Workspace removal deletes them. Register a new Agent Session
 with `--session SESSION_ID`, or use `twt agents transcript link` for an
 existing record.
 Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading stays
-off because its local records do not contain a safe, exact Project directory.
+off because its local records do not contain a safe, exact Workspace directory.
 
 Older preview versions used the Neovim state directory. twt cannot reliably
 find that path when `NVIM_APPNAME` changes. You can remove those old preview
@@ -177,7 +177,7 @@ require("twt").setup({
 })
 ```
 
-Run both headless tests. The second test uses the real `twt` binary and two separate Projects:
+Run both headless tests. The second test uses the real `twt` binary and two separate Workspaces:
 
 ```sh
 ./nvim/twt.nvim/tests/test.sh

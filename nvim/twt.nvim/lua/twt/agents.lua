@@ -11,17 +11,17 @@ local M = {}
 
 local cannot_send = "the selected Agent Session cannot receive feedback"
 
--- One record for each Project: the selected Agent Session, the two
+-- One record for each Workspace: the selected Agent Session, the two
 -- one-at-a-time guards, and the labels of the last listing (for the
 -- statusline).
-local projects = {}
-local last_project_id
+local workspaces = {}
+local last_workspace_id
 
-local function project(project_id)
-  local record = projects[project_id]
+local function workspace(workspace_id)
+  local record = workspaces[workspace_id]
   if not record then
     record = { agents = {} }
-    projects[project_id] = record
+    workspaces[workspace_id] = record
   end
   return record
 end
@@ -36,18 +36,18 @@ local function notify_refresh()
 end
 
 -- Keeps the label and the liveness of the last listing, for the statusline.
-local function remember(project_id, agents)
+local function remember(workspace_id, agents)
   local known = {}
   for _, agent in ipairs(agents) do
     known[agent.id] = { label = agent.label, live = agent.status == "live" }
   end
-  project(project_id).agents = known
-  last_project_id = project_id
+  workspace(workspace_id).agents = known
+  last_workspace_id = workspace_id
 end
 
 function M.status()
-  local project_id = vim.b[buffers.project_id] or last_project_id
-  local record = project_id and projects[project_id]
+  local workspace_id = vim.b[buffers.workspace_id] or last_workspace_id
+  local record = workspace_id and workspaces[workspace_id]
   if not record then return nil end
   local entry = record.selected_id and record.agents[record.selected_id]
   if not entry then return nil end
@@ -58,8 +58,8 @@ local function list_for(context, directory, done)
   client.request({
     "agents",
     "list",
-    "--project",
-    context.project.id,
+    "--workspace",
+    context.workspace.id,
     "--limit",
     tostring(config.get().max_agents),
   }, { cwd = directory }, function(err, result)
@@ -67,18 +67,18 @@ local function list_for(context, directory, done)
       done(err)
       return
     end
-    if result.projectId ~= context.project.id then
-      done("twt returned Agent Sessions for a different Project")
+    if result.workspaceId ~= context.workspace.id then
+      done("twt returned Agent Sessions for a different Workspace")
       return
     end
     local agents = result.agents or {}
-    remember(context.project.id, agents)
+    remember(context.workspace.id, agents)
     done(nil, agents, context, directory)
   end)
 end
 
 function M.list(done)
-  client.project_context(function(err, context, directory)
+  client.workspace_context(function(err, context, directory)
     if err then
       done(err)
       return
@@ -89,25 +89,25 @@ end
 
 -- Writes a new transcript snapshot for one Agent Session and opens the file.
 -- It answers `done(nil, { agent = agent, path = path })`.
-local function take_snapshot(agent, project_id, directory, done)
+local function take_snapshot(agent, workspace_id, directory, done)
   if not can(agent, "canReadTranscript") then
     done("the selected Agent Session has no linked transcript")
     return
   end
-  local record = project(project_id)
+  local record = workspace(workspace_id)
   if record.snapshotting then
-    done("a transcript snapshot is already in progress for this Project")
+    done("a transcript snapshot is already in progress for this Workspace")
     return
   end
   record.snapshotting = true
-  client.request({ "agents", "transcript", "snapshot", agent.id, "--project", project_id }, { cwd = directory }, function(transcript_err, transcript)
+  client.request({ "agents", "transcript", "snapshot", agent.id, "--workspace", workspace_id }, { cwd = directory }, function(transcript_err, transcript)
     record.snapshotting = nil
     if transcript_err then
       done(transcript_err)
       return
     end
-    if transcript.projectId ~= project_id then
-      done("twt returned a transcript for a different Project or Agent Session")
+    if transcript.workspaceId ~= workspace_id then
+      done("twt returned a transcript for a different Workspace or Agent Session")
       return
     end
     -- A discovered session ID is the provider session ID. Snapshot adopts
@@ -115,19 +115,19 @@ local function take_snapshot(agent, project_id, directory, done)
     if transcript.agentId ~= agent.id then
       local discovered = agent.status == "discovered" and agent.providerSessionId == agent.id
       if not discovered then
-        done("twt returned a transcript for a different Project or Agent Session")
+        done("twt returned a transcript for a different Workspace or Agent Session")
         return
       end
       local adopted = vim.deepcopy(agent)
       adopted.id = transcript.agentId
       agent = adopted
     end
-    local path, path_err = snapshot.resolve(transcript, project_id)
+    local path, path_err = snapshot.resolve(transcript, workspace_id)
     if not path then
       done(path_err)
       return
     end
-    local _, open_err = snapshot.open(path, project_id, directory)
+    local _, open_err = snapshot.open(path, workspace_id, directory)
     if open_err then
       done(open_err)
       return
@@ -138,7 +138,7 @@ local function take_snapshot(agent, project_id, directory, done)
   end)
 end
 
--- Lists the Agent Sessions of the current Project, then writes and opens the
+-- Lists the Agent Sessions of the current Workspace, then writes and opens the
 -- transcript snapshot of the selected one. A canceled selection answers
 -- `done(nil)` with no result.
 function M.pick(done)
@@ -149,7 +149,7 @@ function M.pick(done)
       return
     end
     if #agents == 0 then
-      done("this Project has no Agent Sessions")
+      done("this Workspace has no Agent Sessions")
       return
     end
     config.get().select(agents, {
@@ -162,19 +162,19 @@ function M.pick(done)
         done(nil)
         return
       end
-      take_snapshot(agent, context.project.id, directory, done)
+      take_snapshot(agent, context.workspace.id, directory, done)
     end)
   end)
 end
 
 local function with_selected(done, expected)
-  client.project_context(function(err, context, directory)
+  client.workspace_context(function(err, context, directory)
     if err then
       done(err)
       return
     end
-    if expected and context.project.id ~= expected.project_id then
-      done("the current buffer changed to a different Project")
+    if expected and context.workspace.id ~= expected.workspace_id then
+      done("the current buffer changed to a different Workspace")
       return
     end
     list_for(context, directory, function(list_err, agents)
@@ -182,31 +182,31 @@ local function with_selected(done, expected)
         done(list_err)
         return
       end
-      local id = project(context.project.id).selected_id
+      local id = workspace(context.workspace.id).selected_id
       for _, agent in ipairs(agents) do
         if agent.id == id then
           done(nil, agent, context, directory)
           return
         end
       end
-      done("select an Agent Session for this Project first")
+      done("select an Agent Session for this Workspace first")
     end)
   end, expected and expected.directory or nil)
 end
 
--- Sends `text` to one live Agent Session. One send at a time for each Project.
-local function send_now(agent, project_id, directory, text, done)
+-- Sends `text` to one live Agent Session. One send at a time for each Workspace.
+local function send_now(agent, workspace_id, directory, text, done)
   if not can(agent, "canSend") then
     done(cannot_send)
     return
   end
-  local record = project(project_id)
+  local record = workspace(workspace_id)
   if record.sending then
-    done("a review send is already in progress for this Project")
+    done("a review send is already in progress for this Workspace")
     return
   end
   record.sending = true
-  client.request({ "agents", "send", agent.id, "--project", project_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
+  client.request({ "agents", "send", agent.id, "--workspace", workspace_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
     record.sending = nil
     if not send_err then notify_refresh() end
     done(send_err, result)
@@ -219,9 +219,9 @@ local function send_text(text, done, expected)
       done(err)
       return
     end
-    local project_id = context.project.id
+    local workspace_id = context.workspace.id
     if can(agent, "canSend") then
-      send_now(agent, project_id, directory, text, done)
+      send_now(agent, workspace_id, directory, text, done)
       return
     end
     if not can(agent, "canResume") then
@@ -241,13 +241,13 @@ local function send_text(text, done, expected)
         notify_refresh()
         -- Reads the Agent Session one more time, so the send uses the
         -- capabilities of the resumed Agent Session.
-        local from = { project_id = project_id, directory = directory }
+        local from = { workspace_id = workspace_id, directory = directory }
         with_selected(function(live_err, live_agent, live_context, live_directory)
           if live_err then
             done(live_err)
             return
           end
-          send_now(live_agent, live_context.project.id, live_directory, text, done)
+          send_now(live_agent, live_context.workspace.id, live_directory, text, done)
         end, from)
       end)
     end)
@@ -276,7 +276,7 @@ function M.prompt_send(done)
   end)
 end
 
--- Writes a new snapshot for the Agent Session that the Project already
+-- Writes a new snapshot for the Agent Session that the Workspace already
 -- selected. It answers `done(nil, { agent = agent, path = path })`.
 function M.refresh(done)
   done = done or function() end
@@ -285,7 +285,7 @@ function M.refresh(done)
       done(err)
       return
     end
-    take_snapshot(agent, context.project.id, directory, done)
+    take_snapshot(agent, context.workspace.id, directory, done)
   end)
 end
 

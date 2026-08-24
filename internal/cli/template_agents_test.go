@@ -14,7 +14,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func TestProjectsCreateRegistersTheDeclaredAgentSessions(t *testing.T) {
+func TestWorkspacesCreateRegistersTheDeclaredAgentSessions(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -54,13 +54,13 @@ agents:
 	if !strings.Contains(validated, "example") {
 		t.Fatalf("templates validate output = %q", validated)
 	}
-	executeWithOptions(t, options, nil, "projects", "create", "fix-auth", "--template", "example", "--no-open")
-	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth")
+	executeWithOptions(t, options, nil, "workspaces", "create", "fix-auth", "--template", "example", "--no-open")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	listJSON := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID, "--output", "json")
+	listJSON := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID, "--output", "json")
 	var listed struct {
 		Agents []struct {
 			ID           string `json:"id"`
@@ -86,7 +86,7 @@ agents:
 	if !declared.Capabilities.CanResume || !declared.Capabilities.CanSend {
 		t.Fatalf("declared Agent Session = %+v in %s", declared, listJSON)
 	}
-	windows := runCommand(t, root, "tmux", "-L", socket, "-f", "/dev/null", "list-windows", "-t", project.TmuxSession, "-F", "#{window_name}")
+	windows := runCommand(t, root, "tmux", "-L", socket, "-f", "/dev/null", "list-windows", "-t", workspace.TmuxSession, "-F", "#{window_name}")
 	count := 0
 	for _, name := range strings.Fields(windows) {
 		if name == "review" {
@@ -98,8 +98,8 @@ agents:
 	}
 
 	// A setup retry replays the agent step without a second registration.
-	executeWithOptions(t, options, nil, "projects", "setup", "retry", project.ID)
-	sessions, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	executeWithOptions(t, options, nil, "workspaces", "setup", "retry", workspace.ID)
+	sessions, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

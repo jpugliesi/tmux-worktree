@@ -26,26 +26,26 @@ func NewService(stateDir, tmuxSocket string) *Service {
 	return &Service{stateDir: stateDir, store: store.NewAgentStore(stateDir), tmux: tmuxclient.Client{Socket: tmuxSocket}, now: func() time.Time { return time.Now().UTC() }}
 }
 
-func (s *Service) Register(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string) (domain.AgentSession, error) {
+func (s *Service) Register(workspace domain.Workspace, provider, label, pane, providerSessionID string, resumeCommand []string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLock(s.stateDir)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	defer lock.Release()
-	project, err = store.NewProjectStore(s.stateDir).Find(project.ID)
+	workspace, err = store.NewWorkspaceStore(s.stateDir).Find(workspace.ID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	provider, providerSessionID, existing, err := s.validateRegistration(project, provider, pane, providerSessionID, resumeCommand)
+	provider, providerSessionID, existing, err := s.validateRegistration(workspace, provider, pane, providerSessionID, resumeCommand)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	agent, err := newSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, s.now())
+	agent, err := newSession(workspace, provider, label, pane, providerSessionID, resumeCommand, existing, s.now())
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	if pane != "" {
-		if err := s.attachPane(project, &agent, pane); err != nil {
+		if err := s.attachPane(workspace, &agent, pane); err != nil {
 			return domain.AgentSession{}, err
 		}
 	}
@@ -57,10 +57,10 @@ func (s *Service) Register(project domain.Project, provider, label, pane, provid
 
 // BuildSession makes one new Agent Session record. It does not take a lock,
 // read tmux, or write the store. Register uses it inside the mutation lock.
-// Project setup also uses it, because the mutation lock is already held
-// there. The caller gives the Agent Sessions that the Project has now, and
+// Workspace setup also uses it, because the mutation lock is already held
+// there. The caller gives the Agent Sessions that the Workspace has now, and
 // must record the pane identity and save the record.
-func BuildSession(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
+func BuildSession(workspace domain.Workspace, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
 	provider, providerSessionID, err := inferRegistration(provider, providerSessionID, resumeCommand)
 	if err != nil {
 		return domain.AgentSession{}, err
@@ -68,12 +68,12 @@ func BuildSession(project domain.Project, provider, label, pane, providerSession
 	if !validProvider(provider) {
 		return domain.AgentSession{}, clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
 	}
-	return newSession(project, provider, label, pane, providerSessionID, resumeCommand, existing, now)
+	return newSession(workspace, provider, label, pane, providerSessionID, resumeCommand, existing, now)
 }
 
 // newSession makes the Agent Session record from a normalized provider and
 // provider session ID.
-func newSession(project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
+func newSession(workspace domain.Workspace, provider, label, pane, providerSessionID string, resumeCommand []string, existing []domain.AgentSession, now time.Time) (domain.AgentSession, error) {
 	label, err := resolveLabel(label, provider, existing)
 	if err != nil {
 		return domain.AgentSession{}, err
@@ -83,7 +83,7 @@ func newSession(project domain.Project, provider, label, pane, providerSessionID
 		return domain.AgentSession{}, err
 	}
 	return domain.AgentSession{
-		Version: domain.AgentVersion, ID: id, ProjectID: project.ID, Provider: provider, Label: label,
+		Version: domain.AgentVersion, ID: id, WorkspaceID: workspace.ID, Provider: provider, Label: label,
 		ProviderSessionID: providerSessionID, TmuxPane: pane,
 		ResumeCommand: append([]string(nil), resumeCommand...), CreatedAt: now, UpdatedAt: now,
 	}, nil
@@ -96,17 +96,17 @@ func MatchesProvider(paneCommand, paneStart, provider string, resumeCommand []st
 		commandMatchesProvider(startCommand(paneStart), provider, resumeCommand)
 }
 
-func (s *Service) ValidateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) error {
-	provider, _, _, err := s.validateRegistration(project, provider, pane, providerSessionID, resumeCommand)
+func (s *Service) ValidateRegistration(workspace domain.Workspace, provider, pane, providerSessionID string, resumeCommand []string) error {
+	provider, _, _, err := s.validateRegistration(workspace, provider, pane, providerSessionID, resumeCommand)
 	if err != nil {
 		return err
 	}
 	if pane == "" {
 		return nil
 	}
-	command, start, err := s.tmux.PaneProcess(pane, project.ID)
+	command, start, err := s.tmux.PaneProcess(pane, workspace.ID)
 	if err != nil {
-		return clierr.Wrap(clierr.PreconditionFailed, fmt.Errorf("tmux pane %q cannot be registered for Project %q: %w", pane, project.Name, err))
+		return clierr.Wrap(clierr.PreconditionFailed, fmt.Errorf("tmux pane %q cannot be registered for Workspace %q: %w", pane, workspace.Name, err))
 	}
 	if !MatchesProvider(command, start, provider, resumeCommand) {
 		return clierr.New(clierr.PreconditionFailed, "pane command %q does not match provider %q", command, provider)
@@ -115,11 +115,11 @@ func (s *Service) ValidateRegistration(project domain.Project, provider, pane, p
 }
 
 // validateRegistration checks one registration and returns the normalized
-// provider and provider session ID with the Agent Sessions that the Project
+// provider and provider session ID with the Agent Sessions that the Workspace
 // has now. Inference and validation run once; Register consumes the result.
-func (s *Service) validateRegistration(project domain.Project, provider, pane, providerSessionID string, resumeCommand []string) (string, string, []domain.AgentSession, error) {
-	if project.Status != domain.ProjectActive {
-		return "", "", nil, projectNotActiveError(project)
+func (s *Service) validateRegistration(workspace domain.Workspace, provider, pane, providerSessionID string, resumeCommand []string) (string, string, []domain.AgentSession, error) {
+	if workspace.Status != domain.WorkspaceActive {
+		return "", "", nil, workspaceNotActiveError(workspace)
 	}
 	if pane == "" && len(resumeCommand) == 0 {
 		return "", "", nil, clierr.New(clierr.InvalidUsage, "set a live --pane or give a resume command after --")
@@ -131,7 +131,7 @@ func (s *Service) validateRegistration(project domain.Project, provider, pane, p
 	if !validProvider(provider) {
 		return "", "", nil, clierr.New(clierr.InvalidUsage, "unsupported agent provider %q", provider)
 	}
-	existing, err := s.store.List(project.ID)
+	existing, err := s.store.List(workspace.ID)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -153,8 +153,8 @@ func (s *Service) validateRegistration(project domain.Project, provider, pane, p
 
 // attachPane records the pane process identity on the Agent Session and
 // claims the pane, after it verifies that the pane runs the provider.
-func (s *Service) attachPane(project domain.Project, session *domain.AgentSession, pane string) error {
-	command, start, err := s.tmux.PaneProcess(pane, project.ID)
+func (s *Service) attachPane(workspace domain.Workspace, session *domain.AgentSession, pane string) error {
+	command, start, err := s.tmux.PaneProcess(pane, workspace.ID)
 	if err != nil {
 		return err
 	}
@@ -163,19 +163,19 @@ func (s *Service) attachPane(project domain.Project, session *domain.AgentSessio
 	}
 	session.TmuxPane = pane
 	session.PaneCommand, session.PaneStart = command, start
-	return s.tmux.ClaimAgentPane(pane, project.ID, session.ID)
+	return s.tmux.ClaimAgentPane(pane, workspace.ID, session.ID)
 }
 
-// StartDeclared starts the Agent Session process in its own Project window,
+// StartDeclared starts the Agent Session process in its own Workspace window,
 // verifies and claims the new pane, and saves the record. Like BuildSession,
-// it takes no mutation lock: Project setup calls it while the caller already
+// it takes no mutation lock: Workspace setup calls it while the caller already
 // holds the global mutation lock, so a lock here would deadlock.
-func (s *Service) StartDeclared(project domain.Project, session domain.AgentSession, start []string) (domain.AgentSession, error) {
-	pane, err := s.tmux.StartAgent(project, session.Label, start)
+func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start []string) (domain.AgentSession, error) {
+	pane, err := s.tmux.StartAgent(workspace, session.Label, start)
 	if err != nil {
 		return session, err
 	}
-	if err := s.attachPane(project, &session, pane); err != nil {
+	if err := s.attachPane(workspace, &session, pane); err != nil {
 		return session, err
 	}
 	session.UpdatedAt = s.now()
@@ -185,13 +185,13 @@ func (s *Service) StartDeclared(project domain.Project, session domain.AgentSess
 	return session, nil
 }
 
-// ValidateLabel checks that the display label is free inside the Project. An
+// ValidateLabel checks that the display label is free inside the Workspace. An
 // empty label always passes, because twt makes a unique default label.
-func (s *Service) ValidateLabel(projectID, label string) error {
+func (s *Service) ValidateLabel(workspaceID, label string) error {
 	if strings.TrimSpace(label) == "" {
 		return nil
 	}
-	existing, err := s.store.List(projectID)
+	existing, err := s.store.List(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -201,7 +201,7 @@ func (s *Service) ValidateLabel(projectID, label string) error {
 
 // resolveLabel returns the label for a new Agent Session. An explicit label
 // must be free. An empty label becomes the provider name, then the provider
-// name with a number, inside the Project.
+// name with a number, inside the Workspace.
 func resolveLabel(label, provider string, existing []domain.AgentSession) (string, error) {
 	used := map[string]bool{}
 	for _, agent := range existing {
@@ -211,7 +211,7 @@ func resolveLabel(label, provider string, existing []domain.AgentSession) (strin
 	if label != "" {
 		if used[label] {
 			return "", clierr.WithHint(
-				clierr.New(clierr.AlreadyExists, "Agent Session label %q is already in use in this Project", label),
+				clierr.New(clierr.AlreadyExists, "Agent Session label %q is already in use in this Workspace", label),
 				"Give a different --label, or do not set --label.",
 			)
 		}
@@ -292,29 +292,29 @@ func sessionIDArgument(value string) string {
 	return value
 }
 
-func projectNotActiveError(project domain.Project) error {
-	if project.Status == domain.ProjectArchived {
+func workspaceNotActiveError(workspace domain.Workspace) error {
+	if workspace.Status == domain.WorkspaceArchived {
 		return clierr.WithHint(
-			clierr.New(clierr.PreconditionFailed, "Project %q is archived", project.Name),
-			"Run 'twt projects open %s' to open it.", project.Name,
+			clierr.New(clierr.PreconditionFailed, "Workspace %q is archived", workspace.Name),
+			"Run 'twt workspaces open %s' to open it.", workspace.Name,
 		)
 	}
-	return clierr.New(clierr.PreconditionFailed, "Project %q setup is not complete", project.Name)
+	return clierr.New(clierr.PreconditionFailed, "Workspace %q setup is not complete", workspace.Name)
 }
 
-func (s *Service) List(projectID string) ([]domain.AgentSession, error) {
-	return s.store.List(projectID)
+func (s *Service) List(workspaceID string) ([]domain.AgentSession, error) {
+	return s.store.List(workspaceID)
 }
 
 func (s *Service) Find(reference string) (domain.AgentSession, error) { return s.store.Find(reference) }
 
-func (s *Service) LinkTranscript(agentID, projectID, providerSessionID string) (domain.AgentSession, error) {
+func (s *Service) LinkTranscript(agentID, workspaceID, providerSessionID string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLock(s.stateDir)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	defer lock.Release()
-	agent, err := s.validateTranscriptLink(agentID, projectID, providerSessionID)
+	agent, err := s.validateTranscriptLink(agentID, workspaceID, providerSessionID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
@@ -326,21 +326,21 @@ func (s *Service) LinkTranscript(agentID, projectID, providerSessionID string) (
 	return agent, nil
 }
 
-func (s *Service) ValidateTranscriptLink(agentID, projectID, providerSessionID string) error {
-	_, err := s.validateTranscriptLink(agentID, projectID, providerSessionID)
+func (s *Service) ValidateTranscriptLink(agentID, workspaceID, providerSessionID string) error {
+	_, err := s.validateTranscriptLink(agentID, workspaceID, providerSessionID)
 	return err
 }
 
-func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID string) (domain.AgentSession, error) {
-	if _, err := store.NewProjectStore(s.stateDir).Find(projectID); err != nil {
+func (s *Service) validateTranscriptLink(agentID, workspaceID, providerSessionID string) (domain.AgentSession, error) {
+	if _, err := store.NewWorkspaceStore(s.stateDir).Find(workspaceID); err != nil {
 		return domain.AgentSession{}, err
 	}
 	agent, err := s.store.Find(agentID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	if agent.ProjectID != projectID {
-		return domain.AgentSession{}, transcript.NotInProjectError(agent.ID, projectID)
+	if agent.WorkspaceID != workspaceID {
+		return domain.AgentSession{}, transcript.NotInWorkspaceError(agent.ID, workspaceID)
 	}
 	if !transcript.SupportsProvider(agent.Provider) {
 		return domain.AgentSession{}, clierr.New(clierr.InvalidUsage, "provider %q does not support verifiable linked transcripts", agent.Provider)
@@ -348,7 +348,7 @@ func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID s
 	if err := transcript.ValidateSessionID(providerSessionID); err != nil {
 		return domain.AgentSession{}, err
 	}
-	agents, err := s.store.List(projectID)
+	agents, err := s.store.List(workspaceID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
@@ -361,10 +361,10 @@ func (s *Service) validateTranscriptLink(agentID, projectID, providerSessionID s
 }
 
 func (s *Service) IsLive(agent domain.AgentSession) bool {
-	return s.tmux.PaneBelongsToAgent(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	return s.tmux.PaneBelongsToAgent(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
 }
 
-func (s *Service) Resume(agent domain.AgentSession, project domain.Project) (domain.AgentSession, error) {
+func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLock(s.stateDir)
 	if err != nil {
 		return agent, err
@@ -375,23 +375,23 @@ func (s *Service) Resume(agent domain.AgentSession, project domain.Project) (dom
 		return agent, err
 	}
 	agent = current
-	project, err = store.NewProjectStore(s.stateDir).Find(agent.ProjectID)
+	workspace, err = store.NewWorkspaceStore(s.stateDir).Find(agent.WorkspaceID)
 	if err != nil {
 		return agent, err
 	}
-	if err := s.ValidateResume(agent, project); err != nil {
+	if err := s.ValidateResume(agent, workspace); err != nil {
 		return agent, err
 	}
 	if s.IsLive(agent) {
-		return agent, s.tmux.Focus(agent.TmuxPane, project.ID, agent.ID, agent.PaneCommand, agent.PaneStart)
+		return agent, s.tmux.Focus(agent.TmuxPane, workspace.ID, agent.ID, agent.PaneCommand, agent.PaneStart)
 	}
-	return s.StartDeclared(project, agent, agent.ResumeCommand)
+	return s.StartDeclared(workspace, agent, agent.ResumeCommand)
 }
 
-// Live returns the Agent Sessions of the Project that run live in their
+// Live returns the Agent Sessions of the Workspace that run live in their
 // owned tmux panes.
-func (s *Service) Live(projectID string) ([]domain.AgentSession, error) {
-	agents, err := s.store.List(projectID)
+func (s *Service) Live(workspaceID string) ([]domain.AgentSession, error) {
+	agents, err := s.store.List(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -404,12 +404,12 @@ func (s *Service) Live(projectID string) ([]domain.AgentSession, error) {
 	return live, nil
 }
 
-func (s *Service) ValidateResume(agent domain.AgentSession, project domain.Project) error {
-	if project.ID != agent.ProjectID {
-		return transcript.NotInProjectError(agent.ID, project.Name)
+func (s *Service) ValidateResume(agent domain.AgentSession, workspace domain.Workspace) error {
+	if workspace.ID != agent.WorkspaceID {
+		return transcript.NotInWorkspaceError(agent.ID, workspace.Name)
 	}
-	if project.Status != domain.ProjectActive {
-		return projectNotActiveError(project)
+	if workspace.Status != domain.WorkspaceActive {
+		return workspaceNotActiveError(workspace)
 	}
 	if !s.IsLive(agent) && len(agent.ResumeCommand) == 0 {
 		return clierr.New(clierr.PreconditionFailed, "Agent Session %q has no live pane or resume command", agent.ID)
@@ -423,17 +423,17 @@ func NotLiveError(agentID string) error { return tmuxclient.NotLiveError(agentID
 
 // ExplainLiveness returns one check for each Agent Session pane predicate.
 func (s *Service) ExplainLiveness(agent domain.AgentSession) []tmuxclient.PaneCheck {
-	return s.tmux.ExplainPane(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	return s.tmux.ExplainPane(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
 }
 
 // Remove deletes the Agent Session record. It does not stop a live process.
-func (s *Service) Remove(reference, projectID string) (domain.AgentSession, error) {
+func (s *Service) Remove(reference, workspaceID string) (domain.AgentSession, error) {
 	lock, err := store.AcquireMutationLock(s.stateDir)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
 	defer lock.Release()
-	agent, err := s.ValidateRemove(reference, projectID)
+	agent, err := s.ValidateRemove(reference, workspaceID)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
@@ -443,29 +443,29 @@ func (s *Service) Remove(reference, projectID string) (domain.AgentSession, erro
 	return agent, nil
 }
 
-func (s *Service) ValidateRemove(reference, projectID string) (domain.AgentSession, error) {
+func (s *Service) ValidateRemove(reference, workspaceID string) (domain.AgentSession, error) {
 	agent, err := s.store.Find(reference)
 	if err != nil {
 		return domain.AgentSession{}, err
 	}
-	if projectID != "" && agent.ProjectID != projectID {
-		return domain.AgentSession{}, transcript.NotInProjectError(agent.ID, projectID)
+	if workspaceID != "" && agent.WorkspaceID != workspaceID {
+		return domain.AgentSession{}, transcript.NotInWorkspaceError(agent.ID, workspaceID)
 	}
 	return agent, nil
 }
 
 func (s *Service) Focus(agent domain.AgentSession) error {
-	return s.tmux.Focus(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart)
+	return s.tmux.Focus(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart)
 }
 
-func (s *Service) Send(agent domain.AgentSession, projectID, text string) error {
-	if agent.ProjectID != projectID {
-		return transcript.NotInProjectError(agent.ID, projectID)
+func (s *Service) Send(agent domain.AgentSession, workspaceID, text string) error {
+	if agent.WorkspaceID != workspaceID {
+		return transcript.NotInWorkspaceError(agent.ID, workspaceID)
 	}
 	if text == "" {
 		return clierr.New(clierr.InvalidUsage, "feedback input is empty")
 	}
-	return s.tmux.Send(agent.TmuxPane, agent.ProjectID, agent.ID, agent.PaneCommand, agent.PaneStart, text)
+	return s.tmux.Send(agent.TmuxPane, agent.WorkspaceID, agent.ID, agent.PaneCommand, agent.PaneStart, text)
 }
 
 func startCommand(command string) string {

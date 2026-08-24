@@ -89,7 +89,7 @@ func TestSkillsInstallReplacesASymlinkAndReportsJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("decode %q: %v", output, err)
 	}
-	if result.SchemaVersion != 1 || result.Status != "applied" || len(result.Skills) != 3 {
+	if result.SchemaVersion != 2 || result.Status != "applied" || len(result.Skills) != 3 {
 		t.Fatalf("install result = %+v", result)
 	}
 	actions := map[string]string{}
@@ -165,7 +165,7 @@ func TestSkillsShowPrintsTheStampedSkill(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("decode %q: %v", output, err)
 	}
-	if result.SchemaVersion != 1 || result.Skill.Version != version.Version || result.Skill.Content != text {
+	if result.SchemaVersion != 2 || result.Skill.Version != version.Version || result.Skill.Content != text {
 		t.Fatalf("skills show JSON = %+v", result)
 	}
 }

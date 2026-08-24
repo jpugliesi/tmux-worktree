@@ -69,3 +69,12 @@ func optionalArg(name string) cobra.PositionalArgs {
 		return nil
 	}
 }
+
+func oneOrMoreArgs(name string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return invalidUsage(command, "missing required argument %s", name)
+		}
+		return nil
+	}
+}

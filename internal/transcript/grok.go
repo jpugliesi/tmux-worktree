@@ -16,7 +16,7 @@ func (s *Service) grokRoot() string { return filepath.Join(s.home, ".grok", "ses
 // discoverGrok reads the session ID and the repository name of one Grok
 // Build chat_history file. Other jsonl files in the same session directory
 // are not sessions.
-func discoverGrok(path string, project domain.Project) (string, string, bool) {
+func discoverGrok(path string, workspace domain.Workspace) (string, string, bool) {
 	sessionID, sessionDir, ok := grokSessionFromPath(path)
 	if !ok {
 		return "", "", false
@@ -28,14 +28,14 @@ func discoverGrok(path string, project domain.Project) (string, string, bool) {
 	if cwd == "" {
 		return "", "", false
 	}
-	name := repositoryForDirectory(project, cwd)
+	name := repositoryForDirectory(workspace, cwd)
 	if name == "" {
 		return "", "", false
 	}
 	return sessionID, name, true
 }
 
-func (s *Service) readGrok(sessionID string, project domain.Project) (Transcript, error) {
+func (s *Service) readGrok(sessionID string, workspace domain.Workspace) (Transcript, error) {
 	paths, err := grokChatHistoryFiles(s.grokRoot(), sessionID)
 	if err != nil {
 		return Transcript{}, err
@@ -53,9 +53,9 @@ func (s *Service) readGrok(sessionID string, project domain.Project) (Transcript
 		if id != "" && id != sessionID {
 			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Grok transcript has conflicting session metadata")
 		}
-		repositoryName := repositoryForDirectory(project, cwd)
+		repositoryName := repositoryForDirectory(workspace, cwd)
 		if repositoryName == "" {
-			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Grok transcript %q does not belong to Project %q", sessionID, project.Name)
+			return Transcript{}, clierr.New(clierr.PreconditionFailed, "Grok transcript %q does not belong to Workspace %q", sessionID, workspace.Name)
 		}
 		return makeTranscript("grok", sessionID, repositoryName, info.ModTime(), grokEvents(lines))
 	}

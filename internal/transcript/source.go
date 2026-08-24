@@ -108,12 +108,12 @@ func scanJSONLines(path string, limit int64, visit func(map[string]any) bool) er
 	return nil
 }
 
-func repositoryForDirectory(project domain.Project, directory string) string {
+func repositoryForDirectory(workspace domain.Workspace, directory string) string {
 	cleanDirectory, err := filepath.Abs(directory)
 	if err != nil {
 		return ""
 	}
-	for _, repository := range project.Repositories {
+	for _, repository := range workspace.Repositories {
 		root, err := filepath.Abs(repository.Path)
 		if err != nil {
 			continue

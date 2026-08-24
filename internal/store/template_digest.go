@@ -37,26 +37,26 @@ func Digests(template domain.Template) (DigestSet, error) {
 	return DigestSet{Environment: environment, Legacy: legacy}, nil
 }
 
-// TemplateStatus describes one current Project Template. Unreadable marks a
-// Project Template that twt cannot load or digest.
+// TemplateStatus describes one current Workspace Template. Unreadable marks a
+// Workspace Template that twt cannot load or digest.
 type TemplateStatus struct {
 	Digests    DigestSet
 	Unreadable bool
 }
 
-// TemplateCatalog maps each current Project Template name to its status.
+// TemplateCatalog maps each current Workspace Template name to its status.
 type TemplateCatalog map[string]TemplateStatus
 
 // TemplateDisposition tells what to do with one prepared digest.
 type TemplateDisposition int
 
 const (
-	// TemplateCurrent: the digest matches the current Project Template.
+	// TemplateCurrent: the digest matches the current Workspace Template.
 	TemplateCurrent TemplateDisposition = iota
-	// TemplateKeep: twt cannot read the Project Template, so it cannot know
+	// TemplateKeep: twt cannot read the Workspace Template, so it cannot know
 	// if the digest is obsolete. Keep the Prepared Environment.
 	TemplateKeep
-	// TemplateObsolete: the Project Template no longer exists, or the digest
+	// TemplateObsolete: the Workspace Template no longer exists, or the digest
 	// no longer matches it.
 	TemplateObsolete
 )
@@ -77,8 +77,8 @@ func (c TemplateCatalog) Disposition(templateName, digest string) TemplateDispos
 	return TemplateObsolete
 }
 
-// LoadTemplateCatalog reads each Project Template and returns its digests.
-// The second return value holds one warning for each Project Template that
+// LoadTemplateCatalog reads each Workspace Template and returns its digests.
+// The second return value holds one warning for each Workspace Template that
 // twt cannot load; the catalog marks those entries as Unreadable.
 func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
 	templates := NewTemplateStore(configDir)
@@ -96,7 +96,7 @@ func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
 		}
 		if err != nil {
 			catalog[name] = TemplateStatus{Unreadable: true}
-			warnings = append(warnings, fmt.Sprintf("Project Template %q is not valid. twt kept its Prepared Environments.", name))
+			warnings = append(warnings, fmt.Sprintf("Workspace Template %q is not valid. twt kept its Prepared Environments.", name))
 			continue
 		}
 		catalog[name] = TemplateStatus{Digests: digests}
@@ -104,9 +104,9 @@ func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
 	return catalog, warnings, nil
 }
 
-// environmentDigestPayload holds only the Project Template values that change
-// the physical worktrees of a Prepared Environment. A change to the Project
-// Template name, a window name, the Project initialization, or the pool depth
+// environmentDigestPayload holds only the Workspace Template values that change
+// the physical worktrees of a Prepared Environment. A change to the Workspace
+// Template name, a window name, the Workspace initialization, or the pool depth
 // does not change this payload, so a prepared set stays usable.
 type environmentDigestPayload struct {
 	FormatVersion int                           `json:"formatVersion"`
@@ -127,7 +127,7 @@ type environmentDigestInitialize struct {
 	WorkingDirectory string   `json:"workingDirectory"`
 }
 
-// EnvironmentDigest identifies the physical worktree set of one Project
+// EnvironmentDigest identifies the physical worktree set of one Workspace
 // Template revision and preparation format. encoding/json sorts string map
 // keys, so the result does not depend on map insertion order.
 func EnvironmentDigest(template domain.Template) (string, error) {
@@ -159,7 +159,7 @@ func EnvironmentDigest(template domain.Template) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// LegacyTemplateDigest identifies one exact Project Template and preparation
+// LegacyTemplateDigest identifies one exact Workspace Template and preparation
 // format. Installations that twt prepared before the digest split use it.
 func LegacyTemplateDigest(template domain.Template) (string, error) {
 	payload := struct {
@@ -171,7 +171,7 @@ func LegacyTemplateDigest(template domain.Template) (string, error) {
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("encode Project Template digest: %w", err)
+		return "", fmt.Errorf("encode Workspace Template digest: %w", err)
 	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil

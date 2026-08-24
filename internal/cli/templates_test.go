@@ -155,7 +155,7 @@ func TestTemplatesInitializationCommands(t *testing.T) {
 	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--repo", "app", "--", "./init.sh", "--quick"); err != nil {
 		t.Fatalf("set repository initialization: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--cwd", "app", "--", "./scripts/init-project.sh"); err != nil {
+	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--cwd", "app", "--", "./scripts/init-workspace.sh"); err != nil {
 		t.Fatalf("set template initialization: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestTemplatesInitializationCommands(t *testing.T) {
 	}
 	wantParts := []string{
 		"command:\n            - ./init.sh\n            - --quick",
-		"command:\n        - ./scripts/init-project.sh",
+		"command:\n        - ./scripts/init-workspace.sh",
 		"working_directory: app",
 	}
 	for _, want := range wantParts {

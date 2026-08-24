@@ -15,14 +15,14 @@ type Config struct {
 	// TicketsHome is the root directory of the Markdown ticket files.
 	TicketsHome string `yaml:"ticketsHome"`
 	// BranchPrefix is the user branch prefix for the {prefix} token of
-	// Project branch patterns. twt concatenates it literally, so include the
+	// Workspace branch patterns. twt concatenates it literally, so include the
 	// separator, for example "jpugliesi/". TWT_BRANCH_PREFIX overrides it.
 	BranchPrefix string `yaml:"branchPrefix"`
 }
 
 // LoadConfig reads one strict twt config document from
 // configDir/config.yaml. It rejects unknown fields and more than one
-// document, the same as Project Template loading. A missing file returns the
+// document, the same as Workspace Template loading. A missing file returns the
 // zero Config without an error.
 func LoadConfig(configDir string) (Config, error) {
 	var config Config

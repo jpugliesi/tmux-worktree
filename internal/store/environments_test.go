@@ -83,9 +83,9 @@ func TestEnvironmentStoreDoesNotChangeAClaimReservation(t *testing.T) {
 	environment := testEnvironment("claim-once", time.Now().UTC())
 	environment.Status = domain.EnvironmentClaiming
 	environment.ClaimReservation = &domain.EnvironmentClaim{
-		Project: domain.Project{
-			Version:       domain.ProjectVersion,
-			ID:            "first-project",
+		Workspace: domain.Workspace{
+			Version:       domain.WorkspaceVersion,
+			ID:            "first-workspace",
 			EnvironmentID: environment.ID,
 		},
 		ReservedAt: time.Now().UTC(),
@@ -93,7 +93,7 @@ func TestEnvironmentStoreDoesNotChangeAClaimReservation(t *testing.T) {
 	if err := environments.Save(environment); err != nil {
 		t.Fatal(err)
 	}
-	environment.ClaimReservation.Project.ID = "different-project"
+	environment.ClaimReservation.Workspace.ID = "different-workspace"
 	if err := environments.Save(environment); err == nil || !strings.Contains(err.Error(), "claim reservation cannot change") {
 		t.Fatalf("Save() changed reservation error = %v", err)
 	}
@@ -101,8 +101,8 @@ func TestEnvironmentStoreDoesNotChangeAClaimReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ClaimReservation.Project.ID != "first-project" {
-		t.Fatalf("saved Project ID = %q", got.ClaimReservation.Project.ID)
+	if got.ClaimReservation.Workspace.ID != "first-workspace" {
+		t.Fatalf("saved Workspace ID = %q", got.ClaimReservation.Workspace.ID)
 	}
 }
 
@@ -111,17 +111,17 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 	environment := testEnvironment("claimed", time.Now().UTC())
 	environment.Status = domain.EnvironmentClaiming
 	environment.ClaimReservation = &domain.EnvironmentClaim{
-		Project: domain.Project{
-			Version:       domain.ProjectVersion,
-			ID:            "project-id",
+		Workspace: domain.Workspace{
+			Version:       domain.WorkspaceVersion,
+			ID:            "workspace-id",
 			EnvironmentID: environment.ID,
 			Name:          "fix-auth",
 			TemplateName:  environment.TemplateName,
-			Status:        domain.ProjectInitializing,
-			Root:          "/projects/fix-auth",
-			TmuxSession:   "fix-auth-project-id",
-			Repositories: []domain.ProjectRepository{{
-				Name: "app", CachePath: "/cache/app", Path: "/projects/fix-auth/app", Branch: "fix-auth", WindowName: "app",
+			Status:        domain.WorkspaceInitializing,
+			Root:          "/workspaces/fix-auth",
+			TmuxSession:   "fix-auth-workspace-id",
+			Repositories: []domain.WorkspaceRepository{{
+				Name: "app", CachePath: "/cache/app", Path: "/workspaces/fix-auth/app", Branch: "fix-auth", WindowName: "app",
 			}},
 		},
 		ReservedAt: time.Now().UTC(),
@@ -133,8 +133,46 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ClaimReservation == nil || got.ClaimReservation.Project.TmuxSession != "fix-auth-project-id" || len(got.ClaimReservation.Project.Repositories) != 1 {
+	if got.ClaimReservation == nil || got.ClaimReservation.Workspace.TmuxSession != "fix-auth-workspace-id" || len(got.ClaimReservation.Workspace.Repositories) != 1 {
 		t.Fatalf("claim reservation = %+v", got.ClaimReservation)
+	}
+}
+
+func TestEnvironmentStoreLoadsALegacyWorkspaceClaim(t *testing.T) {
+	stateDir := t.TempDir()
+	environments := NewEnvironmentStore(stateDir)
+	environment := testEnvironment("legacy-claim", time.Now().UTC())
+	environment.Status = domain.EnvironmentClaiming
+	environment.ClaimReservation = &domain.EnvironmentClaim{
+		Workspace: domain.Workspace{
+			Version:       domain.WorkspaceVersion,
+			ID:            "legacy-workspace",
+			EnvironmentID: environment.ID,
+			Name:          "auth-fix",
+			TemplateName:  environment.TemplateName,
+			Status:        domain.WorkspaceInitializing,
+		},
+		ReservedAt: time.Now().UTC(),
+	}
+	if err := environments.Save(environment); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(stateDir, "environments", environment.ID+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Replace(string(data), `"workspace":`, `"project":`, 1)
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := environments.Find(environment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ClaimReservation == nil || got.ClaimReservation.Workspace.ID != "legacy-workspace" {
+		t.Fatalf("legacy claim = %+v", got.ClaimReservation)
 	}
 }
 
@@ -163,7 +201,7 @@ func TestEnvironmentStoreRejectsAnUnknownTemplateDigest(t *testing.T) {
 	environments := NewEnvironmentStore(t.TempDir())
 	environment := testEnvironment("unknown-digest", time.Now().UTC())
 	environment.TemplateDigest = "0000000000000000000000000000000000000000000000000000000000000000"
-	if err := environments.Save(environment); err == nil || !strings.Contains(err.Error(), "Project Template digest") {
+	if err := environments.Save(environment); err == nil || !strings.Contains(err.Error(), "Workspace Template digest") {
 		t.Fatalf("Save() unknown digest error = %v", err)
 	}
 }
@@ -208,7 +246,7 @@ func testEnvironment(id string, createdAt time.Time) domain.PreparedEnvironment 
 			Path: filepath.Join("/tmp", id, "app"), BaseCommit: "base-commit",
 		}},
 		Steps: []domain.SetupStep{{
-			ID: "environment_root", Kind: domain.StepProjectRoot, Status: domain.StepSucceeded,
+			ID: "environment_root", Kind: domain.StepWorkspaceRoot, Status: domain.StepSucceeded,
 		}},
 		QueueToken: "queue-token",
 		QueuedAt:   createdAt,

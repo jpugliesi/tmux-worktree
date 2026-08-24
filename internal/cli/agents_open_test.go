@@ -15,34 +15,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// agentsOpenFixture saves one active Project with a linked Codex Agent
+// agentsOpenFixture saves one active Workspace with a linked Codex Agent
 // Session and one discovered Claude session, and returns the CLI options.
-func agentsOpenFixture(t *testing.T) (cli.Options, domain.Project, string) {
+func agentsOpenFixture(t *testing.T) (cli.Options, domain.Workspace, string) {
 	t.Helper()
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
 	t.Setenv("TMUX_PANE", "")
-	repository := filepath.Join(root, "project", "app")
+	repository := filepath.Join(root, "workspace", "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one",
-		Status: domain.ProjectActive, Root: filepath.Dir(repository), TmuxSession: "project-one",
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one",
+		Status: domain.WorkspaceActive, Root: filepath.Dir(repository), TmuxSession: "workspace-one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt:    now, UpdatedAt: now,
 	}
 	stateDir := filepath.Join(root, "state")
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TWT_PROJECT_ID", project.ID)
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
 	writeTestLines(t, filepath.Join(home, ".codex", "sessions", "2026", "08", "20", "rollout-session-one.jsonl"),
 		`{"type":"session_meta","payload":{"id":"session-one","cwd":`+quoteJSON(t, repository)+`}}
-{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Project question"}]}}
-{"type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"Project answer"}]}}
+{"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Workspace question"}]}}
+{"type":"response_item","payload":{"role":"assistant","content":[{"type":"output_text","text":"Workspace answer"}]}}
 `)
 	writeTestLines(t, filepath.Join(home, ".claude", "projects", "-user-code-app", "claude-one.jsonl"),
 		`{"sessionId":"claude-one","cwd":`+quoteJSON(t, repository)+`,"type":"user","message":{"role":"user","content":"Claude question"}}
@@ -50,14 +50,14 @@ func agentsOpenFixture(t *testing.T) (cli.Options, domain.Project, string) {
 `)
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 	registration := executeWithOptions(t, options, nil,
-		"agents", "register", "--project", project.ID, "--provider", "codex", "--label", "review",
+		"agents", "register", "--workspace", workspace.ID, "--provider", "codex", "--label", "review",
 		"--session", "session-one", "--", "codex", "resume", "session-one",
 	)
 	fields := strings.Fields(registration)
 	if len(fields) < 4 {
 		t.Fatalf("registration output = %q", registration)
 	}
-	return options, project, fields[3]
+	return options, workspace, fields[3]
 }
 
 func TestAgentsOpenRefusesJSONOutput(t *testing.T) {
@@ -73,8 +73,8 @@ func TestAgentsOpenRefusesJSONOutput(t *testing.T) {
 }
 
 func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
-	options, project, agentID := agentsOpenFixture(t)
-	listed := executeWithOptions(t, options, nil, "agents", "list", "--project", project.ID)
+	options, workspace, agentID := agentsOpenFixture(t)
+	listed := executeWithOptions(t, options, nil, "agents", "list", "--workspace", workspace.ID)
 	if strings.Contains(listed, "\t") || !strings.Contains(listed, "PROVIDER") || !strings.Contains(listed, agentID) {
 		t.Fatalf("agents list text = %q", listed)
 	}
@@ -83,7 +83,7 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 		pickedLines = append([]string(nil), lines...)
 		return 0, nil
 	}
-	output := executeWithOptions(t, options, nil, "agents", "open", "--project", project.ID, "--dry-run")
+	output := executeWithOptions(t, options, nil, "agents", "open", "--workspace", workspace.ID, "--dry-run")
 	if len(pickedLines) != 2 {
 		t.Fatalf("agents open picker lines = %v", pickedLines)
 	}
@@ -99,8 +99,8 @@ func TestAgentsOpenPickerListsRegisteredAndDiscoveredSessions(t *testing.T) {
 }
 
 func TestAgentsOpenPickerResumesTheSelectedDiscoveredSessionWithoutAdoptingOnDryRun(t *testing.T) {
-	options, project, _ := agentsOpenFixture(t)
-	before, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	options, workspace, _ := agentsOpenFixture(t)
+	before, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil || len(before) != 1 {
 		t.Fatalf("registered Agent Sessions = %+v, %v", before, err)
 	}
@@ -111,7 +111,7 @@ func TestAgentsOpenPickerResumesTheSelectedDiscoveredSessionWithoutAdoptingOnDry
 	if !strings.Contains(output, "agents.open: valid") {
 		t.Fatalf("discovered picker dry-run output = %q", output)
 	}
-	after, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	after, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil || len(after) != 1 || after[0].ID != before[0].ID {
 		t.Fatalf("dry-run picker adopted a session: %+v, %v", after, err)
 	}
@@ -148,21 +148,21 @@ func TestAgentsOpenNumberedPickerReadsTheAgentNumber(t *testing.T) {
 }
 
 func TestAgentsOpenPreviewWritesTheSameMarkdownAsTranscriptShow(t *testing.T) {
-	options, project, agentID := agentsOpenFixture(t)
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--project", project.ID)
-	preview := executeWithOptions(t, options, nil, "agents", "open", "--preview", agentID, "--project", project.ID)
+	options, workspace, agentID := agentsOpenFixture(t)
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID)
+	preview := executeWithOptions(t, options, nil, "agents", "open", "--preview", agentID, "--workspace", workspace.ID)
 	if preview != shown {
 		t.Fatalf("open --preview markdown = %q, transcript show = %q", preview, shown)
 	}
-	if !strings.Contains(preview, "Project question") || !strings.Contains(preview, "Project answer") {
+	if !strings.Contains(preview, "Workspace question") || !strings.Contains(preview, "Workspace answer") {
 		t.Fatalf("preview markdown = %q", preview)
 	}
 }
 
 func TestAgentsOpenPreviewDoesNotAdoptADiscoveredSession(t *testing.T) {
-	options, project, _ := agentsOpenFixture(t)
+	options, workspace, _ := agentsOpenFixture(t)
 	before := directorySnapshot(t, options.StateDir)
-	preview := executeWithOptions(t, options, nil, "agents", "open", "--preview", "claude-one", "--project", project.ID)
+	preview := executeWithOptions(t, options, nil, "agents", "open", "--preview", "claude-one", "--workspace", workspace.ID)
 	if !strings.Contains(preview, "Claude question") || !strings.Contains(preview, "Claude answer") {
 		t.Fatalf("discovered preview markdown = %q", preview)
 	}
@@ -170,25 +170,25 @@ func TestAgentsOpenPreviewDoesNotAdoptADiscoveredSession(t *testing.T) {
 	if len(after) != len(before) {
 		t.Fatalf("open --preview changed the state directory")
 	}
-	listed, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	listed, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("open --preview adopted a session: %+v, %v", listed, err)
 	}
 }
 
 func TestAgentsOpenPreviewWritesMarkdownWithoutATerminal(t *testing.T) {
-	options, project, agentID := agentsOpenFixture(t)
-	stdout, _, err := executeRaw(t, options, "agents", "open", "--preview", agentID, "--project", project.ID)
+	options, workspace, agentID := agentsOpenFixture(t)
+	stdout, _, err := executeRaw(t, options, "agents", "open", "--preview", agentID, "--workspace", workspace.ID)
 	if err != nil {
 		t.Fatalf("open --preview without --output: %v", err)
 	}
-	if strings.Contains(stdout, "schemaVersion") || !strings.Contains(stdout, "Project question") {
+	if strings.Contains(stdout, "schemaVersion") || !strings.Contains(stdout, "Workspace question") {
 		t.Fatalf("open --preview without a terminal = %q", stdout)
 	}
 }
 
 func TestAgentsOpenRunsTheProviderResumeCommand(t *testing.T) {
-	options, project, agentID := agentsOpenFixture(t)
+	options, workspace, agentID := agentsOpenFixture(t)
 	var ran []string
 	options.AgentOpenExec = func(_ string, argv []string, _ []string) error {
 		ran = append([]string(nil), argv...)
@@ -204,11 +204,11 @@ func TestAgentsOpenRunsTheProviderResumeCommand(t *testing.T) {
 	options.AgentPick = func(_ *cobra.Command, _ []string) (int, error) {
 		return 1, nil
 	}
-	output = executeWithOptions(t, options, nil, "agents", "open", "--project", project.ID)
+	output = executeWithOptions(t, options, nil, "agents", "open", "--workspace", workspace.ID)
 	if strings.Join(ran, " ") != "claude --resume claude-one" {
 		t.Fatalf("discovered open command = %v, output = %q", ran, output)
 	}
-	listed, err := store.NewAgentStore(options.StateDir).List(project.ID)
+	listed, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil || len(listed) != 2 {
 		t.Fatalf("open did not adopt the discovered session: %+v, %v", listed, err)
 	}
@@ -233,15 +233,15 @@ func TestAgentsOpenWithAgentIDResumesWithoutAPicker(t *testing.T) {
 func TestAgentsOpenWithNoAgentsReportsNotFound(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "empty-id", Name: "empty",
-		Status: domain.ProjectActive, TmuxSession: "empty", CreatedAt: now, UpdatedAt: now,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "empty-id", Name: "empty",
+		Status: domain.WorkspaceActive, TmuxSession: "empty", CreatedAt: now, UpdatedAt: now,
 	}
 	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
-	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TWT_PROJECT_ID", project.ID)
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
 	t.Setenv("TMUX_PANE", "")
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	_, _, err := executeCollectingOutput(t, options, "agents", "open", "--dry-run")

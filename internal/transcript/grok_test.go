@@ -12,7 +12,7 @@ import (
 
 func TestReadAndDiscoverGrokSessions(t *testing.T) {
 	home := t.TempDir()
-	project, repository := discoverProject(t)
+	workspace, repository := discoverWorkspace(t)
 	other := filepath.Join(t.TempDir(), "other")
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestReadAndDiscoverGrokSessions(t *testing.T) {
 	writeGrokSession(t, home, "01a02626-4685-7c72-9679-5dbf6dec43ce", repository, "Grok question", "Grok answer")
 	writeGrokSession(t, home, "01a02626-4685-7c72-9679-aaaaaaaaaaaa", other, "Outside question", "Outside answer")
 
-	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{Provider: "grok"})
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{Provider: "grok"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestReadAndDiscoverGrokSessions(t *testing.T) {
 		t.Fatalf("Discover(grok) = %+v", found)
 	}
 
-	got, err := transcript.New(home, "").Read("grok", "01a02626-4685-7c72-9679-5dbf6dec43ce", project)
+	got, err := transcript.New(home, "").Read("grok", "01a02626-4685-7c72-9679-5dbf6dec43ce", workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,19 +39,19 @@ func TestReadAndDiscoverGrokSessions(t *testing.T) {
 		t.Fatalf("Read(grok) Markdown = %q", got.Markdown)
 	}
 
-	if _, err := transcript.New(home, "").Read("grok", "01a02626-4685-7c72-9679-aaaaaaaaaaaa", project); err == nil || !strings.Contains(err.Error(), "does not belong") {
-		t.Fatalf("Read(grok) outside Project error = %v", err)
+	if _, err := transcript.New(home, "").Read("grok", "01a02626-4685-7c72-9679-aaaaaaaaaaaa", workspace); err == nil || !strings.Contains(err.Error(), "does not belong") {
+		t.Fatalf("Read(grok) outside Workspace error = %v", err)
 	}
 }
 
 func TestGrokDiscoveryIgnoresSiblingJSONLFiles(t *testing.T) {
 	home := t.TempDir()
-	project, repository := discoverProject(t)
+	workspace, repository := discoverWorkspace(t)
 	sessionID := "01a02626-4685-7c72-9679-bbbbbbbbbbbb"
 	chat := writeGrokSession(t, home, sessionID, repository, "Keep this", "Keep that")
 	writeLines(t, filepath.Join(filepath.Dir(chat), "events.jsonl"), []string{`{"type":"user","content":"noise"}`})
 
-	found, err := transcript.New(home, "").Discover(project, transcript.DiscoverOptions{Provider: "grok"})
+	found, err := transcript.New(home, "").Discover(workspace, transcript.DiscoverOptions{Provider: "grok"})
 	if err != nil {
 		t.Fatal(err)
 	}

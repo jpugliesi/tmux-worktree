@@ -8,7 +8,7 @@ created: {{CREATED}}
 
 # Tickets
 
-Personal agent tickets. One file for each Ticket. One folder for each Board. Do not edit these views by hand. Bases refreshes them.
+Personal agent tickets. One file for each Ticket. One folder for each Project. Do not edit these views by hand. Bases refreshes them.
 
 ```base
 filters:
@@ -25,7 +25,7 @@ views:
       - file.name
       - title
       - status
-      - board
+      - project
       - created
     sort:
       - property: created
@@ -40,7 +40,7 @@ views:
       - priority
       - file.name
       - title
-      - board
+      - project
       - blocked_by
     sort:
       - property: priority
@@ -59,7 +59,7 @@ views:
       - title
       - status
       - blocked_by
-      - board
+      - project
   - type: table
     name: Claimed
     filters:

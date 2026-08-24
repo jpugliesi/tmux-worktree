@@ -17,27 +17,27 @@ type Template struct {
 	Repositories []RepositorySpec `yaml:"repositories" json:"repositories"`
 	Initialize   *InitializeSpec  `yaml:"initialize,omitempty" json:"initialize,omitempty"`
 	// Session is the command that twt runs each time it creates the tmux
-	// session of a Project. Use it to lay out the windows and the panes.
+	// session of a Workspace. Use it to lay out the windows and the panes.
 	Session *SessionSpec `yaml:"session,omitempty" json:"session,omitempty"`
 	// PoolDepth is the number of ready Prepared Environments to keep for this
-	// Project Template. A value of 0 uses the default depth of 1.
+	// Workspace Template. A value of 0 uses the default depth of 1.
 	PoolDepth int `yaml:"pool_depth,omitempty" json:"poolDepth,omitempty"`
-	// BranchPattern is the default Project branch name of this Project
+	// BranchPattern is the default Workspace branch name of this Workspace
 	// Template. The tokens {prefix}, {name}, and {id8} expand to the user
-	// branch prefix, the Project name, and the first 8 characters of the
-	// Project ID. An empty value uses DefaultBranchPattern. The pattern is
+	// branch prefix, the Workspace name, and the first 8 characters of the
+	// Workspace ID. An empty value uses DefaultBranchPattern. The pattern is
 	// presentation only: it does not change the Prepared Environment digest.
 	BranchPattern string `yaml:"branch_pattern,omitempty" json:"branchPattern,omitempty"`
-	// Agents are the Agent Sessions that each new Project gets.
+	// Agents are the Agent Sessions that each new Workspace gets.
 	Agents []TemplateAgent `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // TemplateAgent declares one Agent Session that twt registers and starts
-// during Project setup.
+// during Workspace setup.
 type TemplateAgent struct {
 	Label    string `yaml:"label" json:"label"`
 	Provider string `yaml:"provider" json:"provider"`
-	// Start is the command that twt runs in a new Project window. It is also
+	// Start is the command that twt runs in a new Workspace window. It is also
 	// the resume command of the Agent Session.
 	Start []string `yaml:"start" json:"start"`
 }
@@ -63,11 +63,11 @@ func (t Template) EffectivePoolDepth() int {
 	return t.PoolDepth
 }
 
-// Warnings returns the advisory messages for a valid Project Template. A
+// Warnings returns the advisory messages for a valid Workspace Template. A
 // warning does not stop a mutation.
 func (t Template) Warnings() []string {
 	if len(t.Repositories) == 0 {
-		return []string{"The Project Template has no repositories."}
+		return []string{"The Workspace Template has no repositories."}
 	}
 	return nil
 }
@@ -87,14 +87,14 @@ type CloneSpec struct {
 }
 
 // SessionSpec declares one command that twt runs each time it creates the
-// tmux session of a Project. twt runs the command after it makes the session
+// tmux session of a Workspace. twt runs the command after it makes the session
 // and one window for each repository. twt never runs it against a session
 // that is already live, so the command cannot disturb panes that the user
 // arranged.
 type SessionSpec struct {
 	Command []string `yaml:"command" json:"command"`
 	// CWD is the working directory of the command. It is relative to the
-	// Project root. An empty value uses the Project root.
+	// Workspace root. An empty value uses the Workspace root.
 	CWD string `yaml:"cwd,omitempty" json:"cwd,omitempty"`
 }
 
@@ -233,8 +233,8 @@ func validateInitialize(initialize *InitializeSpec, requireWorkingDirectory bool
 	if requireWorkingDirectory && strings.TrimSpace(initialize.WorkingDirectory) == "" {
 		return fmt.Errorf("working_directory must be set")
 	}
-	if requireWorkingDirectory && !insideProjectRoot(initialize.WorkingDirectory) {
-		return fmt.Errorf("working_directory must stay inside the Project root")
+	if requireWorkingDirectory && !insideWorkspaceRoot(initialize.WorkingDirectory) {
+		return fmt.Errorf("working_directory must stay inside the Workspace root")
 	}
 	return nil
 }
@@ -246,15 +246,15 @@ func validateSession(session *SessionSpec) error {
 	if len(session.Command) == 0 || strings.TrimSpace(session.Command[0]) == "" {
 		return fmt.Errorf("command must not be empty")
 	}
-	if session.CWD != "" && !insideProjectRoot(session.CWD) {
-		return fmt.Errorf("cwd must stay inside the Project root")
+	if session.CWD != "" && !insideWorkspaceRoot(session.CWD) {
+		return fmt.Errorf("cwd must stay inside the Workspace root")
 	}
 	return nil
 }
 
-// insideProjectRoot reports whether a declared relative directory stays inside
-// the Project root.
-func insideProjectRoot(directory string) bool {
+// insideWorkspaceRoot reports whether a declared relative directory stays inside
+// the Workspace root.
+func insideWorkspaceRoot(directory string) bool {
 	if filepath.IsAbs(directory) {
 		return false
 	}

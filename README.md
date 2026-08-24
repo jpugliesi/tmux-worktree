@@ -1,16 +1,16 @@
 # tmux-worktree
 
-`twt` manages coding-agent work with tmux. One **Project** is one unit of work.
-Each Project has its own git worktrees, its own tmux session with your pane
-layout, and its own Agent Sessions. Prepared Environments make Project
+`twt` manages coding-agent work with tmux. One **Workspace** is one unit of work.
+Each Workspace has its own git worktrees, its own tmux session with your pane
+layout, and its own Agent Sessions. Prepared Environments make Workspace
 creation take seconds. A Markdown ticket tracker (`twt tickets`) holds the
 backlog that you and your agents pick from. Every command speaks JSON,
 dry-runs, and stable error codes, so agents drive `twt` as well as you do.
 
-A **Project Template** is the YAML recipe for that kind of Project. A
-**Prepared Environment** is a warm, initialized worktree set that a Project
+A **Workspace Template** is the YAML recipe for that kind of Workspace. A
+**Prepared Environment** is a warm, initialized worktree set that a Workspace
 claims. An **Agent Session** is one coding-agent run that belongs to a
-Project. A **Ticket** is one Markdown note in **Tickets home**. A **Board**
+Workspace. A **Ticket** is one Markdown note in **Tickets home**. A **Project**
 is a directory that groups Tickets.
 
 ## The daily loop
@@ -31,25 +31,26 @@ twt tickets claim fix-auth-tokens
 File new work at any time, from anywhere:
 
 ```sh
-twt tickets create "Fix auth token refresh" --board core --status ready-for-agent
+twt tickets create "Fix auth token refresh" --project core --status ready-for-agent
 ```
 
 A claim is compare-and-set. When two agents race for one Ticket, the second
 gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 
-### 2. Start a Project
+### 2. Start a Workspace
 
-Pick an open Ticket and start its Project:
+Pick one or more open Tickets from one Project and start their Workspace:
 
 ```sh
 twt start
 ```
 
-A Ticket slug claims that Ticket, creates the Project, links the two, and
-appends a start comment. `twt done` then offers to close that Ticket.
+Ticket slugs claim those Tickets, create one Workspace, link the records, and
+append a start comment to each Ticket.
 
 ```sh
 twt start fix-auth-tokens
+twt start fix-auth-tokens add-auth-tests
 ```
 
 Both paths claim a Prepared Environment and create a branch. They build the
@@ -59,12 +60,12 @@ A warm start to a working session takes about six seconds. The replacement
 environment prepares itself in the background.
 
 Run `twt start` with no name to pick an open Ticket. Run it from anywhere. Inside
-another Project it archives that Project after the switch. Outside one it
+another Workspace it archives that Workspace after the switch. Outside one it
 uses your last template.
 
 ### 3. Work
 
-Move between live Projects with the picker. `twt` uses `fzf` when `fzf` is
+Move between live Workspaces with the picker. `twt` uses `fzf` when `fzf` is
 installed. Without `fzf`, `twt` shows a numbered list:
 
 ```sh
@@ -85,7 +86,7 @@ The preview shows the same markdown as `twt agents transcript show`. Preview
 of a discovered session does not register it. A selection registers it,
 then starts the provider resume command in this pane.
 
-Attach coding agents that already ran in the Project directories.
+Attach coding agents that already ran in the Workspace directories.
 Registration infers the provider and session ID from the resume command.
 `twt agents ls` also shows discovered Codex, Claude, and Grok sessions.
 The first action on a discovered session registers it:
@@ -106,16 +107,16 @@ echo "Root cause found in token refresh path." | twt tickets comment fix-auth-to
 ```
 
 Already have a tmux session that you made by hand? Adopt it. Removal of an
-adopted Project deletes only the twt state. It never deletes the
+adopted Workspace deletes only the twt state. It never deletes the
 directories:
 
 ```sh
-twt projects adopt my-session --name fix-auth
+twt workspaces adopt my-session --name fix-auth
 ```
 
 ### 4. Finish
 
-Close the Ticket, then remove the Project:
+Close the Ticket, then remove the Workspace:
 
 ```sh
 twt tickets close fix-auth-tokens
@@ -123,27 +124,28 @@ twt done
 ```
 
 `close` sets the status to `done` and drops the claim in one write. `done`
-archives the Project, verifies that nothing unpushed gets lost, and removes
+archives the Workspace, verifies that nothing unpushed gets lost, and removes
 the worktrees, branch, and records. When you run it from inside the
-Project's own session, it moves your tmux client to another Project first.
+Workspace's own session, it moves your tmux client to another Workspace first.
 A branch with unpushed commits blocks removal and prints the escape
 commands. A branch with no new commits removes instantly, even offline.
 
-When you started with `twt tickets start`, `twt done` asks whether to close
-that Ticket. Use `twt tickets set --status` and `twt tickets unclaim` when
-you need only one of those two changes.
+When a Workspace has one open Ticket, `twt done` asks whether to close it.
+When it has many open Tickets, `twt done` keeps them open and prints one close
+command for each Ticket. Use `twt tickets set --status` and
+`twt tickets unclaim` when you need only one of those two changes.
 
 Not done yet, just pausing? `twt archive` stops the session and keeps
-everything. `twt projects open NAME` brings it back, layout and all.
+everything. `twt workspaces open NAME` brings it back, layout and all.
 
 ### Housekeeping
 
 ```sh
 twt config                            # resolved settings and their sources
-twt context                           # Project and repository for this directory
+twt context                           # Workspace and repository for this directory
 twt storage show                      # active vs archived bytes
 twt environments list                 # the warm pool, with sizes and ages
-twt projects remove --all-archived --older-than 14d --apply
+twt workspaces remove --all-archived --older-than 14d --apply
 twt storage clean --apply             # failed environments, orphan records
 twt doctor                            # end-to-end health check
 ```
@@ -157,21 +159,22 @@ twt doctor                            # end-to-end health check
 | Command | Job |
 | --- | --- |
 | `twt tickets` | Create, list, claim, start, comment, and close Markdown Tickets |
-| `twt start` | Pick a Ticket or name, create a Project, and switch to it |
-| `twt tickets start` | Claim a Ticket and start its Project |
-| `twt switch` | Move the tmux client to a Project |
+| `twt projects` | Create, list, and show durable Ticket Projects |
+| `twt start` | Pick Tickets or a name, create a Workspace, and switch to it |
+| `twt tickets start` | Claim one or more Tickets and start one Workspace |
+| `twt switch` | Move the tmux client to a Workspace |
 | `twt agents` | List, open, resume, send, and read Agent Sessions |
-| `twt archive` | Stop a Project session and keep its data |
-| `twt done` | Archive a Project and remove its data |
-| `twt projects` | Create, open, adopt, archive, and remove Projects |
-| `twt templates` | Create and edit Project Templates. Prepare Environments |
+| `twt archive` | Stop a Workspace session and keep its data |
+| `twt done` | Archive a Workspace and remove its data |
+| `twt workspaces` (`twt w`) | Create, open, adopt, archive, and remove Workspaces |
+| `twt templates` | Create and edit Workspace Templates. Prepare Environments |
 
 **Inspect and maintain**
 
 | Command | Job |
 | --- | --- |
 | `twt config` | Show every resolved setting and its source |
-| `twt context` | Show the Project and repository for a directory or pane |
+| `twt context` | Show the Workspace and repository for a directory or pane |
 | `twt environments` | Inspect the Prepared Environment pool |
 | `twt storage` | Show disk use. Clean twt-owned leftovers |
 | `twt doctor` | Check tools, templates, state, and skill copies |
@@ -186,7 +189,7 @@ twt doctor                            # end-to-end health check
 | `twt completion` | Generate shell completion |
 
 `list` commands accept `ls`. Common reads are `twt tickets ls`,
-`twt agents ls`, and `twt projects ls`.
+`twt agents ls`, and `twt workspaces ls`.
 
 These commands are interactive. They have no apply operation. They refuse
 `--output json`:
@@ -229,7 +232,7 @@ GOBIN="$PWD/bin" go install ./cmd/twt
 echo "export PATH=\"$PWD/bin:\$PATH\"" >> ~/.zshrc
 ```
 
-Shell completion covers commands, template names, Project names, ticket
+Shell completion covers commands, template names, Workspace names, ticket
 slugs, and Agent Session IDs:
 
 ```sh
@@ -247,9 +250,9 @@ twt completion zsh > ~/.local/share/zsh/site-functions/_twt
 Use `twt completion bash`, `twt completion fish`, or
 `twt completion powershell` for the other shells.
 
-### Define a Project Template
+### Define a Workspace Template
 
-A template declares what every Project of its kind gets: repositories,
+A template declares what every Workspace of its kind gets: repositories,
 initialization, your tmux pane layout, and default agents.
 
 ```sh
@@ -260,7 +263,7 @@ twt templates repos init set product api -- sh -c './init.sh && direnv allow .'
 
 Or write `~/.config/twt/templates/product.yaml` directly. twt validates the
 file on every load. A `session` command runs each time twt creates the
-Project's session. This example builds a three-pane layout (editor, shell
+Workspace's session. This example builds a three-pane layout (editor, shell
 below, agent column):
 
 ```yaml
@@ -333,7 +336,7 @@ The original bash CLI is retired and installed as `twt-legacy`. Its
 configuration stays at `~/.config/tmux-worktree/config.sh` and its data at
 `$TMUX_WORKTREE_DIR`. `tests/start-reset.sh` still exercises it. Run its old
 commands (`create`, `start`, `rename`, `reset`, `shared`) as `twt-legacy`.
-Use Projects and Project Templates for new work.
+Use Workspaces and Workspace Templates for new work.
 
 ## License
 

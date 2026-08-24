@@ -12,8 +12,8 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 )
 
 // doneFixture prepares a config directory with the "example" template, a
@@ -45,67 +45,67 @@ func doneFixture(t *testing.T) cli.Options {
 func TestDoneOutsideSessionSupportsDryRunKeepAndFullRemoval(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
-	executeWithOptions(t, options, nil, "projects", "create", "finish-me", "--template", "example", "--no-open")
-	project, err := store.NewProjectStore(options.StateDir).Find("finish-me")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "finish-me", "--template", "example", "--no-open")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("finish-me")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	dryRun := executeWithOptions(t, options, nil, "done", "finish-me", "--dry-run")
-	for _, want := range []string{"Archive of Project \"finish-me\" is valid.", "Removal plan for Project \"finish-me\":", "remove_worktree"} {
+	for _, want := range []string{"Archive of Workspace \"finish-me\" is valid.", "Removal plan for Workspace \"finish-me\":", "remove_worktree"} {
 		if !strings.Contains(dryRun, want) {
 			t.Fatalf("done dry-run output does not contain %q: %s", want, dryRun)
 		}
 	}
 	if strings.Contains(dryRun, "Blocked:") || strings.Contains(dryRun, "not archived") {
-		t.Fatalf("done dry-run of a clean Project shows blockers: %s", dryRun)
+		t.Fatalf("done dry-run of a clean Workspace shows blockers: %s", dryRun)
 	}
-	unchanged, err := store.NewProjectStore(options.StateDir).Find(project.ID)
-	if err != nil || unchanged.Status != domain.ProjectActive {
-		t.Fatalf("done dry-run changed the Project: status=%q error=%v", unchanged.Status, err)
+	unchanged, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || unchanged.Status != domain.WorkspaceActive {
+		t.Fatalf("done dry-run changed the Workspace: status=%q error=%v", unchanged.Status, err)
 	}
-	if _, err := os.Stat(project.Root); err != nil {
-		t.Fatalf("done dry-run changed Project data: %v", err)
+	if _, err := os.Stat(workspace.Root); err != nil {
+		t.Fatalf("done dry-run changed Workspace data: %v", err)
 	}
 
 	keepOutput := executeWithOptions(t, options, nil, "done", "finish-me", "--keep")
-	if !strings.Contains(keepOutput, "Archived Project \"finish-me\"") || strings.Contains(keepOutput, "Removed") {
+	if !strings.Contains(keepOutput, "Archived Workspace \"finish-me\"") || strings.Contains(keepOutput, "Removed") {
 		t.Fatalf("done --keep output = %q", keepOutput)
 	}
-	archived, err := store.NewProjectStore(options.StateDir).Find(project.ID)
-	if err != nil || archived.Status != domain.ProjectArchived {
-		t.Fatalf("Project after done --keep: status=%q error=%v", archived.Status, err)
+	archived, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || archived.Status != domain.WorkspaceArchived {
+		t.Fatalf("Workspace after done --keep: status=%q error=%v", archived.Status, err)
 	}
-	if _, err := os.Stat(project.Root); err != nil {
-		t.Fatalf("done --keep removed Project data: %v", err)
+	if _, err := os.Stat(workspace.Root); err != nil {
+		t.Fatalf("done --keep removed Workspace data: %v", err)
 	}
 
 	output := executeWithOptions(t, options, nil, "done", "finish-me")
-	if !strings.Contains(output, "Archived Project \"finish-me\"") || !strings.Contains(output, "Removed Project \"finish-me\". Reclaimed ") {
+	if !strings.Contains(output, "Archived Workspace \"finish-me\"") || !strings.Contains(output, "Removed Workspace \"finish-me\". Reclaimed ") {
 		t.Fatalf("done output = %q", output)
 	}
-	if _, err := os.Stat(project.Root); !os.IsNotExist(err) {
-		t.Fatalf("Project root still exists after done: %v", err)
+	if _, err := os.Stat(workspace.Root); !os.IsNotExist(err) {
+		t.Fatalf("Workspace root still exists after done: %v", err)
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find(project.ID); err == nil {
-		t.Fatal("Project record still exists after done")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID); err == nil {
+		t.Fatal("Workspace record still exists after done")
 	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-finish-me").Run(); err == nil {
-		t.Fatal("Project tmux session still exists after done")
+		t.Fatal("Workspace tmux session still exists after done")
 	}
 }
 
-func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
+func TestDoneLeavesABlockedWorkspaceArchived(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
-	executeWithOptions(t, options, nil, "projects", "create", "block-me", "--template", "example", "--no-open")
-	project, err := store.NewProjectStore(options.StateDir).Find("block-me")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "block-me", "--template", "example", "--no-open")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("block-me")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(project.Root, "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace.Root, "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,38 +119,38 @@ func TestDoneLeavesABlockedProjectArchived(t *testing.T) {
 		t.Fatalf("blocked done error = %v", err)
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "Archived Project \"block-me\"") || !strings.Contains(output, "Blocked:") || !strings.Contains(output, "stays archived") {
+	if !strings.Contains(output, "Archived Workspace \"block-me\"") || !strings.Contains(output, "Blocked:") || !strings.Contains(output, "stays archived") {
 		t.Fatalf("blocked done output = %q", output)
 	}
-	if !strings.Contains(output, "twt done "+project.ID) {
+	if !strings.Contains(output, "twt done "+workspace.ID) {
 		t.Fatalf("blocked done output has no retry command: %q", output)
 	}
-	archived, findErr := store.NewProjectStore(options.StateDir).Find(project.ID)
-	if findErr != nil || archived.Status != domain.ProjectArchived {
-		t.Fatalf("blocked done Project: status=%q error=%v", archived.Status, findErr)
+	archived, findErr := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if findErr != nil || archived.Status != domain.WorkspaceArchived {
+		t.Fatalf("blocked done Workspace: status=%q error=%v", archived.Status, findErr)
 	}
-	if _, err := os.Stat(filepath.Join(project.Root, "app", "unsaved.txt")); err != nil {
-		t.Fatalf("blocked done changed Project data: %v", err)
+	if _, err := os.Stat(filepath.Join(workspace.Root, "app", "unsaved.txt")); err != nil {
+		t.Fatalf("blocked done changed Workspace data: %v", err)
 	}
 }
 
-func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
+func TestDoneAndArchiveRelocateInsideTheWorkspaceSession(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	for _, name := range []string{"alpha", "beta", "gamma"} {
-		executeWithOptions(t, options, nil, "projects", "create", name, "--template", "example", "--no-open")
+		executeWithOptions(t, options, nil, "workspaces", "create", name, "--template", "example", "--no-open")
 	}
-	projects := store.NewProjectStore(options.StateDir)
-	alpha, err := projects.Find("alpha")
+	workspaces := store.NewWorkspaceStore(options.StateDir)
+	alpha, err := workspaces.Find("alpha")
 	if err != nil {
 		t.Fatal(err)
 	}
-	beta, err := projects.Find("beta")
+	beta, err := workspaces.Find("beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	gamma, err := projects.Find("gamma")
+	gamma, err := workspaces.Find("gamma")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,10 +166,10 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	jsonCommand.SetArgs(forceTextOutput([]string{"done", "--output", "json"}))
 	err = jsonCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "text output") {
-		t.Fatalf("done JSON inside the Project session error = %v", err)
+		t.Fatalf("done JSON inside the Workspace session error = %v", err)
 	}
-	if unchanged, findErr := projects.Find(gamma.ID); findErr != nil || unchanged.Status != domain.ProjectActive {
-		t.Fatalf("refused JSON done changed the Project: %+v error=%v", unchanged, findErr)
+	if unchanged, findErr := workspaces.Find(gamma.ID); findErr != nil || unchanged.Status != domain.WorkspaceActive {
+		t.Fatalf("refused JSON done changed the Workspace: %+v error=%v", unchanged, findErr)
 	}
 
 	// Archive with JSON output refuses too; the unified policy covers both.
@@ -180,68 +180,68 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 	archiveJSONCommand.SetArgs(forceTextOutput([]string{"archive", "--output", "json"}))
 	err = archiveJSONCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "text output") {
-		t.Fatalf("archive JSON inside the Project session error = %v", err)
+		t.Fatalf("archive JSON inside the Workspace session error = %v", err)
 	}
 
 	// The fake hook completes the work like the real worker does.
 	var requests []cli.RelocationRequest
 	options.DoneRelocate = func(request cli.RelocationRequest) error {
 		requests = append(requests, request)
-		service := projectservice.NewService(projectservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
-		if _, err := service.Archive(request.ProjectID, ""); err != nil {
+		service := workspaceservice.NewService(workspaceservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: options.TmuxSocket})
+		if _, err := service.Archive(request.WorkspaceID, ""); err != nil {
 			return err
 		}
 		if request.Keep {
 			return nil
 		}
-		_, err := service.Remove(request.ProjectID, "", projectservice.RemovalOptions{AllowUnpublished: request.AllowUnpublished})
+		_, err := service.Remove(request.WorkspaceID, "", workspaceservice.RemovalOptions{AllowUnpublished: request.AllowUnpublished})
 		return err
 	}
 
-	// Done relocates to the most recently updated other active Project.
+	// Done relocates to the most recently updated other active Workspace.
 	output := executeWithOptions(t, options, nil, "done")
-	if !strings.Contains(output, "Finishing Project \"gamma\"; switching the client to Project \"beta\"") {
+	if !strings.Contains(output, "Finishing Workspace \"gamma\"; switching the client to Workspace \"beta\"") {
 		t.Fatalf("relocated done output = %q", output)
 	}
-	if _, err := projects.Find(gamma.ID); err == nil {
-		t.Fatal("relocated done kept the Project record")
+	if _, err := workspaces.Find(gamma.ID); err == nil {
+		t.Fatal("relocated done kept the Workspace record")
 	}
 	if _, err := os.Stat(gamma.Root); !os.IsNotExist(err) {
-		t.Fatalf("relocated done kept the Project root: %v", err)
+		t.Fatalf("relocated done kept the Workspace root: %v", err)
 	}
 
-	// Archive relocates too, keeps the Project data, and behaves like done
+	// Archive relocates too, keeps the Workspace data, and behaves like done
 	// --keep.
 	betaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=example-beta", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", betaPane)
 	archiveOutput := executeWithOptions(t, options, nil, "archive")
-	if !strings.Contains(archiveOutput, "Archiving Project \"beta\"; switching the client to Project \"alpha\"") {
+	if !strings.Contains(archiveOutput, "Archiving Workspace \"beta\"; switching the client to Workspace \"alpha\"") {
 		t.Fatalf("relocated archive output = %q", archiveOutput)
 	}
-	archivedBeta, err := projects.Find(beta.ID)
-	if err != nil || archivedBeta.Status != domain.ProjectArchived {
-		t.Fatalf("relocated archive Project: status=%q error=%v", archivedBeta.Status, err)
+	archivedBeta, err := workspaces.Find(beta.ID)
+	if err != nil || archivedBeta.Status != domain.WorkspaceArchived {
+		t.Fatalf("relocated archive Workspace: status=%q error=%v", archivedBeta.Status, err)
 	}
 	if _, err := os.Stat(beta.Root); err != nil {
-		t.Fatalf("relocated archive removed Project data: %v", err)
+		t.Fatalf("relocated archive removed Workspace data: %v", err)
 	}
 
-	// Without another active Project, done reports an empty destination.
+	// Without another active Workspace, done reports an empty destination.
 	alphaPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=example-alpha", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", alphaPane)
 	lastOutput := executeWithOptions(t, options, nil, "done")
-	if !strings.Contains(lastOutput, "No other active Project exists.") {
+	if !strings.Contains(lastOutput, "No other active Workspace exists.") {
 		t.Fatalf("last done output = %q", lastOutput)
 	}
 	if _, err := os.Stat(alpha.Root); !os.IsNotExist(err) {
-		t.Fatalf("last done kept the Project root: %v", err)
+		t.Fatalf("last done kept the Workspace root: %v", err)
 	}
 
 	wantDestinations := []string{beta.ID, alpha.ID, ""}
 	gotDestinations := make([]string, 0, len(requests))
 	wantKeep := []bool{false, true, false}
 	for index, request := range requests {
-		gotDestinations = append(gotDestinations, request.DestinationProjectID)
+		gotDestinations = append(gotDestinations, request.DestinationWorkspaceID)
 		if request.Keep != wantKeep[index] {
 			t.Fatalf("relocation request %d keep = %t, want %t", index, request.Keep, wantKeep[index])
 		}
@@ -253,10 +253,10 @@ func TestDoneAndArchiveRelocateInsideTheProjectSession(t *testing.T) {
 
 func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	options := doneFixture(t)
-	t.Setenv("TWT_PROJECT_ID", "")
-	executeWithOptions(t, options, nil, "projects", "create", "worker-src", "--template", "example", "--no-open")
-	executeWithOptions(t, options, nil, "projects", "create", "worker-dest", "--template", "example", "--no-open")
-	source, err := store.NewProjectStore(options.StateDir).Find("worker-src")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "worker-src", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "worker-dest", "--template", "example", "--no-open")
+	source, err := store.NewWorkspaceStore(options.StateDir).Find("worker-src")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,9 +269,9 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt done "+source.ID) {
 		t.Fatalf("done worker timeout = %v", err)
 	}
-	unchanged, err := store.NewProjectStore(options.StateDir).Find(source.ID)
-	if err != nil || unchanged.Status != domain.ProjectActive {
-		t.Fatalf("Project after worker timeout: status=%q error=%v", unchanged.Status, err)
+	unchanged, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID)
+	if err != nil || unchanged.Status != domain.WorkspaceActive {
+		t.Fatalf("Workspace after worker timeout: status=%q error=%v", unchanged.Status, err)
 	}
 	windowName := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "display-message", "-p", "-t", helperPane, "#{window_name}")
 	if windowName != "done-failed" {
@@ -291,11 +291,11 @@ func TestDoneWorkerArchivesAndRemovesFromAnotherSession(t *testing.T) {
 	if err := <-signalResult; err != nil {
 		t.Fatalf("signal done worker: %v", err)
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find(source.ID); err == nil {
-		t.Fatal("done worker kept the Project record")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID); err == nil {
+		t.Fatal("done worker kept the Workspace record")
 	}
 	if _, err := os.Stat(source.Root); !os.IsNotExist(err) {
-		t.Fatalf("done worker kept the Project root: %v", err)
+		t.Fatalf("done worker kept the Workspace root: %v", err)
 	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-worker-src").Run(); err == nil {
 		t.Fatal("done worker kept the source tmux session")

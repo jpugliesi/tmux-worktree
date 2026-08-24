@@ -1,7 +1,7 @@
 -- The buffer-local variable names that mark a twt snapshot buffer. A snapshot
--- buffer keeps the Project it belongs to, so a later action uses that Project
--- and not the Project of the working directory.
+-- buffer keeps the Workspace it belongs to, so a later action uses that Workspace
+-- and not the Workspace of the working directory.
 return {
-  project_id = "twt_project_id",
-  project_directory = "twt_project_directory",
+  workspace_id = "twt_workspace_id",
+  workspace_directory = "twt_workspace_directory",
 }

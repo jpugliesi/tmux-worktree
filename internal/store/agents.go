@@ -33,7 +33,7 @@ func (s AgentStore) Save(agent domain.AgentSession) error {
 	return WriteFileAtomic(filepath.Join(s.dir, agent.ID+".json"), data, 0o600, "Agent Session state")
 }
 
-func (s AgentStore) List(projectID string) ([]domain.AgentSession, error) {
+func (s AgentStore) List(workspaceID string) ([]domain.AgentSession, error) {
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return []domain.AgentSession{}, nil
@@ -50,7 +50,7 @@ func (s AgentStore) List(projectID string) ([]domain.AgentSession, error) {
 		if err != nil {
 			return nil, err
 		}
-		if projectID == "" || agent.ProjectID == projectID {
+		if workspaceID == "" || agent.WorkspaceID == workspaceID {
 			agents = append(agents, agent)
 		}
 	}
@@ -89,8 +89,8 @@ func (s AgentStore) Delete(agentID string) error {
 	return nil
 }
 
-func (s AgentStore) DeleteProject(projectID string) error {
-	agents, err := s.List(projectID)
+func (s AgentStore) DeleteWorkspace(workspaceID string) error {
+	agents, err := s.List(workspaceID)
 	if err != nil {
 		return err
 	}

@@ -11,22 +11,22 @@ import (
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/jpugliesi/tmux-worktree/skills"
 )
 
 type StorageStatus struct {
 	TotalBytes                int64 `json:"totalBytes"`
 	CacheBytes                int64 `json:"cacheBytes"`
-	ActiveProjectBytes        int64 `json:"activeProjectBytes"`
-	ArchivedProjectBytes      int64 `json:"archivedProjectBytes"`
+	ActiveWorkspaceBytes      int64 `json:"activeWorkspaceBytes"`
+	ArchivedWorkspaceBytes    int64 `json:"archivedWorkspaceBytes"`
 	PreparedBytes             int64 `json:"preparedBytes"`
 	SnapshotBytes             int64 `json:"snapshotBytes"`
 	CacheCount                int   `json:"cacheCount"`
-	ProjectCount              int   `json:"projectCount"`
-	ActiveProjectCount        int   `json:"activeProjectCount"`
-	ArchivedProjectCount      int   `json:"archivedProjectCount"`
+	WorkspaceCount            int   `json:"workspaceCount"`
+	ActiveWorkspaceCount      int   `json:"activeWorkspaceCount"`
+	ArchivedWorkspaceCount    int   `json:"archivedWorkspaceCount"`
 	WorktreeCount             int   `json:"worktreeCount"`
 	PreparedEnvironmentCount  int   `json:"preparedEnvironmentCount"`
 	ReadyEnvironmentCount     int   `json:"readyEnvironmentCount"`
@@ -40,7 +40,7 @@ type StorageStatus struct {
 
 // EnvironmentInfo describes one Prepared Environment. Status is the record
 // status, or "obsolete" for a ready Prepared Environment that no longer
-// matches its Project Template.
+// matches its Workspace Template.
 type EnvironmentInfo struct {
 	ID           string
 	TemplateName string
@@ -52,14 +52,14 @@ type EnvironmentInfo struct {
 	Failure      string
 	LogPath      string
 	Steps        []domain.SetupStep
-	Project      *EnvironmentProject
+	Workspace    *EnvironmentWorkspace
 	// SizeWarning tells why twt could not measure the Prepared Environment
 	// root. Bytes is zero in that case.
 	SizeWarning string
 }
 
-// EnvironmentProject describes the Project that claims a Prepared Environment.
-type EnvironmentProject struct {
+// EnvironmentWorkspace describes the Workspace that claims a Prepared Environment.
+type EnvironmentWorkspace struct {
 	ID     string
 	Name   string
 	Status string
@@ -120,17 +120,17 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	if err != nil {
 		return StorageStatus{}, err
 	}
-	projects, err := store.NewProjectStore(s.stateDir).List()
+	workspaces, err := store.NewWorkspaceStore(s.stateDir).List()
 	if err != nil {
 		return StorageStatus{}, err
 	}
 	worktrees := 0
 	var activeBytes, archivedBytes int64
 	activeCount, archivedCount := 0, 0
-	for _, project := range projects {
-		worktrees += len(project.Repositories)
-		bytes := measure(project.Root)
-		if project.Status == domain.ProjectArchived {
+	for _, workspace := range workspaces {
+		worktrees += len(workspace.Repositories)
+		bytes := measure(workspace.Root)
+		if workspace.Status == domain.WorkspaceArchived {
 			archivedBytes += bytes
 			archivedCount++
 			continue
@@ -162,8 +162,8 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	}
 	return StorageStatus{
 		TotalBytes: cacheBytes + activeBytes + archivedBytes + preparedBytes + snapshotBytes, CacheBytes: cacheBytes,
-		ActiveProjectBytes: activeBytes, ArchivedProjectBytes: archivedBytes, PreparedBytes: preparedBytes, SnapshotBytes: snapshotBytes,
-		CacheCount: cacheCount, ProjectCount: len(projects), ActiveProjectCount: activeCount, ArchivedProjectCount: archivedCount, WorktreeCount: worktrees,
+		ActiveWorkspaceBytes: activeBytes, ArchivedWorkspaceBytes: archivedBytes, PreparedBytes: preparedBytes, SnapshotBytes: snapshotBytes,
+		CacheCount: cacheCount, WorkspaceCount: len(workspaces), ActiveWorkspaceCount: activeCount, ArchivedWorkspaceCount: archivedCount, WorktreeCount: worktrees,
 		PreparedEnvironmentCount: preparedCount, ReadyEnvironmentCount: readyCount,
 		PreparingEnvironmentCount: preparingCount, FailedEnvironmentCount: failedCount, PreparedWorktreeCount: preparedWorktrees,
 		Warnings: warnings,
@@ -182,8 +182,8 @@ func bestEffortDirectoryBytes(root string) (int64, string) {
 }
 
 // EnvironmentReport describes each Prepared Environment record. It joins the
-// Prepared Environment store, the Project Template digests, and the Project
-// store. A Project Template that twt cannot load keeps the record status,
+// Prepared Environment store, the Workspace Template digests, and the Workspace
+// store. A Workspace Template that twt cannot load keeps the record status,
 // because twt cannot know if its Prepared Environments are obsolete.
 func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	environments, err := store.NewEnvironmentStore(s.stateDir).List()
@@ -194,13 +194,13 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	projects, err := store.NewProjectStore(s.stateDir).List()
+	workspaces, err := store.NewWorkspaceStore(s.stateDir).List()
 	if err != nil {
 		return nil, err
 	}
-	live := make(map[string]domain.Project, len(projects))
-	for _, project := range projects {
-		live[project.ID] = project
+	live := make(map[string]domain.Workspace, len(workspaces))
+	for _, workspace := range workspaces {
+		live[workspace.ID] = workspace
 	}
 	report := make([]EnvironmentInfo, 0, len(environments))
 	for _, environment := range environments {
@@ -219,13 +219,13 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 		}
 		info.LogPath = s.prepareLogPath(environment.ID)
 		if environment.ClaimReservation != nil {
-			reserved := environment.ClaimReservation.Project
-			claim := EnvironmentProject{ID: reserved.ID, Name: reserved.Name, Status: string(reserved.Status)}
+			reserved := environment.ClaimReservation.Workspace
+			claim := EnvironmentWorkspace{ID: reserved.ID, Name: reserved.Name, Status: string(reserved.Status)}
 			if current, found := live[reserved.ID]; found {
 				claim.Name = current.Name
 				claim.Status = string(current.Status)
 			}
-			info.Project = &claim
+			info.Workspace = &claim
 		}
 		report = append(report, info)
 	}
@@ -266,22 +266,22 @@ func (s *Service) Doctor() DoctorReport {
 			}
 		}
 		if valid {
-			report.addPass("templates", fmt.Sprintf("%d Project Templates are valid", len(names)))
+			report.addPass("templates", fmt.Sprintf("%d Workspace Templates are valid", len(names)))
 		}
 	}
-	projects, err := store.NewProjectStore(s.stateDir).List()
+	workspaces, err := store.NewWorkspaceStore(s.stateDir).List()
 	if err != nil {
-		report.addFailure("projects", err.Error())
+		report.addFailure("workspaces", err.Error())
 	} else {
 		valid := true
-		for _, project := range projects {
-			if err := projectservice.ValidateProjectMarker(project.Root, project.ID); err != nil {
-				report.addFailure("project:"+project.Name, err.Error())
+		for _, workspace := range workspaces {
+			if err := workspaceservice.ValidateWorkspaceMarker(workspace.Root, workspace.ID); err != nil {
+				report.addFailure("workspace:"+workspace.Name, err.Error())
 				valid = false
 			}
 		}
 		if valid {
-			report.addPass("projects", fmt.Sprintf("%d Project records are valid", len(projects)))
+			report.addPass("workspaces", fmt.Sprintf("%d Workspace records are valid", len(workspaces)))
 		}
 	}
 	environments, err := store.NewEnvironmentStore(s.stateDir).List()

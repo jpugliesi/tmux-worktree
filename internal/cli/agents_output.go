@@ -15,7 +15,7 @@ type agentOutput struct {
 	// ProviderSessionID is the raw provider session ID. twt never returns
 	// the provider file path.
 	ProviderSessionID string `json:"providerSessionId,omitempty"`
-	ProjectID         string `json:"projectId"`
+	WorkspaceID       string `json:"workspaceId"`
 	Provider          string `json:"provider"`
 	Label             string `json:"label"`
 	Status            string `json:"status"`
@@ -39,7 +39,7 @@ type agentCapabilities struct {
 
 type agentsListOutput struct {
 	SchemaVersion int           `json:"schemaVersion"`
-	ProjectID     string        `json:"projectId"`
+	WorkspaceID   string        `json:"workspaceId"`
 	Agents        []agentOutput `json:"agents"`
 	TotalCount    int           `json:"totalCount"`
 	Truncated     bool          `json:"truncated,omitempty"`
@@ -59,7 +59,7 @@ type agentCheck struct {
 
 type agentsDiscoverOutput struct {
 	SchemaVersion int                `json:"schemaVersion"`
-	ProjectID     string             `json:"projectId"`
+	WorkspaceID   string             `json:"workspaceId"`
 	Sessions      []discoveredOutput `json:"sessions"`
 	TotalCount    int                `json:"totalCount"`
 	Truncated     bool               `json:"truncated,omitempty"`
@@ -88,7 +88,7 @@ type agentSendOutput struct {
 // toAgentOutput describes one Agent Session. With probeLive false, twt does
 // not ask tmux for the state of the pane: the status is "unknown" and the
 // capabilities that need a live pane are false.
-func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, projectActive, probeLive bool) agentOutput {
+func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, workspaceActive, probeLive bool) agentOutput {
 	live := false
 	status := "unknown"
 	if probeLive {
@@ -99,13 +99,13 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, pro
 		}
 	}
 	return agentOutput{
-		ID: agent.ID, ProviderSessionID: agent.ProviderSessionID, ProjectID: agent.ProjectID,
+		ID: agent.ID, ProviderSessionID: agent.ProviderSessionID, WorkspaceID: agent.WorkspaceID,
 		Provider: agent.Provider, Label: agent.Label, Status: status,
 		CreatedAt: agent.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: agent.UpdatedAt.Format(time.RFC3339),
 		recency:   agent.UpdatedAt,
 		Capabilities: agentCapabilities{
-			CanResume: projectActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
+			CanResume: workspaceActive && (live || len(agent.ResumeCommand) > 0), CanSend: live, CanFocus: live,
 			CanReadTranscript: agent.ProviderSessionID != "" && transcriptservice.SupportsProvider(agent.Provider),
 		},
 	}
@@ -114,14 +114,14 @@ func toAgentOutput(service *agentservice.Service, agent domain.AgentSession, pro
 // discoveredAgentOutput describes one discovered provider session in the
 // Agent Session list. The session is not registered yet: its ID is the
 // provider session ID, and the first action on it adopts it.
-func discoveredAgentOutput(project domain.Project, session transcriptservice.DiscoveredSession) agentOutput {
+func discoveredAgentOutput(workspace domain.Workspace, session transcriptservice.DiscoveredSession) agentOutput {
 	return agentOutput{
-		ID: session.SessionID, ProviderSessionID: session.SessionID, ProjectID: project.ID,
+		ID: session.SessionID, ProviderSessionID: session.SessionID, WorkspaceID: workspace.ID,
 		Provider: session.Provider, Label: session.Provider, Status: "discovered",
 		LastActivity: session.LastActivity.UTC().Format(time.RFC3339),
 		recency:      session.LastActivity.UTC(),
 		Capabilities: agentCapabilities{
-			CanResume: project.Status == domain.ProjectActive, CanSend: false, CanFocus: false, CanReadTranscript: true,
+			CanResume: workspace.Status == domain.WorkspaceActive, CanSend: false, CanFocus: false, CanReadTranscript: true,
 		},
 	}
 }

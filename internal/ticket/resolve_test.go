@@ -21,7 +21,7 @@ func resolverHome(t *testing.T) (*Service, string) {
 		fixture{title: "Refresh the auth tokens", status: "needs-triage", aliases: []string{"Token Refresh"}}.content())
 	writeFixture(t, filepath.Join(home, "auth-revoke.md"),
 		fixture{title: "Revoke the auth tokens", status: "needs-triage"}.content())
-	writeFixture(t, filepath.Join(home, "change-monitor", "index.md"), "# board hub\n")
+	writeFixture(t, filepath.Join(home, "change-monitor", "index.md"), "# project hub\n")
 	writeFixture(t, filepath.Join(home, "change-monitor", "vfs-tools.md"),
 		fixture{title: "Reconnect VFS tools", status: "ready-for-agent"}.content())
 	writeFixture(t, filepath.Join(home, "change-monitor", "deep", "too-deep.md"),
@@ -39,7 +39,7 @@ func TestResolveTable(t *testing.T) {
 	}{
 		{"exact slug beats prefix", "auth", "auth"},
 		{"unique prefix", "auth-ref", "auth-refresh"},
-		{"unique prefix in board", "vfs", "vfs-tools"},
+		{"unique prefix in project", "vfs", "vfs-tools"},
 		{"title case-insensitive", "reconnect vfs TOOLS", "vfs-tools"},
 		{"alias case-insensitive", "token refresh", "auth-refresh"},
 		{"wiki-link", "[[vfs-tools]]", "vfs-tools"},

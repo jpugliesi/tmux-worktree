@@ -11,36 +11,36 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func TestRegisterReloadsProjectInsideMutationLock(t *testing.T) {
+func TestRegisterReloadsWorkspaceInsideMutationLock(t *testing.T) {
 	service := NewService(t.TempDir(), "")
-	project := domain.Project{
-		Version: domain.ProjectVersion,
-		ID:      "project-that-was-removed",
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion,
+		ID:      "workspace-that-was-removed",
 		Name:    "removed",
-		Status:  domain.ProjectActive,
+		Status:  domain.WorkspaceActive,
 	}
 
-	_, err := service.Register(project, "command", "test", "", "", []string{"true"})
+	_, err := service.Register(workspace, "command", "test", "", "", []string{"true"})
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
-		t.Fatalf("Register after Project removal error = %v", err)
+		t.Fatalf("Register after Workspace removal error = %v", err)
 	}
-	agents, listErr := service.List(project.ID)
+	agents, listErr := service.List(workspace.ID)
 	if listErr != nil {
 		t.Fatal(listErr)
 	}
 	if len(agents) != 0 {
-		t.Fatalf("Register saved an Agent Session for a removed Project: %+v", agents)
+		t.Fatalf("Register saved an Agent Session for a removed Workspace: %+v", agents)
 	}
 }
 
 func TestValidateRegistrationRejectsUnsupportedTranscriptLink(t *testing.T) {
 	service := NewService(t.TempDir(), "")
-	project := domain.Project{ID: "project-one", Name: "project-one", Status: domain.ProjectActive}
-	err := service.ValidateRegistration(project, "cursor", "", "cursor-session", []string{"cursor-agent", "resume"})
+	workspace := domain.Workspace{ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive}
+	err := service.ValidateRegistration(workspace, "cursor", "", "cursor-session", []string{"cursor-agent", "resume"})
 	if err == nil || !strings.Contains(err.Error(), "does not support verifiable linked transcripts") {
 		t.Fatalf("Cursor transcript registration error = %v", err)
 	}
-	if err := service.ValidateRegistration(project, "cursor", "", "", []string{"cursor-agent", "resume"}); err != nil {
+	if err := service.ValidateRegistration(workspace, "cursor", "", "", []string{"cursor-agent", "resume"}); err != nil {
 		t.Fatalf("Cursor registration without a transcript link: %v", err)
 	}
 }
@@ -66,8 +66,8 @@ func TestRegisterInfersProviderAndProviderSessionFromTheResumeCommand(t *testing
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service, project := activeProject(t)
-			agent, err := service.Register(project, "", "", "", "", test.resumeCommand)
+			service, workspace := activeWorkspace(t)
+			agent, err := service.Register(workspace, "", "", "", "", test.resumeCommand)
 			if test.wantErrorSubstr != "" {
 				if err == nil || !strings.Contains(err.Error(), test.wantErrorSubstr) {
 					t.Fatalf("Register() error = %v", err)
@@ -88,15 +88,15 @@ func TestRegisterInfersProviderAndProviderSessionFromTheResumeCommand(t *testing
 }
 
 func TestRegisterKeepsExplicitProviderAndSession(t *testing.T) {
-	service, project := activeProject(t)
-	agent, err := service.Register(project, "command", "", "", "", []string{"codex", "resume", "session-one"})
+	service, workspace := activeWorkspace(t)
+	agent, err := service.Register(workspace, "command", "", "", "", []string{"codex", "resume", "session-one"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if agent.Provider != "command" || agent.ProviderSessionID != "" {
 		t.Fatalf("explicit provider registration = %+v", agent)
 	}
-	linked, err := service.Register(project, "codex", "", "", "session-explicit", []string{"codex", "resume", "session-one"})
+	linked, err := service.Register(workspace, "codex", "", "", "session-explicit", []string{"codex", "resume", "session-one"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +106,9 @@ func TestRegisterKeepsExplicitProviderAndSession(t *testing.T) {
 }
 
 func TestRegisterMakesUniqueDefaultLabelsAndRejectsDuplicateLabels(t *testing.T) {
-	service, project := activeProject(t)
+	service, workspace := activeWorkspace(t)
 	for index, want := range []string{"codex", "codex-2", "codex-3"} {
-		agent, err := service.Register(project, "", "", "", "", []string{"codex", "resume", fmt.Sprintf("session-%d", index)})
+		agent, err := service.Register(workspace, "", "", "", "", []string{"codex", "resume", fmt.Sprintf("session-%d", index)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,84 +116,84 @@ func TestRegisterMakesUniqueDefaultLabelsAndRejectsDuplicateLabels(t *testing.T)
 			t.Fatalf("default label %d = %q, want %q", index, agent.Label, want)
 		}
 	}
-	if _, err := service.Register(project, "", "review", "", "", []string{"codex", "resume", "session-review"}); err != nil {
+	if _, err := service.Register(workspace, "", "review", "", "", []string{"codex", "resume", "session-review"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := service.Register(project, "", "review", "", "", []string{"codex", "resume", "session-other"})
+	_, err := service.Register(workspace, "", "review", "", "", []string{"codex", "resume", "session-other"})
 	if err == nil || !strings.Contains(err.Error(), "already in use") {
 		t.Fatalf("duplicate label error = %v", err)
 	}
 	if clierr.CodeOf(err) != clierr.AlreadyExists {
 		t.Fatalf("duplicate label code = %q", clierr.CodeOf(err))
 	}
-	if err := service.ValidateLabel(project.ID, "review"); err == nil {
+	if err := service.ValidateLabel(workspace.ID, "review"); err == nil {
 		t.Fatal("ValidateLabel accepted a used label")
 	}
-	if err := service.ValidateLabel(project.ID, "free"); err != nil {
+	if err := service.ValidateLabel(workspace.ID, "free"); err != nil {
 		t.Fatalf("ValidateLabel(free) = %v", err)
 	}
 }
 
-func TestRegisterAndResumeExplainAnArchivedProject(t *testing.T) {
-	service, project := activeProject(t)
-	project.Status = domain.ProjectArchived
-	if err := store.NewProjectStore(service.stateDir).Save(project); err != nil {
+func TestRegisterAndResumeExplainAnArchivedWorkspace(t *testing.T) {
+	service, workspace := activeWorkspace(t)
+	workspace.Status = domain.WorkspaceArchived
+	if err := store.NewWorkspaceStore(service.stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	err := service.ValidateRegistration(project, "codex", "", "", []string{"codex", "resume", "session-one"})
+	err := service.ValidateRegistration(workspace, "codex", "", "", []string{"codex", "resume", "session-one"})
 	if err == nil || !strings.Contains(err.Error(), "is archived") {
-		t.Fatalf("archived Project registration error = %v", err)
+		t.Fatalf("archived Workspace registration error = %v", err)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "projects open") {
-		t.Fatalf("archived Project hint = %q", hint)
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "workspaces open") {
+		t.Fatalf("archived Workspace hint = %q", hint)
 	}
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("archived Project code = %q", clierr.CodeOf(err))
+		t.Fatalf("archived Workspace code = %q", clierr.CodeOf(err))
 	}
-	resumeErr := service.ValidateResume(domain.AgentSession{ID: "agent-one", ProjectID: project.ID}, project)
+	resumeErr := service.ValidateResume(domain.AgentSession{ID: "agent-one", WorkspaceID: workspace.ID}, workspace)
 	if resumeErr == nil || !strings.Contains(resumeErr.Error(), "is archived") {
-		t.Fatalf("archived Project resume error = %v", resumeErr)
+		t.Fatalf("archived Workspace resume error = %v", resumeErr)
 	}
 }
 
 func TestRemoveDeletesOnlyTheSelectedAgentSessionRecord(t *testing.T) {
-	service, project := activeProject(t)
-	first, err := service.Register(project, "", "", "", "", []string{"codex", "resume", "session-one"})
+	service, workspace := activeWorkspace(t)
+	first, err := service.Register(workspace, "", "", "", "", []string{"codex", "resume", "session-one"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Register(project, "", "", "", "", []string{"codex", "resume", "session-two"})
+	second, err := service.Register(workspace, "", "", "", "", []string{"codex", "resume", "session-two"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Remove(first.ID, "other-project"); err == nil || !strings.Contains(err.Error(), "does not belong") {
-		t.Fatalf("Remove() for another Project error = %v", err)
+	if _, err := service.Remove(first.ID, "other-workspace"); err == nil || !strings.Contains(err.Error(), "does not belong") {
+		t.Fatalf("Remove() for another Workspace error = %v", err)
 	}
-	if _, err := service.Remove(first.ID, project.ID); err != nil {
+	if _, err := service.Remove(first.ID, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	remaining, err := service.List(project.ID)
+	remaining, err := service.List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(remaining) != 1 || remaining[0].ID != second.ID {
 		t.Fatalf("Agent Sessions after Remove() = %+v", remaining)
 	}
-	if _, err := service.Remove(first.ID, project.ID); clierr.CodeOf(err) != clierr.NotFound {
+	if _, err := service.Remove(first.ID, workspace.ID); clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("Remove() of a missing Agent Session error = %v", err)
 	}
 }
 
 func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 	service := NewService(t.TempDir(), "")
-	project := domain.Project{Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectInitializing}
+	workspace := domain.Workspace{Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceInitializing}
 	now := time.Now().UTC()
 
-	session, err := BuildSession(project, "codex", "review", "", "", []string{"codex"}, nil, now)
+	session, err := BuildSession(workspace, "codex", "review", "", "", []string{"codex"}, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.ID == "" || session.ProjectID != project.ID || session.Provider != "codex" || session.Label != "review" {
+	if session.ID == "" || session.WorkspaceID != workspace.ID || session.Provider != "codex" || session.Label != "review" {
 		t.Fatalf("BuildSession() = %+v", session)
 	}
 	if session.TmuxPane != "" || session.PaneCommand != "" || session.PaneStart != "" {
@@ -205,7 +205,7 @@ func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 	if !session.CreatedAt.Equal(now) || !session.UpdatedAt.Equal(now) {
 		t.Fatalf("BuildSession() times = %s and %s", session.CreatedAt, session.UpdatedAt)
 	}
-	agents, err := service.List(project.ID)
+	agents, err := service.List(workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,13 +213,13 @@ func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 		t.Fatalf("BuildSession() saved a record: %+v", agents)
 	}
 
-	if _, err := BuildSession(project, "codex", "review", "", "", []string{"codex"}, []domain.AgentSession{session}, now); err == nil || !strings.Contains(err.Error(), "already in use") {
+	if _, err := BuildSession(workspace, "codex", "review", "", "", []string{"codex"}, []domain.AgentSession{session}, now); err == nil || !strings.Contains(err.Error(), "already in use") {
 		t.Fatalf("BuildSession() with a used label error = %v", err)
 	}
-	if _, err := BuildSession(project, "robot", "review", "", "", []string{"robot"}, nil, now); err == nil || !strings.Contains(err.Error(), "unsupported agent provider") {
+	if _, err := BuildSession(workspace, "robot", "review", "", "", []string{"robot"}, nil, now); err == nil || !strings.Contains(err.Error(), "unsupported agent provider") {
 		t.Fatalf("BuildSession() with an unsupported provider error = %v", err)
 	}
-	defaulted, err := BuildSession(project, "", "", "", "", []string{"codex", "resume", "session-one"}, []domain.AgentSession{session}, now)
+	defaulted, err := BuildSession(workspace, "", "", "", "", []string{"codex", "resume", "session-one"}, []domain.AgentSession{session}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,35 +229,35 @@ func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 }
 
 func TestUserFacingErrorsCarryConsistentCodes(t *testing.T) {
-	service, project := activeProject(t)
-	agent, err := service.Register(project, "", "", "", "", []string{"codex", "resume", "session-one"})
+	service, workspace := activeWorkspace(t)
+	agent, err := service.Register(workspace, "", "", "", "", []string{"codex", "resume", "session-one"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ValidateRemove(agent.ID, "other-project"); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("remove outside the Project code = %q", clierr.CodeOf(err))
+	if _, err := service.ValidateRemove(agent.ID, "other-workspace"); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("remove outside the Workspace code = %q", clierr.CodeOf(err))
 	}
-	if err := service.Send(agent, "other-project", "text"); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("send outside the Project code = %q", clierr.CodeOf(err))
+	if err := service.Send(agent, "other-workspace", "text"); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("send outside the Workspace code = %q", clierr.CodeOf(err))
 	}
-	if err := service.ValidateResume(agent, domain.Project{ID: "other-project", Name: "other"}); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("resume outside the Project code = %q", clierr.CodeOf(err))
+	if err := service.ValidateResume(agent, domain.Workspace{ID: "other-workspace", Name: "other"}); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("resume outside the Workspace code = %q", clierr.CodeOf(err))
 	}
-	other := domain.Project{Version: domain.ProjectVersion, ID: "other-project", Name: "other", Status: domain.ProjectActive}
-	if err := store.NewProjectStore(service.stateDir).Save(other); err != nil {
+	other := domain.Workspace{Version: domain.WorkspaceVersion, ID: "other-workspace", Name: "other", Status: domain.WorkspaceActive}
+	if err := store.NewWorkspaceStore(service.stateDir).Save(other); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.ValidateTranscriptLink(agent.ID, other.ID, "session-two"); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("link outside the Project code = %q", clierr.CodeOf(err))
+		t.Fatalf("link outside the Workspace code = %q", clierr.CodeOf(err))
 	}
-	if err := service.Send(agent, project.ID, ""); clierr.CodeOf(err) != clierr.InvalidUsage {
+	if err := service.Send(agent, workspace.ID, ""); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("empty feedback code = %q", clierr.CodeOf(err))
 	}
-	err = service.ValidateRegistration(project, "cursor", "", "cursor-session", []string{"cursor-agent", "resume"})
+	err = service.ValidateRegistration(workspace, "cursor", "", "cursor-session", []string{"cursor-agent", "resume"})
 	if clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("unsupported transcript link code = %q", clierr.CodeOf(err))
 	}
-	live, err := service.Live(project.ID)
+	live, err := service.Live(workspace.ID)
 	if err != nil || len(live) != 0 {
 		t.Fatalf("Live() = %+v, %v", live, err)
 	}
@@ -272,17 +272,17 @@ func TestMatchesProvider(t *testing.T) {
 	}
 }
 
-func activeProject(t *testing.T) (*Service, domain.Project) {
+func activeWorkspace(t *testing.T) (*Service, domain.Workspace) {
 	t.Helper()
 	stateDir := t.TempDir()
 	service := NewService(stateDir, "")
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-one", Name: "project-one", Status: domain.ProjectActive,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", Status: domain.WorkspaceActive,
 		Root: t.TempDir(), CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	return service, project
+	return service, workspace
 }

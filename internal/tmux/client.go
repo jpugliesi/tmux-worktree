@@ -18,7 +18,7 @@ type Client struct {
 	run func(stdin io.Reader, args ...string) (string, error)
 }
 
-func (c Client) PaneBelongsToProject(pane, projectID string) bool {
+func (c Client) PaneBelongsToWorkspace(pane, workspaceID string) bool {
 	if pane == "" {
 		return false
 	}
@@ -26,13 +26,21 @@ func (c Client) PaneBelongsToProject(pane, projectID string) bool {
 	if err != nil {
 		return false
 	}
-	owner, err := c.output(nil, "show-options", "-t", sessionID, "-v", "@twt_project_id")
-	return err == nil && owner == projectID
+	owner, err := c.workspaceOwner(sessionID)
+	return err == nil && owner == workspaceID
 }
 
-func (c Client) PaneProcess(pane, projectID string) (string, string, error) {
-	if !c.PaneBelongsToProject(pane, projectID) {
-		return "", "", fmt.Errorf("the pane is not owned by this Project")
+func (c Client) workspaceOwner(sessionID string) (string, error) {
+	owner, err := c.output(nil, "show-options", "-t", sessionID, "-v", "@twt_workspace_id")
+	if err == nil && owner != "" {
+		return owner, nil
+	}
+	return c.output(nil, "show-options", "-t", sessionID, "-v", "@twt_project_id")
+}
+
+func (c Client) PaneProcess(pane, workspaceID string) (string, string, error) {
+	if !c.PaneBelongsToWorkspace(pane, workspaceID) {
+		return "", "", fmt.Errorf("the pane is not owned by this Workspace")
 	}
 	dead, current, start, err := c.paneState(pane)
 	if err != nil {
@@ -59,9 +67,9 @@ func (c Client) paneState(pane string) (dead bool, current, start string, err er
 	return parts[0] != "0", parts[1], parts[2], nil
 }
 
-func (c Client) ClaimAgentPane(pane, projectID, agentID string) error {
-	if !c.PaneBelongsToProject(pane, projectID) {
-		return fmt.Errorf("the pane is not owned by this Project")
+func (c Client) ClaimAgentPane(pane, workspaceID, agentID string) error {
+	if !c.PaneBelongsToWorkspace(pane, workspaceID) {
+		return fmt.Errorf("the pane is not owned by this Workspace")
 	}
 	owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
 	if err == nil && owner != "" && owner != agentID {
@@ -84,21 +92,21 @@ type PaneCheck struct {
 
 // ExplainPane returns one check for each Agent Session pane predicate, in a
 // stable order. Callers can show the result to a user.
-func (c Client) ExplainPane(pane, projectID, agentID, paneCommand, paneStart string) []PaneCheck {
-	projectPane := pane != "" && c.PaneBelongsToProject(pane, projectID)
+func (c Client) ExplainPane(pane, workspaceID, agentID, paneCommand, paneStart string) []PaneCheck {
+	workspacePane := pane != "" && c.PaneBelongsToWorkspace(pane, workspaceID)
 	owned := false
 	if pane != "" && agentID != "" {
 		owner, err := c.output(nil, "show-options", "-p", "-t", pane, "-v", "@twt_agent_id")
 		owned = err == nil && owner == agentID
 	}
 	dead, current, start := true, "", ""
-	if projectPane {
+	if workspacePane {
 		if paneDead, paneCurrent, paneStart, err := c.paneState(pane); err == nil {
 			dead, current, start = paneDead, paneCurrent, paneStart
 		}
 	}
 	return []PaneCheck{
-		{Name: "project pane", OK: projectPane},
+		{Name: "workspace pane", OK: workspacePane},
 		{Name: "agent marker", OK: owned},
 		{Name: "live process", OK: !dead},
 		{Name: "start command", OK: paneStart != "" && start == paneStart},
@@ -106,8 +114,8 @@ func (c Client) ExplainPane(pane, projectID, agentID, paneCommand, paneStart str
 	}
 }
 
-func (c Client) PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart string) bool {
-	for _, check := range c.ExplainPane(pane, projectID, agentID, paneCommand, paneStart) {
+func (c Client) PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, paneStart string) bool {
+	for _, check := range c.ExplainPane(pane, workspaceID, agentID, paneCommand, paneStart) {
 		if !check.Advisory && !check.OK {
 			return false
 		}
@@ -115,16 +123,16 @@ func (c Client) PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneSt
 	return true
 }
 
-func (c Client) StartAgent(project domain.Project, label string, command []string) (string, error) {
+func (c Client) StartAgent(workspace domain.Workspace, label string, command []string) (string, error) {
 	if len(command) == 0 {
 		return "", fmt.Errorf("Agent Session has no resume command")
 	}
-	sessionID, err := c.projectSession(project)
+	sessionID, err := c.workspaceSession(workspace)
 	if err != nil {
 		return "", err
 	}
 	windowName := safeWindowName(label)
-	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionID, "-n", windowName, "-c", project.Repositories[0].Path, "--"}
+	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionID, "-n", windowName, "-c", workspace.Repositories[0].Path, "--"}
 	args = append(args, command...)
 	pane, err := c.output(nil, args...)
 	if err != nil {
@@ -136,8 +144,8 @@ func (c Client) StartAgent(project domain.Project, label string, command []strin
 	return pane, nil
 }
 
-func (c Client) Focus(pane, projectID, agentID, paneCommand, paneStart string) error {
-	if !c.PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart) {
+func (c Client) Focus(pane, workspaceID, agentID, paneCommand, paneStart string) error {
+	if !c.PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, paneStart) {
 		return NotLiveError(agentID)
 	}
 	if _, err := c.output(nil, "select-window", "-t", pane); err != nil {
@@ -158,8 +166,8 @@ func NotLiveError(agentID string) error {
 	)
 }
 
-func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text string) error {
-	if !c.PaneBelongsToAgent(pane, projectID, agentID, paneCommand, paneStart) {
+func (c Client) Send(pane, workspaceID, agentID, paneCommand, paneStart, text string) error {
+	if !c.PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, paneStart) {
 		return NotLiveError(agentID)
 	}
 	buffer := "twt-feedback-" + strings.TrimPrefix(pane, "%")
@@ -175,19 +183,26 @@ func (c Client) Send(pane, projectID, agentID, paneCommand, paneStart, text stri
 	return nil
 }
 
-func (c Client) projectSession(project domain.Project) (string, error) {
-	rows, err := c.output(nil, "list-sessions", "-F", "#{session_id}\t#{@twt_project_id}")
+func (c Client) workspaceSession(workspace domain.Workspace) (string, error) {
+	rows, err := c.output(nil, "list-sessions", "-F", "#{session_id}\t#{@twt_workspace_id}\t#{@twt_project_id}")
 	if err != nil {
 		return "", fmt.Errorf("list tmux sessions: %w", err)
 	}
 	for _, row := range strings.Split(rows, "\n") {
-		parts := strings.SplitN(row, "\t", 2)
-		if len(parts) != 2 || parts[1] != project.ID {
+		parts := strings.SplitN(row, "\t", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		owner := parts[1]
+		if owner == "" && len(parts) == 3 {
+			owner = parts[2]
+		}
+		if owner != workspace.ID {
 			continue
 		}
 		return parts[0], nil
 	}
-	return "", fmt.Errorf("Project %q does not have a live owned tmux session", project.Name)
+	return "", fmt.Errorf("Workspace %q does not have a live owned tmux session", workspace.Name)
 }
 
 func (c Client) output(stdin io.Reader, args ...string) (string, error) {

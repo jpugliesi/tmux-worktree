@@ -46,7 +46,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 1 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 26 {
+	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 26 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -55,22 +55,22 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	for _, command := range schema.Commands {
 		if command.Path == "twt start" {
 			foundQuickCreate = true
-			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || command.Arguments[0].Required {
+			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name_or_ticket" || command.Arguments[0].Required {
 				t.Fatalf("quick create schema arguments = %+v", command.Arguments)
 			}
 		}
 		if command.Path == "twt archive" {
 			foundArchive = true
-			if len(command.Arguments) != 1 || command.Arguments[0].Name != "project" || command.Arguments[0].Required {
+			if len(command.Arguments) != 1 || command.Arguments[0].Name != "workspace" || command.Arguments[0].Required {
 				t.Fatalf("archive schema arguments = %+v", command.Arguments)
 			}
 		}
-		if command.Path != "twt projects create" {
+		if command.Path != "twt workspaces create" {
 			continue
 		}
 		foundCreate = true
 		if len(command.Arguments) != 1 || command.Arguments[0].Name != "name" || !command.Arguments[0].Required {
-			t.Fatalf("projects create schema arguments = %+v", command.Arguments)
+			t.Fatalf("workspaces create schema arguments = %+v", command.Arguments)
 		}
 		flags := map[string]struct {
 			required bool
@@ -83,17 +83,17 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 			}{flag.Required, flag.Enum}
 		}
 		if flags["template"].required || len(flags["output"].enum) != 3 {
-			t.Fatalf("projects create schema flags = %+v", flags)
+			t.Fatalf("workspaces create schema flags = %+v", flags)
 		}
 		if _, ok := flags["branch"]; !ok {
-			t.Fatalf("projects create schema misses --branch: %+v", flags)
+			t.Fatalf("workspaces create schema misses --branch: %+v", flags)
 		}
 		if _, ok := flags["no-fetch"]; !ok {
-			t.Fatalf("projects create schema misses --no-fetch: %+v", flags)
+			t.Fatalf("workspaces create schema misses --no-fetch: %+v", flags)
 		}
 	}
 	if !foundCreate {
-		t.Fatal("schema does not contain twt projects create")
+		t.Fatal("schema does not contain twt workspaces create")
 	}
 	if !foundQuickCreate {
 		t.Fatal("schema does not contain twt start")
@@ -106,12 +106,12 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		if operation.Operation == "agents.register" && len(operation.Fields) != 6 {
 			t.Fatalf("agents.register fields = %+v", operation.Fields)
 		}
-		if operation.Operation == "projects.archive" {
-			foundArchiveOperation = len(operation.Fields) == 1 && operation.Fields[0].Path == "project.reference"
+		if operation.Operation == "workspaces.archive" {
+			foundArchiveOperation = len(operation.Fields) == 1 && operation.Fields[0].Path == "workspace.reference"
 		}
 	}
 	if !foundArchiveOperation {
-		t.Fatal("schema does not contain projects.archive")
+		t.Fatal("schema does not contain workspaces.archive")
 	}
 }
 
@@ -150,41 +150,41 @@ func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {
 	}
 }
 
-func TestRawApplyArchivesAProject(t *testing.T) {
+func TestRawApplyArchivesAWorkspace(t *testing.T) {
 	root := t.TempDir()
 	options := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),
 		StateDir:  filepath.Join(root, "state"),
 		DataDir:   filepath.Join(root, "data"),
 	}
-	project := domain.Project{
-		Version:      domain.ProjectVersion,
-		ID:           "project-archive-id",
+	workspace := domain.Workspace{
+		Version:      domain.WorkspaceVersion,
+		ID:           "workspace-archive-id",
 		Name:         "archive-me",
 		TemplateName: "example",
-		Status:       domain.ProjectActive,
+		Status:       domain.WorkspaceActive,
 	}
-	if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetIn(strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me","name":"not-valid"}}`))
+	command.SetIn(strings.NewReader(`{"operation":"workspaces.archive","workspace":{"reference":"archive-me","name":"not-valid"}}`))
 	command.SetArgs(forceTextOutput([]string{"apply", "--stdin", "--dry-run", "--output", "json"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), `unknown field "name"`) {
 		t.Fatalf("archive request with create fields error = %v", err)
 	}
 	options.Stdout, options.Stderr = nil, nil
-	request := strings.NewReader(`{"operation":"projects.archive","project":{"reference":"archive-me"}}`)
+	request := strings.NewReader(`{"operation":"workspaces.archive","workspace":{"reference":"archive-me"}}`)
 	output := executeWithOptions(t, options, request, "apply", "--stdin", "--output", "json")
-	if !strings.Contains(output, `"operation":"projects.archive"`) || !strings.Contains(output, `"status":"applied"`) {
+	if !strings.Contains(output, `"operation":"workspaces.archive"`) || !strings.Contains(output, `"status":"applied"`) {
 		t.Fatalf("raw archive output = %s", output)
 	}
-	archived, err := store.NewProjectStore(options.StateDir).Find(project.ID)
-	if err != nil || archived.Status != domain.ProjectArchived || archived.ArchivedAt == nil {
-		t.Fatalf("raw archive Project = %#v, error = %v", archived, err)
+	archived, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || archived.Status != domain.WorkspaceArchived || archived.ArchivedAt == nil {
+		t.Fatalf("raw archive Workspace = %#v, error = %v", archived, err)
 	}
 }
 
@@ -231,7 +231,7 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil || result.SchemaVersion != 1 || result.Error.Code != "not_found" || !strings.Contains(result.Error.Message, "does not exist") {
+	if err := json.Unmarshal(stderr.Bytes(), &result); err != nil || result.SchemaVersion != 2 || result.Error.Code != "not_found" || !strings.Contains(result.Error.Message, "does not exist") {
 		t.Fatalf("structured error = %s; decode error = %v", stderr.String(), err)
 	}
 }
@@ -289,15 +289,15 @@ func TestLockedMutationsReportTheLockedCode(t *testing.T) {
 
 func TestWriteErrorShowsHintsInTextAndJSON(t *testing.T) {
 	hinted := clierr.WithHint(
-		clierr.New(clierr.PreconditionFailed, "Project %q is archived", "fix-auth"),
-		"Run 'twt projects open %s' to open the Project.", "fix-auth")
+		clierr.New(clierr.PreconditionFailed, "Workspace %q is archived", "fix-auth"),
+		"Run 'twt workspaces open %s' to open the Workspace.", "fix-auth")
 
 	textCommand := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
 	var text bytes.Buffer
 	if err := cli.WriteError(textCommand, &text, hinted); err != nil {
 		t.Fatal(err)
 	}
-	want := "twt: Project \"fix-auth\" is archived\nRun 'twt projects open fix-auth' to open the Project.\n"
+	want := "twt: Workspace \"fix-auth\" is archived\nRun 'twt workspaces open fix-auth' to open the Workspace.\n"
 	if text.String() != want {
 		t.Fatalf("text error:\n%s\nwant:\n%s", text.String(), want)
 	}
@@ -319,7 +319,7 @@ func TestWriteErrorShowsHintsInTextAndJSON(t *testing.T) {
 	if err := json.Unmarshal(encoded.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON error: %v\n%s", err, encoded.String())
 	}
-	if result.Error.Code != "precondition_failed" || result.Error.Hint != "Run 'twt projects open fix-auth' to open the Project." {
+	if result.Error.Code != "precondition_failed" || result.Error.Hint != "Run 'twt workspaces open fix-auth' to open the Workspace." {
 		t.Fatalf("JSON error = %+v", result.Error)
 	}
 }

@@ -28,9 +28,9 @@ local function tmux(arguments)
   return vim.trim(result.stdout)
 end
 
-local function start_agent_pane(project_id, session_name, agent_id)
+local function start_agent_pane(workspace_id, session_name, agent_id)
   local pane = tmux({ "new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session_name, "--", "cat" })
-  tmux({ "set-option", "-t", session_name, "@twt_project_id", project_id })
+  tmux({ "set-option", "-t", session_name, "@twt_workspace_id", workspace_id })
   tmux({ "set-option", "-p", "-t", pane, "@twt_agent_id", agent_id })
   local process = vim.split(tmux({ "display-message", "-p", "-t", pane, "#{pane_current_command}\t#{pane_start_command}" }), "\t", { plain = true })
   assert(#process == 2)
@@ -41,7 +41,7 @@ local function write_json(path, value)
   assert(vim.fn.writefile({ vim.json.encode(value) }, path) == 0)
 end
 
-local function make_project(id, name, repository)
+local function make_workspace(id, name, repository)
   assert(vim.fn.mkdir(repository, "p") == 1 or vim.fn.isdirectory(repository) == 1)
   write_json(state .. "/projects/" .. id .. ".json", {
     version = 1,
@@ -58,13 +58,13 @@ local function make_project(id, name, repository)
   })
 end
 
-local function make_agent(id, project_id, session_id, pane, pane_command, pane_start)
+local function make_agent(id, workspace_id, session_id, pane, pane_command, pane_start)
   write_json(state .. "/agents/" .. id .. ".json", {
     version = 1,
     id = id,
-    projectId = project_id,
+    workspaceId = workspace_id,
     provider = "codex",
-    label = project_id .. " review",
+    label = workspace_id .. " review",
     providerSessionId = session_id,
     resumeCommand = { "codex", "resume", session_id },
     tmuxPane = pane,
@@ -88,16 +88,16 @@ local function make_transcript(session_id, repository, text)
   assert(vim.fn.writefile(lines, directory .. "/rollout-" .. session_id .. ".jsonl") == 0)
 end
 
-local repository_one = root .. "/project-one/app"
-local repository_two = root .. "/project-two/app"
-make_project("project-one", "project-one", repository_one)
-make_project("project-two", "project-two", repository_two)
-local pane_one, command_one, start_one = start_agent_pane("project-one", "project-one", "a1a1a1a1b2b2c3c3d4d4e5e5")
-local pane_two, command_two, start_two = start_agent_pane("project-two", "project-two", "f6f6f6f6a7a7b8b8c9c9d0d0")
-make_agent("a1a1a1a1b2b2c3c3d4d4e5e5", "project-one", "session-one", pane_one, command_one, start_one)
-make_agent("f6f6f6f6a7a7b8b8c9c9d0d0", "project-two", "session-two", pane_two, command_two, start_two)
-make_transcript("session-one", repository_one, "Project one transcript")
-make_transcript("session-two", repository_two, "Project two transcript")
+local repository_one = root .. "/workspace-one/app"
+local repository_two = root .. "/workspace-two/app"
+make_workspace("workspace-one", "workspace-one", repository_one)
+make_workspace("workspace-two", "workspace-two", repository_two)
+local pane_one, command_one, start_one = start_agent_pane("workspace-one", "workspace-one", "a1a1a1a1b2b2c3c3d4d4e5e5")
+local pane_two, command_two, start_two = start_agent_pane("workspace-two", "workspace-two", "f6f6f6f6a7a7b8b8c9c9d0d0")
+make_agent("a1a1a1a1b2b2c3c3d4d4e5e5", "workspace-one", "session-one", pane_one, command_one, start_one)
+make_agent("f6f6f6f6a7a7b8b8c9c9d0d0", "workspace-two", "session-two", pane_two, command_two, start_two)
+make_transcript("session-one", repository_one, "Workspace one transcript")
+make_transcript("session-two", repository_two, "Workspace two transcript")
 
 local directory = repository_one
 require("twt").setup({
@@ -123,16 +123,16 @@ pick("a1a1a1a1b2b2c3c3d4d4e5e5")
 directory = repository_two
 pick("f6f6f6f6a7a7b8b8c9c9d0d0")
 
-local first = snapshots .. "/project-one/latest.md"
-local second = snapshots .. "/project-two/latest.md"
-assert(table.concat(vim.fn.readfile(first), "\n"):find("Project one transcript", 1, true))
-assert(table.concat(vim.fn.readfile(second), "\n"):find("Project two transcript", 1, true))
-assert(not table.concat(vim.fn.readfile(first), "\n"):find("Project two transcript", 1, true))
+local first = snapshots .. "/workspace-one/latest.md"
+local second = snapshots .. "/workspace-two/latest.md"
+assert(table.concat(vim.fn.readfile(first), "\n"):find("Workspace one transcript", 1, true))
+assert(table.concat(vim.fn.readfile(second), "\n"):find("Workspace two transcript", 1, true))
+assert(not table.concat(vim.fn.readfile(first), "\n"):find("Workspace two transcript", 1, true))
 assert(vim.uv.fs_stat(first).mode % 512 == 384)
 assert(vim.uv.fs_stat(vim.fs.dirname(first)).mode % 512 == 448)
 
-local function send_feedback(project_directory, text)
-  directory = project_directory
+local function send_feedback(workspace_directory, text)
+  directory = workspace_directory
   local finished = false
   local result_error
   require("twt").agents.send(text, function(err)
@@ -143,12 +143,12 @@ local function send_feedback(project_directory, text)
   assert(result_error == nil, result_error)
 end
 
-send_feedback(repository_one, "Feedback for Project one")
-send_feedback(repository_two, "Feedback for Project two")
-assert(tmux({ "capture-pane", "-p", "-t", pane_one }):find("Feedback for Project one", 1, true))
-assert(not tmux({ "capture-pane", "-p", "-t", pane_one }):find("Feedback for Project two", 1, true))
-assert(tmux({ "capture-pane", "-p", "-t", pane_two }):find("Feedback for Project two", 1, true))
+send_feedback(repository_one, "Feedback for Workspace one")
+send_feedback(repository_two, "Feedback for Workspace two")
+assert(tmux({ "capture-pane", "-p", "-t", pane_one }):find("Feedback for Workspace one", 1, true))
+assert(not tmux({ "capture-pane", "-p", "-t", pane_one }):find("Feedback for Workspace two", 1, true))
+assert(tmux({ "capture-pane", "-p", "-t", pane_two }):find("Feedback for Workspace two", 1, true))
 
 tmux({ "kill-server" })
 
-print("twt.nvim two-Project integration: ok")
+print("twt.nvim two-Workspace integration: ok")

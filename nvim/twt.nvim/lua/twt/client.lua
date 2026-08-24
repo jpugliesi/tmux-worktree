@@ -34,7 +34,7 @@ function M.request(args, opts, done)
       done("twt returned invalid JSON")
       return
     end
-    if value.schemaVersion ~= 1 then
+    if value.schemaVersion ~= 2 then
       done("twt JSON schema version is not supported")
       return
     end
@@ -55,10 +55,10 @@ function M.context(directory, done)
   M.request({ "context", "--directory", directory }, { cwd = directory }, done)
 end
 
--- Reads the Project context of `fixed_directory`, or of the directory that the
+-- Reads the Workspace context of `fixed_directory`, or of the directory that the
 -- current buffer selects. It answers `done(err)`, or
 -- `done(nil, context, directory)` with the directory that it used.
-function M.project_context(done, fixed_directory)
+function M.workspace_context(done, fixed_directory)
   local directory = fixed_directory or config.get().directory()
   M.context(directory, function(err, context)
     if err then

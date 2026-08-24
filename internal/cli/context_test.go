@@ -23,21 +23,21 @@ func TestContextDirectoryUsesAnAdoptedRepositoryThenFallsBackToTheSession(t *tes
 		}
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-adopted", Name: "dev-env",
-		Status: domain.ProjectActive, Adopted: true, Root: first,
-		Repositories: []domain.ProjectRepository{
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-adopted", Name: "dev-env",
+		Status: domain.WorkspaceActive, Adopted: true, Root: first,
+		Repositories: []domain.WorkspaceRepository{
 			{Name: "first", Path: first},
 			{Name: "second", Path: second},
 		},
 		CreatedAt: now, UpdatedAt: now,
 	}
 	stateDir := filepath.Join(root, "state")
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	t.Setenv("TMUX_PANE", "")
 
 	fromSecond := executeWithOptions(t, options, nil, "context", "--directory", second, "--output", "json")
@@ -45,9 +45,30 @@ func TestContextDirectoryUsesAnAdoptedRepositoryThenFallsBackToTheSession(t *tes
 		t.Fatalf("context from a second adopted repository = %s", fromSecond)
 	}
 
-	t.Setenv("TWT_PROJECT_ID", project.ID)
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
 	fromOutside := executeWithOptions(t, options, nil, "context", "--directory", outside, "--output", "json")
 	if !strings.Contains(fromOutside, `"name":"dev-env"`) {
-		t.Fatalf("context outside a repository did not use the session Project = %s", fromOutside)
+		t.Fatalf("context outside a repository did not use the session Workspace = %s", fromOutside)
+	}
+}
+
+func TestContextAcceptsTheLegacyProjectEnvironmentID(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-legacy", Name: "legacy",
+		Status: domain.WorkspaceActive, Root: filepath.Join(root, "workspace"),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TWT_PROJECT_ID", workspace.ID)
+	t.Setenv("TMUX_PANE", "")
+	output := executeWithOptions(t, cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}, nil, "context", "--output", "json")
+	if !strings.Contains(output, `"name":"legacy"`) {
+		t.Fatalf("context did not use TWT_PROJECT_ID: %s", output)
 	}
 }

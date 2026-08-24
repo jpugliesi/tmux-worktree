@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 )
 
 const prepareWorkerArgument = "__twt_prepare_worker"
@@ -26,7 +26,7 @@ func startPreparationRefill(options Options, templateName string, template domai
 			return nil
 		}
 	}
-	service := options.projectService()
+	service := options.workspaceService()
 	queued, err := service.TopUpPool(templateName, template, template.EffectivePoolDepth())
 	if err != nil {
 		return err
@@ -41,8 +41,8 @@ func startPreparationRefill(options Options, templateName string, template domai
 
 // startPrepareWorker starts one detached background preparation process for a
 // queued Prepared Environment.
-func startPrepareWorker(options Options, service *projectservice.Service, executable string, environment domain.PreparedEnvironment) error {
-	logPath := projectservice.PrepareLogPath(options.StateDir, environment.ID)
+func startPrepareWorker(options Options, service *workspaceservice.Service, executable string, environment domain.PreparedEnvironment) error {
+	logPath := workspaceservice.PrepareLogPath(options.StateDir, environment.ID)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return fmt.Errorf("create preparation log directory: %w", err)
 	}
@@ -77,10 +77,10 @@ func RunPrepareWorker(options Options, args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("invalid Prepared Environment worker request")
 	}
-	environment, err := options.projectService().PrepareQueued(args[0], args[1])
+	environment, err := options.workspaceService().PrepareQueued(args[0], args[1])
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(os.Stdout, "Prepared Environment %q for Project Template %q\n", environment.ID, environment.TemplateName)
+	_, err = fmt.Fprintf(os.Stdout, "Prepared Environment %q for Workspace Template %q\n", environment.ID, environment.TemplateName)
 	return err
 }

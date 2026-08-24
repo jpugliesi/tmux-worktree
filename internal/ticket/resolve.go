@@ -32,7 +32,7 @@ type index struct {
 }
 
 // buildIndex walks home once. Only regular *.md files at depth zero (the
-// home) or depth one (inside one Board directory) are Tickets. index.md at
+// home) or depth one (inside one Project directory) are Tickets. index.md at
 // any level, the templates directory, and dot directories are not.
 func buildIndex(home string) (*index, error) {
 	root := filepath.Clean(home)
@@ -110,9 +110,9 @@ func (x *index) add(path string) {
 		x.skipped[slug] = err
 		return
 	}
-	// The directory is the truth for the Board, so a stale board key never
+	// The directory is the truth for the Project, so a stale project key never
 	// misfiles a ticket in a listing.
-	ticket.Board = boardOf(x.root, path)
+	ticket.Project = projectOf(x.root, path)
 	x.tickets[path] = ticket
 	x.bodies[path] = file.Body
 	if ticket.Title != "" {

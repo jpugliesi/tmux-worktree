@@ -9,37 +9,37 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	transcriptservice "github.com/jpugliesi/tmux-worktree/internal/transcript"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
 func newAgentsCommand(options Options) *cobra.Command {
 	agents := agentservice.NewService(options.StateDir, options.TmuxSocket)
-	projects := options.projectService()
-	command := groupCommand(&cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Projects"})
-	command.AddCommand(newAgentsRegisterCommand(agents, projects))
-	command.AddCommand(newAgentsListCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsShowCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsDiscoverCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsRemoveCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsResumeCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsFocusCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentsOpenCommand(options, agents, projects, options.StateDir))
-	command.AddCommand(newAgentsSendCommand(agents, projects, options.StateDir))
-	command.AddCommand(newAgentTranscriptCommand(agents, projects, options.StateDir))
+	workspaces := options.workspaceService()
+	command := groupCommand(&cobra.Command{Use: "agents", Short: "Manage Agent Sessions for Workspaces"})
+	command.AddCommand(newAgentsRegisterCommand(agents, workspaces))
+	command.AddCommand(newAgentsListCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsShowCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsDiscoverCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsRemoveCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsResumeCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsFocusCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsOpenCommand(options, agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentsSendCommand(agents, workspaces, options.StateDir))
+	command.AddCommand(newAgentTranscriptCommand(agents, workspaces, options.StateDir))
 	return command
 }
 
-func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectservice.Service) *cobra.Command {
-	var projectReference string
+func newAgentsRegisterCommand(agents *agentservice.Service, workspaces *workspaceservice.Service) *cobra.Command {
+	var workspaceReference string
 	var provider string
 	var label string
 	var pane string
 	var providerSessionID string
 	command := &cobra.Command{
 		Use:   "register [-- RESUME_COMMAND...]",
-		Short: "Register an Agent Session with a Project",
+		Short: "Register an Agent Session with a Workspace",
 		Args: func(command *cobra.Command, args []string) error {
 			if len(args) > 0 && command.ArgsLenAtDash() != 0 {
 				return invalidUsage(command, "put RESUME_COMMAND after --")
@@ -53,20 +53,20 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
-			return registerAgent(command, agents, project, provider, label, pane, providerSessionID, args)
+			return registerAgent(command, agents, workspace, provider, label, pane, providerSessionID, args)
 		},
 	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
 	command.Flags().StringVar(&provider, "provider", "", "Set the provider: codex, claude, cursor, grok, or command. twt infers it from the resume command")
 	command.Flags().StringVar(&label, "label", "", "Set the display label. The default label is the provider name")
 	command.Flags().StringVar(&pane, "pane", "", "Set an owned tmux pane ID, or use current")
 	command.Flags().StringVar(&providerSessionID, "session", "", "Link the provider session ID for transcript loading. twt infers it from the resume command")
 	setArguments(command, variadicArgument("resume_command", false, "required when --pane is empty"))
-	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
 	setFlagEnum(command, "provider", agentProviderNames...)
 	return command
 }
@@ -75,21 +75,21 @@ func newAgentsRegisterCommand(agents *agentservice.Service, projects *projectser
 // of the calling terminal.
 const currentPaneReference = "current"
 
-// registerAgent registers one Agent Session with a Project. Both the agents
+// registerAgent registers one Agent Session with a Workspace. Both the agents
 // register command and apply use it.
-func registerAgent(command *cobra.Command, agents *agentservice.Service, project domain.Project, provider, label, pane, providerSessionID string, resumeCommand []string) error {
+func registerAgent(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, provider, label, pane, providerSessionID string, resumeCommand []string) error {
 	if pane == currentPaneReference {
 		pane = os.Getenv("TMUX_PANE")
 	}
 	return runMutation(command, "agents.register",
 		func() (string, string, error) {
-			if err := agents.ValidateRegistration(project, provider, pane, providerSessionID, resumeCommand); err != nil {
+			if err := agents.ValidateRegistration(workspace, provider, pane, providerSessionID, resumeCommand); err != nil {
 				return "", "", err
 			}
-			return "", label, agents.ValidateLabel(project.ID, label)
+			return "", label, agents.ValidateLabel(workspace.ID, label)
 		},
 		func() (string, string, error) {
-			agent, err := agents.Register(project, provider, label, pane, providerSessionID, resumeCommand)
+			agent, err := agents.Register(workspace, provider, label, pane, providerSessionID, resumeCommand)
 			return agent.ID, agent.Label, err
 		},
 		func(out io.Writer, id, name string) error {
@@ -98,40 +98,40 @@ func registerAgent(command *cobra.Command, agents *agentservice.Service, project
 		})
 }
 
-// requireAgentInProject checks that the Agent Session belongs to the Project.
-func requireAgentInProject(agent domain.AgentSession, project domain.Project) error {
-	if agent.ProjectID != project.ID {
-		return transcriptservice.NotInProjectError(agent.ID, project.Name)
+// requireAgentInWorkspace checks that the Agent Session belongs to the Workspace.
+func requireAgentInWorkspace(agent domain.AgentSession, workspace domain.Workspace) error {
+	if agent.WorkspaceID != workspace.ID {
+		return transcriptservice.NotInWorkspaceError(agent.ID, workspace.Name)
 	}
 	return nil
 }
 
 // setAgentCommandCompletion declares the AGENT_ID argument of one Agent
-// Session command with its completion and the --project flag completion.
-func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service, stateDir string) {
+// Session command with its completion and the --workspace flag completion.
+func setAgentCommandCompletion(command *cobra.Command, agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) {
 	setAgentIDArgument(command)
-	command.ValidArgsFunction = agentReferenceCompletion(agents, projects, stateDir)
-	if command.Flags().Lookup("project") != nil {
-		_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	command.ValidArgsFunction = agentReferenceCompletion(agents, workspaces, stateDir)
+	if command.Flags().Lookup("workspace") != nil {
+		_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
 	}
 }
 
-func newAgentsListCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
+func newAgentsListCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
+	var workspaceReference string
 	var limit, offset int
 	var live bool
 	var registered bool
 	command := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List Agent Sessions for a Project",
+		Short:   "List Agent Sessions for a Workspace",
 		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
-			outputs, err := projectAgentOutputs(agents, project, stateDir, live, registered)
+			outputs, err := workspaceAgentOutputs(agents, workspace, stateDir, live, registered)
 			if err != nil {
 				return err
 			}
@@ -144,7 +144,7 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 					return writeNDJSONList(command, outputs, total, truncated)
 				}
 				return writeReadJSON(command, agentsListOutput{
-					SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Agents: outputs,
+					SchemaVersion: jsonSchemaVersion, WorkspaceID: workspace.ID, Agents: outputs,
 					TotalCount: total, Truncated: truncated,
 				}, "agents")
 			}
@@ -156,58 +156,58 @@ func newAgentsListCommand(agents *agentservice.Service, projects *projectservice
 			return writeTable(command.OutOrStdout(), []string{"PROVIDER", "ID", "AGE"}, rows)
 		},
 	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
 	addListReadFlags(command, &limit, &offset, agentOutput{})
 	command.Flags().BoolVar(&live, "live", true, "Probe tmux for live state and scan the providers for discovered sessions. --live=false is the cheap statusline path: it does not probe tmux and does not scan the providers")
 	command.Flags().BoolVar(&registered, "registered", false, "List only registered Agent Sessions; do not scan providers")
-	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
 	return command
 }
 
-// projectAgentOutputs lists the Agent Sessions of one Project in the same
+// workspaceAgentOutputs lists the Agent Sessions of one Workspace in the same
 // order as `twt agents list`: newest first. Registered and discovered
 // sessions share one recency order. The scan only reads.
-func projectAgentOutputs(agents *agentservice.Service, project domain.Project, stateDir string, live, registered bool) ([]agentOutput, error) {
-	values, err := agents.List(project.ID)
+func workspaceAgentOutputs(agents *agentservice.Service, workspace domain.Workspace, stateDir string, live, registered bool) ([]agentOutput, error) {
+	values, err := agents.List(workspace.ID)
 	if err != nil {
 		return nil, err
 	}
 	outputs := make([]agentOutput, 0, len(values))
 	for _, value := range values {
-		outputs = append(outputs, toAgentOutput(agents, value, project.Status == domain.ProjectActive, live))
+		outputs = append(outputs, toAgentOutput(agents, value, workspace.Status == domain.WorkspaceActive, live))
 	}
 	if live && !registered {
-		found, err := discoverProjectSessions(project, stateDir, values)
+		found, err := discoverWorkspaceSessions(workspace, stateDir, values)
 		if err != nil {
 			return nil, err
 		}
 		for _, session := range found {
-			outputs = append(outputs, discoveredAgentOutput(project, session))
+			outputs = append(outputs, discoveredAgentOutput(workspace, session))
 		}
 	}
 	sortAgentsForDisplay(outputs)
 	return outputs, nil
 }
 
-func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
+func newAgentsShowCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
+	var workspaceReference string
 	command := &cobra.Command{
 		Use:   "show AGENT_ID",
 		Short: "Show one Agent Session and each liveness check",
 		Args:  exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
-			agent, _, err := findOrAdoptAgent(command, agents, project, stateDir, args[0])
+			agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, args[0])
 			if err != nil {
 				return err
 			}
-			if err := requireAgentInProject(agent, project); err != nil {
+			if err := requireAgentInWorkspace(agent, workspace); err != nil {
 				return err
 			}
-			output := toAgentOutput(agents, agent, project.Status == domain.ProjectActive, true)
+			output := toAgentOutput(agents, agent, workspace.Status == domain.WorkspaceActive, true)
 			checks := []agentCheck{}
 			for _, check := range agents.ExplainLiveness(agent) {
 				checks = append(checks, agentCheck{Name: check.Name, OK: check.OK, Advisory: check.Advisory})
@@ -253,44 +253,44 @@ func newAgentsShowCommand(agents *agentservice.Service, projects *projectservice
 			return writeTable(command.OutOrStdout(), []string{"CHECK", "RESULT"}, rows)
 		},
 	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
 	addFieldsFlag(command, agentShowOutput{})
-	setAgentCommandCompletion(command, agents, projects, stateDir)
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
-func newAgentsRemoveCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
+func newAgentsRemoveCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
+	var workspaceReference string
 	command := &cobra.Command{
 		Use:     "rm AGENT_ID",
 		Aliases: []string{"remove"},
 		Short:   "Delete an Agent Session record",
 		Args:    exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
-			return removeAgentSession(command, agents, args[0], project, stateDir)
+			return removeAgentSession(command, agents, args[0], workspace, stateDir)
 		},
 	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
-	setAgentCommandCompletion(command, agents, projects, stateDir)
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
-// removeAgentSession deletes one Agent Session record of a Project. Both the
+// removeAgentSession deletes one Agent Session record of a Workspace. Both the
 // agents rm command and apply use it. A reference that names a discovered but
 // unregistered provider session is invalid usage: rm does not adopt.
-func removeAgentSession(command *cobra.Command, agents *agentservice.Service, agentID string, project domain.Project, stateDir string) error {
+func removeAgentSession(command *cobra.Command, agents *agentservice.Service, agentID string, workspace domain.Workspace, stateDir string) error {
 	return runMutation(command, "agents.rm",
 		func() (string, string, error) {
-			agent, err := agents.ValidateRemove(agentID, project.ID)
-			return agent.ID, agent.Label, notRegisteredForRemoval(agents, project, stateDir, agentID, err)
+			agent, err := agents.ValidateRemove(agentID, workspace.ID)
+			return agent.ID, agent.Label, notRegisteredForRemoval(agents, workspace, stateDir, agentID, err)
 		},
 		func() (string, string, error) {
-			agent, err := agents.Remove(agentID, project.ID)
-			return agent.ID, agent.Label, notRegisteredForRemoval(agents, project, stateDir, agentID, err)
+			agent, err := agents.Remove(agentID, workspace.ID)
+			return agent.ID, agent.Label, notRegisteredForRemoval(agents, workspace, stateDir, agentID, err)
 		},
 		func(out io.Writer, id, name string) error {
 			_, err := fmt.Fprintf(out, "Removed Agent Session %s (%s)\n", id, name)
@@ -298,24 +298,24 @@ func removeAgentSession(command *cobra.Command, agents *agentservice.Service, ag
 		})
 }
 
-func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
-	var projectReference string
+func newAgentsDiscoverCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
+	var workspaceReference string
 	var adopt bool
 	var limit, offset int
 	command := &cobra.Command{
 		Use:   "discover",
-		Short: "Find provider sessions of a Project that no Agent Session uses",
+		Short: "Find provider sessions of a Workspace that no Agent Session uses",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
-			registered, err := agents.List(project.ID)
+			registered, err := agents.List(workspace.ID)
 			if err != nil {
 				return err
 			}
-			found, err := discoverProjectSessions(project, stateDir, registered)
+			found, err := discoverWorkspaceSessions(workspace, stateDir, registered)
 			if err != nil {
 				return err
 			}
@@ -331,7 +331,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 				})
 			}
 			result := agentsDiscoverOutput{
-				SchemaVersion: jsonSchemaVersion, ProjectID: project.ID, Sessions: sessions,
+				SchemaVersion: jsonSchemaVersion, WorkspaceID: workspace.ID, Sessions: sessions,
 				TotalCount: total, Truncated: truncated,
 			}
 			if adopt {
@@ -339,7 +339,7 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 				if isDryRun(command) {
 					result.Status = statusValid
 				}
-				result.Adopted, err = adoptSessions(command, agents, project, found)
+				result.Adopted, err = adoptSessions(command, agents, workspace, found)
 				if err != nil {
 					return err
 				}
@@ -366,25 +366,25 @@ func newAgentsDiscoverCommand(agents *agentservice.Service, projects *projectser
 			return nil
 		},
 	}
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
 	command.Flags().BoolVar(&adopt, "adopt", false, "Register each discovered provider session as an Agent Session")
 	addListReadFlags(command, &limit, &offset, discoveredOutput{})
-	_ = command.RegisterFlagCompletionFunc("project", projectFlagCompletion(projects))
+	_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
 	return command
 }
 
 // adoptSessions registers each discovered provider session with a generated
 // resume command. A dry run makes no record.
-func adoptSessions(command *cobra.Command, agents *agentservice.Service, project domain.Project, sessions []transcriptservice.DiscoveredSession) ([]string, error) {
+func adoptSessions(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, sessions []transcriptservice.DiscoveredSession) ([]string, error) {
 	adopted := []string{}
 	for _, session := range sessions {
 		if isDryRun(command) {
-			if _, err := validateAdoption(agents, project, session); err != nil {
+			if _, err := validateAdoption(agents, workspace, session); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		agent, err := adoptDiscoveredSession(agents, project, session)
+		agent, err := adoptDiscoveredSession(agents, workspace, session)
 		if err != nil {
 			return nil, err
 		}
@@ -393,85 +393,85 @@ func adoptSessions(command *cobra.Command, agents *agentservice.Service, project
 	return adopted, nil
 }
 
-func newAgentsResumeCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
+func newAgentsResumeCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "resume AGENT_ID",
 		Short: "Resume or focus an Agent Session",
 		Args:  exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
-			return resumeAgentSession(command, agents, projects, stateDir, args[0], "")
+			return resumeAgentSession(command, agents, workspaces, stateDir, args[0], "")
 		},
 	}
-	setAgentCommandCompletion(command, agents, projects, stateDir)
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
-// resumeAgentSession resumes or focuses one Agent Session. An empty Project
-// reference uses the Project of the Agent Session record; a set reference
-// must name that same Project. A reference that names a discovered provider
+// resumeAgentSession resumes or focuses one Agent Session. An empty Workspace
+// reference uses the Workspace of the Agent Session record; a set reference
+// must name that same Workspace. A reference that names a discovered provider
 // session adopts it first. Both the agents resume command and apply use it.
-func resumeAgentSession(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service, stateDir, agentID, projectReference string) error {
+func resumeAgentSession(command *cobra.Command, agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir, agentID, workspaceReference string) error {
 	agent, err := agents.Find(agentID)
 	if err != nil {
-		agent, err = adoptForResume(command, agents, projects, stateDir, agentID, projectReference, err)
+		agent, err = adoptForResume(command, agents, workspaces, stateDir, agentID, workspaceReference, err)
 		if err != nil {
 			return err
 		}
 	}
-	project, err := findAgentProject(projects, agent, projectReference)
+	workspace, err := findAgentWorkspace(workspaces, agent, workspaceReference)
 	if err != nil {
 		return err
 	}
 	if isDryRun(command) {
-		if err := agents.ValidateResume(agent, project); err != nil {
+		if err := agents.ValidateResume(agent, workspace); err != nil {
 			return err
 		}
 		return writeMutation(command, "agents.resume", statusValid, agent.ID, agent.Label)
 	}
-	agent, err = agents.Resume(agent, project)
+	agent, err = agents.Resume(agent, workspace)
 	if err != nil {
 		return err
 	}
 	if WantsJSON(command) {
-		return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, project.Status == domain.ProjectActive, true)})
+		return writeJSONOutput(command, agentActionOutput{SchemaVersion: jsonSchemaVersion, Agent: toAgentOutput(agents, agent, workspace.Status == domain.WorkspaceActive, true)})
 	}
 	_, err = fmt.Fprintf(command.OutOrStdout(), "Resumed Agent Session %s\n", agent.ID)
 	return err
 }
 
 // adoptForResume resolves a missed resume reference against the discovered
-// provider sessions of the Project. An empty Project reference uses the
-// current Project. When no Project resolves, the original lookup error stays.
-func adoptForResume(command *cobra.Command, agents *agentservice.Service, projects *projectservice.Service, stateDir, agentID, projectReference string, lookupErr error) (domain.AgentSession, error) {
+// provider sessions of the Workspace. An empty Workspace reference uses the
+// current Workspace. When no Workspace resolves, the original lookup error stays.
+func adoptForResume(command *cobra.Command, agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir, agentID, workspaceReference string, lookupErr error) (domain.AgentSession, error) {
 	if clierr.CodeOf(lookupErr) != clierr.NotFound {
 		return domain.AgentSession{}, lookupErr
 	}
-	if projectReference == "" {
-		projectReference = currentProjectReference
+	if workspaceReference == "" {
+		workspaceReference = currentWorkspaceReference
 	}
-	project, err := resolveProject(projects, projectReference)
+	workspace, err := resolveWorkspace(workspaces, workspaceReference)
 	if err != nil {
 		return domain.AgentSession{}, lookupErr
 	}
-	agent, _, err := findOrAdoptAgent(command, agents, project, stateDir, agentID)
+	agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, agentID)
 	return agent, err
 }
 
-// findAgentProject finds the Project of one Agent Session. An empty
-// reference uses the Project ID of the Agent Session record. Every other
-// reference resolves as a PROJECT value and must name that same Project.
-func findAgentProject(projects *projectservice.Service, agent domain.AgentSession, projectReference string) (domain.Project, error) {
-	if projectReference == "" {
-		return projects.Find(agent.ProjectID)
+// findAgentWorkspace finds the Workspace of one Agent Session. An empty
+// reference uses the Workspace ID of the Agent Session record. Every other
+// reference resolves as a WORKSPACE value and must name that same Workspace.
+func findAgentWorkspace(workspaces *workspaceservice.Service, agent domain.AgentSession, workspaceReference string) (domain.Workspace, error) {
+	if workspaceReference == "" {
+		return workspaces.Find(agent.WorkspaceID)
 	}
-	project, err := resolveProject(projects, projectReference)
+	workspace, err := resolveWorkspace(workspaces, workspaceReference)
 	if err != nil {
-		return domain.Project{}, err
+		return domain.Workspace{}, err
 	}
-	return project, requireAgentInProject(agent, project)
+	return workspace, requireAgentInWorkspace(agent, workspace)
 }
 
-func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
+func newAgentsFocusCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "focus AGENT_ID",
 		Short: "Focus a live Agent Session pane",
@@ -496,13 +496,13 @@ func newAgentsFocusCommand(agents *agentservice.Service, projects *projectservic
 				func(io.Writer, string, string) error { return nil })
 		},
 	}
-	setAgentCommandCompletion(command, agents, projects, stateDir)
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
-func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice.Service, stateDir string) *cobra.Command {
+func newAgentsSendCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
 	var useStdin bool
-	var projectReference string
+	var workspaceReference string
 	command := &cobra.Command{
 		Use:   "send AGENT_ID",
 		Short: "Send feedback to a live Agent Session pane",
@@ -514,7 +514,7 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			project, err := resolveProject(projects, projectReference)
+			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
 				return err
 			}
@@ -524,26 +524,26 @@ func newAgentsSendCommand(agents *agentservice.Service, projects *projectservice
 			if err != nil {
 				return fmt.Errorf("read feedback: %w", err)
 			}
-			return sendAgentFeedback(command, agents, project, stateDir, args[0], string(data))
+			return sendAgentFeedback(command, agents, workspace, stateDir, args[0], string(data))
 		},
 	}
 	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
-	command.Flags().StringVar(&projectReference, "project", "current", "Select the Project by name or ID")
+	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
 	_ = command.MarkFlagRequired("stdin")
-	setAgentCommandCompletion(command, agents, projects, stateDir)
+	setAgentCommandCompletion(command, agents, workspaces, stateDir)
 	return command
 }
 
 // sendAgentFeedback sends one feedback text to the live pane of an Agent
-// Session of the Project. Both the agents send command and apply use it. A
+// Session of the Workspace. Both the agents send command and apply use it. A
 // reference that names a discovered provider session adopts it first; the
 // send then reports that the Agent Session is not live, with the resume hint.
-func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, project domain.Project, stateDir, agentID, text string) error {
-	agent, _, err := findOrAdoptAgent(command, agents, project, stateDir, agentID)
+func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, agentID, text string) error {
+	agent, _, err := findOrAdoptAgent(command, agents, workspace, stateDir, agentID)
 	if err != nil {
 		return err
 	}
-	if err := requireAgentInProject(agent, project); err != nil {
+	if err := requireAgentInWorkspace(agent, workspace); err != nil {
 		return err
 	}
 	if isDryRun(command) {
@@ -555,7 +555,7 @@ func sendAgentFeedback(command *cobra.Command, agents *agentservice.Service, pro
 		}
 		return writeMutation(command, "agents.send", statusValid, agent.ID, agent.Label)
 	}
-	if err := agents.Send(agent, project.ID, text); err != nil {
+	if err := agents.Send(agent, workspace.ID, text); err != nil {
 		return err
 	}
 	if WantsJSON(command) {

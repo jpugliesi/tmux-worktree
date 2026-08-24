@@ -14,17 +14,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ungroupedBoardSentinel is the Board picker row for a Ticket with no Board.
+// ungroupedProjectSentinel is the Project picker row for a Ticket with no Project.
 // Parentheses make it an invalid resource name, so it cannot collide with a
-// Board.
-const ungroupedBoardSentinel = "(none)"
+// Project.
+const ungroupedProjectSentinel = "(none)"
 
-// createTicketWizard collects title, Board, and description for a person at a
+// createTicketWizard collects title, Project, and description for a person at a
 // terminal. DESCRIPTION and --stdin never enter this path. --title skips the
-// title prompt. --board skips the picker and never creates a missing Board.
+// title prompt. --project skips the picker and never creates a missing Project.
 func createTicketWizard(command *cobra.Command, options Options, service *ticketservice.Service, request ticketservice.CreateRequest) (ticketservice.CreateRequest, error) {
-	if command.Flags().Changed("board") && strings.TrimSpace(request.Board) != "" {
-		if _, err := service.Board(request.Board); err != nil {
+	if command.Flags().Changed("project") && strings.TrimSpace(request.Project) != "" {
+		if _, err := service.Project(request.Project); err != nil {
 			return request, err
 		}
 	}
@@ -39,17 +39,17 @@ func createTicketWizard(command *cobra.Command, options Options, service *ticket
 		}
 		request.Title = title
 	}
-	if !command.Flags().Changed("board") {
-		choice, err := pickTicketBoard(command, options, service)
+	if !command.Flags().Changed("project") {
+		choice, err := pickTicketProject(command, options, service)
 		if err != nil {
 			return request, err
 		}
-		board, ensure, err := resolveWizardBoard(command, service, choice)
+		project, ensure, err := resolveWizardProject(command, service, choice)
 		if err != nil {
 			return request, err
 		}
-		request.Board = board
-		request.EnsureBoard = ensure
+		request.Project = project
+		request.EnsureProject = ensure
 	}
 	body, err := readTicketDescriptionInEditor(command, options)
 	if err != nil {
@@ -59,79 +59,79 @@ func createTicketWizard(command *cobra.Command, options Options, service *ticket
 	return request, nil
 }
 
-// resolveWizardBoard maps one picker result to a Board name. "(none)" leaves
-// the Ticket ungrouped. An existing Board is used as-is. A new name must
+// resolveWizardProject maps one picker result to a Project name. "(none)" leaves
+// the Ticket ungrouped. An existing Project is used as-is. A new name must
 // pass resource-name rules, then the person confirms create.
-func resolveWizardBoard(command *cobra.Command, service *ticketservice.Service, choice string) (string, bool, error) {
-	if choice == "" || choice == ungroupedBoardSentinel {
+func resolveWizardProject(command *cobra.Command, service *ticketservice.Service, choice string) (string, bool, error) {
+	if choice == "" || choice == ungroupedProjectSentinel {
 		return "", false, nil
 	}
 	if choice == "templates" {
-		return "", false, invalidUsageWithHint(command, "Pick an existing Board, or type a different name.",
-			"the Board name %q is reserved", choice)
+		return "", false, invalidUsageWithHint(command, "Pick an existing Project, or type a different name.",
+			"the Project name %q is reserved", choice)
 	}
 	if err := store.ValidateResourceName(choice); err != nil {
 		return "", false, invalidUsageWithHint(command, "Use letters, numbers, dots, hyphens, or underscores.",
-			"invalid Board name %q", choice)
+			"invalid Project name %q", choice)
 	}
-	if _, err := service.Board(choice); err == nil {
+	if _, err := service.Project(choice); err == nil {
 		return choice, false, nil
 	}
-	ok, err := confirmNewBoard(command, choice)
+	ok, err := confirmNewProject(command, choice)
 	if err != nil {
 		return "", false, err
 	}
 	if !ok {
-		return "", false, invalidUsageWithHint(command, "Pick an existing Board, or confirm the new name.",
-			"Ticket creation was canceled; Board %q was not created", choice)
+		return "", false, invalidUsageWithHint(command, "Pick an existing Project, or confirm the new name.",
+			"Ticket creation was canceled; Project %q was not created", choice)
 	}
 	return choice, true, nil
 }
 
-// pickTicketBoard shows the Board picker: (none), then every Board name.
-func pickTicketBoard(command *cobra.Command, options Options, service *ticketservice.Service) (string, error) {
-	boards, err := service.Boards()
+// pickTicketProject shows the Project picker: (none), then every Project name.
+func pickTicketProject(command *cobra.Command, options Options, service *ticketservice.Service) (string, error) {
+	projects, err := service.Projects()
 	if err != nil {
 		return "", err
 	}
-	lines := make([]string, 0, len(boards)+1)
-	lines = append(lines, ungroupedBoardSentinel)
-	for _, board := range boards {
-		lines = append(lines, board.Name)
+	lines := make([]string, 0, len(projects)+1)
+	lines = append(lines, ungroupedProjectSentinel)
+	for _, project := range projects {
+		lines = append(lines, project.Name)
 	}
-	choice, err := options.PickTicketBoard(command, lines)
+	choice, err := options.PickTicketProject(command, lines)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(choice), nil
 }
 
-// realPickTicketBoard selects one line with fzf when it is installed, or with
+// realPickTicketProject selects one line with fzf when it is installed, or with
 // a numbered list that also accepts a typed name.
-func realPickTicketBoard(command *cobra.Command, lines []string) (string, error) {
+func realPickTicketProject(command *cobra.Command, lines []string) (string, error) {
 	if _, err := exec.LookPath("fzf"); err == nil {
 		return fzfPickOrQuery(lines)
 	}
-	return numberedBoardPick(command, lines)
+	return numberedProjectPick(command, lines)
 }
 
-// fzfPickOrQuery lists Boards in fzf. Enter accepts a match, or the typed
+// fzfPickOrQuery lists Projects in fzf. Enter accepts a match, or the typed
 // query when nothing matches. This helper is separate from fzfPick, which
 // requires an exact listed line.
 func fzfPickOrQuery(lines []string) (string, error) {
 	fzf := exec.Command("fzf",
 		"--print-query",
 		"--bind", "enter:accept-or-print-query",
-		"--header", "Select a Board, or type a new name.")
+		"--header", "Select a Project, or type a new name.")
 	fzf.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
 	fzf.Stderr = os.Stderr
 	selected, err := fzf.Output()
 	output := strings.TrimRight(string(selected), "\n")
 	if output == "" {
 		if err != nil {
-			return "", fmt.Errorf("no Board was selected")
+			return "", fmt.Errorf("no Project was selected")
 		}
-		return "", fmt.Errorf("no Board was selected")
+		return "", fmt.Errorf("no Project was selected")
 	}
 	parts := strings.Split(output, "\n")
 	query := strings.TrimSpace(parts[0])
@@ -139,12 +139,12 @@ func fzfPickOrQuery(lines []string) (string, error) {
 	if len(parts) > 1 {
 		selection = strings.TrimSpace(parts[len(parts)-1])
 	}
-	return resolveFzfBoardChoice(lines, query, selection)
+	return resolveFzfProjectChoice(lines, query, selection)
 }
 
-// resolveFzfBoardChoice prefers a listed selection. Otherwise it uses the
-// typed query as a new Board name.
-func resolveFzfBoardChoice(lines []string, query, selection string) (string, error) {
+// resolveFzfProjectChoice prefers a listed selection. Otherwise it uses the
+// typed query as a new Project name.
+func resolveFzfProjectChoice(lines []string, query, selection string) (string, error) {
 	if selection != "" {
 		for _, line := range lines {
 			if line == selection {
@@ -155,13 +155,13 @@ func resolveFzfBoardChoice(lines []string, query, selection string) (string, err
 	if query != "" {
 		return query, nil
 	}
-	return "", fmt.Errorf("no Board was selected")
+	return "", fmt.Errorf("no Project was selected")
 }
 
-// numberedBoardPick prints a numbered Board list and reads a number or a name.
-func numberedBoardPick(command *cobra.Command, lines []string) (string, error) {
+// numberedProjectPick prints a numbered Project list and reads a number or a name.
+func numberedProjectPick(command *cobra.Command, lines []string) (string, error) {
 	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Board; pass --board in a script")
+		return "", invalidUsage(command, "missing Project; pass --project in a script")
 	}
 	errOut := command.ErrOrStderr()
 	for index, line := range lines {
@@ -169,23 +169,23 @@ func numberedBoardPick(command *cobra.Command, lines []string) (string, error) {
 			return "", err
 		}
 	}
-	name, err := promptTicketLine(command, "Board name or number: ")
+	name, err := promptTicketLine(command, "Project name or number: ")
 	if err != nil {
 		return "", err
 	}
-	choice, err := resolveBoardPick(lines, name)
+	choice, err := resolveProjectPick(lines, name)
 	if err != nil {
 		return "", invalidUsage(command, "%s", err.Error())
 	}
 	return choice, nil
 }
 
-// resolveBoardPick maps typed picker input to a line. Exact listed names win
-// over numbers, so a Board named "1" is not taken as index 1.
-func resolveBoardPick(lines []string, input string) (string, error) {
+// resolveProjectPick maps typed picker input to a line. Exact listed names win
+// over numbers, so a Project named "1" is not taken as index 1.
+func resolveProjectPick(lines []string, input string) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return "", fmt.Errorf("no Board was selected")
+		return "", fmt.Errorf("no Project was selected")
 	}
 	for _, line := range lines {
 		if line == input {
@@ -195,16 +195,16 @@ func resolveBoardPick(lines []string, input string) (string, error) {
 	number, err := strconv.Atoi(input)
 	if err == nil {
 		if number < 0 || number >= len(lines) {
-			return "", fmt.Errorf("give a Board number between 0 and %d", len(lines)-1)
+			return "", fmt.Errorf("give a Project number between 0 and %d", len(lines)-1)
 		}
 		return lines[number], nil
 	}
 	return input, nil
 }
 
-// confirmNewBoard asks whether to create a missing Board. Enter means yes.
-func confirmNewBoard(command *cobra.Command, name string) (bool, error) {
-	if _, err := fmt.Fprintf(command.ErrOrStderr(), "Board %q does not exist. Create it? [Y/n] ", name); err != nil {
+// confirmNewProject asks whether to create a missing Project. Enter means yes.
+func confirmNewProject(command *cobra.Command, name string) (bool, error) {
+	if _, err := fmt.Fprintf(command.ErrOrStderr(), "Project %q does not exist. Create it? [Y/n] ", name); err != nil {
 		return false, err
 	}
 	line, err := readTicketPromptLine(command)

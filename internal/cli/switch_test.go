@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// switchFixture saves one archived and two active Projects and returns the
+// switchFixture saves one archived and two active Workspaces and returns the
 // base options.
 func switchFixture(t *testing.T) cli.Options {
 	t.Helper()
@@ -26,14 +26,14 @@ func switchFixture(t *testing.T) cli.Options {
 	}
 	now := time.Now().UTC()
 	archivedAt := now.Add(-5 * time.Hour)
-	projects := []domain.Project{
-		{Version: domain.ProjectVersion, ID: "old-active-id", Name: "old-active", TemplateName: "example", Status: domain.ProjectActive, TmuxSession: "old-active", CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now},
-		{Version: domain.ProjectVersion, ID: "new-active-id", Name: "new-active", TemplateName: "example", Status: domain.ProjectActive, TmuxSession: "new-active", CreatedAt: now.Add(-time.Hour), UpdatedAt: now},
-		{Version: domain.ProjectVersion, ID: "sleepy-id", Name: "sleepy", TemplateName: "example", Status: domain.ProjectArchived, TmuxSession: "sleepy", CreatedAt: now.Add(-72 * time.Hour), UpdatedAt: now, ArchivedAt: &archivedAt},
+	workspaces := []domain.Workspace{
+		{Version: domain.WorkspaceVersion, ID: "old-active-id", Name: "old-active", TemplateName: "example", Status: domain.WorkspaceActive, TmuxSession: "old-active", CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now},
+		{Version: domain.WorkspaceVersion, ID: "new-active-id", Name: "new-active", TemplateName: "example", Status: domain.WorkspaceActive, TmuxSession: "new-active", CreatedAt: now.Add(-time.Hour), UpdatedAt: now},
+		{Version: domain.WorkspaceVersion, ID: "sleepy-id", Name: "sleepy", TemplateName: "example", Status: domain.WorkspaceArchived, TmuxSession: "sleepy", CreatedAt: now.Add(-72 * time.Hour), UpdatedAt: now, ArchivedAt: &archivedAt},
 	}
-	projectStore := store.NewProjectStore(options.StateDir)
-	for _, project := range projects {
-		if err := projectStore.Save(project); err != nil {
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	for _, workspace := range workspaces {
+		if err := workspaceStore.Save(workspace); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -55,7 +55,7 @@ func TestSwitchRefusesJSONOutput(t *testing.T) {
 func TestSwitchDryRunReportsThePlanWithoutAChange(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 
 	output := executeWithOptions(t, options, nil, "switch", "new-active", "--dry-run")
 	if !strings.Contains(output, `switch the client to session "new-active"`) {
@@ -63,23 +63,23 @@ func TestSwitchDryRunReportsThePlanWithoutAChange(t *testing.T) {
 	}
 
 	archivedOutput := executeWithOptions(t, options, nil, "switch", "sleepy", "--dry-run")
-	if !strings.Contains(archivedOutput, `open archived Project "sleepy"`) {
-		t.Fatalf("switch dry-run for an archived Project = %q", archivedOutput)
+	if !strings.Contains(archivedOutput, `open archived Workspace "sleepy"`) {
+		t.Fatalf("switch dry-run for an archived Workspace = %q", archivedOutput)
 	}
-	unchanged, err := store.NewProjectStore(options.StateDir).Find("sleepy-id")
-	if err != nil || unchanged.Status != domain.ProjectArchived {
-		t.Fatalf("switch dry-run changed the archived Project: status=%q error=%v", unchanged.Status, err)
+	unchanged, err := store.NewWorkspaceStore(options.StateDir).Find("sleepy-id")
+	if err != nil || unchanged.Status != domain.WorkspaceArchived {
+		t.Fatalf("switch dry-run changed the archived Workspace: status=%q error=%v", unchanged.Status, err)
 	}
 
 	if _, _, err := executeCollectingOutput(t, options, "switch", "missing", "--dry-run"); err == nil || clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("switch for an unknown Project = %v", err)
+		t.Fatalf("switch for an unknown Workspace = %v", err)
 	}
 }
 
-func TestSwitchPickerSortsActiveProjectsFirst(t *testing.T) {
+func TestSwitchPickerSortsActiveWorkspacesFirst(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	var pickedLines []string
 	options.SwitchPick = func(_ *cobra.Command, lines []string) (int, error) {
 		pickedLines = append([]string(nil), lines...)
@@ -100,10 +100,10 @@ func TestSwitchPickerSortsActiveProjectsFirst(t *testing.T) {
 	}
 }
 
-func TestSwitchNumberedPickerReadsTheProjectNumber(t *testing.T) {
+func TestSwitchNumberedPickerReadsTheWorkspaceNumber(t *testing.T) {
 	options := switchFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	// An empty PATH hides fzf, so the real picker uses the numbered list.
 	t.Setenv("PATH", "")
 	var stdout, stderr bytes.Buffer
@@ -114,10 +114,10 @@ func TestSwitchNumberedPickerReadsTheProjectNumber(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("switch with the numbered picker: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "1) new-active") || !strings.Contains(stderr.String(), "Project number: ") {
+	if !strings.Contains(stderr.String(), "1) new-active") || !strings.Contains(stderr.String(), "Workspace number: ") {
 		t.Fatalf("numbered picker prompt = %q", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `open archived Project "sleepy"`) {
+	if !strings.Contains(stdout.String(), `open archived Workspace "sleepy"`) {
 		t.Fatalf("numbered picker dry-run output = %q", stdout.String())
 	}
 

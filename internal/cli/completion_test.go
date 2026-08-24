@@ -33,33 +33,33 @@ func completeArgs(t *testing.T, options cli.Options, args ...string) []string {
 	return candidates
 }
 
-// saveCompletionProject saves one active Project with one repository directory
+// saveCompletionWorkspace saves one active Workspace with one repository directory
 // and returns it.
-func saveCompletionProject(t *testing.T, stateDir, root, name string) domain.Project {
+func saveCompletionWorkspace(t *testing.T, stateDir, root, name string) domain.Workspace {
 	t.Helper()
 	repository := filepath.Join(root, name, "app")
 	if err := os.MkdirAll(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: name, Name: name,
-		Status: domain.ProjectActive, Root: filepath.Dir(repository), TmuxSession: name,
-		Repositories: []domain.ProjectRepository{{Name: "app", Path: repository}},
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: name, Name: name,
+		Status: domain.WorkspaceActive, Root: filepath.Dir(repository), TmuxSession: name,
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: repository}},
 		CreatedAt:    now, UpdatedAt: now,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	return project
+	return workspace
 }
 
-// writeCodexSession writes one codex provider session that the Project
+// writeCodexSession writes one codex provider session that the Workspace
 // discovers.
-func writeCodexSession(t *testing.T, home string, project domain.Project, sessionID string) {
+func writeCodexSession(t *testing.T, home string, workspace domain.Workspace, sessionID string) {
 	t.Helper()
 	writeTestLines(t, filepath.Join(home, ".codex", "sessions", "rollout-"+sessionID+".jsonl"),
-		`{"type":"session_meta","payload":{"id":"`+sessionID+`","cwd":`+quoteJSON(t, project.Repositories[0].Path)+`}}
+		`{"type":"session_meta","payload":{"id":"`+sessionID+`","cwd":`+quoteJSON(t, workspace.Repositories[0].Path)+`}}
 {"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"A question"}]}}
 `)
 }
@@ -70,19 +70,19 @@ func TestAgentReferenceCompletionOffersRegisteredAndDiscoveredSessions(t *testin
 	t.Setenv("HOME", home)
 	t.Setenv("TMUX_PANE", "")
 	stateDir := filepath.Join(root, "state")
-	project := saveCompletionProject(t, stateDir, root, "project-one")
-	t.Setenv("TWT_PROJECT_ID", project.ID)
+	workspace := saveCompletionWorkspace(t, stateDir, root, "workspace-one")
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
-	executeWithOptions(t, options, nil, "agents", "register", "--project", project.ID,
+	executeWithOptions(t, options, nil, "agents", "register", "--workspace", workspace.ID,
 		"--label", "reviewer", "--", "codex", "resume", "registered-one")
-	registered, err := store.NewAgentStore(stateDir).List(project.ID)
+	registered, err := store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil || len(registered) != 1 {
 		t.Fatalf("registered Agent Sessions = %+v, %v", registered, err)
 	}
-	writeCodexSession(t, home, project, "codex-two")
+	writeCodexSession(t, home, workspace, "codex-two")
 
-	// focus has no --project flag: it completes the Agent Sessions of the
-	// current Project, with the label of a registered session and the provider
+	// focus has no --workspace flag: it completes the Agent Sessions of the
+	// current Workspace, with the label of a registered session and the provider
 	// of a discovered one.
 	candidates := completeArgs(t, options, "agents", "focus", "")
 	want := []string{registered[0].ID + "\treviewer", "codex-two\tdiscovered codex"}
@@ -116,49 +116,49 @@ func TestAgentReferenceCompletionOffersRegisteredAndDiscoveredSessions(t *testin
 	}
 
 	// A completion reads only: it never adopts the discovered session.
-	after, err := store.NewAgentStore(stateDir).List(project.ID)
+	after, err := store.NewAgentStore(stateDir).List(workspace.ID)
 	if err != nil || len(after) != 1 {
 		t.Fatalf("Agent Sessions after the completions = %+v, %v", after, err)
 	}
 }
 
-func TestAgentReferenceCompletionScopesToTheProject(t *testing.T) {
+func TestAgentReferenceCompletionScopesToTheWorkspace(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
 	t.Setenv("TMUX_PANE", "")
 	stateDir := filepath.Join(root, "state")
-	first := saveCompletionProject(t, stateDir, root, "project-one")
-	second := saveCompletionProject(t, stateDir, root, "project-two")
+	first := saveCompletionWorkspace(t, stateDir, root, "workspace-one")
+	second := saveCompletionWorkspace(t, stateDir, root, "workspace-two")
 	writeCodexSession(t, home, first, "codex-first")
 	writeCodexSession(t, home, second, "codex-second")
-	t.Setenv("TWT_PROJECT_ID", first.ID)
+	t.Setenv("TWT_WORKSPACE_ID", first.ID)
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 
-	// The current Project applies when --project stays at its default. A
-	// Project with discovered sessions only still completes them.
+	// The current Workspace applies when --workspace stays at its default. A
+	// Workspace with discovered sessions only still completes them.
 	if candidates := completeArgs(t, options, "agents", "transcript", "show", ""); len(candidates) != 1 || candidates[0] != "codex-first\tdiscovered codex" {
-		t.Fatalf("transcript show completion of the current Project = %q", candidates)
+		t.Fatalf("transcript show completion of the current Workspace = %q", candidates)
 	}
 
-	// A set --project flag selects that Project.
-	candidates := completeArgs(t, options, "agents", "transcript", "show", "--project", second.ID, "")
+	// A set --workspace flag selects that Workspace.
+	candidates := completeArgs(t, options, "agents", "transcript", "show", "--workspace", second.ID, "")
 	if len(candidates) != 1 || candidates[0] != "codex-second\tdiscovered codex" {
-		t.Fatalf("transcript show completion of --project %s = %q", second.ID, candidates)
+		t.Fatalf("transcript show completion of --workspace %s = %q", second.ID, candidates)
 	}
 
-	// An unknown Project completes nothing, and reports no error.
-	if candidates := completeArgs(t, options, "agents", "show", "--project", "absent", ""); len(candidates) != 0 {
-		t.Fatalf("agents show completion of an unknown Project = %q", candidates)
+	// An unknown Workspace completes nothing, and reports no error.
+	if candidates := completeArgs(t, options, "agents", "show", "--workspace", "absent", ""); len(candidates) != 0 {
+		t.Fatalf("agents show completion of an unknown Workspace = %q", candidates)
 	}
 
-	// Outside a Project, focus completes the registered Agent Sessions of every
-	// Project. It scans no provider, because one scan for each Project is too
+	// Outside a Workspace, focus completes the registered Agent Sessions of every
+	// Workspace. It scans no provider, because one scan for each Workspace is too
 	// slow for a key press.
-	t.Setenv("TWT_PROJECT_ID", "")
-	executeWithOptions(t, options, nil, "agents", "register", "--project", first.ID,
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "agents", "register", "--workspace", first.ID,
 		"--label", "first", "--", "codex", "resume", "one")
-	executeWithOptions(t, options, nil, "agents", "register", "--project", second.ID,
+	executeWithOptions(t, options, nil, "agents", "register", "--workspace", second.ID,
 		"--label", "second", "--", "codex", "resume", "two")
 	labels := []string{}
 	for _, candidate := range completeArgs(t, options, "agents", "focus", "") {
@@ -166,12 +166,12 @@ func TestAgentReferenceCompletionScopesToTheProject(t *testing.T) {
 	}
 	sort.Strings(labels)
 	if strings.Join(labels, "|") != "first|second" {
-		t.Fatalf("agents focus completion outside a Project = %q", labels)
+		t.Fatalf("agents focus completion outside a Workspace = %q", labels)
 	}
 
-	// A --project flag that resolves to no Project completes nothing, also
-	// when Projects exist.
+	// A --workspace flag that resolves to no Workspace completes nothing, also
+	// when Workspaces exist.
 	if candidates := completeArgs(t, options, "agents", "show", ""); len(candidates) != 0 {
-		t.Fatalf("agents show completion outside a Project = %q", candidates)
+		t.Fatalf("agents show completion outside a Workspace = %q", candidates)
 	}
 }

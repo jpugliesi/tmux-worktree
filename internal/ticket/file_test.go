@@ -11,7 +11,7 @@ import (
 )
 
 // legacyFixture mirrors the shape of a real pre-twt vault ticket: legacy
-// keys (id, type, category, project, parent), a quoted title, two-space alias
+// keys (id, type, category, workspace, parent), a quoted title, two-space alias
 // indent, a flow-style empty blocked_by, and empty claim fields.
 const legacyFixture = `---
 title: "Reconnect Change Monitor VFS tools"
@@ -24,7 +24,7 @@ type: task
 category: enhancement
 status: ready-for-agent
 priority: 2
-project: "[[Change Monitor Agent]]"
+workspace: "[[Change Monitor Agent]]"
 parent:
 blocked_by: []
 claimed_by:
@@ -62,7 +62,7 @@ func TestGoldenRoundTripWithoutMutationIsByteIdentical(t *testing.T) {
 
 // TestGoldenClaimTouchesOnlyClaimLines pins the lossless mutation contract: a
 // claim on a legacy file changes only claimed_by, claimed_at, updated, and
-// board. Every other line stays byte-identical and in order.
+// project. Every other line stays byte-identical and in order.
 func TestGoldenClaimTouchesOnlyClaimLines(t *testing.T) {
 	service, home := newTestService(t)
 	path := filepath.Join(home, "change-monitor", "tkt-cm-001.md")
@@ -77,7 +77,7 @@ func TestGoldenClaimTouchesOnlyClaimLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	touched := func(line string) bool {
-		for _, prefix := range []string{"claimed_by:", "claimed_at:", "updated:", "board:"} {
+		for _, prefix := range []string{"claimed_by:", "claimed_at:", "updated:", "project:"} {
 			if strings.HasPrefix(line, prefix) {
 				return true
 			}
@@ -107,7 +107,7 @@ func TestGoldenClaimTouchesOnlyClaimLines(t *testing.T) {
 		"\nclaimed_by: codex-fix-auth\n",
 		"\nclaimed_at: 2026-08-20\n",
 		"\nupdated: 2026-08-20\n",
-		"\nboard: change-monitor\n",
+		"\nproject: change-monitor\n",
 	} {
 		if !strings.Contains(string(after), want) {
 			t.Fatalf("claimed file misses %q\n---after---\n%s", want, after)
@@ -215,7 +215,7 @@ func newTestService(t *testing.T) (*Service, string) {
 	return service, home
 }
 
-// writeFixture writes one raw ticket file, creating the Board directory.
+// writeFixture writes one raw ticket file, creating the Project directory.
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

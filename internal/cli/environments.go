@@ -14,20 +14,20 @@ import (
 )
 
 type environmentOutput struct {
-	ID          string                    `json:"id"`
-	Template    string                    `json:"template"`
-	Status      string                    `json:"status"`
-	ReadyAt     string                    `json:"readyAt,omitempty"`
-	CreatedAt   string                    `json:"createdAt"`
-	Bytes       int64                     `json:"bytes"`
-	BaseCommits map[string]string         `json:"baseCommits"`
-	Failure     string                    `json:"failure,omitempty"`
-	Log         string                    `json:"log,omitempty"`
-	Project     *environmentProjectOutput `json:"project,omitempty"`
-	Steps       []environmentStepOutput   `json:"steps,omitempty"`
+	ID          string                      `json:"id"`
+	Template    string                      `json:"template"`
+	Status      string                      `json:"status"`
+	ReadyAt     string                      `json:"readyAt,omitempty"`
+	CreatedAt   string                      `json:"createdAt"`
+	Bytes       int64                       `json:"bytes"`
+	BaseCommits map[string]string           `json:"baseCommits"`
+	Failure     string                      `json:"failure,omitempty"`
+	Log         string                      `json:"log,omitempty"`
+	Workspace   *environmentWorkspaceOutput `json:"workspace,omitempty"`
+	Steps       []environmentStepOutput     `json:"steps,omitempty"`
 }
 
-type environmentProjectOutput struct {
+type environmentWorkspaceOutput struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -153,7 +153,7 @@ func sortEnvironmentReport(report []maintenance.EnvironmentInfo) {
 	})
 }
 
-// writeEnvironmentTree groups the Prepared Environments by Project Template.
+// writeEnvironmentTree groups the Prepared Environments by Workspace Template.
 func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.EnvironmentInfo) error {
 	if len(report) == 0 {
 		_, err := fmt.Fprintln(out, "No Prepared Environments.")
@@ -212,10 +212,10 @@ func writeEnvironmentDetail(out io.Writer, now time.Time, info maintenance.Envir
 	if info.LogPath != "" {
 		fields = append(fields, [2]string{"Log", info.LogPath})
 	}
-	if info.Project != nil {
+	if info.Workspace != nil {
 		fields = append(fields,
-			[2]string{"Project", info.Project.Name + " (" + string(info.Project.Status) + ")"},
-			[2]string{"Project ID", info.Project.ID},
+			[2]string{"Workspace", info.Workspace.Name + " (" + string(info.Workspace.Status) + ")"},
+			[2]string{"Workspace ID", info.Workspace.ID},
 		)
 	}
 	if err := writeFields(out, fields); err != nil {
@@ -256,8 +256,8 @@ func writeEnvironmentDetail(out io.Writer, now time.Time, info maintenance.Envir
 
 // environmentDetail writes the value that a person needs most for one status.
 func environmentDetail(info maintenance.EnvironmentInfo) string {
-	if info.Project != nil {
-		return fmt.Sprintf("Project %s (%s)", info.Project.Name, info.Project.Status)
+	if info.Workspace != nil {
+		return fmt.Sprintf("Workspace %s (%s)", info.Workspace.Name, info.Workspace.Status)
 	}
 	if info.LogPath != "" && (info.Failure != "" || info.Status == "failed") {
 		return "log: " + info.LogPath
@@ -307,8 +307,8 @@ func toEnvironmentOutput(info maintenance.EnvironmentInfo, withSteps bool) envir
 	if info.ReadyAt != nil {
 		result.ReadyAt = info.ReadyAt.UTC().Format(time.RFC3339)
 	}
-	if info.Project != nil {
-		result.Project = &environmentProjectOutput{ID: info.Project.ID, Name: info.Project.Name, Status: info.Project.Status}
+	if info.Workspace != nil {
+		result.Workspace = &environmentWorkspaceOutput{ID: info.Workspace.ID, Name: info.Workspace.Name, Status: info.Workspace.Status}
 	}
 	if withSteps {
 		for _, step := range info.Steps {

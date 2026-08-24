@@ -17,7 +17,7 @@ func TestCodeOfAndExitCode(t *testing.T) {
 	}{
 		{"nil", nil, clierr.Internal, 0},
 		{"plain error", errors.New("boom"), clierr.Internal, 1},
-		{"not found", clierr.New(clierr.NotFound, "Project %q does not exist", "x"), clierr.NotFound, 3},
+		{"not found", clierr.New(clierr.NotFound, "Workspace %q does not exist", "x"), clierr.NotFound, 3},
 		{"already exists", clierr.New(clierr.AlreadyExists, "exists"), clierr.AlreadyExists, 3},
 		{"precondition failed", clierr.New(clierr.PreconditionFailed, "not ready"), clierr.PreconditionFailed, 3},
 		{"locked", clierr.New(clierr.Locked, "busy"), clierr.Locked, 3},
@@ -39,13 +39,13 @@ func TestCodeOfAndExitCode(t *testing.T) {
 }
 
 func TestWithHintPropagatesThroughWrapping(t *testing.T) {
-	err := clierr.WithHint(clierr.New(clierr.PreconditionFailed, "Project %q is archived", "fix-auth"),
-		"Run 'twt projects open %s' to open the Project.", "fix-auth")
-	if err.Error() != `Project "fix-auth" is archived` {
+	err := clierr.WithHint(clierr.New(clierr.PreconditionFailed, "Workspace %q is archived", "fix-auth"),
+		"Run 'twt workspaces open %s' to open the Workspace.", "fix-auth")
+	if err.Error() != `Workspace "fix-auth" is archived` {
 		t.Fatalf("message = %q", err.Error())
 	}
 	wrapped := fmt.Errorf("open: %w", err)
-	if clierr.HintOf(wrapped) != "Run 'twt projects open fix-auth' to open the Project." {
+	if clierr.HintOf(wrapped) != "Run 'twt workspaces open fix-auth' to open the Workspace." {
 		t.Fatalf("hint = %q", clierr.HintOf(wrapped))
 	}
 	if clierr.HintOf(errors.New("plain")) != "" {

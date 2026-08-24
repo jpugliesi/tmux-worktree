@@ -13,9 +13,9 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-// The session command of a Project Template lays out the tmux session. twt
+// The session command of a Workspace Template lays out the tmux session. twt
 // runs it each time it creates the session, and never against a live session.
-func TestProjectsCreateRunsTheTemplateSessionCommand(t *testing.T) {
+func TestWorkspacesCreateRunsTheTemplateSessionCommand(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -42,7 +42,7 @@ call_tmux() {
     tmux "$@"
   fi
 }
-test -n "$TWT_PROJECT_ID"
+test -n "$TWT_WORKSPACE_ID"
 test -d "$TWT_REPOSITORY_APP"
 call_tmux split-window -d -h -l 34% -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
 call_tmux split-window -d -v -l 25% -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
@@ -72,33 +72,33 @@ session:
 	}
 
 	executeWithOptions(t, options, nil, "templates", "validate", "example")
-	executeWithOptions(t, options, nil, "projects", "create", "layout-me", "--template", "example", "--no-open")
-	project, err := store.NewProjectStore(options.StateDir).Find("layout-me")
+	executeWithOptions(t, options, nil, "workspaces", "create", "layout-me", "--template", "example", "--no-open")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("layout-me")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.TmuxSession != "example-layout-me" {
-		t.Fatalf("Project tmux session = %q, want %q", project.TmuxSession, "example-layout-me")
+	if workspace.TmuxSession != "example-layout-me" {
+		t.Fatalf("Workspace tmux session = %q, want %q", workspace.TmuxSession, "example-layout-me")
 	}
-	if panes := paneCount(t, socket, project.TmuxSession, "app"); panes != 3 {
+	if panes := paneCount(t, socket, workspace.TmuxSession, "app"); panes != 3 {
 		t.Fatalf("panes in the repository window after create = %d, want 3", panes)
 	}
 
 	// A setup retry must not run the session command against the live
 	// session, so the pane count stays the same.
-	executeWithOptions(t, options, nil, "projects", "setup", "retry", project.ID)
-	if panes := paneCount(t, socket, project.TmuxSession, "app"); panes != 3 {
+	executeWithOptions(t, options, nil, "workspaces", "setup", "retry", workspace.ID)
+	if panes := paneCount(t, socket, workspace.TmuxSession, "app"); panes != 3 {
 		t.Fatalf("panes in the repository window after a setup retry = %d, want 3", panes)
 	}
 
 	// Open makes the tmux session again, so the session command runs again.
 	t.Setenv("TMUX_PANE", "")
-	executeWithOptions(t, options, nil, "projects", "archive", project.ID)
+	executeWithOptions(t, options, nil, "workspaces", "archive", workspace.ID)
 	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=example-layout-me").Run(); err == nil {
-		t.Fatal("archive kept the Project tmux session")
+		t.Fatal("archive kept the Workspace tmux session")
 	}
-	executeWithOptions(t, options, nil, "projects", "open", project.ID, "--no-attach")
-	if panes := paneCount(t, socket, project.TmuxSession, "app"); panes != 3 {
+	executeWithOptions(t, options, nil, "workspaces", "open", workspace.ID, "--no-attach")
+	if panes := paneCount(t, socket, workspace.TmuxSession, "app"); panes != 3 {
 		t.Fatalf("panes in the repository window after open = %d, want 3", panes)
 	}
 }
@@ -111,9 +111,9 @@ func paneCount(t *testing.T, socket, session, window string) int {
 	return len(strings.Fields(rows))
 }
 
-// A Project Template with a broken session command must fail the tmux step and
-// must keep the Project for a setup retry.
-func TestProjectsCreateReportsABrokenSessionCommand(t *testing.T) {
+// A Workspace Template with a broken session command must fail the tmux step and
+// must keep the Workspace for a setup retry.
+func TestWorkspacesCreateReportsABrokenSessionCommand(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -148,9 +148,9 @@ session:
 	}
 
 	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"projects", "create", "broken-layout", "--template", "example", "--no-open"}))
+	command.SetArgs(forceTextOutput([]string{"workspaces", "create", "broken-layout", "--template", "example", "--no-open"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "session command") || !strings.Contains(err.Error(), "layout failed") {
-		t.Fatalf("projects create error = %v", err)
+		t.Fatalf("workspaces create error = %v", err)
 	}
 }

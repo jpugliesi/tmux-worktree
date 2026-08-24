@@ -16,7 +16,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func TestPreparedEnvironmentRunsRepositoryInitializationBeforeProjectClaim(t *testing.T) {
+func TestPreparedEnvironmentRunsRepositoryInitializationBeforeWorkspaceClaim(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -63,31 +63,31 @@ repositories:
 		t.Fatalf("templates prepare output = %q", prepareOutput)
 	}
 	assertFileLines(t, initLog, []string{"initialized"})
-	projects, err := store.NewProjectStore(options.StateDir).List()
+	workspaces, err := store.NewWorkspaceStore(options.StateDir).List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(projects) != 0 {
-		t.Fatalf("templates prepare created Projects: %+v", projects)
+	if len(workspaces) != 0 {
+		t.Fatalf("templates prepare created Workspaces: %+v", workspaces)
 	}
 
 	started := time.Now()
-	executeWithOptions(t, options, nil, "projects", "create", "first", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
 	claimTime := time.Since(started)
 	if claimTime >= time.Second {
-		t.Fatalf("prepared Project claim took %s; want less than 1s", claimTime)
+		t.Fatalf("prepared Workspace claim took %s; want less than 1s", claimTime)
 	}
 	assertFileLines(t, initLog, []string{"initialized"})
-	project, err := store.NewProjectStore(options.StateDir).Find("first")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.EnvironmentID == "" {
-		t.Fatalf("Project %q has no claimed Prepared Environment", project.Name)
+	if workspace.EnvironmentID == "" {
+		t.Fatalf("Workspace %q has no claimed Prepared Environment", workspace.Name)
 	}
-	branch := runCommand(t, project.Repositories[0].Path, "git", "branch", "--show-current")
-	if branch != project.Repositories[0].Branch {
-		t.Fatalf("claimed checkout branch = %q, want %q", branch, project.Repositories[0].Branch)
+	branch := runCommand(t, workspace.Repositories[0].Path, "git", "branch", "--show-current")
+	if branch != workspace.Repositories[0].Branch {
+		t.Fatalf("claimed checkout branch = %q, want %q", branch, workspace.Repositories[0].Branch)
 	}
 	waitFor(t, 4*time.Second, func() bool {
 		data, err := os.ReadFile(initLog)
@@ -139,11 +139,11 @@ repositories:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(environments) != 1 || environments[0].Status != domain.EnvironmentClaimed || environments[0].ID != project.EnvironmentID {
-		t.Fatalf("cleanup changed the claimed Project Environment: %+v", environments)
+	if len(environments) != 1 || environments[0].Status != domain.EnvironmentClaimed || environments[0].ID != workspace.EnvironmentID {
+		t.Fatalf("cleanup changed the claimed Workspace Environment: %+v", environments)
 	}
-	if _, err := os.Stat(project.Repositories[0].Path); err != nil {
-		t.Fatalf("cleanup removed the active Project checkout: %v", err)
+	if _, err := os.Stat(workspace.Repositories[0].Path); err != nil {
+		t.Fatalf("cleanup removed the active Workspace checkout: %v", err)
 	}
 }
 
@@ -200,18 +200,18 @@ repositories:
 	}
 
 	started := time.Now()
-	executeWithOptions(t, options, nil, "projects", "create", "first", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
 	claimTime := time.Since(started)
 	if claimTime >= time.Second {
-		t.Fatalf("prepared Project claim after a window name edit took %s; want less than 1s", claimTime)
+		t.Fatalf("prepared Workspace claim after a window name edit took %s; want less than 1s", claimTime)
 	}
 	assertFileLines(t, initLog, []string{"initialized"})
-	project, err := store.NewProjectStore(options.StateDir).Find("first")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.EnvironmentID == "" {
-		t.Fatalf("Project %q has no claimed Prepared Environment", project.Name)
+	if workspace.EnvironmentID == "" {
+		t.Fatalf("Workspace %q has no claimed Prepared Environment", workspace.Name)
 	}
 	waitFor(t, 6*time.Second, func() bool {
 		data, err := os.ReadFile(initLog)
@@ -231,7 +231,7 @@ repositories:
 	}, "background refill did not prepare the next environment")
 }
 
-func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
+func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -258,9 +258,9 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	newTip := addOriginCommit(t, source, "second.txt")
 	agePreparedEnvironments(t, options.StateDir)
 
-	stdout, stderr, err := executeCollectingOutput(t, options, "projects", "create", "fresh", "--branch", "feature/custom", "--no-open")
+	stdout, stderr, err := executeCollectingOutput(t, options, "workspaces", "create", "fresh", "--branch", "feature/custom", "--no-open")
 	if err != nil {
-		t.Fatalf("projects create with a stale environment: %v\n%s", err, stderr)
+		t.Fatalf("workspaces create with a stale environment: %v\n%s", err, stderr)
 	}
 	if !strings.Contains(stdout, "Root: ") {
 		t.Fatalf("create output has no Root line: %q", stdout)
@@ -268,7 +268,7 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if !strings.Contains(stderr, "Base: origin/main @ ") {
 		t.Fatalf("create progress has no Base line: %q", stderr)
 	}
-	fresh, err := store.NewProjectStore(options.StateDir).Find("fresh")
+	fresh, err := store.NewWorkspaceStore(options.StateDir).Find("fresh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,33 +281,33 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 		t.Fatalf("custom branch = %q (record %q), want feature/custom", branch, fresh.Repositories[0].Branch)
 	}
 
-	rootPath := executeWithOptions(t, options, nil, "projects", "path", "fresh")
+	rootPath := executeWithOptions(t, options, nil, "workspaces", "path", "fresh")
 	if rootPath != fresh.Root+"\n" {
-		t.Fatalf("projects path = %q, want %q", rootPath, fresh.Root+"\n")
+		t.Fatalf("workspaces path = %q, want %q", rootPath, fresh.Root+"\n")
 	}
-	repositoryPath := executeWithOptions(t, options, nil, "projects", "path", "fresh", "app")
+	repositoryPath := executeWithOptions(t, options, nil, "workspaces", "path", "fresh", "app")
 	if repositoryPath != fresh.Repositories[0].Path+"\n" {
-		t.Fatalf("projects path with repository = %q, want %q", repositoryPath, fresh.Repositories[0].Path+"\n")
+		t.Fatalf("workspaces path with repository = %q, want %q", repositoryPath, fresh.Repositories[0].Path+"\n")
 	}
-	if _, _, err := executeCollectingOutput(t, options, "projects", "path", "fresh", "missing"); err == nil || !strings.Contains(err.Error(), "is not in Project") {
-		t.Fatalf("projects path with an unknown repository = %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "path", "fresh", "missing"); err == nil || !strings.Contains(err.Error(), "is not in Workspace") {
+		t.Fatalf("workspaces path with an unknown repository = %v", err)
 	}
-	showOutput := executeWithOptions(t, options, nil, "projects", "show", "fresh")
+	showOutput := executeWithOptions(t, options, nil, "workspaces", "show", "fresh")
 	if !strings.Contains(showOutput, "Root") || !strings.Contains(showOutput, fresh.Root) {
-		t.Fatalf("projects show has no Root line:\n%s", showOutput)
+		t.Fatalf("workspaces show has no Root line:\n%s", showOutput)
 	}
-	showJSON := executeWithOptions(t, options, nil, "projects", "show", "fresh", "--output", "json")
+	showJSON := executeWithOptions(t, options, nil, "workspaces", "show", "fresh", "--output", "json")
 	if !strings.Contains(showJSON, `"root":`) {
-		t.Fatalf("projects show JSON has no root field: %s", showJSON)
+		t.Fatalf("workspaces show JSON has no root field: %s", showJSON)
 	}
 
 	executeWithOptions(t, options, nil, "templates", "prepare", "example")
 	addOriginCommit(t, source, "third.txt")
 	agePreparedEnvironments(t, options.StateDir)
-	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "stale", "--no-fetch", "--no-open"); err != nil {
-		t.Fatalf("projects create --no-fetch: %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "stale", "--no-fetch", "--no-open"); err != nil {
+		t.Fatalf("workspaces create --no-fetch: %v", err)
 	}
-	stale, err := store.NewProjectStore(options.StateDir).Find("stale")
+	stale, err := store.NewWorkspaceStore(options.StateDir).Find("stale")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,17 +316,17 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 		t.Fatalf("--no-fetch claim landed on %s, want the old base %s", staleHead, newTip)
 	}
 	if stale.Repositories[0].Branch != "stale" {
-		t.Fatalf("default branch = %q, want the Project name %q", stale.Repositories[0].Branch, "stale")
+		t.Fatalf("default branch = %q, want the Workspace name %q", stale.Repositories[0].Branch, "stale")
 	}
 
-	_, stderr, err = executeCollectingOutput(t, options, "projects", "create", "third", "--branch", "feature/custom", "--no-open")
+	_, stderr, err = executeCollectingOutput(t, options, "workspaces", "create", "third", "--branch", "feature/custom", "--no-open")
 	if err != nil {
-		t.Fatalf("projects create with a branch collision: %v", err)
+		t.Fatalf("workspaces create with a branch collision: %v", err)
 	}
 	if !strings.Contains(stderr, `Branch "feature/custom" exists.`) {
 		t.Fatalf("branch collision progress = %q", stderr)
 	}
-	third, err := store.NewProjectStore(options.StateDir).Find("third")
+	third, err := store.NewWorkspaceStore(options.StateDir).Find("third")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,21 +334,21 @@ func TestProjectsCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 		t.Fatalf("collision fallback branch = %q", third.Repositories[0].Branch)
 	}
 
-	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "fourth", "--branch", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
-		t.Fatalf("projects create with the default branch name = %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "fourth", "--branch", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
+		t.Fatalf("workspaces create with the default branch name = %v", err)
 	}
 
-	// A Project whose name equals the repository default branch must fail at
-	// create time, because its default Project branch is its name.
-	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
-		t.Fatalf("projects create named after the default branch = %v", err)
+	// A Workspace whose name equals the repository default branch must fail at
+	// create time, because its default Workspace branch is its name.
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "main", "--no-open"); err == nil || !strings.Contains(err.Error(), "default branch") {
+		t.Fatalf("workspaces create named after the default branch = %v", err)
 	}
 
 	t.Setenv("TWT_BRANCH_PREFIX", "jpugliesi/")
-	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "prefixed", "--no-open"); err != nil {
-		t.Fatalf("projects create with a branch prefix: %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "prefixed", "--no-open"); err != nil {
+		t.Fatalf("workspaces create with a branch prefix: %v", err)
 	}
-	prefixed, err := store.NewProjectStore(options.StateDir).Find("prefixed")
+	prefixed, err := store.NewWorkspaceStore(options.StateDir).Find("prefixed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,14 +400,14 @@ func TestPreparedEnvironmentPoolDepthTopUp(t *testing.T) {
 		t.Fatalf("templates prepare JSON with a full pool = %s", fullJSON)
 	}
 
-	executeWithOptions(t, options, nil, "projects", "create", "first", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
 	waitFor(t, 10*time.Second, func() bool {
 		return countEnvironments(t, options.StateDir, domain.EnvironmentReady) == 2 &&
 			countEnvironments(t, options.StateDir, domain.EnvironmentClaimed) == 1
 	}, "the pool was not filled back to depth 2 after the claim")
 }
 
-func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
+func TestWorkspacesCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -431,28 +431,28 @@ func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 
-	// The only template is inferred, and a kept failed Project hints retry.
-	_, stderr, err := executeCollectingOutput(t, options, "projects", "create", "broken", "--no-open")
+	// The only template is inferred, and a kept failed Workspace hints retry.
+	_, stderr, err := executeCollectingOutput(t, options, "workspaces", "create", "broken", "--no-open")
 	if err == nil {
-		t.Fatal("projects create with a failing Project initialization did not fail")
+		t.Fatal("workspaces create with a failing Workspace initialization did not fail")
 	}
 	if !strings.Contains(stderr, "Template: example (only template)") {
 		t.Fatalf("inference message = %q", stderr)
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt projects setup retry broken") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "twt workspaces setup retry broken") {
 		t.Fatalf("create failure hint = %q from error %v", hint, err)
 	}
-	broken, findErr := store.NewProjectStore(options.StateDir).Find("broken")
-	if findErr != nil || broken.Status != domain.ProjectSetupFailed {
-		t.Fatalf("kept Project after failure: %+v, %v", broken, findErr)
+	broken, findErr := store.NewWorkspaceStore(options.StateDir).Find("broken")
+	if findErr != nil || broken.Status != domain.WorkspaceSetupFailed {
+		t.Fatalf("kept Workspace after failure: %+v, %v", broken, findErr)
 	}
 
 	workingTemplate := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
 	if err := os.WriteFile(templatePath, []byte(workingTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingOutput(t, options, "projects", "create", "works", "--no-open"); err != nil {
-		t.Fatalf("projects create with the fixed template: %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "works", "--no-open"); err != nil {
+		t.Fatalf("workspaces create with the fixed template: %v", err)
 	}
 
 	// A second template exists, so inference uses the last-used record.
@@ -460,9 +460,9 @@ func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "zeta.yaml"), []byte(otherTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, stderr, err = executeCollectingOutput(t, options, "projects", "create", "second", "--no-open")
+	_, stderr, err = executeCollectingOutput(t, options, "workspaces", "create", "second", "--no-open")
 	if err != nil {
-		t.Fatalf("projects create with a last-used template: %v", err)
+		t.Fatalf("workspaces create with a last-used template: %v", err)
 	}
 	if !strings.Contains(stderr, "Template: example (last used)") {
 		t.Fatalf("last-used inference message = %q", stderr)
@@ -472,9 +472,9 @@ func TestProjectsCreateInfersTheTemplateAndHintsSetupRetry(t *testing.T) {
 	if err := os.Remove(filepath.Join(options.StateDir, "last-template.json")); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = executeCollectingOutput(t, options, "projects", "create", "third", "--no-open")
+	_, _, err = executeCollectingOutput(t, options, "workspaces", "create", "third", "--no-open")
 	if err == nil || !strings.Contains(err.Error(), "--template TEMPLATE") || !strings.Contains(err.Error(), "example") || !strings.Contains(err.Error(), "zeta") {
-		t.Fatalf("projects create without a template selection = %v", err)
+		t.Fatalf("workspaces create without a template selection = %v", err)
 	}
 }
 

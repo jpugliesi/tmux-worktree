@@ -85,6 +85,40 @@ func TestShowReportsOpenAndMissingBlockers(t *testing.T) {
 	}
 }
 
+func TestMutationRenamesTheLegacyBoardFieldToProject(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "core", "legacy.md")
+	writeFixture(t, path, `---
+title: "Legacy"
+status: needs-triage
+priority: 2
+board: core
+custom_key: keep-me
+blocked_by: []
+---
+
+# Legacy
+`)
+
+	ticket, err := service.Resolve("legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Project != "core" {
+		t.Fatalf("legacy Ticket Project = %q", ticket.Project)
+	}
+	if _, err := service.Comment("legacy", "Migrated.", false); err != nil {
+		t.Fatal(err)
+	}
+	content := readFile(t, path)
+	if !strings.Contains(content, "project: core\n") || strings.Contains(content, "board: core\n") {
+		t.Fatalf("legacy field was not renamed:\n%s", content)
+	}
+	if !strings.Contains(content, "custom_key: keep-me\n") {
+		t.Fatalf("unknown frontmatter was not preserved:\n%s", content)
+	}
+}
+
 func TestShowNormalizesBlockedByFormsInMemoryOnly(t *testing.T) {
 	service, home := newTestService(t)
 	content := strings.Replace(
@@ -115,10 +149,10 @@ func TestShowNormalizesBlockedByFormsInMemoryOnly(t *testing.T) {
 
 func TestListFiltersAndSort(t *testing.T) {
 	service, home := newTestService(t)
-	writeFixture(t, filepath.Join(home, "boards", "index.md"), "# hub\n")
+	writeFixture(t, filepath.Join(home, "projects", "index.md"), "# hub\n")
 	writeFixture(t, filepath.Join(home, "ungrouped.md"), fixture{title: "Ungrouped", status: "needs-triage", priority: "3"}.content())
-	writeFixture(t, filepath.Join(home, "boards", "beta.md"), fixture{title: "Beta", status: "needs-triage", priority: "1"}.content())
-	writeFixture(t, filepath.Join(home, "boards", "alpha.md"), fixture{title: "Alpha", status: "done", priority: "1"}.content())
+	writeFixture(t, filepath.Join(home, "projects", "beta.md"), fixture{title: "Beta", status: "needs-triage", priority: "1"}.content())
+	writeFixture(t, filepath.Join(home, "projects", "alpha.md"), fixture{title: "Alpha", status: "done", priority: "1"}.content())
 	writeFixture(t, filepath.Join(home, "no-priority.md"), fixture{title: "No priority", status: "needs-triage"}.content())
 
 	all, err := service.List(ListFilter{All: true})
@@ -133,20 +167,20 @@ func TestListFiltersAndSort(t *testing.T) {
 		t.Fatalf("sort order = %v", order)
 	}
 
-	board, err := service.List(ListFilter{Board: "boards", BoardSet: true, All: true})
+	project, err := service.List(ListFilter{Project: "projects", ProjectSet: true, All: true})
 	if err != nil {
-		t.Fatalf("List --board: %v", err)
+		t.Fatalf("List --project: %v", err)
 	}
-	if len(board) != 2 || board[0].Slug != "alpha" || board[1].Slug != "beta" {
-		t.Fatalf("board filter = %+v", board)
+	if len(project) != 2 || project[0].Slug != "alpha" || project[1].Slug != "beta" {
+		t.Fatalf("project filter = %+v", project)
 	}
-	if board[0].Board != "boards" {
-		t.Fatalf("Board field = %q", board[0].Board)
+	if project[0].Project != "projects" {
+		t.Fatalf("Project field = %q", project[0].Project)
 	}
 
-	ungrouped, err := service.List(ListFilter{BoardSet: true})
+	ungrouped, err := service.List(ListFilter{ProjectSet: true})
 	if err != nil {
-		t.Fatalf("List --board '': %v", err)
+		t.Fatalf("List --project '': %v", err)
 	}
 	if len(ungrouped) != 2 || ungrouped[0].Slug != "no-priority" || ungrouped[1].Slug != "ungrouped" {
 		t.Fatalf("ungrouped filter = %+v", ungrouped)
@@ -287,12 +321,12 @@ func TestCloseIsOneWriteThatKeepsLegacyKeys(t *testing.T) {
 		"claimed_by:\n",
 		"claimed_at:\n",
 		"updated: 2026-08-20\n",
-		"board: change-monitor\n",
+		"project: change-monitor\n",
 		// The legacy frontmatter survives the write.
 		"id: tkt-cm-001\n",
 		"type: task\n",
 		"category: enhancement\n",
-		"project: \"[[Change Monitor Agent]]\"\n",
+		"workspace: \"[[Change Monitor Agent]]\"\n",
 		"parent:\n",
 		"title: \"Reconnect Change Monitor VFS tools\"\n",
 		"blocked_by: []\n",
@@ -537,7 +571,7 @@ func TestCommentOnLegacyFixturePreservesLegacyKeys(t *testing.T) {
 		"id: tkt-cm-001\n",
 		"type: task\n",
 		"category: enhancement\n",
-		"project: \"[[Change Monitor Agent]]\"\n",
+		"workspace: \"[[Change Monitor Agent]]\"\n",
 		"parent:\n",
 		"title: \"Reconnect Change Monitor VFS tools\"\n",
 	} {
@@ -600,15 +634,15 @@ func TestSetValidation(t *testing.T) {
 	if _, err := service.Set("work", SetRequest{Priority: 5, PrioritySet: true}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("priority 5 = %v, want invalid_usage", err)
 	}
-	if _, err := service.Set("work", SetRequest{BoardSet: true}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("empty board = %v, want invalid_usage", err)
+	if _, err := service.Set("work", SetRequest{ProjectSet: true}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("empty project = %v, want invalid_usage", err)
 	}
-	_, err = service.Set("work", SetRequest{Board: "nowhere", BoardSet: true}, false)
+	_, err = service.Set("work", SetRequest{Project: "nowhere", ProjectSet: true}, false)
 	if clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("missing board = %v, want not_found", err)
+		t.Fatalf("missing project = %v, want not_found", err)
 	}
-	if !strings.Contains(clierr.HintOf(err), "twt tickets boards create") {
-		t.Fatalf("hint %q does not point at boards create", clierr.HintOf(err))
+	if !strings.Contains(clierr.HintOf(err), "twt projects create") {
+		t.Fatalf("hint %q does not point at projects create", clierr.HintOf(err))
 	}
 }
 
@@ -629,20 +663,20 @@ func TestSetStatusIsTheUnknownStatusEscapeHatch(t *testing.T) {
 	}
 }
 
-func TestSetBoardMovesTheFile(t *testing.T) {
+func TestSetProjectMovesTheFile(t *testing.T) {
 	service, home := newTestService(t)
-	if _, err := service.CreateBoard("change-monitor", false); err != nil {
-		t.Fatalf("CreateBoard: %v", err)
+	if _, err := service.CreateProject("change-monitor", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
 	}
 	source := filepath.Join(home, "work.md")
 	writeFixture(t, source, fixture{title: "Work", status: "needs-triage"}.content())
 
-	moved, err := service.Set("work", SetRequest{Board: "change-monitor", BoardSet: true, Status: "ready-for-agent", StatusSet: true}, false)
+	moved, err := service.Set("work", SetRequest{Project: "change-monitor", ProjectSet: true, Status: "ready-for-agent", StatusSet: true}, false)
 	if err != nil {
-		t.Fatalf("Set --board: %v", err)
+		t.Fatalf("Set --project: %v", err)
 	}
 	destination := filepath.Join(home, "change-monitor", "work.md")
-	if moved.Path != destination || moved.Board != "change-monitor" {
+	if moved.Path != destination || moved.Project != "change-monitor" {
 		t.Fatalf("moved ticket = %+v", moved)
 	}
 	if _, err := os.Stat(source); !os.IsNotExist(err) {
@@ -650,7 +684,7 @@ func TestSetBoardMovesTheFile(t *testing.T) {
 	}
 	content := readFile(t, destination)
 	// All requested changes land in the one destination write.
-	if !strings.Contains(content, "board: change-monitor\n") ||
+	if !strings.Contains(content, "project: change-monitor\n") ||
 		!strings.Contains(content, "status: ready-for-agent\n") ||
 		!strings.Contains(content, "updated: 2026-08-20\n") {
 		t.Fatalf("destination frontmatter not healed:\n%s", content)
@@ -658,30 +692,30 @@ func TestSetBoardMovesTheFile(t *testing.T) {
 
 	// Moving onto itself is a no-op move that still bumps updated.
 	before := readFile(t, destination)
-	if _, err := service.Set("work", SetRequest{Board: "change-monitor", BoardSet: true}, false); err != nil {
-		t.Fatalf("same-board Set: %v", err)
+	if _, err := service.Set("work", SetRequest{Project: "change-monitor", ProjectSet: true}, false); err != nil {
+		t.Fatalf("same-project Set: %v", err)
 	}
 	after := readFile(t, destination)
 	if !strings.Contains(after, "updated: 2026-08-20\n") {
-		t.Fatalf("updated missing after same-board set:\n%s", after)
+		t.Fatalf("updated missing after same-project set:\n%s", after)
 	}
 	if strings.Count(after, "\n") != strings.Count(before, "\n") {
-		t.Fatal("same-board set changed the line count")
+		t.Fatal("same-project set changed the line count")
 	}
 
 	// A slug collision at the destination refuses the move.
 	writeFixture(t, filepath.Join(home, "work2.md"), fixture{title: "Work two", status: "needs-triage"}.content())
 	writeFixture(t, filepath.Join(home, "change-monitor", "work2.md"), fixture{title: "Occupied", status: "done"}.content())
 	// Both files share a slug now, so address the source by path.
-	if _, err := service.Set("work2.md", SetRequest{Board: "change-monitor", BoardSet: true}, false); clierr.CodeOf(err) != clierr.UnsafeState {
+	if _, err := service.Set("work2.md", SetRequest{Project: "change-monitor", ProjectSet: true}, false); clierr.CodeOf(err) != clierr.UnsafeState {
 		t.Fatalf("duplicate move = %v, want unsafe_state from the duplicate slug", err)
 	}
 }
 
 func TestMutationDryRunWritesNothing(t *testing.T) {
 	service, home := newTestService(t)
-	if _, err := service.CreateBoard("boards", false); err != nil {
-		t.Fatalf("CreateBoard: %v", err)
+	if _, err := service.CreateProject("projects", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
 	}
 	path := filepath.Join(home, "work.md")
 	writeFixture(t, path, fixture{title: "Work", status: "ready-for-agent"}.content())
@@ -694,11 +728,11 @@ func TestMutationDryRunWritesNothing(t *testing.T) {
 	if claimed.ClaimedBy != "agent-a" {
 		t.Fatalf("dry-run result = %+v", claimed)
 	}
-	moved, err := service.Set("work", SetRequest{Board: "boards", BoardSet: true}, true)
+	moved, err := service.Set("work", SetRequest{Project: "projects", ProjectSet: true}, true)
 	if err != nil {
 		t.Fatalf("dry-run Set: %v", err)
 	}
-	if moved.Board != "boards" {
+	if moved.Project != "projects" {
 		t.Fatalf("dry-run move result = %+v", moved)
 	}
 	if _, err := service.Comment("work", "note", true); err != nil {
@@ -710,7 +744,7 @@ func TestMutationDryRunWritesNothing(t *testing.T) {
 	if readFile(t, path) != before {
 		t.Fatal("a dry run changed the file")
 	}
-	if _, err := os.Stat(filepath.Join(home, "boards", "work.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, "projects", "work.md")); !os.IsNotExist(err) {
 		t.Fatal("a dry-run move created the destination")
 	}
 	// Dry-run still performs every check.
@@ -721,10 +755,10 @@ func TestMutationDryRunWritesNothing(t *testing.T) {
 
 func TestCreateRendersTheV1Shape(t *testing.T) {
 	service, home := newTestService(t)
-	if _, err := service.CreateBoard("change-monitor", false); err != nil {
-		t.Fatalf("CreateBoard: %v", err)
+	if _, err := service.CreateProject("change-monitor", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
 	}
-	result, err := service.Create(CreateRequest{Title: "Fix the vfs tools", Board: "change-monitor", Priority: -1}, false)
+	result, err := service.Create(CreateRequest{Title: "Fix the vfs tools", Project: "change-monitor", Priority: -1}, false)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -736,7 +770,7 @@ tags:
   - tickets
 status: needs-triage
 priority: 2
-board: change-monitor
+project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
@@ -781,8 +815,8 @@ func TestCreateUngroupedWithBody(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	content := string(result.Content)
-	if !strings.Contains(content, "board:\n") {
-		t.Fatalf("ungrouped board is not null:\n%s", content)
+	if !strings.Contains(content, "project:\n") {
+		t.Fatalf("ungrouped project is not null:\n%s", content)
 	}
 	if !strings.Contains(content, "status: ready-for-agent\n") || !strings.Contains(content, "priority: 1\n") {
 		t.Fatalf("status or priority wrong:\n%s", content)
@@ -815,28 +849,28 @@ func TestCreateErrors(t *testing.T) {
 		t.Fatalf("message %q", err)
 	}
 
-	_, err = service.Create(CreateRequest{Title: "New work", Board: "nowhere", Priority: -1}, false)
+	_, err = service.Create(CreateRequest{Title: "New work", Project: "nowhere", Priority: -1}, false)
 	if clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("missing board = %v, want not_found", err)
+		t.Fatalf("missing project = %v, want not_found", err)
 	}
 
-	_, err = service.Create(CreateRequest{Title: "Ensure me", Board: "nowhere", Priority: -1, EnsureBoard: true}, true)
+	_, err = service.Create(CreateRequest{Title: "Ensure me", Project: "nowhere", Priority: -1, EnsureProject: true}, true)
 	if err != nil {
-		t.Fatalf("EnsureBoard dry-run = %v", err)
+		t.Fatalf("EnsureProject dry-run = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, "nowhere")); !os.IsNotExist(err) {
-		t.Fatal("EnsureBoard dry-run created the Board")
+		t.Fatal("EnsureProject dry-run created the Project")
 	}
 
-	result, err := service.Create(CreateRequest{Title: "Ensure me", Board: "nowhere", Priority: -1, EnsureBoard: true}, false)
+	result, err := service.Create(CreateRequest{Title: "Ensure me", Project: "nowhere", Priority: -1, EnsureProject: true}, false)
 	if err != nil {
-		t.Fatalf("EnsureBoard create = %v", err)
+		t.Fatalf("EnsureProject create = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, "nowhere", "index.md")); err != nil {
-		t.Fatalf("EnsureBoard did not create the Board: %v", err)
+		t.Fatalf("EnsureProject did not create the Project: %v", err)
 	}
-	if result.Ticket.Board != "nowhere" {
-		t.Fatalf("EnsureBoard ticket board = %q", result.Ticket.Board)
+	if result.Ticket.Project != "nowhere" {
+		t.Fatalf("EnsureProject ticket project = %q", result.Ticket.Project)
 	}
 
 	if _, err := service.Create(CreateRequest{Title: "Bad status", Status: "open", Priority: -1}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
@@ -925,62 +959,62 @@ func TestInitScaffoldSubstitutesTheFolderName(t *testing.T) {
 		t.Fatalf("root index keeps a placeholder:\n%s", content)
 	}
 	template := readFile(t, filepath.Join(home, "templates", "ticket.md"))
-	for _, legacy := range []string{"id:", "type:", "category:", "project:", "parent:"} {
+	for _, legacy := range []string{"id:", "type:", "category:", "workspace:", "parent:"} {
 		if strings.Contains(template, legacy) {
 			t.Fatalf("template carries legacy key %q:\n%s", legacy, template)
 		}
 	}
-	if !strings.Contains(template, "board:\n") || !strings.Contains(template, "None - can start immediately") {
+	if !strings.Contains(template, "project:\n") || !strings.Contains(template, "None - can start immediately") {
 		t.Fatalf("template misses v1 content:\n%s", template)
 	}
 }
 
-func TestBoards(t *testing.T) {
+func TestProjects(t *testing.T) {
 	service, home := newTestService(t)
 	if _, err := service.Init(false); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	board, err := service.CreateBoard("change-monitor", false)
+	project, err := service.CreateProject("change-monitor", false)
 	if err != nil {
-		t.Fatalf("CreateBoard: %v", err)
+		t.Fatalf("CreateProject: %v", err)
 	}
-	if board.Name != "change-monitor" || !board.HasIndex || board.Tickets != 0 {
-		t.Fatalf("board = %+v", board)
+	if project.Name != "change-monitor" || !project.HasIndex || project.Tickets != 0 {
+		t.Fatalf("project = %+v", project)
 	}
 	// A second create keeps the personalized index.
 	indexPath := filepath.Join(home, "change-monitor", "index.md")
-	writeFixture(t, indexPath, "# custom board hub\n")
-	if _, err := service.CreateBoard("change-monitor", false); err != nil {
-		t.Fatalf("second CreateBoard: %v", err)
+	writeFixture(t, indexPath, "# custom project hub\n")
+	if _, err := service.CreateProject("change-monitor", false); err != nil {
+		t.Fatalf("second CreateProject: %v", err)
 	}
-	if readFile(t, indexPath) != "# custom board hub\n" {
-		t.Fatal("second CreateBoard overwrote index.md")
+	if readFile(t, indexPath) != "# custom project hub\n" {
+		t.Fatal("second CreateProject overwrote index.md")
 	}
 
 	writeFixture(t, filepath.Join(home, "change-monitor", "one.md"), fixture{title: "One", status: "needs-triage"}.content())
-	boards, err := service.Boards()
+	projects, err := service.Projects()
 	if err != nil {
-		t.Fatalf("Boards: %v", err)
+		t.Fatalf("Projects: %v", err)
 	}
-	if len(boards) != 1 || boards[0].Name != "change-monitor" || boards[0].Tickets != 1 || !boards[0].HasIndex {
-		t.Fatalf("Boards = %+v", boards)
+	if len(projects) != 1 || projects[0].Name != "change-monitor" || projects[0].Tickets != 1 || !projects[0].HasIndex {
+		t.Fatalf("Projects = %+v", projects)
 	}
 
-	if _, err := service.Board("nowhere"); clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("missing Board = %v, want not_found", err)
+	if _, err := service.Project("nowhere"); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("missing Project = %v, want not_found", err)
 	}
-	if _, err := service.CreateBoard("bad/name", false); clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("bad Board name = %v, want invalid_usage", err)
+	if _, err := service.CreateProject("bad/name", false); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("bad Project name = %v, want invalid_usage", err)
 	}
-	if _, err := service.CreateBoard("templates", false); clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("reserved Board name = %v, want invalid_usage", err)
+	if _, err := service.CreateProject("templates", false); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("reserved Project name = %v, want invalid_usage", err)
 	}
 }
 
-func TestBoardIndexScaffoldSubstitutesTheTitle(t *testing.T) {
+func TestProjectIndexScaffoldSubstitutesTheTitle(t *testing.T) {
 	service, home := newTestService(t)
-	if _, err := service.CreateBoard("change-monitor", false); err != nil {
-		t.Fatalf("CreateBoard: %v", err)
+	if _, err := service.CreateProject("change-monitor", false); err != nil {
+		t.Fatalf("CreateProject: %v", err)
 	}
 	content := readFile(t, filepath.Join(home, "change-monitor", "index.md"))
 	for _, want := range []string{
@@ -989,11 +1023,11 @@ func TestBoardIndexScaffoldSubstitutesTheTitle(t *testing.T) {
 		"created: 2026-08-20",
 	} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("board index misses %q:\n%s", want, content)
+			t.Fatalf("project index misses %q:\n%s", want, content)
 		}
 	}
 	if strings.Contains(content, "{{") {
-		t.Fatalf("board index keeps a placeholder:\n%s", content)
+		t.Fatalf("project index keeps a placeholder:\n%s", content)
 	}
 }
 

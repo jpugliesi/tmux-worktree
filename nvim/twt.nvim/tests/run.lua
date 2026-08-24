@@ -29,22 +29,22 @@ end
 
 local calls = {}
 local context = {
-  schemaVersion = 1,
-  project = { id = "project-1", name = "change-one" },
+  schemaVersion = 2,
+  workspace = { id = "workspace-1", name = "change-one" },
   repositoryName = "app",
 }
 local other_context = {
-  schemaVersion = 1,
-  project = { id = "project-2", name = "change-two" },
+  schemaVersion = 2,
+  workspace = { id = "workspace-2", name = "change-two" },
   repositoryName = "app",
 }
 local agents_response = {
-  schemaVersion = 1,
-  projectId = "project-1",
+  schemaVersion = 2,
+  workspaceId = "workspace-1",
   agents = {
     {
       id = "agent-1",
-      projectId = "project-1",
+      workspaceId = "workspace-1",
       provider = "codex",
       label = "review",
       status = "live",
@@ -53,12 +53,12 @@ local agents_response = {
   },
 }
 local other_agents_response = {
-  schemaVersion = 1,
-  projectId = "project-2",
+  schemaVersion = 2,
+  workspaceId = "workspace-2",
   agents = {
     {
       id = "agent-2",
-      projectId = "project-2",
+      workspaceId = "workspace-2",
       provider = "codex",
       label = "other-review",
       status = "live",
@@ -68,7 +68,7 @@ local other_agents_response = {
 }
 local third_agent = {
   id = "agent-3",
-  projectId = "project-2",
+  workspaceId = "workspace-2",
   provider = "codex",
   label = "other-plan",
   status = "live",
@@ -77,17 +77,17 @@ local third_agent = {
 
 local before_finish
 local transcript_by_agent = {
-  ["agent-1"] = "# Project one transcript\n",
-  ["agent-2"] = "# Project two transcript\n",
+  ["agent-1"] = "# Workspace one transcript\n",
+  ["agent-2"] = "# Workspace two transcript\n",
 }
 
--- Mirrors twt's real layout: $STATE/snapshots/projects/<projectID>/agents/<agentID>.md
-local function agent_snapshot_path(project_id, agent_id)
-  return vim.env.TWT_STATE_DIR .. "/snapshots/projects/" .. project_id .. "/agents/" .. agent_id .. ".md"
+-- Mirrors twt's real layout: $STATE/snapshots/projects/<workspaceID>/agents/<agentID>.md
+local function agent_snapshot_path(workspace_id, agent_id)
+  return vim.env.TWT_STATE_DIR .. "/snapshots/projects/" .. workspace_id .. "/agents/" .. agent_id .. ".md"
 end
 
-local function save_snapshot(project_id, agent_id, markdown)
-  local path = agent_snapshot_path(project_id, agent_id)
+local function save_snapshot(workspace_id, agent_id, markdown)
+  local path = agent_snapshot_path(workspace_id, agent_id)
   vim.fn.mkdir(vim.fs.dirname(path), "p")
   assert(vim.uv.fs_chmod(vim.fs.dirname(path), 448))
   assert(vim.fn.writefile(vim.split(markdown, "\n", { plain = true }), path, "b") == 0)
@@ -102,17 +102,17 @@ local function runner(argv, opts, done)
   local value = joined:find(" context ", 1, true) and (opts.cwd == "/work/other" and other_context or context)
     or joined:find(" agents list ", 1, true) and (opts.cwd == "/work/other" and other_agents_response or agents_response)
     or joined:find(" agents transcript snapshot ", 1, true) and {
-      schemaVersion = 1,
-      projectId = opts.cwd == "/work/other" and "project-2" or "project-1",
+      schemaVersion = 2,
+      workspaceId = opts.cwd == "/work/other" and "workspace-2" or "workspace-1",
       agentId = snapshot_agent,
       provider = "codex",
       repositoryName = "app",
       updatedAt = "2026-08-20T00:00:00Z",
       status = "applied",
     }
-    or { schemaVersion = 1, status = "sent", agentId = "agent-1" }
+    or { schemaVersion = 2, status = "sent", agentId = "agent-1" }
   if joined:find(" agents transcript snapshot ", 1, true) then
-    value.path = save_snapshot(value.projectId, snapshot_agent, transcript_by_agent[snapshot_agent])
+    value.path = save_snapshot(value.workspaceId, snapshot_agent, transcript_by_agent[snapshot_agent])
   end
   if before_finish then before_finish(joined) end
   done({ code = 0, stdout = vim.json.encode(value), stderr = "" })
@@ -130,7 +130,7 @@ require("twt").setup({
   end,
 })
 
-test("lists and selects Agents through exact Project context", function()
+test("lists and selects Agents through exact Workspace context", function()
   local selected
   require("twt").agents.pick(function(err, result)
     assert(err == nil, err)
@@ -138,13 +138,13 @@ test("lists and selects Agents through exact Project context", function()
   end)
   assert(selected.id == "agent-1")
   assert(table.concat(calls[1].argv, " ") == "/test/twt context --directory /work/app --output json")
-  assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --project project-1 --limit 40 --output json")
+  assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --workspace workspace-1 --limit 40 --output json")
 end)
 
 test("keeps the registered ID after a discovered transcript snapshot adopts the session", function()
   local discovered = {
     id = "codex-session-1",
-    projectId = "project-1",
+    workspaceId = "workspace-1",
     provider = "codex",
     providerSessionId = "codex-session-1",
     label = "codex",
@@ -158,12 +158,12 @@ test("keeps the registered ID after a discovered transcript snapshot adopts the 
     directory = fixed_directory("/work/app"),
     runner = function(argv, opts, done)
       if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
-        local path = save_snapshot("project-1", registered_id, "# Discovered transcript\n")
+        local path = save_snapshot("workspace-1", registered_id, "# Discovered transcript\n")
         done({
           code = 0,
           stdout = vim.json.encode({
-            schemaVersion = 1,
-            projectId = "project-1",
+            schemaVersion = 2,
+            workspaceId = "workspace-1",
             agentId = registered_id,
             provider = "codex",
             repositoryName = "app",
@@ -197,7 +197,7 @@ test("revalidates the selected Agent and sends feedback on standard input", func
   end)
   assert(ok)
   local sent = calls[#calls]
-  assert(table.concat(sent.argv, " ") == "/test/twt agents send agent-1 --project project-1 --stdin --output json")
+  assert(table.concat(sent.argv, " ") == "/test/twt agents send agent-1 --workspace workspace-1 --stdin --output json")
   assert(sent.stdin == "review text")
 end)
 
@@ -221,7 +221,7 @@ test("uses extmarks and repository names for current review lines", function()
   end)
   assert(added)
   vim.api.nvim_buf_set_lines(buffer, 0, 0, false, { "inserted" })
-  local format_err, batch = require("twt").review.format("project-1")
+  local format_err, batch = require("twt").review.format("workspace-1")
   assert(format_err == nil, format_err)
   assert(#batch.note_ids == 1)
   assert(batch.text:find("app:src/file.go#L3\n", 1, true))
@@ -230,7 +230,7 @@ test("uses extmarks and repository names for current review lines", function()
   assert(not batch.text:find("three", 1, true))
 end)
 
-test("keeps a review send in its captured Project when the current buffer changes", function()
+test("keeps a review send in its captured Workspace when the current buffer changes", function()
   local directory = "/work/other"
   require("twt.config").get().directory = function() return directory end
   require("twt").agents.pick(function(err, result)
@@ -256,7 +256,7 @@ test("keeps a review send in its captured Project when the current buffer change
   assert(sent.cwd == "/work/app")
 end)
 
-test("writes and reopens a private latest transcript for each Project", function()
+test("writes and reopens a private latest transcript for each Workspace", function()
   local state_root = vim.fn.tempname()
   local snapshot_root = state_root .. "/snapshots/projects"
   local directory = "/work/app"
@@ -277,27 +277,27 @@ test("writes and reopens a private latest transcript for each Project", function
     second_path = result.path
   end)
 
-  assert(first_path == snapshot_root .. "/project-1/agents/agent-1.md")
-  assert(second_path == snapshot_root .. "/project-2/agents/agent-2.md")
+  assert(first_path == snapshot_root .. "/workspace-1/agents/agent-1.md")
+  assert(second_path == snapshot_root .. "/workspace-2/agents/agent-2.md")
   assert(first_path ~= second_path)
-  assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Project one transcript")
-  assert(table.concat(vim.fn.readfile(second_path), "\n") == "# Project two transcript")
+  assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Workspace one transcript")
+  assert(table.concat(vim.fn.readfile(second_path), "\n") == "# Workspace two transcript")
   assert(vim.uv.fs_stat(first_path).mode % 512 == 384)
   assert(vim.uv.fs_stat(vim.fs.dirname(first_path)).mode % 512 == 448)
 
-  transcript_by_agent["agent-1"] = "# Project one transcript, refreshed\n"
+  transcript_by_agent["agent-1"] = "# Workspace one transcript, refreshed\n"
   directory = "/work/app"
   require("twt").agents.pick(function(err) assert(err == nil, err) end)
-  assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Project one transcript, refreshed")
-  assert(table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n") == "# Project one transcript, refreshed")
+  assert(table.concat(vim.fn.readfile(first_path), "\n") == "# Workspace one transcript, refreshed")
+  assert(table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n") == "# Workspace one transcript, refreshed")
   assert(vim.bo.modifiable == false)
   assert(vim.bo.readonly == true)
 
-  require("twt.snapshot").open(first_path, "project-1")
+  require("twt.snapshot").open(first_path, "workspace-1")
   assert(vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(first_path))
 end)
 
-test("serializes transcript snapshots for one Project", function()
+test("serializes transcript snapshots for one Workspace", function()
   other_agents_response.agents[2] = third_agent
   local choice = 1
   local pending = {}
@@ -322,11 +322,11 @@ test("serializes transcript snapshots for one Project", function()
     require("twt").agents.pick(function(err) blocked_error = err end)
     assert(blocked_error and blocked_error:find("already in progress", 1, true))
     assert(#pending == 1)
-    local agent2_path = save_snapshot("project-2", "agent-2", "# First selection\n")
+    local agent2_path = save_snapshot("workspace-2", "agent-2", "# First selection\n")
     pending[1].done({
       code = 0,
       stdout = vim.json.encode({
-        schemaVersion = 1, projectId = "project-2", agentId = "agent-2",
+        schemaVersion = 2, workspaceId = "workspace-2", agentId = "agent-2",
         provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
         status = "applied", path = agent2_path,
       }),
@@ -341,18 +341,18 @@ test("serializes transcript snapshots for one Project", function()
       second_done = true
     end)
     assert(#pending == 2)
-    local agent3_path = save_snapshot("project-2", "agent-3", "# Second selection\n")
+    local agent3_path = save_snapshot("workspace-2", "agent-3", "# Second selection\n")
     pending[2].done({
       code = 0,
       stdout = vim.json.encode({
-        schemaVersion = 1, projectId = "project-2", agentId = "agent-3",
+        schemaVersion = 2, workspaceId = "workspace-2", agentId = "agent-3",
         provider = "codex", repositoryName = "app", updatedAt = "2026-08-20T00:00:00Z",
         status = "applied", path = agent3_path,
       }),
       stderr = "",
     })
     assert(second_done)
-    assert(agent3_path == agent_snapshot_path("project-2", "agent-3"))
+    assert(agent3_path == agent_snapshot_path("workspace-2", "agent-3"))
     assert(table.concat(vim.fn.readfile(agent3_path), "\n") == "# Second selection")
   end)
 end)
@@ -370,10 +370,10 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
     select = function(items, _, done) done(items[#items]) end,
     runner = function(argv, opts, done)
       if table.concat(argv, " "):find(" agents transcript snapshot ", 1, true) then
-        local open_fails_path = save_snapshot("project-1", "agent-open-fails", "# New file\n")
+        local open_fails_path = save_snapshot("workspace-1", "agent-open-fails", "# New file\n")
         done({ code = 0, stdout = vim.json.encode({
-          schemaVersion = 1,
-          projectId = "project-1",
+          schemaVersion = 2,
+          workspaceId = "workspace-1",
           agentId = "agent-open-fails",
           provider = "codex",
           repositoryName = "app",
@@ -392,14 +392,14 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
     assert(pick_error == "injected open failure")
   end)
 
-  -- The Project still sends to the Agent Session of the last good snapshot.
+  -- The Workspace still sends to the Agent Session of the last good snapshot.
   local send_argv
   with_config({
     directory = fixed_directory("/work/app"),
     runner = function(argv, opts, done)
       if table.concat(argv, " "):find(" agents send ", 1, true) then
         send_argv = table.concat(argv, " ")
-        done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, status = "sent", agentId = "agent-1" }), stderr = "" })
+        done({ code = 0, stdout = vim.json.encode({ schemaVersion = 2, status = "sent", agentId = "agent-1" }), stderr = "" })
       else
         runner(argv, opts, done)
       end
@@ -415,7 +415,7 @@ test("keeps the old Agent selection when a new snapshot cannot open", function()
   table.remove(agents_response.agents)
 end)
 
-test("allows one feedback send per Project at the same time", function()
+test("allows one feedback send per Workspace at the same time", function()
   local directory = "/work/app"
   local pending = {}
   with_config({
@@ -446,8 +446,8 @@ test("allows one feedback send per Project at the same time", function()
       second_done = true
     end)
     assert(#pending == 2)
-    pending[1].done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, status = "sent", agentId = "agent-1" }), stderr = "" })
-    pending[2].done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, status = "sent", agentId = "agent-3" }), stderr = "" })
+    pending[1].done({ code = 0, stdout = vim.json.encode({ schemaVersion = 2, status = "sent", agentId = "agent-1" }), stderr = "" })
+    pending[2].done({ code = 0, stdout = vim.json.encode({ schemaVersion = 2, status = "sent", agentId = "agent-3" }), stderr = "" })
     assert(first_done and second_done)
   end)
 end)
@@ -455,7 +455,7 @@ end)
 test("rejects an unsupported JSON schema", function()
   local client = require("twt.client")
   local old = context.schemaVersion
-  context.schemaVersion = 2
+  context.schemaVersion = 3
   local received
   client.context("/work/app", function(err)
     received = err
@@ -467,18 +467,18 @@ end)
 test("falls back to the shared latest.md when a snapshot response has no path", function()
   -- An empty response is a response with no `path`: an older twt binary.
   local function legacy_path()
-    return require("twt.snapshot").resolve({}, "project-1")
+    return require("twt.snapshot").resolve({}, "workspace-1")
   end
   local old_state = vim.env.TWT_STATE_DIR
   local old_xdg = vim.env.XDG_STATE_HOME
   vim.env.TWT_STATE_DIR = "/explicit/state/twt"
-  assert(legacy_path() == "/explicit/state/twt/snapshots/projects/project-1/latest.md")
+  assert(legacy_path() == "/explicit/state/twt/snapshots/projects/workspace-1/latest.md")
   vim.env.TWT_STATE_DIR = nil
   vim.env.XDG_STATE_HOME = "/xdg/state"
-  assert(legacy_path() == "/xdg/state/twt/snapshots/projects/project-1/latest.md")
+  assert(legacy_path() == "/xdg/state/twt/snapshots/projects/workspace-1/latest.md")
   vim.env.TWT_STATE_DIR = old_state
   vim.env.XDG_STATE_HOME = old_xdg
-  assert(require("twt.snapshot").resolve({ path = "/reported/path.md" }, "project-1") == "/reported/path.md")
+  assert(require("twt.snapshot").resolve({ path = "/reported/path.md" }, "workspace-1") == "/reported/path.md")
 
   local fallback_opened
   with_config({
@@ -489,8 +489,8 @@ test("falls back to the shared latest.md when a snapshot response has no path", 
         vim.fn.mkdir(vim.fs.dirname(fallback), "p")
         assert(vim.fn.writefile({ "# Legacy transcript" }, fallback, "b") == 0)
         done({ code = 0, stdout = vim.json.encode({
-          schemaVersion = 1,
-          projectId = "project-1",
+          schemaVersion = 2,
+          workspaceId = "workspace-1",
           agentId = "agent-1",
           provider = "codex",
           repositoryName = "app",
@@ -704,7 +704,7 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
 
@@ -735,7 +735,7 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   assert(preview:find("src/other.go:2", 1, true), preview)
   assert(preview:find("first note", 1, true), preview)
   assert(preview:find("two", 1, true), preview)
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("lists a review note and deletes it", function()
@@ -748,7 +748,7 @@ test("lists a review note and deletes it", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
 
@@ -778,11 +778,11 @@ test("lists a review note and deletes it", function()
     review.prompt_notes(function(err) assert(err == nil, err) end)
     local left = {}
     for _, note in ipairs(review.list()) do
-      if note.project_id == "project-1" then left[#left + 1] = note.comment end
+      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
     end
     assert(#left == 1 and left[1] == "second note", table.concat(left, ","))
   end)
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("opens an existing review note on the line and saves the edit", function()
@@ -795,7 +795,7 @@ test("opens an existing review note on the line and saves the edit", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -814,10 +814,10 @@ test("opens an existing review note on the line and saves the edit", function()
   assert(saved and saved.comment == "revised note", vim.inspect(saved))
   local left = {}
   for _, note in ipairs(review.list()) do
-    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
   end
   assert(#left == 1 and left[1] == "revised note", table.concat(left, ","))
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("deletes an existing review note from the note window", function()
@@ -830,7 +830,7 @@ test("deletes an existing review note from the note window", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -850,10 +850,10 @@ test("deletes an existing review note from the note window", function()
   assert(result == "review note deleted", vim.inspect(result))
   local left = {}
   for _, note in ipairs(review.list()) do
-    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
   end
   assert(#left == 0, table.concat(left, ","))
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("deletes an opened review note when the comment is cleared", function()
@@ -866,7 +866,7 @@ test("deletes an opened review note when the comment is cleared", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first draft", 2, 2, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
 
@@ -883,10 +883,10 @@ test("deletes an opened review note when the comment is cleared", function()
   assert(result == "review note deleted", vim.inspect(result))
   local left = {}
   for _, note in ipairs(review.list()) do
-    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
   end
   assert(#left == 0, table.concat(left, ","))
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("deletes the review note on the current line", function()
@@ -899,7 +899,7 @@ test("deletes the review note on the current line", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
   review.add("drop me", 3, 3, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 3, 0 })
@@ -912,13 +912,13 @@ test("deletes the review note on the current line", function()
   assert(result == "review note deleted", vim.inspect(result))
   local left = {}
   for _, note in ipairs(review.list()) do
-    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
   end
   assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
-test("asks before it clears the Project review notes", function()
+test("asks before it clears the Workspace review notes", function()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/src", "p")
   vim.fn.mkdir(root .. "/.git", "p")
@@ -928,7 +928,7 @@ test("asks before it clears the Project review notes", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("keep me", 2, 2, function(err) assert(err == nil, err) end)
 
   local questions = {}
@@ -943,7 +943,7 @@ test("asks before it clears the Project review notes", function()
     assert(#questions == 1 and questions[1]:find("Are you sure", 1, true), vim.inspect(questions))
     local left = {}
     for _, note in ipairs(review.list()) do
-      if note.project_id == "project-1" then left[#left + 1] = note.comment end
+      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
     end
     assert(#left == 1 and left[1] == "keep me", table.concat(left, ","))
 
@@ -952,11 +952,11 @@ test("asks before it clears the Project review notes", function()
     assert(#questions == 2)
     left = {}
     for _, note in ipairs(review.list()) do
-      if note.project_id == "project-1" then left[#left + 1] = note.comment end
+      if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
     end
     assert(#left == 0, table.concat(left, ","))
   end)
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("opens a review note from the picker and saves the edit", function()
@@ -969,7 +969,7 @@ test("opens a review note from the picker and saves the edit", function()
   vim.api.nvim_set_current_buf(buffer)
   require("twt.config").get().directory = function() return root .. "/src" end
   local review = require("twt").review
-  review.clear("project-1")
+  review.clear("workspace-1")
   review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
   review.add("second note", 3, 3, function(err) assert(err == nil, err) end)
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -1012,17 +1012,17 @@ test("opens a review note from the picker and saves the edit", function()
   assert(saved and saved.comment == "opened from picker", vim.inspect(saved))
   local left = {}
   for _, note in ipairs(review.list()) do
-    if note.project_id == "project-1" then left[#left + 1] = note.comment end
+    if note.workspace_id == "workspace-1" then left[#left + 1] = note.comment end
   end
   assert(#left == 2, table.concat(left, ","))
   assert(left[1] == "opened from picker" and left[2] == "second note", table.concat(left, ","))
-  review.clear("project-1")
+  review.clear("workspace-1")
 end)
 
 test("writes a new snapshot without the picker", function()
   require("twt.config").get().directory = function() return "/work/app" end
   require("twt").agents.pick(function(err) assert(err == nil, err) end)
-  transcript_by_agent["agent-1"] = "# Project one transcript, again\n"
+  transcript_by_agent["agent-1"] = "# Workspace one transcript, again\n"
   local picks = 0
   local refreshed
   with_config({
@@ -1038,8 +1038,8 @@ test("writes a new snapshot without the picker", function()
     end)
   end)
   assert(picks == 0, "refresh must not open the picker")
-  assert(refreshed == agent_snapshot_path("project-1", "agent-1"))
-  assert(table.concat(vim.fn.readfile(refreshed), "\n") == "# Project one transcript, again")
+  assert(refreshed == agent_snapshot_path("workspace-1", "agent-1"))
+  assert(table.concat(vim.fn.readfile(refreshed), "\n") == "# Workspace one transcript, again")
   assert(vim.bo.autoread == true)
 end)
 
@@ -1091,7 +1091,7 @@ test("offers to resume a stopped Agent Session before a send", function()
     runner = function(argv, opts, done)
       if table.concat(argv, " "):find(" agents resume ", 1, true) then
         live = true
-        done({ code = 0, stdout = vim.json.encode({ schemaVersion = 1, agentId = agent.id, status = "live" }), stderr = "" })
+        done({ code = 0, stdout = vim.json.encode({ schemaVersion = 2, agentId = agent.id, status = "live" }), stderr = "" })
         return
       end
       agent.status = live and "live" or "stopped"

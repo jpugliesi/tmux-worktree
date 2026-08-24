@@ -77,8 +77,8 @@ func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 		t.Fatalf("config: %v", err)
 	}
 	envelope := decodeConfig(t, stdout)
-	if envelope.SchemaVersion != 1 {
-		t.Fatalf("schemaVersion = %d, want 1", envelope.SchemaVersion)
+	if envelope.SchemaVersion != 2 {
+		t.Fatalf("schemaVersion = %d, want 2", envelope.SchemaVersion)
 	}
 
 	want := []struct {

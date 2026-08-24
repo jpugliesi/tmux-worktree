@@ -11,28 +11,30 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
 // quickCreateRequest describes one quick-create run. Both twt start and twt
 // tickets start use the same flow.
 type quickCreateRequest struct {
-	// Name is the new Project name. An empty value asks for it in an
+	// Name is the new Workspace name. An empty value asks for it in an
 	// interactive terminal.
 	Name string
-	// TemplateName selects the Project Template. An empty value uses the
-	// template of the current Project, or infers one outside a Project.
+	// TemplateName selects the Workspace Template. An empty value uses the
+	// template of the current Workspace, or infers one outside a Workspace.
 	TemplateName string
-	// KeepCurrent keeps the current Project active after the switch.
+	// KeepCurrent keeps the current Workspace active after the switch.
 	KeepCurrent bool
 	// NoFetch turns the default-branch refresh before the claim off.
 	NoFetch bool
-	// Branch is an optional custom Project branch name.
+	// Branch is an optional custom Workspace branch name.
 	Branch string
-	// Ticket is the slug of the Ticket that the new Project works on.
-	Ticket string
+	// Tickets are the Ticket slugs that the new Workspace works on.
+	Tickets []string
+	// Project is the durable Project of Tickets.
+	Project string
 }
 
 func newQuickCreateCommand(options Options) *cobra.Command {
@@ -42,38 +44,44 @@ func newQuickCreateCommand(options Options) *cobra.Command {
 	var branch string
 	var as string
 	command := &cobra.Command{
-		Use:     "start [NAME]",
-		Short:   "Create a new Project and archive the current Project",
-		Args:    optionalArg("NAME"),
+		Use:     "start [NAME|TICKET...]",
+		Short:   "Start a Workspace and archive the current Workspace",
+		Args:    func(_ *cobra.Command, _ []string) error { return nil },
 		PreRunE: refuseJSONQuickCreate,
 		RunE: func(command *cobra.Command, args []string) error {
-			name := ""
-			if len(args) == 1 {
-				name = args[0]
-			}
-			return runStart(command, options, quickCreateRequest{
-				Name:         name,
+			request := quickCreateRequest{
 				TemplateName: templateName,
 				KeepCurrent:  keepCurrent,
 				NoFetch:      noFetch,
 				Branch:       branch,
-			}, as)
+			}
+			if len(args) > 1 {
+				tickets, err := resolveStartTicketRefs(options, args)
+				if err != nil {
+					return err
+				}
+				return startFromTickets(command, options, tickets, request, as)
+			}
+			if len(args) == 1 {
+				request.Name = args[0]
+			}
+			return runStart(command, options, request, as)
 		},
 	}
-	command.Flags().StringVar(&templateName, "template", "", "Select the Project Template instead of the current Project's template")
-	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Project and keep the current Project active")
+	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
+	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Workspace and keep the current Workspace active")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
-	command.Flags().StringVar(&branch, "branch", "", "Set a custom Project branch name")
+	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name when start claims a Ticket")
-	setArguments(command, optionalArgument("name", "the Ticket picker asks for it when absent. A Ticket slug claims that Ticket. TAB offers Ticket slugs"))
-	command.ValidArgsFunction = ticketSlugCompletion(options)
+	setArguments(command, variadicArgument("name_or_ticket", false, "one value can be a Workspace name or Ticket slug; many values must be Ticket slugs from one Project"))
+	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
 
-// runStart starts a Project. A Ticket slug claims that Ticket first. With no
+// runStart starts a Workspace. A Ticket slug claims that Ticket first. With no
 // name and at least one open Ticket, it shows the Ticket picker. With no
-// Tickets it asks for a Project name.
+// Tickets it asks for a Workspace name.
 func runStart(command *cobra.Command, options Options, request quickCreateRequest, as string) error {
 	name := strings.TrimSpace(request.Name)
 	if name != "" {
@@ -122,7 +130,7 @@ func resolveStartTicket(options Options, name string) (domain.Ticket, bool, erro
 }
 
 // listOpenStartTickets lists open Tickets for the start picker. A missing
-// Tickets home returns no Tickets so start can still ask for a Project name.
+// Tickets home returns no Tickets so start can still ask for a Workspace name.
 func listOpenStartTickets(options Options) ([]domain.Ticket, error) {
 	service, err := options.ticketService()
 	if err != nil {
@@ -139,11 +147,11 @@ func listOpenStartTickets(options Options) ([]domain.Ticket, error) {
 func pickStartTicket(command *cobra.Command, options Options, tickets []domain.Ticket) (domain.Ticket, error) {
 	lines := make([]string, 0, len(tickets))
 	for _, ticket := range tickets {
-		boardName := ticket.Board
-		if boardName == "" {
-			boardName = "-"
+		projectName := ticket.Project
+		if projectName == "" {
+			projectName = "-"
 		}
-		lines = append(lines, fmt.Sprintf("%s\t%s\t%d\t%s\t%s", ticket.Slug, ticket.Status, ticket.Priority, boardName, ticket.Title))
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%d\t%s\t%s", ticket.Slug, ticket.Status, ticket.Priority, projectName, ticket.Title))
 	}
 	pick := options.TicketPick
 	if pick == nil {
@@ -188,30 +196,30 @@ func ticketStartPreviewCommand() string {
 // starts. The flow moves the calling tmux client, so it is interactive.
 func refuseJSONQuickCreate(command *cobra.Command, _ []string) error {
 	if WantsJSON(command) {
-		return invalidUsage(command, "quick create uses interactive text output; use 'twt projects create' for JSON automation")
+		return invalidUsage(command, "quick create uses interactive text output; use 'twt workspaces create' for JSON automation")
 	}
 	return nil
 }
 
-// runQuickCreate is the shared quick-create flow: it creates the new Project,
-// switches the calling tmux client to it, and archives the current Project
-// unless the request keeps it. Outside a Project session, it only creates and
-// opens the new Project.
+// runQuickCreate is the shared quick-create flow: it creates the new Workspace,
+// switches the calling tmux client to it, and archives the current Workspace
+// unless the request keeps it. Outside a Workspace session, it only creates and
+// opens the new Workspace.
 func runQuickCreate(command *cobra.Command, options Options, request quickCreateRequest) error {
-	service := options.projectService()
+	service := options.workspaceService()
 	currentPane := os.Getenv("TMUX_PANE")
 	directory, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	current, err := service.CurrentForQuickCreate(directory, os.Getenv("TWT_PROJECT_ID"), currentPane)
+	current, err := service.CurrentForQuickCreate(directory, workspaceIDFromEnvironment(), currentPane)
 	known := err == nil
-	if err != nil && !errors.Is(err, projectservice.ErrNotInProject) {
+	if err != nil && !errors.Is(err, workspaceservice.ErrNotInWorkspace) {
 		return err
 	}
-	// The tmux client switch and the archive of the current Project
+	// The tmux client switch and the archive of the current Workspace
 	// need the calling pane. Without a pane, quick create uses the
-	// outside-session flow and keeps the current Project active.
+	// outside-session flow and keeps the current Workspace active.
 	outside := !known || currentPane == ""
 	templateStore := options.templateStore()
 	selected := strings.TrimSpace(request.TemplateName)
@@ -245,22 +253,22 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 			return err
 		}
 	}
-	createOptions := projectservice.CreateOptions{Branch: request.Branch, NoFetch: request.NoFetch, Ticket: request.Ticket}
+	createOptions := workspaceservice.CreateOptions{Branch: request.Branch, NoFetch: request.NoFetch, Tickets: request.Tickets, Project: request.Project}
 	if isDryRun(command) {
 		if err := validateCreate(options, service, name, selected, template, createOptions); err != nil {
 			return err
 		}
-		return writeMutation(command, "projects.quick_create", statusValid, "", name)
+		return writeMutation(command, "workspaces.quick_create", statusValid, "", name)
 	}
 
-	created, err := createProject(command, options, name, selected, template, createOptions)
+	created, err := createWorkspace(command, options, name, selected, template, createOptions)
 	if err != nil {
 		return err
 	}
 	out := command.OutOrStdout()
 
 	if outside {
-		if _, err := fmt.Fprintf(out, "Created Project %q (%s)\n", created.Name, created.ID); err != nil {
+		if _, err := fmt.Fprintf(out, "Created Workspace %q (%s)\n", created.Name, created.ID); err != nil {
 			return err
 		}
 		if err := options.QuickCreateSwitch("", created.TmuxSession); err != nil {
@@ -276,9 +284,9 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 			}
 		}
 	}
-	message := fmt.Sprintf("Created Project %q; switching to it and archiving Project %q\n", created.Name, current.Name)
+	message := fmt.Sprintf("Created Workspace %q; switching to it and archiving Workspace %q\n", created.Name, current.Name)
 	if request.KeepCurrent {
-		message = fmt.Sprintf("Created Project %q; switching to it; Project %q stays active\n", created.Name, current.Name)
+		message = fmt.Sprintf("Created Workspace %q; switching to it; Workspace %q stays active\n", created.Name, current.Name)
 	}
 	if _, err := fmt.Fprint(out, message); err != nil {
 		return quickCreateSwitchFailure(created, fmt.Errorf("write quick create result: %w", err))
@@ -290,31 +298,31 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		return nil
 	}
 	if err := options.QuickCreateArchive(clientName, current.ID, created.ID); err != nil {
-		return fmt.Errorf("new Project %q is active, but old Project %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
+		return fmt.Errorf("new Workspace %q is active, but old Workspace %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
 	}
 	return nil
 }
 
-// quickCreateSwitchFailure keeps the new Project active after a failed tmux
+// quickCreateSwitchFailure keeps the new Workspace active after a failed tmux
 // switch and tells the user how to open it.
-func quickCreateSwitchFailure(created domain.Project, cause error) error {
-	return fmt.Errorf("twt could not switch to the new Project: %w. The new Project %q is active. Run 'twt projects open %s'.", cause, created.Name, created.Name)
+func quickCreateSwitchFailure(created domain.Workspace, cause error) error {
+	return fmt.Errorf("twt could not switch to the new Workspace: %w. The new Workspace %q is active. Run 'twt workspaces open %s'.", cause, created.Name, created.Name)
 }
 
 func quickCreateName(command *cobra.Command) (string, error) {
 	if !interactiveInput(command.InOrStdin()) {
-		return "", invalidUsage(command, "missing Project name; use 'twt start NAME' in a script")
+		return "", invalidUsage(command, "missing Workspace name; use 'twt start NAME' in a script")
 	}
-	if _, err := fmt.Fprint(command.ErrOrStderr(), "Project name: "); err != nil {
+	if _, err := fmt.Fprint(command.ErrOrStderr(), "Workspace name: "); err != nil {
 		return "", err
 	}
 	line, err := bufio.NewReader(command.InOrStdin()).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read Project name: %w", err)
+		return "", fmt.Errorf("read Workspace name: %w", err)
 	}
 	name := strings.TrimSpace(line)
 	if name == "" {
-		return "", invalidUsage(command, "Project creation was canceled; no Project name was given")
+		return "", invalidUsage(command, "Workspace creation was canceled; no Workspace name was given")
 	}
 	return name, nil
 }

@@ -2,7 +2,7 @@ package transcript
 
 import "testing"
 
-func TestEncodeClaudeProjectReplacesEveryNonAlphanumericCharacter(t *testing.T) {
+func TestEncodeClaudeWorkspaceReplacesEveryNonAlphanumericCharacter(t *testing.T) {
 	tests := []struct {
 		path string
 		want string
@@ -11,8 +11,8 @@ func TestEncodeClaudeProjectReplacesEveryNonAlphanumericCharacter(t *testing.T) 
 		{path: "/tmp/a.b/repo_1", want: "-tmp-a-b-repo-1"},
 	}
 	for _, test := range tests {
-		if got := encodeClaudeProject(test.path); got != test.want {
-			t.Fatalf("encodeClaudeProject(%q) = %q, want %q", test.path, got, test.want)
+		if got := encodeClaudeWorkspace(test.path); got != test.want {
+			t.Fatalf("encodeClaudeWorkspace(%q) = %q, want %q", test.path, got, test.want)
 		}
 	}
 }

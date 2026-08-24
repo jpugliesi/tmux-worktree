@@ -6,7 +6,7 @@ tags:
   - tickets
 status: needs-triage
 priority: 2
-board:
+project:
 blocked_by: []
 claimed_by:
 claimed_at:

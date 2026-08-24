@@ -39,26 +39,26 @@ func TestTemplatesPathPrintsTheYAMLFile(t *testing.T) {
 		t.Fatalf("templates path = %q, want %q", output, want)
 	}
 	if _, err := execute(t, root, "templates", "path", "missing"); err == nil || clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("templates path for a missing Project Template = %v", err)
+		t.Fatalf("templates path for a missing Workspace Template = %v", err)
 	}
 }
 
-func TestTemplatesRemoveRefusesAUsedProjectTemplate(t *testing.T) {
+func TestTemplatesRemoveRefusesAUsedWorkspaceTemplate(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	if _, err := execute(t, root, "templates", "create", "example"); err != nil {
 		t.Fatal(err)
 	}
-	project := domain.Project{
-		Version: domain.ProjectVersion, ID: "project-uses-template", Name: "fix-auth",
-		TemplateName: "example", Status: domain.ProjectActive,
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-uses-template", Name: "fix-auth",
+		TemplateName: "example", Status: domain.WorkspaceActive,
 	}
-	if err := store.NewProjectStore(stateDir).Save(project); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
 		t.Fatal(err)
 	}
 	_, err := execute(t, root, "templates", "remove", "example")
 	if err == nil || clierr.CodeOf(err) != clierr.PreconditionFailed || !strings.Contains(err.Error(), "fix-auth") {
-		t.Fatalf("templates remove with a Project = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("templates remove with a Workspace = %v (code %q)", err, clierr.CodeOf(err))
 	}
 	if clierr.HintOf(err) == "" {
 		t.Fatal("templates remove refusal has no hint")
@@ -67,7 +67,7 @@ func TestTemplatesRemoveRefusesAUsedProjectTemplate(t *testing.T) {
 		t.Fatalf("refused removal deleted the file: %v", statErr)
 	}
 
-	if err := store.NewProjectStore(stateDir).Delete(project.ID); err != nil {
+	if err := store.NewWorkspaceStore(stateDir).Delete(workspace.ID); err != nil {
 		t.Fatal(err)
 	}
 	dryRun, err := execute(t, root, "templates", "remove", "example", "--dry-run", "--output", "json")
@@ -132,7 +132,7 @@ func TestTemplatesCreateReadsAFileOrStandardInput(t *testing.T) {
 	}
 	saved, err := os.ReadFile(filepath.Join(root, "config", "templates", "fromfile.yaml"))
 	if err != nil || !strings.Contains(string(saved), "url: https://example.com/app.git") {
-		t.Fatalf("saved Project Template = %s, error = %v", saved, err)
+		t.Fatalf("saved Workspace Template = %s, error = %v", saved, err)
 	}
 
 	if _, err := execute(t, root, "templates", "create", "other", "--from-file", documentPath); err == nil ||
@@ -156,7 +156,7 @@ func TestTemplatesCreateFromStdinRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("templates create --from-stdin with an unknown field = %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "config", "templates", "strict.yaml")); !os.IsNotExist(statErr) {
-		t.Fatalf("invalid input created a Project Template: %v", statErr)
+		t.Fatalf("invalid input created a Workspace Template: %v", statErr)
 	}
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader("version: 1\nrepositories: []\n"),
 		"templates", "create", "both", "--from-stdin", "--from-file", "/tmp/does-not-matter.yaml"); err == nil ||
@@ -174,7 +174,7 @@ func TestTemplatesValidateReportsWarningsWithoutFailing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("templates validate = %v", err)
 	}
-	if !strings.Contains(text, "is valid") || !strings.Contains(text, "Warning: The Project Template has no repositories.") {
+	if !strings.Contains(text, "is valid") || !strings.Contains(text, "Warning: The Workspace Template has no repositories.") {
 		t.Fatalf("templates validate text = %q", text)
 	}
 	encoded, err := execute(t, root, "templates", "validate", "empty", "--output", "json")
@@ -203,7 +203,7 @@ func TestTemplatesValidateReportsWarningsWithoutFailing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Warnings) != 0 {
-		t.Fatalf("Project Template with one repository has warnings: %+v", result.Warnings)
+		t.Fatalf("Workspace Template with one repository has warnings: %+v", result.Warnings)
 	}
 }
 
@@ -218,16 +218,16 @@ func TestTemplatesInitSetHandlesBothModes(t *testing.T) {
 	if _, err := execute(t, root, "templates", "init", "set", "product", "--repo", "web", "--", "./init.sh"); err != nil {
 		t.Fatalf("repository initialization: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "init", "set", "product", "--cwd", "web", "--", "./scripts/init-project.sh"); err != nil {
-		t.Fatalf("Project initialization: %v", err)
+	if _, err := execute(t, root, "templates", "init", "set", "product", "--cwd", "web", "--", "./scripts/init-workspace.sh"); err != nil {
+		t.Fatalf("Workspace initialization: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "config", "templates", "product.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"- ./init.sh", "- ./scripts/init-project.sh", "working_directory: web"} {
+	for _, want := range []string{"- ./init.sh", "- ./scripts/init-workspace.sh", "working_directory: web"} {
 		if !strings.Contains(string(data), want) {
-			t.Fatalf("Project Template YAML does not contain %q:\n%s", want, data)
+			t.Fatalf("Workspace Template YAML does not contain %q:\n%s", want, data)
 		}
 	}
 
@@ -237,7 +237,7 @@ func TestTemplatesInitSetHandlesBothModes(t *testing.T) {
 	}
 	_, err = execute(t, root, "templates", "init", "set", "product", "--", "./init.sh")
 	if err == nil || !strings.Contains(err.Error(), "--cwd") {
-		t.Fatalf("Project initialization without --cwd = %v", err)
+		t.Fatalf("Workspace initialization without --cwd = %v", err)
 	}
 	_, err = execute(t, root, "templates", "init", "set", "product", "--repo", "missing", "--", "./init.sh")
 	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
@@ -266,7 +266,7 @@ func TestTemplatesReposRemoveDeletesOneRepositorySpecification(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "name: web") || !strings.Contains(string(data), "name: api") {
-		t.Fatalf("Project Template YAML after removal:\n%s", data)
+		t.Fatalf("Workspace Template YAML after removal:\n%s", data)
 	}
 	if _, err := execute(t, root, "templates", "repos", "remove", "product", "web"); err == nil || clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("second templates repos remove = %v (code %q)", err, clierr.CodeOf(err))
@@ -283,12 +283,12 @@ func TestEmptyListsGiveAStderrHintInTextMode(t *testing.T) {
 	if stdout != "" || !strings.Contains(stderr, "twt templates create NAME") {
 		t.Fatalf("empty templates list stdout = %q, stderr = %q", stdout, stderr)
 	}
-	stdout, stderr, err = executeCollectingOutput(t, options, "projects", "list")
+	stdout, stderr, err = executeCollectingOutput(t, options, "workspaces", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stdout != "" || !strings.Contains(stderr, "twt projects create NAME") {
-		t.Fatalf("empty projects list stdout = %q, stderr = %q", stdout, stderr)
+	if stdout != "" || !strings.Contains(stderr, "twt workspaces create NAME") {
+		t.Fatalf("empty workspaces list stdout = %q, stderr = %q", stdout, stderr)
 	}
 	stdout, stderr, err = executeCollectingOutput(t, options, "templates", "list", "--output", "json")
 	if err != nil {

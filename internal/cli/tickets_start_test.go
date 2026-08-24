@@ -53,9 +53,10 @@ func ticketsStartFixture(t *testing.T) (cli.Options, string) {
 func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	options, home := ticketsStartFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 	var switched []string
 	options.QuickCreateSwitch = func(_ string, session string) error {
 		switched = append(switched, session)
@@ -66,79 +67,167 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
 		t.Fatalf("tickets start output has no claim: %q", output)
 	}
-	if !strings.Contains(output, `Created Project "fix-auth-tokens"`) {
+	if !strings.Contains(output, `Created Workspace "fix-auth-tokens"`) {
 		t.Fatalf("tickets start output has no create: %q", output)
 	}
-	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens")
-	if err != nil || project.Status != domain.ProjectActive {
-		t.Fatalf("Project after tickets start: %+v error=%v", project, err)
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
+	if err != nil || workspace.Status != domain.WorkspaceActive {
+		t.Fatalf("Workspace after tickets start: %+v error=%v", workspace, err)
 	}
-	if project.Ticket != "fix-auth-tokens" {
-		t.Fatalf("Project ticket = %q, want %q", project.Ticket, "fix-auth-tokens")
+	if len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
+		t.Fatalf("Workspace tickets = %v, want [fix-auth-tokens]", workspace.Tickets)
 	}
-	if len(switched) != 1 || switched[0] != project.TmuxSession {
+	if len(switched) != 1 || switched[0] != workspace.TmuxSession {
 		t.Fatalf("tickets start switch events = %v", switched)
 	}
-	content := readTicketFile(t, filepath.Join(home, "fix-auth-tokens.md"))
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
 	if !strings.Contains(content, "tester") {
 		t.Fatalf("ticket is not claimed:\n%s", content)
 	}
-	if !strings.Contains(content, "Started Project fix-auth-tokens.") {
+	if !strings.Contains(content, "Started Workspace fix-auth-tokens.") {
 		t.Fatalf("ticket has no start comment:\n%s", content)
 	}
 
-	// projects show reports the link in text and JSON.
-	show := executeWithOptions(t, options, nil, "projects", "show", "fix-auth-tokens")
+	// workspaces show reports the link in text and JSON.
+	show := executeWithOptions(t, options, nil, "workspaces", "show", "fix-auth-tokens")
 	if !strings.Contains(show, "Ticket") || !strings.Contains(show, "fix-auth-tokens") {
-		t.Fatalf("projects show has no Ticket line: %q", show)
+		t.Fatalf("workspaces show has no Ticket line: %q", show)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "show", "fix-auth-tokens", "--output", "json")
-	if err != nil || !strings.Contains(showJSON, `"ticket":"fix-auth-tokens"`) {
-		t.Fatalf("projects show JSON has no ticket field: %q error=%v", showJSON, err)
+	showJSON, _, err := executeCollectingInput(t, options, nil, "workspaces", "show", "fix-auth-tokens", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, `"tickets":["fix-auth-tokens"]`) {
+		t.Fatalf("workspaces show JSON has no tickets field: %q error=%v", showJSON, err)
 	}
 
-	// --name overrides the Project name; the link keeps the Ticket slug.
-	executeWithOptions(t, options, nil, "tickets", "create", "Second thing")
+	// --name overrides the Workspace name; the link keeps the Ticket slug.
+	executeWithOptions(t, options, nil, "tickets", "create", "Second thing", "--project", "core")
 	named := executeWithOptions(t, options, nil, "tickets", "start", "second-thing", "--as", "tester", "--name", "custom-app")
-	if !strings.Contains(named, `Created Project "custom-app"`) {
+	if !strings.Contains(named, `Created Workspace "custom-app"`) {
 		t.Fatalf("tickets start --name output = %q", named)
 	}
-	namedProject, err := store.NewProjectStore(options.StateDir).Find("custom-app")
-	if err != nil || namedProject.Ticket != "second-thing" {
-		t.Fatalf("Project after tickets start --name: %+v error=%v", namedProject, err)
+	namedWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("custom-app")
+	if err != nil || len(namedWorkspace.Tickets) != 1 || namedWorkspace.Tickets[0] != "second-thing" {
+		t.Fatalf("Workspace after tickets start --name: %+v error=%v", namedWorkspace, err)
 	}
-	namedContent := readTicketFile(t, filepath.Join(home, "second-thing.md"))
-	if !strings.Contains(namedContent, "Started Project custom-app.") {
+	namedContent := readTicketFile(t, filepath.Join(home, "core", "second-thing.md"))
+	if !strings.Contains(namedContent, "Started Workspace custom-app.") {
 		t.Fatalf("ticket has no start comment for --name:\n%s", namedContent)
+	}
+}
+
+func TestTicketsStartCreatesOneWorkspaceForManyTickets(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+
+	executeWithOptions(t, options, nil, "tickets", "start", "fix-auth", "add-auth-tests", "--as", "tester")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Project != "core" {
+		t.Fatalf("Workspace Project = %q", workspace.Project)
+	}
+	if got := strings.Join(workspace.Tickets, ","); got != "fix-auth,add-auth-tests" {
+		t.Fatalf("Workspace Tickets = %q", got)
+	}
+	for _, slug := range workspace.Tickets {
+		content := readTicketFile(t, filepath.Join(home, "core", slug+".md"))
+		if !strings.Contains(content, "claimed_by: tester") || !strings.Contains(content, "Started Workspace fix-auth.") {
+			t.Fatalf("Ticket %q was not started:\n%s", slug, content)
+		}
+	}
+}
+
+func TestWorkspacesCreateLinksRepeatedTicketFlags(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
+
+	executeWithOptions(t, options, nil, "workspaces", "create", "auth-work", "--template", "example", "--no-open",
+		"--ticket", "fix-auth", "--ticket", "add-auth-tests")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("auth-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Project != "core" || strings.Join(workspace.Tickets, ",") != "fix-auth,add-auth-tests" {
+		t.Fatalf("Workspace links = Project %q, Tickets %v", workspace.Project, workspace.Tickets)
+	}
+}
+
+func TestApplyWorkspacesCreateLinksTickets(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
+
+	request := `{"operation":"workspaces.create","workspace":{"name":"auth-work","template":"example","tickets":["fix-auth","add-auth-tests"]}}`
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "--stdin"); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("auth-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Project != "core" || strings.Join(workspace.Tickets, ",") != "fix-auth,add-auth-tests" {
+		t.Fatalf("Workspace links = Project %q, Tickets %v", workspace.Project, workspace.Tickets)
+	}
+}
+
+func TestStartAcceptsManyTicketSlugs(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+
+	executeWithOptions(t, options, nil, "start", "fix-auth", "add-auth-tests", "--as", "tester")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(workspace.Tickets, ",") != "fix-auth,add-auth-tests" {
+		t.Fatalf("Workspace Tickets = %v", workspace.Tickets)
 	}
 }
 
 func TestTicketsStartRefusesClosedLockedAndJSON(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 
-	// A Ticket that a different claimant holds aborts before any Project
+	// A Ticket that a different claimant holds aborts before any Workspace
 	// work.
 	executeWithOptions(t, options, nil, "tickets", "claim", "fix-auth-tokens", "--as", "other")
 	_, _, err := executeCollectingInput(t, options, nil, "tickets", "start", "fix-auth-tokens", "--as", "tester")
 	if clierr.CodeOf(err) != clierr.Locked {
 		t.Fatalf("tickets start on a claimed Ticket = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	projects, listErr := store.NewProjectStore(options.StateDir).List()
-	if listErr != nil || len(projects) != 0 {
-		t.Fatalf("tickets start on a claimed Ticket made Projects: %+v error=%v", projects, listErr)
+	workspaces, listErr := store.NewWorkspaceStore(options.StateDir).List()
+	if listErr != nil || len(workspaces) != 0 {
+		t.Fatalf("tickets start on a claimed Ticket made Workspaces: %+v error=%v", workspaces, listErr)
 	}
-	if !strings.Contains(readTicketFile(t, filepath.Join(home, "fix-auth-tokens.md")), "other") {
+	if !strings.Contains(readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md")), "other") {
 		t.Fatal("the locked start changed the claim")
 	}
 
 	// A closed Ticket is refused.
 	executeWithOptions(t, options, nil, "tickets", "close", "fix-auth-tokens", "--as", "other")
 	_, _, err = executeCollectingInput(t, options, nil, "tickets", "start", "fix-auth-tokens", "--as", "tester")
-	if clierr.CodeOf(err) != clierr.PreconditionFailed || !strings.Contains(err.Error(), "the Ticket is closed") {
+	if clierr.CodeOf(err) != clierr.PreconditionFailed || !strings.Contains(err.Error(), "is closed") {
 		t.Fatalf("tickets start on a closed Ticket = %v (code %q)", err, clierr.CodeOf(err))
 	}
 
@@ -149,10 +238,34 @@ func TestTicketsStartRefusesClosedLockedAndJSON(t *testing.T) {
 	}
 }
 
+func TestTicketsStartRequiresUniqueTicketsFromOneProject(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	for _, project := range []string{"core", "docs"} {
+		executeWithOptions(t, options, nil, "projects", "create", project)
+	}
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Write guide", "--project", "docs")
+
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "start", "fix-auth", "write-guide", "--as", "tester")
+	if clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "one Project") {
+		t.Fatalf("cross-Project start = %v", err)
+	}
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "start", "fix-auth", "fix-auth", "--as", "tester")
+	if clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("duplicate start = %v", err)
+	}
+	if strings.Contains(readTicketFile(t, filepath.Join(home, "core", "fix-auth.md")), "claimed_by: tester") {
+		t.Fatal("an invalid multi-Ticket start claimed a Ticket")
+	}
+}
+
 func TestTicketsStartKeepsTheClaimWhenTheCreateFails(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	// The only template has no repositories, so the create validation fails
 	// after the claim.
 	if err := os.MkdirAll(filepath.Join(options.ConfigDir, "templates"), 0o755); err != nil {
@@ -163,19 +276,20 @@ func TestTicketsStartKeepsTheClaimWhenTheCreateFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 
 	_, _, err := executeCollectingInput(t, options, nil, "tickets", "start", "fix-auth-tokens", "--as", "tester")
 	if err == nil || !strings.Contains(err.Error(), "no repositories") {
 		t.Fatalf("tickets start with a broken template = %v", err)
 	}
-	content := readTicketFile(t, filepath.Join(home, "fix-auth-tokens.md"))
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
 	if !strings.Contains(content, "tester") {
 		t.Fatalf("the failed create released the claim:\n%s", content)
 	}
-	projects, listErr := store.NewProjectStore(options.StateDir).List()
-	if listErr != nil || len(projects) != 0 {
-		t.Fatalf("the failed create made Projects: %+v error=%v", projects, listErr)
+	workspaces, listErr := store.NewWorkspaceStore(options.StateDir).List()
+	if listErr != nil || len(workspaces) != 0 {
+		t.Fatalf("the failed create made Workspaces: %+v error=%v", workspaces, listErr)
 	}
 }
 
@@ -202,10 +316,11 @@ func TestStartCompletesTicketSlugs(t *testing.T) {
 func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
 	options, home := ticketsStartFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
-	executeWithOptions(t, options, nil, "tickets", "create", "Second thing")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Second thing", "--project", "core")
 	executeWithOptions(t, options, nil, "tickets", "close", "second-thing", "--as", "tester")
 	var pickedLines []string
 	options.TicketPick = func(_ *cobra.Command, lines []string) (int, error) {
@@ -228,17 +343,17 @@ func TestStartPickerClaimsTheSelectedTicket(t *testing.T) {
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
 		t.Fatalf("start picker output has no claim: %q", output)
 	}
-	if !strings.Contains(output, `Created Project "fix-auth-tokens"`) {
+	if !strings.Contains(output, `Created Workspace "fix-auth-tokens"`) {
 		t.Fatalf("start picker output has no create: %q", output)
 	}
-	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens")
-	if err != nil || project.Ticket != "fix-auth-tokens" {
-		t.Fatalf("Project after start picker: %+v error=%v", project, err)
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
+	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
+		t.Fatalf("Workspace after start picker: %+v error=%v", workspace, err)
 	}
-	if len(switched) != 1 || switched[0] != project.TmuxSession {
+	if len(switched) != 1 || switched[0] != workspace.TmuxSession {
 		t.Fatalf("start picker switch events = %v", switched)
 	}
-	content := readTicketFile(t, filepath.Join(home, "fix-auth-tokens.md"))
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
 	if !strings.Contains(content, "tester") {
 		t.Fatalf("picked ticket is not claimed:\n%s", content)
 	}
@@ -248,32 +363,34 @@ func TestStartNumberedPickerReadsTheTicketNumber(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
 	t.Setenv("PATH", "")
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 	output := executeWithOptions(t, options, strings.NewReader("1\n"), "start", "--as", "tester", "--dry-run")
-	if !strings.Contains(output, "tickets.claim: valid") || !strings.Contains(output, "projects.quick_create: valid") {
+	if !strings.Contains(output, "tickets.claim: valid") || !strings.Contains(output, "workspaces.quick_create: valid") {
 		t.Fatalf("start numbered picker dry-run output = %q", output)
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens"); err == nil {
-		t.Fatal("start numbered picker dry-run created a Project")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens"); err == nil {
+		t.Fatal("start numbered picker dry-run created a Workspace")
 	}
 }
 
 func TestStartWithATicketSlugClaimsTheTicket(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "init")
-	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
 	options.QuickCreateSwitch = func(_ string, _ string) error { return nil }
 
 	output := executeWithOptions(t, options, nil, "start", "fix-auth-tokens", "--as", "tester")
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {
 		t.Fatalf("start with a Ticket slug has no claim: %q", output)
 	}
-	project, err := store.NewProjectStore(options.StateDir).Find("fix-auth-tokens")
-	if err != nil || project.Ticket != "fix-auth-tokens" {
-		t.Fatalf("Project after start with a Ticket slug: %+v error=%v", project, err)
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
+	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
+		t.Fatalf("Workspace after start with a Ticket slug: %+v error=%v", workspace, err)
 	}
 }

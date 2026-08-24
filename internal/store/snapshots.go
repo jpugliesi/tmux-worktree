@@ -29,9 +29,9 @@ type SnapshotStore struct {
 }
 
 type SnapshotInfo struct {
-	ProjectID string
-	Directory string
-	Bytes     int64
+	WorkspaceID string
+	Directory   string
+	Bytes       int64
 }
 
 type SnapshotTemporaryFile struct {
@@ -41,32 +41,43 @@ type SnapshotTemporaryFile struct {
 
 // SnapshotPaths gives the files that one Transcript Snapshot write makes.
 // Agent is the private file of one Agent Session. Latest is a plain copy of
-// the most recent Transcript Snapshot of the Project.
+// the most recent Transcript Snapshot of the Workspace.
 type SnapshotPaths struct {
 	Agent  string
 	Latest string
 }
 
 type snapshotMarker struct {
-	Version   int    `json:"version"`
-	Owner     string `json:"owner"`
-	ProjectID string `json:"projectId"`
+	Version     int    `json:"version"`
+	Owner       string `json:"owner"`
+	WorkspaceID string `json:"workspaceId"`
+	ProjectID   string `json:"projectId,omitempty"`
+}
+
+func (m snapshotMarker) workspaceID() (string, bool) {
+	if m.WorkspaceID != "" && m.ProjectID != "" && m.WorkspaceID != m.ProjectID {
+		return "", false
+	}
+	if m.WorkspaceID != "" {
+		return m.WorkspaceID, true
+	}
+	return m.ProjectID, m.ProjectID != ""
 }
 
 func NewSnapshotStore(stateDir string) SnapshotStore {
 	return SnapshotStore{stateDir: stateDir, root: filepath.Join(stateDir, "snapshots", "projects")}
 }
 
-func (s SnapshotStore) ProjectDir(projectID string) (string, error) {
-	if err := ValidateResourceName(projectID); err != nil {
-		return "", fmt.Errorf("invalid Project ID: %w", err)
+func (s SnapshotStore) WorkspaceDir(workspaceID string) (string, error) {
+	if err := ValidateResourceName(workspaceID); err != nil {
+		return "", fmt.Errorf("invalid Workspace ID: %w", err)
 	}
-	return filepath.Join(s.root, projectID), nil
+	return filepath.Join(s.root, workspaceID), nil
 }
 
 // AgentPath gives the private Transcript Snapshot file of one Agent Session.
-func (s SnapshotStore) AgentPath(projectID, agentID string) (string, error) {
-	directory, err := s.ProjectDir(projectID)
+func (s SnapshotStore) AgentPath(workspaceID, agentID string) (string, error) {
+	directory, err := s.WorkspaceDir(workspaceID)
 	if err != nil {
 		return "", err
 	}
@@ -78,15 +89,15 @@ func (s SnapshotStore) AgentPath(projectID, agentID string) (string, error) {
 
 // Save writes the Transcript Snapshot of one Agent Session. It also writes
 // latest.md as a plain copy of this most recent snapshot.
-func (s SnapshotStore) Save(projectID, agentID, markdown string) (SnapshotPaths, error) {
+func (s SnapshotStore) Save(workspaceID, agentID, markdown string) (SnapshotPaths, error) {
 	if markdown == "" {
 		return SnapshotPaths{}, fmt.Errorf("Transcript Snapshot is empty")
 	}
-	directory, err := s.ProjectDir(projectID)
+	directory, err := s.WorkspaceDir(workspaceID)
 	if err != nil {
 		return SnapshotPaths{}, err
 	}
-	agentPath, err := s.AgentPath(projectID, agentID)
+	agentPath, err := s.AgentPath(workspaceID, agentID)
 	if err != nil {
 		return SnapshotPaths{}, err
 	}
@@ -111,13 +122,13 @@ func (s SnapshotStore) Save(projectID, agentID, markdown string) (SnapshotPaths,
 		}
 		initialize = len(entries) == 0
 		if !initialize {
-			if _, err := s.ValidateProject(projectID, false); err != nil {
+			if _, err := s.ValidateWorkspace(workspaceID, false); err != nil {
 				return SnapshotPaths{}, err
 			}
 		}
 	}
 	if initialize {
-		marker, err := json.Marshal(snapshotMarker{Version: 1, Owner: "twt", ProjectID: projectID})
+		marker, err := json.Marshal(snapshotMarker{Version: 1, Owner: "twt", WorkspaceID: workspaceID})
 		if err != nil {
 			return SnapshotPaths{}, fmt.Errorf("encode Transcript Snapshot ownership marker: %w", err)
 		}
@@ -158,8 +169,8 @@ func (s SnapshotStore) ensureAgentsDir(directory string) error {
 	return nil
 }
 
-func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool, error) {
-	directory, err := s.ProjectDir(projectID)
+func (s SnapshotStore) ValidateWorkspace(workspaceID string, allowEmpty bool) (bool, error) {
+	directory, err := s.WorkspaceDir(workspaceID)
 	if err != nil {
 		return false, err
 	}
@@ -217,7 +228,13 @@ func (s SnapshotStore) ValidateProject(projectID string, allowEmpty bool) (bool,
 		return false, fmt.Errorf("read Transcript Snapshot ownership marker: %w", err)
 	}
 	var marker snapshotMarker
-	if json.Unmarshal(data, &marker) != nil || marker.Version != 1 || marker.Owner != "twt" || marker.ProjectID != projectID {
+	markerWorkspaceID, validMarker := marker.workspaceID()
+	if json.Unmarshal(data, &marker) != nil {
+		validMarker = false
+	} else {
+		markerWorkspaceID, validMarker = marker.workspaceID()
+	}
+	if !validMarker || marker.Version != 1 || marker.Owner != "twt" || markerWorkspaceID != workspaceID {
 		return false, clierr.New(clierr.UnsafeState, "Transcript Snapshot directory %q has a conflicting ownership marker", directory)
 	}
 	return true, nil
@@ -248,7 +265,7 @@ func validateSnapshotAgents(directory string) error {
 }
 
 // snapshotAgentNames lists the validated Agent Session snapshot file names of
-// one Project directory.
+// one Workspace directory.
 func snapshotAgentNames(directory string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(directory, snapshotAgentsDirName))
 	if errors.Is(err, os.ErrNotExist) {
@@ -278,14 +295,14 @@ func (s SnapshotStore) List() ([]SnapshotInfo, error) {
 		if ValidateResourceName(entry.Name()) != nil {
 			continue
 		}
-		exists, err := s.ValidateProject(entry.Name(), false)
+		exists, err := s.ValidateWorkspace(entry.Name(), false)
 		if err != nil {
 			return nil, err
 		}
 		if !exists {
 			continue
 		}
-		directory, err := s.ProjectDir(entry.Name())
+		directory, err := s.WorkspaceDir(entry.Name())
 		if err != nil {
 			return nil, err
 		}
@@ -304,17 +321,17 @@ func (s SnapshotStore) List() ([]SnapshotInfo, error) {
 			}
 			bytes += info.Size()
 		}
-		result = append(result, SnapshotInfo{ProjectID: entry.Name(), Directory: directory, Bytes: bytes})
+		result = append(result, SnapshotInfo{WorkspaceID: entry.Name(), Directory: directory, Bytes: bytes})
 	}
 	return result, nil
 }
 
-func (s SnapshotStore) DeleteProject(projectID string, allowEmpty bool) error {
-	exists, err := s.ValidateProject(projectID, allowEmpty)
+func (s SnapshotStore) DeleteWorkspace(workspaceID string, allowEmpty bool) error {
+	exists, err := s.ValidateWorkspace(workspaceID, allowEmpty)
 	if err != nil || !exists {
 		return err
 	}
-	directory, err := s.ProjectDir(projectID)
+	directory, err := s.WorkspaceDir(workspaceID)
 	if err != nil {
 		return err
 	}

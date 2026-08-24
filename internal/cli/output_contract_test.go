@@ -51,19 +51,19 @@ func outputTestOptions(t *testing.T) cli.Options {
 	}
 }
 
-// seedOutputProjects saves count active Projects named project-0..count-1,
-// newest last, so the display order is project-(count-1) first.
-func seedOutputProjects(t *testing.T, options cli.Options, count int) {
+// seedOutputWorkspaces saves count active Workspaces named workspace-0..count-1,
+// newest last, so the display order is workspace-(count-1) first.
+func seedOutputWorkspaces(t *testing.T, options cli.Options, count int) {
 	t.Helper()
 	base := time.Now().UTC().Add(-time.Duration(count) * time.Hour)
 	for index := 0; index < count; index++ {
-		project := domain.Project{
-			Version: domain.ProjectVersion, ID: fmt.Sprintf("project-%d-id", index),
-			Name: fmt.Sprintf("project-%d", index), TemplateName: "example",
-			Status: domain.ProjectActive, CreatedAt: base.Add(time.Duration(index) * time.Hour),
+		workspace := domain.Workspace{
+			Version: domain.WorkspaceVersion, ID: fmt.Sprintf("workspace-%d-id", index),
+			Name: fmt.Sprintf("workspace-%d", index), TemplateName: "example",
+			Status: domain.WorkspaceActive, CreatedAt: base.Add(time.Duration(index) * time.Hour),
 			UpdatedAt: base.Add(time.Duration(index) * time.Hour),
 		}
-		if err := store.NewProjectStore(options.StateDir).Save(project); err != nil {
+		if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -84,7 +84,7 @@ func TestOutputDefaultsToJSONWithoutTerminal(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("templates list without --output is not JSON: %v\n%s", err, stdout)
 	}
-	if envelope.SchemaVersion != 1 {
+	if envelope.SchemaVersion != 2 {
 		t.Fatalf("templates list without --output = %s", stdout)
 	}
 
@@ -93,25 +93,25 @@ func TestOutputDefaultsToJSONWithoutTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("templates list --output text: %v", err)
 	}
-	if strings.Contains(textOut, "schemaVersion") || !strings.Contains(textErr, "No Project Templates exist") {
+	if strings.Contains(textOut, "schemaVersion") || !strings.Contains(textErr, "No Workspace Templates exist") {
 		t.Fatalf("templates list --output text stdout=%q stderr=%q", textOut, textErr)
 	}
 
 	// An interactive command treats the implicit json default like an
 	// explicit --output json.
-	_, _, err = executeRaw(t, options, "start", "some-project")
-	if err == nil || !strings.Contains(err.Error(), "use 'twt projects create' for JSON automation") {
+	_, _, err = executeRaw(t, options, "start", "some-workspace")
+	if err == nil || !strings.Contains(err.Error(), "use 'twt workspaces create' for JSON automation") {
 		t.Fatalf("quick create without a terminal = %v", err)
 	}
 }
 
 func TestNDJSONListsOneObjectPerLine(t *testing.T) {
 	options := outputTestOptions(t)
-	seedOutputProjects(t, options, 2)
+	seedOutputWorkspaces(t, options, 2)
 
-	stdout, _, err := executeRaw(t, options, "projects", "list", "--output", "ndjson", "--limit", "1")
+	stdout, _, err := executeRaw(t, options, "workspaces", "list", "--output", "ndjson", "--limit", "1")
 	if err != nil {
-		t.Fatalf("projects list --output ndjson: %v", err)
+		t.Fatalf("workspaces list --output ndjson: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	if len(lines) != 2 {
@@ -120,7 +120,7 @@ func TestNDJSONListsOneObjectPerLine(t *testing.T) {
 	var element struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(lines[0]), &element); err != nil || element.Name != "project-1" {
+	if err := json.Unmarshal([]byte(lines[0]), &element); err != nil || element.Name != "workspace-1" {
 		t.Fatalf("ndjson element = %q (error %v)", lines[0], err)
 	}
 	if strings.Contains(lines[0], "schemaVersion") {
@@ -135,49 +135,49 @@ func TestNDJSONListsOneObjectPerLine(t *testing.T) {
 	}
 
 	// Commands that are not list commands refuse ndjson.
-	_, _, err = executeRaw(t, options, "projects", "show", "project-0", "--output", "ndjson")
+	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "ndjson")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "ndjson") {
-		t.Fatalf("projects show --output ndjson = %v", err)
+		t.Fatalf("workspaces show --output ndjson = %v", err)
 	}
 }
 
 func TestFieldsMasksReadOutputs(t *testing.T) {
 	options := outputTestOptions(t)
-	seedOutputProjects(t, options, 2)
+	seedOutputWorkspaces(t, options, 2)
 
-	show, _, err := executeRaw(t, options, "projects", "show", "project-0", "--output", "json", "--fields", "id,name")
+	show, _, err := executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "json", "--fields", "id,name")
 	if err != nil {
-		t.Fatalf("projects show --fields: %v", err)
+		t.Fatalf("workspaces show --fields: %v", err)
 	}
 	var shown struct {
 		SchemaVersion int                        `json:"schemaVersion"`
-		Project       map[string]json.RawMessage `json:"project"`
+		Workspace     map[string]json.RawMessage `json:"workspace"`
 	}
 	if err := json.Unmarshal([]byte(show), &shown); err != nil {
-		t.Fatalf("decode projects show --fields: %v\n%s", err, show)
+		t.Fatalf("decode workspaces show --fields: %v\n%s", err, show)
 	}
-	if shown.SchemaVersion != 1 || len(shown.Project) != 2 || shown.Project["id"] == nil || shown.Project["name"] == nil {
-		t.Fatalf("projects show --fields id,name = %s", show)
+	if shown.SchemaVersion != 2 || len(shown.Workspace) != 2 || shown.Workspace["id"] == nil || shown.Workspace["name"] == nil {
+		t.Fatalf("workspaces show --fields id,name = %s", show)
 	}
 
-	list, _, err := executeRaw(t, options, "projects", "list", "--output", "json", "--fields", "name")
+	list, _, err := executeRaw(t, options, "workspaces", "list", "--output", "json", "--fields", "name")
 	if err != nil {
-		t.Fatalf("projects list --fields: %v", err)
+		t.Fatalf("workspaces list --fields: %v", err)
 	}
 	var listed struct {
-		Projects   []map[string]json.RawMessage `json:"projects"`
+		Workspaces []map[string]json.RawMessage `json:"workspaces"`
 		TotalCount int                          `json:"totalCount"`
 	}
 	if err := json.Unmarshal([]byte(list), &listed); err != nil {
-		t.Fatalf("decode projects list --fields: %v\n%s", err, list)
+		t.Fatalf("decode workspaces list --fields: %v\n%s", err, list)
 	}
-	if listed.TotalCount != 2 || len(listed.Projects) != 2 || len(listed.Projects[0]) != 1 || listed.Projects[0]["name"] == nil {
-		t.Fatalf("projects list --fields name = %s", list)
+	if listed.TotalCount != 2 || len(listed.Workspaces) != 2 || len(listed.Workspaces[0]) != 1 || listed.Workspaces[0]["name"] == nil {
+		t.Fatalf("workspaces list --fields name = %s", list)
 	}
 
-	ndjson, _, err := executeRaw(t, options, "projects", "list", "--output", "ndjson", "--fields", "id")
+	ndjson, _, err := executeRaw(t, options, "workspaces", "list", "--output", "ndjson", "--fields", "id")
 	if err != nil {
-		t.Fatalf("projects list ndjson --fields: %v", err)
+		t.Fatalf("workspaces list ndjson --fields: %v", err)
 	}
 	firstLine := strings.Split(strings.TrimSpace(ndjson), "\n")[0]
 	var masked map[string]json.RawMessage
@@ -186,25 +186,25 @@ func TestFieldsMasksReadOutputs(t *testing.T) {
 	}
 
 	// An unknown field name reports the valid names.
-	_, _, err = executeRaw(t, options, "projects", "show", "project-0", "--output", "json", "--fields", "bogus")
+	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "json", "--fields", "bogus")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "valid fields") || !strings.Contains(err.Error(), "name") {
-		t.Fatalf("projects show --fields bogus = %v", err)
+		t.Fatalf("workspaces show --fields bogus = %v", err)
 	}
 
 	// Text output does not support --fields.
-	_, _, err = executeRaw(t, options, "projects", "show", "project-0", "--output", "text", "--fields", "id")
+	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "text", "--fields", "id")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "use --fields with --output json") {
-		t.Fatalf("projects show --output text --fields = %v", err)
+		t.Fatalf("workspaces show --output text --fields = %v", err)
 	}
 }
 
 func TestOffsetWindowsListResults(t *testing.T) {
 	options := outputTestOptions(t)
-	seedOutputProjects(t, options, 3)
+	seedOutputWorkspaces(t, options, 3)
 	type listResult struct {
-		Projects []struct {
+		Workspaces []struct {
 			Name string `json:"name"`
-		} `json:"projects"`
+		} `json:"workspaces"`
 		TotalCount int  `json:"totalCount"`
 		Truncated  bool `json:"truncated"`
 	}
@@ -212,40 +212,40 @@ func TestOffsetWindowsListResults(t *testing.T) {
 		t.Helper()
 		var result listResult
 		if err := json.Unmarshal([]byte(text), &result); err != nil {
-			t.Fatalf("decode projects list: %v\n%s", err, text)
+			t.Fatalf("decode workspaces list: %v\n%s", err, text)
 		}
 		return result
 	}
 
-	window, _, err := executeRaw(t, options, "projects", "list", "--output", "json", "--offset", "1", "--limit", "1")
+	window, _, err := executeRaw(t, options, "workspaces", "list", "--output", "json", "--offset", "1", "--limit", "1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := decode(window)
-	if len(result.Projects) != 1 || result.Projects[0].Name != "project-1" || result.TotalCount != 3 || !result.Truncated {
-		t.Fatalf("projects list --offset 1 --limit 1 = %s", window)
+	if len(result.Workspaces) != 1 || result.Workspaces[0].Name != "workspace-1" || result.TotalCount != 3 || !result.Truncated {
+		t.Fatalf("workspaces list --offset 1 --limit 1 = %s", window)
 	}
 
-	tail, _, err := executeRaw(t, options, "projects", "list", "--output", "json", "--offset", "2")
+	tail, _, err := executeRaw(t, options, "workspaces", "list", "--output", "json", "--offset", "2")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result = decode(tail)
-	if len(result.Projects) != 1 || result.Projects[0].Name != "project-0" || result.TotalCount != 3 || result.Truncated {
-		t.Fatalf("projects list --offset 2 = %s", tail)
+	if len(result.Workspaces) != 1 || result.Workspaces[0].Name != "workspace-0" || result.TotalCount != 3 || result.Truncated {
+		t.Fatalf("workspaces list --offset 2 = %s", tail)
 	}
 
-	beyond, _, err := executeRaw(t, options, "projects", "list", "--output", "json", "--offset", "9")
+	beyond, _, err := executeRaw(t, options, "workspaces", "list", "--output", "json", "--offset", "9")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result = decode(beyond)
-	if len(result.Projects) != 0 || result.TotalCount != 3 || result.Truncated {
-		t.Fatalf("projects list --offset 9 = %s", beyond)
+	if len(result.Workspaces) != 0 || result.TotalCount != 3 || result.Truncated {
+		t.Fatalf("workspaces list --offset 9 = %s", beyond)
 	}
 
-	_, _, err = executeRaw(t, options, "projects", "list", "--output", "json", "--offset", "-1")
+	_, _, err = executeRaw(t, options, "workspaces", "list", "--output", "json", "--offset", "-1")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("projects list --offset -1 = %v", err)
+		t.Fatalf("workspaces list --offset -1 = %v", err)
 	}
 }

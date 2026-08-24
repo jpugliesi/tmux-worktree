@@ -9,18 +9,18 @@ import (
 // providerDescriptor keeps the knowledge about one provider in one place:
 // where the provider stores its transcript files, how a session starts
 // again, how twt reads one linked transcript, and how twt discovers the
-// sessions of a Project.
+// sessions of a Workspace.
 type providerDescriptor struct {
 	root          func(s *Service) string
 	resumeCommand func(sessionID string) []string
-	read          func(s *Service, sessionID string, project domain.Project) (Transcript, error)
+	read          func(s *Service, sessionID string, workspace domain.Workspace) (Transcript, error)
 	// transcriptName selects the JSON Lines files that belong to a session.
 	// A nil value accepts every .jsonl file.
 	transcriptName func(name string) bool
 	// discover reads the session ID and the repository name of one provider
-	// file. A file that twt cannot verify against the Project returns ok
+	// file. A file that twt cannot verify against the Workspace returns ok
 	// false. Discovery must not read the transcript body.
-	discover func(path string, project domain.Project) (sessionID, repositoryName string, ok bool)
+	discover func(path string, workspace domain.Workspace) (sessionID, repositoryName string, ok bool)
 }
 
 // providers is the one table of providers that support verifiable linked

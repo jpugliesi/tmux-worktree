@@ -7,10 +7,10 @@ import (
 )
 
 // scaffoldFS embeds the one-time scaffold notes: the vault hub index, the
-// Board hub index, and the ticket create template. Init and CreateBoard write
+// Project hub index, and the ticket create template. Init and CreateProject write
 // each of them only when the target file is missing.
 //
-//go:embed scaffold/root-index.md scaffold/board-index.md scaffold/ticket.md
+//go:embed scaffold/root-index.md scaffold/project-index.md scaffold/ticket.md
 var scaffoldFS embed.FS
 
 func scaffoldAsset(name string) string {
@@ -31,9 +31,9 @@ func rootIndexContent(home, created string) []byte {
 	return []byte(content)
 }
 
-// boardIndexContent renders the index.md of one Board.
-func boardIndexContent(name, created string) []byte {
-	content := scaffoldAsset("board-index.md")
+// projectIndexContent renders the index.md of one Project.
+func projectIndexContent(name, created string) []byte {
+	content := scaffoldAsset("project-index.md")
 	content = strings.ReplaceAll(content, "{{TITLE}}", name)
 	content = strings.ReplaceAll(content, "{{CREATED}}", created)
 	return []byte(content)

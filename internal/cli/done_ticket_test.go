@@ -24,20 +24,20 @@ func doneTicketFixture(t *testing.T) (cli.Options, string) {
 	return options, home
 }
 
-// createLinkedProject creates one Project and links it to the Ticket slug.
-func createLinkedProject(t *testing.T, options cli.Options, name, slug string) domain.Project {
+// createLinkedWorkspace creates one Workspace and links it to the Ticket slug.
+func createLinkedWorkspace(t *testing.T, options cli.Options, name, slug string) domain.Workspace {
 	t.Helper()
-	executeWithOptions(t, options, nil, "projects", "create", name, "--template", "example", "--no-open")
-	projects := store.NewProjectStore(options.StateDir)
-	project, err := projects.Find(name)
+	executeWithOptions(t, options, nil, "workspaces", "create", name, "--template", "example", "--no-open")
+	workspaces := store.NewWorkspaceStore(options.StateDir)
+	workspace, err := workspaces.Find(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	project.Ticket = slug
-	if err := projects.Save(project); err != nil {
+	workspace.Tickets = []string{slug}
+	if err := workspaces.Save(workspace); err != nil {
 		t.Fatal(err)
 	}
-	return project
+	return workspace
 }
 
 // ticketStatusDone reports whether the Ticket file carries the done status.
@@ -49,12 +49,12 @@ func ticketStatusDone(t *testing.T, home string) bool {
 func TestDoneAsksToCloseTheLinkedTicket(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	prompt := `Close Ticket "fix-auth"? [y/N] `
 	hint := "Run 'twt tickets close fix-auth' when the work is complete."
 
 	// Dry run never prompts and changes nothing.
-	project := createLinkedProject(t, options, "dry-linked", "fix-auth")
+	workspace := createLinkedWorkspace(t, options, "dry-linked", "fix-auth")
 	dryOut, dryErr, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "dry-linked", "--dry-run")
 	if err != nil {
 		t.Fatal(err)
@@ -80,12 +80,12 @@ func TestDoneAsksToCloseTheLinkedTicket(t *testing.T) {
 	if ticketStatusDone(t, home) {
 		t.Fatal("the answer n closed the Ticket")
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find(project.ID); err == nil {
-		t.Fatal("done kept the Project record")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID); err == nil {
+		t.Fatal("done kept the Workspace record")
 	}
 
 	// The answer "y" closes the Ticket after the removal.
-	createLinkedProject(t, options, "yes-linked", "fix-auth")
+	createLinkedWorkspace(t, options, "yes-linked", "fix-auth")
 	stdout, stderr, err = executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "yes-linked")
 	if err != nil {
 		t.Fatal(err)
@@ -104,8 +104,8 @@ func TestDoneAsksToCloseTheLinkedTicket(t *testing.T) {
 func TestDoneWithoutATerminalSkipsThePromptAndHints(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
-	createLinkedProject(t, options, "quiet-linked", "fix-auth")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	createLinkedWorkspace(t, options, "quiet-linked", "fix-auth")
 
 	// A nil stdin keeps os.Stdin, which is not a terminal under go test.
 	stdout, stderr, err := executeCollectingInput(t, options, nil, "done", "quiet-linked")
@@ -123,11 +123,39 @@ func TestDoneWithoutATerminalSkipsThePromptAndHints(t *testing.T) {
 	}
 }
 
+func TestDoneWithManyTicketsDoesNotCloseThem(t *testing.T) {
+	options, home := doneTicketFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests")
+	workspace := createLinkedWorkspace(t, options, "many-linked", "fix-auth")
+	workspace.Tickets = []string{"fix-auth", "add-auth-tests"}
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "many-linked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr, "Close Ticket") {
+		t.Fatalf("done prompted for many Tickets: %q", stderr)
+	}
+	for _, slug := range workspace.Tickets {
+		if !strings.Contains(stdout, "twt tickets close "+slug) {
+			t.Fatalf("done has no close command for %q: %q", slug, stdout)
+		}
+		if strings.Contains(readTicketFile(t, filepath.Join(home, slug+".md")), "status: done") {
+			t.Fatalf("done closed Ticket %q", slug)
+		}
+	}
+}
+
 func TestDoneKeepNeverPromptsForTheTicket(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
-	project := createLinkedProject(t, options, "keep-linked", "fix-auth")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	workspace := createLinkedWorkspace(t, options, "keep-linked", "fix-auth")
 
 	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "keep-linked", "--keep")
 	if err != nil {
@@ -142,18 +170,18 @@ func TestDoneKeepNeverPromptsForTheTicket(t *testing.T) {
 	if ticketStatusDone(t, home) {
 		t.Fatal("done --keep closed the Ticket")
 	}
-	archived, err := store.NewProjectStore(options.StateDir).Find(project.ID)
-	if err != nil || archived.Status != domain.ProjectArchived {
-		t.Fatalf("Project after done --keep: status=%q error=%v", archived.Status, err)
+	archived, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || archived.Status != domain.WorkspaceArchived {
+		t.Fatalf("Workspace after done --keep: status=%q error=%v", archived.Status, err)
 	}
 }
 
 func TestDoneWarnsWhenTheTicketCloseIsLocked(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TWT_PROJECT_ID", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
 	executeWithOptions(t, options, nil, "tickets", "claim", "fix-auth", "--as", "someone-else")
-	project := createLinkedProject(t, options, "locked-linked", "fix-auth")
+	workspace := createLinkedWorkspace(t, options, "locked-linked", "fix-auth")
 
 	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "locked-linked")
 	if err != nil {
@@ -168,20 +196,20 @@ func TestDoneWarnsWhenTheTicketCloseIsLocked(t *testing.T) {
 	if ticketStatusDone(t, home) {
 		t.Fatal("done closed a Ticket that a different claimant holds")
 	}
-	if !strings.Contains(stdout, "Removed Project \"locked-linked\"") {
-		t.Fatalf("done did not remove the Project: %q", stdout)
+	if !strings.Contains(stdout, "Removed Workspace \"locked-linked\"") {
+		t.Fatalf("done did not remove the Workspace: %q", stdout)
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find(project.ID); err == nil {
-		t.Fatal("done kept the Project record")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID); err == nil {
+		t.Fatal("done kept the Workspace record")
 	}
 }
 
 func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
 	options, home := doneTicketFixture(t)
-	t.Setenv("TWT_PROJECT_ID", "")
-	createLinkedProject(t, options, "worker-src", "fix-auth")
-	executeWithOptions(t, options, nil, "projects", "create", "worker-dest", "--template", "example", "--no-open")
-	source, err := store.NewProjectStore(options.StateDir).Find("worker-src")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	createLinkedWorkspace(t, options, "worker-src", "fix-auth")
+	executeWithOptions(t, options, nil, "workspaces", "create", "worker-dest", "--template", "example", "--no-open")
+	source, err := store.NewWorkspaceStore(options.StateDir).Find("worker-src")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +228,8 @@ func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
 	if err := <-signalResult; err != nil {
 		t.Fatalf("signal done worker: %v", err)
 	}
-	if _, err := store.NewProjectStore(options.StateDir).Find(source.ID); err == nil {
-		t.Fatal("done worker kept the Project record")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID); err == nil {
+		t.Fatal("done worker kept the Workspace record")
 	}
 	if !ticketStatusDone(t, home) {
 		t.Fatal("done worker did not close the confirmed Ticket")

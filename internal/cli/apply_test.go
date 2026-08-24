@@ -40,7 +40,7 @@ func applyRequestError(t *testing.T, options cli.Options, request string, extra 
 	return err
 }
 
-func TestApplyEditsAndRemovesProjectTemplates(t *testing.T) {
+func TestApplyEditsAndRemovesWorkspaceTemplates(t *testing.T) {
 	root := t.TempDir()
 	options := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),
@@ -60,11 +60,11 @@ func TestApplyEditsAndRemovesProjectTemplates(t *testing.T) {
 	document := string(data)
 	for _, want := range []string{"make", "setup", "npm", "install"} {
 		if !strings.Contains(document, want) {
-			t.Fatalf("Project Template after templates.init.set misses %q:\n%s", want, document)
+			t.Fatalf("Workspace Template after templates.init.set misses %q:\n%s", want, document)
 		}
 	}
 
-	// Project initialization needs a working directory, and repository
+	// Workspace initialization needs a working directory, and repository
 	// initialization always runs in the repository worktree.
 	if err := applyRequestError(t, options, `{"operation":"templates.init.set","template":{"name":"product","command":["make"]}}`); !strings.Contains(err.Error(), "template.cwd") {
 		t.Fatalf("templates.init.set without cwd = %v", err)
@@ -87,24 +87,24 @@ func TestApplyEditsAndRemovesProjectTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "web") {
-		t.Fatalf("Project Template keeps the removed repository:\n%s", data)
+		t.Fatalf("Workspace Template keeps the removed repository:\n%s", data)
 	}
 	if err := applyRequestError(t, options, `{"operation":"templates.repos.remove","template":{"name":"product","repo":"web"}}`); clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("second templates.repos.remove = %v (code %q)", err, clierr.CodeOf(err))
 	}
 
-	// A Project record that names the Project Template blocks the removal.
+	// A Workspace record that names the Workspace Template blocks the removal.
 	now := time.Now().UTC()
-	if err := store.NewProjectStore(options.StateDir).Save(domain.Project{
-		Version: domain.ProjectVersion, ID: "project-user-id", Name: "user", TemplateName: "product",
-		Status: domain.ProjectActive, CreatedAt: now, UpdatedAt: now,
+	if err := store.NewWorkspaceStore(options.StateDir).Save(domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-user-id", Name: "user", TemplateName: "product",
+		Status: domain.WorkspaceActive, CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := applyRequestError(t, options, `{"operation":"templates.remove","template":{"name":"product"}}`); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("templates.remove of a used Project Template = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("templates.remove of a used Workspace Template = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if err := store.NewProjectStore(options.StateDir).Delete("project-user-id"); err != nil {
+	if err := store.NewWorkspaceStore(options.StateDir).Delete("workspace-user-id"); err != nil {
 		t.Fatal(err)
 	}
 	deleted := applyRequest(t, options, `{"operation":"templates.remove","template":{"name":"product"}}`)
@@ -116,7 +116,7 @@ func TestApplyEditsAndRemovesProjectTemplates(t *testing.T) {
 	}
 }
 
-func TestApplyRetriesProjectSetupAndRefusesToAttach(t *testing.T) {
+func TestApplyRetriesWorkspaceSetupAndRefusesToAttach(t *testing.T) {
 	root := t.TempDir()
 	options := cli.Options{
 		ConfigDir: filepath.Join(root, "config"),
@@ -124,49 +124,49 @@ func TestApplyRetriesProjectSetupAndRefusesToAttach(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}
 	now := time.Now().UTC()
-	projects := store.NewProjectStore(options.StateDir)
-	if err := projects.Save(domain.Project{
-		Version: domain.ProjectVersion, ID: "project-retry-id", Name: "retry-me", TemplateName: "example",
-		Status: domain.ProjectActive, CreatedAt: now, UpdatedAt: now,
+	workspaces := store.NewWorkspaceStore(options.StateDir)
+	if err := workspaces.Save(domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-retry-id", Name: "retry-me", TemplateName: "example",
+		Status: domain.WorkspaceActive, CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	retry := applyRequest(t, options, `{"operation":"projects.setup.retry","project":{"reference":"retry-me"}}`, "--dry-run")
-	if !strings.Contains(retry, `"operation":"projects.setup.retry"`) || !strings.Contains(retry, `"status":"valid"`) {
-		t.Fatalf("apply projects.setup.retry --dry-run = %s", retry)
+	retry := applyRequest(t, options, `{"operation":"workspaces.setup.retry","workspace":{"reference":"retry-me"}}`, "--dry-run")
+	if !strings.Contains(retry, `"operation":"workspaces.setup.retry"`) || !strings.Contains(retry, `"status":"valid"`) {
+		t.Fatalf("apply workspaces.setup.retry --dry-run = %s", retry)
 	}
-	if err := applyRequestError(t, options, `{"operation":"projects.setup.retry","project":{"reference":"no-such-project"}}`, "--dry-run"); clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("projects.setup.retry of an unknown Project = %v (code %q)", err, clierr.CodeOf(err))
+	if err := applyRequestError(t, options, `{"operation":"workspaces.setup.retry","workspace":{"reference":"no-such-workspace"}}`, "--dry-run"); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("workspaces.setup.retry of an unknown Workspace = %v (code %q)", err, clierr.CodeOf(err))
 	}
 
 	archived := now
-	if err := projects.Save(domain.Project{
-		Version: domain.ProjectVersion, ID: "project-archived-id", Name: "archived-one", TemplateName: "example",
-		Status: domain.ProjectArchived, CreatedAt: now, UpdatedAt: now, ArchivedAt: &archived,
+	if err := workspaces.Save(domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-archived-id", Name: "archived-one", TemplateName: "example",
+		Status: domain.WorkspaceArchived, CreatedAt: now, UpdatedAt: now, ArchivedAt: &archived,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyRequestError(t, options, `{"operation":"projects.setup.retry","project":{"reference":"archived-one"}}`, "--dry-run"); !strings.Contains(err.Error(), "archived") {
-		t.Fatalf("projects.setup.retry of an archived Project = %v", err)
+	if err := applyRequestError(t, options, `{"operation":"workspaces.setup.retry","workspace":{"reference":"archived-one"}}`, "--dry-run"); !strings.Contains(err.Error(), "archived") {
+		t.Fatalf("workspaces.setup.retry of an archived Workspace = %v", err)
 	}
 
 	// Apply repairs the tmux session, but it never attaches a tmux client.
-	if err := applyRequestError(t, options, `{"operation":"projects.open","project":{"reference":"retry-me","noAttach":false}}`, "--dry-run"); !strings.Contains(err.Error(), "noAttach") {
-		t.Fatalf("projects.open with noAttach false = %v", err)
+	if err := applyRequestError(t, options, `{"operation":"workspaces.open","workspace":{"reference":"retry-me","noAttach":false}}`, "--dry-run"); !strings.Contains(err.Error(), "noAttach") {
+		t.Fatalf("workspaces.open with noAttach false = %v", err)
 	}
-	open := applyRequest(t, options, `{"operation":"projects.open","project":{"reference":"retry-me","noAttach":true}}`, "--dry-run")
-	if !strings.Contains(open, `"operation":"projects.open"`) || !strings.Contains(open, `"status":"valid"`) {
-		t.Fatalf("apply projects.open --dry-run = %s", open)
+	open := applyRequest(t, options, `{"operation":"workspaces.open","workspace":{"reference":"retry-me","noAttach":true}}`, "--dry-run")
+	if !strings.Contains(open, `"operation":"workspaces.open"`) || !strings.Contains(open, `"status":"valid"`) {
+		t.Fatalf("apply workspaces.open --dry-run = %s", open)
 	}
 }
 
 func TestApplyPlansAndAppliesStorageClean(t *testing.T) {
 	options := maintenanceOptions(t)
-	saveProjectRecord(t, options, "live-project", "live-project", domain.ProjectActive, 512)
+	saveWorkspaceRecord(t, options, "live-workspace", "live-workspace", domain.WorkspaceActive, 512)
 	now := time.Now().UTC()
 	agents := store.NewAgentStore(options.StateDir)
 	if err := agents.Save(domain.AgentSession{
-		Version: domain.AgentVersion, ID: "orphan-agent", ProjectID: "removed-project", Provider: "codex",
+		Version: domain.AgentVersion, ID: "orphan-agent", WorkspaceID: "removed-workspace", Provider: "codex",
 		Label: "old", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
@@ -240,7 +240,7 @@ func TestApplyEditsAndScaffoldsTickets(t *testing.T) {
 	}
 }
 
-func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
+func TestApplyDrivesAgentSessionsOfAWorkspace(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -264,10 +264,10 @@ func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
 		ConfigDir: configDir, StateDir: filepath.Join(root, "state"),
 		DataDir: filepath.Join(root, "data"), TmuxSocket: socket,
 	}
-	executeWithOptions(t, options, nil, "projects", "create", "agentwork", "--template", "agentwork", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "agentwork", "--template", "agentwork", "--no-open")
 
 	registration := applyRequest(t, options,
-		`{"operation":"agents.register","agent":{"project":"agentwork","provider":"command","label":"sleeper","resumeCommand":["sleep","60"]}}`)
+		`{"operation":"agents.register","agent":{"workspace":"agentwork","provider":"command","label":"sleeper","resumeCommand":["sleep","60"]}}`)
 	var registered struct {
 		ID string `json:"id"`
 	}
@@ -277,7 +277,7 @@ func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
 
 	// A pane of a terminal has no meaning for apply.
 	if err := applyRequestError(t, options,
-		`{"operation":"agents.register","agent":{"project":"agentwork","provider":"command","pane":"current"}}`); !strings.Contains(err.Error(), "pane") {
+		`{"operation":"agents.register","agent":{"workspace":"agentwork","provider":"command","pane":"current"}}`); !strings.Contains(err.Error(), "pane") {
 		t.Fatalf("agents.register with the pane value current = %v", err)
 	}
 
@@ -286,24 +286,24 @@ func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
 		t.Fatalf("apply agents.resume = %s", resumed)
 	}
 
-	if err := applyRequestError(t, options, fmt.Sprintf(`{"operation":"agents.send","agent":{"reference":%q,"project":"agentwork"}}`, registered.ID)); !strings.Contains(err.Error(), "agent.text") {
+	if err := applyRequestError(t, options, fmt.Sprintf(`{"operation":"agents.send","agent":{"reference":%q,"workspace":"agentwork"}}`, registered.ID)); !strings.Contains(err.Error(), "agent.text") {
 		t.Fatalf("agents.send without text = %v", err)
 	}
-	sent := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.send","agent":{"reference":%q,"project":"agentwork","text":"look at the tests\n"}}`, registered.ID))
+	sent := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.send","agent":{"reference":%q,"workspace":"agentwork","text":"look at the tests\n"}}`, registered.ID))
 	if !strings.Contains(sent, `"status":"sent"`) {
 		t.Fatalf("apply agents.send = %s", sent)
 	}
 
 	// Only a provider with verifiable transcripts accepts a link.
 	reader := applyRequest(t, options,
-		`{"operation":"agents.register","agent":{"project":"agentwork","provider":"codex","label":"reader","resumeCommand":["codex","resume","session-one"]}}`)
+		`{"operation":"agents.register","agent":{"workspace":"agentwork","provider":"codex","label":"reader","resumeCommand":["codex","resume","session-one"]}}`)
 	var readerAgent struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal([]byte(reader), &readerAgent); err != nil || readerAgent.ID == "" {
 		t.Fatalf("decode the second agents.register: %v\n%s", err, reader)
 	}
-	linked := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.transcript.link","agent":{"reference":%q,"project":"agentwork","session":"session-two"}}`, readerAgent.ID))
+	linked := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.transcript.link","agent":{"reference":%q,"workspace":"agentwork","session":"session-two"}}`, readerAgent.ID))
 	if !strings.Contains(linked, `"operation":"agents.transcript.link"`) {
 		t.Fatalf("apply agents.transcript.link = %s", linked)
 	}
@@ -315,7 +315,7 @@ func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
 		t.Fatalf("provider session ID after the link = %q", stored.ProviderSessionID)
 	}
 
-	removed := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.rm","agent":{"reference":%q,"project":"agentwork"}}`, registered.ID))
+	removed := applyRequest(t, options, fmt.Sprintf(`{"operation":"agents.rm","agent":{"reference":%q,"workspace":"agentwork"}}`, registered.ID))
 	if !strings.Contains(removed, `"operation":"agents.rm"`) || !strings.Contains(removed, `"status":"applied"`) {
 		t.Fatalf("apply agents.rm = %s", removed)
 	}
@@ -326,13 +326,13 @@ func TestApplyDrivesAgentSessionsOfAProject(t *testing.T) {
 
 func TestApplyRefusesInteractiveOperations(t *testing.T) {
 	options := maintenanceOptions(t)
-	err := applyRequestError(t, options, `{"operation":"projects.switch","project":{"reference":"any"}}`)
+	err := applyRequestError(t, options, `{"operation":"workspaces.switch","workspace":{"reference":"any"}}`)
 	if clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("unsupported operation code = %q", clierr.CodeOf(err))
 	}
 	for _, name := range []string{
 		"templates.remove", "templates.prepare", "templates.init.set", "templates.repos.remove",
-		"projects.open", "projects.setup.retry", "agents.send", "agents.resume", "agents.rm",
+		"workspaces.open", "workspaces.setup.retry", "agents.send", "agents.resume", "agents.rm",
 		"agents.transcript.link", "storage.clean", "tickets.init", "tickets.edit",
 	} {
 		if !strings.Contains(err.Error(), name) {

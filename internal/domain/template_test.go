@@ -116,12 +116,12 @@ func TestTemplateValidatesTheSessionCommand(t *testing.T) {
 		{
 			name:    "absolute directory",
 			session: &SessionSpec{Command: []string{"./layout.sh"}, CWD: "/etc"},
-			message: "cwd must stay inside the Project root",
+			message: "cwd must stay inside the Workspace root",
 		},
 		{
-			name:    "directory above the Project root",
+			name:    "directory above the Workspace root",
 			session: &SessionSpec{Command: []string{"./layout.sh"}, CWD: "../elsewhere"},
-			message: "cwd must stay inside the Project root",
+			message: "cwd must stay inside the Workspace root",
 		},
 	}
 	for _, test := range tests {

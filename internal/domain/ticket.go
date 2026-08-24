@@ -54,7 +54,7 @@ type Ticket struct {
 	Aliases   []string     `yaml:"aliases" json:"-"`
 	Status    TicketStatus `yaml:"status" json:"status"`
 	Priority  int          `yaml:"priority" json:"priority"`
-	Board     string       `yaml:"board" json:"board"`
+	Project   string       `yaml:"project" json:"project"`
 	BlockedBy []string     `yaml:"blocked_by" json:"blockedBy"`
 	ClaimedBy string       `yaml:"claimed_by" json:"claimedBy"`
 	ClaimedAt string       `yaml:"claimed_at" json:"-"`
@@ -63,8 +63,8 @@ type Ticket struct {
 	Path      string       `yaml:"-" json:"path"`
 }
 
-// Board is one directory of Tickets under the Tickets home.
-type Board struct {
+// Project is one directory of Tickets under the Tickets home.
+type Project struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
 	Tickets  int    `json:"tickets"`

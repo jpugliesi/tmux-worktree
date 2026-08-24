@@ -16,11 +16,11 @@ local function root_for(path)
   return vim.fs.root(path, { ".git" })
 end
 
--- Returns the notes of one Project, or all notes when `project_id` is nil.
-local function notes_for(project_id)
+-- Returns the notes of one Workspace, or all notes when `workspace_id` is nil.
+local function notes_for(workspace_id)
   local matches = {}
   for _, note in ipairs(notes) do
-    if not project_id or note.project_id == project_id then
+    if not workspace_id or note.workspace_id == workspace_id then
       matches[#matches + 1] = note
     end
   end
@@ -89,7 +89,7 @@ function M.add(comment, start_line, end_line, done)
       return
     end
     if not context.repositoryName or context.repositoryName == "" then
-      done("the file is not in a twt Project repository")
+      done("the file is not in a twt Workspace repository")
       return
     end
     local mark = vim.api.nvim_buf_set_extmark(buffer, namespace, start_line - 1, 0, {
@@ -102,7 +102,7 @@ function M.add(comment, start_line, end_line, done)
     })
     notes[#notes + 1] = {
       id = next_id,
-      project_id = context.project.id,
+      workspace_id = context.workspace.id,
       repository = context.repositoryName,
       root = root,
       buffer = buffer,
@@ -114,11 +114,11 @@ function M.add(comment, start_line, end_line, done)
   end)
 end
 
--- Builds the message of one Project review batch. It returns
+-- Builds the message of one Workspace review batch. It returns
 -- `err`, or `nil, { text = text, note_ids = note_ids }`.
-function M.format(project_id)
-  local batch = notes_for(project_id)
-  if #batch == 0 then return "this Project has no review notes" end
+function M.format(workspace_id)
+  local batch = notes_for(workspace_id)
+  if #batch == 0 then return "this Workspace has no review notes" end
   local parts = { "Please address these review notes:" }
   local note_ids = {}
   for index, note in ipairs(batch) do
@@ -131,9 +131,9 @@ function M.format(project_id)
   return nil, { text = table.concat(parts, "\n"), note_ids = note_ids }
 end
 
-function M.clear(project_id)
+function M.clear(workspace_id)
   for index = #notes, 1, -1 do
-    if not project_id or notes[index].project_id == project_id then
+    if not workspace_id or notes[index].workspace_id == workspace_id then
       remove(index)
     end
   end
@@ -141,18 +141,18 @@ end
 
 function M.clear_current(done)
   done = done or function() end
-  client.project_context(function(err, context)
+  client.workspace_context(function(err, context)
     if err then
       done(err)
       return
     end
-    if #notes_for(context.project.id) == 0 then
-      done("this Project has no review notes")
+    if #notes_for(context.workspace.id) == 0 then
+      done("this Workspace has no review notes")
       return
     end
     config.get().confirm("Are you sure you want to clear all review notes?", function(yes)
       if not yes then return end
-      M.clear(context.project.id)
+      M.clear(context.workspace.id)
       done(nil)
     end)
   end)
@@ -257,12 +257,12 @@ end
 
 function M.send(done)
   done = done or function() end
-  client.project_context(function(err, context, directory)
+  client.workspace_context(function(err, context, directory)
     if err then
       done(err)
       return
     end
-    local format_err, batch = M.format(context.project.id)
+    local format_err, batch = M.format(context.workspace.id)
     if format_err then
       done(format_err)
       return
@@ -270,7 +270,7 @@ function M.send(done)
     agents.send(batch.text, function(send_err, result)
       if not send_err and config.get().clear_after_send then clear_ids(batch.note_ids) end
       done(send_err, result)
-    end, { project_id = context.project.id, directory = directory })
+    end, { workspace_id = context.workspace.id, directory = directory })
   end)
 end
 
@@ -393,21 +393,21 @@ function M.prompt_delete(done)
   config.get().select(existing, note_select_opts("Delete a twt review note"), drop)
 end
 
--- Lists the review notes of the current Project, then opens, deletes, or
+-- Lists the review notes of the current Workspace, then opens, deletes, or
 -- moves to one.
 function M.prompt_notes(done)
   done = done or function() end
-  client.project_context(function(err, context)
+  client.workspace_context(function(err, context)
     if err then
       done(err)
       return
     end
-    local project_notes = notes_for(context.project.id)
-    if #project_notes == 0 then
-      done("this Project has no review notes")
+    local workspace_notes = notes_for(context.workspace.id)
+    if #workspace_notes == 0 then
+      done("this Workspace has no review notes")
       return
     end
-    config.get().select(project_notes, note_select_opts("Select a twt review note"), function(note)
+    config.get().select(workspace_notes, note_select_opts("Select a twt review note"), function(note)
       if not note then done(nil); return end
       config.get().select({ "Open", "Delete", "Go to the line" }, { prompt = label(note) }, function(choice)
         if choice == "Open" then

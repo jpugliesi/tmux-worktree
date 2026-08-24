@@ -7,8 +7,8 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
-	projectservice "github.com/jpugliesi/tmux-worktree/internal/project"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +57,7 @@ func templateFlagCompletion(templateStore store.TemplateStore) completionFunc {
 	}
 }
 
-// templateNameCompletion completes the first positional Project Template name.
+// templateNameCompletion completes the first positional Workspace Template name.
 func templateNameCompletion(templateStore store.TemplateStore) completionFunc {
 	return func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -68,7 +68,7 @@ func templateNameCompletion(templateStore store.TemplateStore) completionFunc {
 }
 
 // templateRepositoryCompletion completes TEMPLATE, then the repositories of
-// that Project Template.
+// that Workspace Template.
 func templateRepositoryCompletion(templateStore store.TemplateStore) completionFunc {
 	return func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -81,7 +81,7 @@ func templateRepositoryCompletion(templateStore store.TemplateStore) completionF
 	}
 }
 
-// repositoryNames lists the repository names of one Project Template.
+// repositoryNames lists the repository names of one Workspace Template.
 func repositoryNames(templateStore store.TemplateStore, templateName, toComplete string) []string {
 	template, err := templateStore.Load(templateName)
 	if err != nil {
@@ -94,56 +94,56 @@ func repositoryNames(templateStore store.TemplateStore, templateName, toComplete
 	return matching(names, toComplete)
 }
 
-// projectFlagCompletion completes a --project flag value.
-func projectFlagCompletion(projects *projectservice.Service) completionFunc {
+// workspaceFlagCompletion completes a --workspace flag value.
+func workspaceFlagCompletion(workspaces *workspaceservice.Service) completionFunc {
 	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return matching(projectReferences(projects), toComplete), noFileCompletion
+		return matching(workspaceReferences(workspaces), toComplete), noFileCompletion
 	}
 }
 
-// projectNameCompletion completes the first positional Project name and the
+// workspaceNameCompletion completes the first positional Workspace name and the
 // current sentinel.
-func projectNameCompletion(projects *projectservice.Service) completionFunc {
+func workspaceNameCompletion(workspaces *workspaceservice.Service) completionFunc {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
 		}
-		return matching(projectReferences(projects), toComplete), noFileCompletion
+		return matching(workspaceReferences(workspaces), toComplete), noFileCompletion
 	}
 }
 
-// projectRepositoryCompletion completes PROJECT, then the repositories of
-// that Project.
-func projectRepositoryCompletion(projects *projectservice.Service) completionFunc {
+// workspaceRepositoryCompletion completes WORKSPACE, then the repositories of
+// that Workspace.
+func workspaceRepositoryCompletion(workspaces *workspaceservice.Service) completionFunc {
 	return func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return projectNameCompletion(projects)(command, args, toComplete)
+			return workspaceNameCompletion(workspaces)(command, args, toComplete)
 		}
 		if len(args) > 1 {
 			return nil, noFileCompletion
 		}
-		project, err := resolveProject(projects, args[0])
+		workspace, err := resolveWorkspace(workspaces, args[0])
 		if err != nil {
 			return nil, noFileCompletion
 		}
-		names := make([]string, 0, len(project.Repositories))
-		for _, repository := range project.Repositories {
+		names := make([]string, 0, len(workspace.Repositories))
+		for _, repository := range workspace.Repositories {
 			names = append(names, repository.Name)
 		}
 		return matching(names, toComplete), noFileCompletion
 	}
 }
 
-// projectReferences lists every Project name and the current sentinel.
-func projectReferences(projects *projectservice.Service) []string {
-	list, err := projects.List()
+// workspaceReferences lists every Workspace name and the current sentinel.
+func workspaceReferences(workspaces *workspaceservice.Service) []string {
+	list, err := workspaces.List()
 	if err != nil {
 		return nil
 	}
 	names := make([]string, 0, len(list)+1)
-	names = append(names, currentProjectReference)
-	for _, project := range list {
-		names = append(names, project.Name)
+	names = append(names, currentWorkspaceReference)
+	for _, workspace := range list {
+		names = append(names, workspace.Name)
 	}
 	return names
 }
@@ -155,23 +155,23 @@ func projectReferences(projects *projectservice.Service) []string {
 const completionDiscoveryWindow = 14 * 24 * time.Hour
 
 // agentReferenceCompletion completes an AGENT reference. The candidates are
-// the registered Agent Sessions of the Project, with the label as the
-// description, and the provider sessions that the Project discovers, with the
+// the registered Agent Sessions of the Workspace, with the label as the
+// description, and the provider sessions that the Workspace discovers, with the
 // provider as the description. Every twt command that takes an AGENT
 // reference adopts a discovered session on first touch, so a discovered
 // session ID is a valid value.
-func agentReferenceCompletion(agents *agentservice.Service, projects *projectservice.Service, stateDir string) completionFunc {
+func agentReferenceCompletion(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) completionFunc {
 	return func(command *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
 		}
-		scope, ok := completionScopeOf(command, projects)
+		scope, ok := completionScopeOf(command, workspaces)
 		if !ok {
 			return nil, noFileCompletion
 		}
 		candidates := []string{}
-		for _, project := range scope.projects {
-			registered, err := agents.List(project.ID)
+		for _, workspace := range scope.workspaces {
+			registered, err := agents.List(workspace.ID)
 			if err != nil {
 				continue
 			}
@@ -181,7 +181,7 @@ func agentReferenceCompletion(agents *agentservice.Service, projects *projectser
 			if !scope.discover {
 				continue
 			}
-			found, err := discoverProjectSessionsSince(project, stateDir, registered, time.Now().Add(-completionDiscoveryWindow))
+			found, err := discoverWorkspaceSessionsSince(workspace, stateDir, registered, time.Now().Add(-completionDiscoveryWindow))
 			if err != nil {
 				continue
 			}
@@ -193,42 +193,42 @@ func agentReferenceCompletion(agents *agentservice.Service, projects *projectser
 	}
 }
 
-// completionScope is the Project set that one Agent Session completion reads.
+// completionScope is the Workspace set that one Agent Session completion reads.
 type completionScope struct {
-	projects []domain.Project
+	workspaces []domain.Workspace
 	// discover permits the provider scan. It is off for the fallback that has
-	// no single Project, because one scan for each Project is too slow for a
+	// no single Workspace, because one scan for each Workspace is too slow for a
 	// key press.
 	discover bool
 }
 
-// completionScopeOf resolves the Projects of one Agent Session completion the
-// same way the command resolves its Project: a set --project flag selects that
-// Project, and every other case uses the current Project. A command without a
-// --project flag, such as agents focus, falls back to the registered Agent
-// Sessions of every Project, so a reference still completes outside a Project
+// completionScopeOf resolves the Workspaces of one Agent Session completion the
+// same way the command resolves its Workspace: a set --workspace flag selects that
+// Workspace, and every other case uses the current Workspace. A command without a
+// --workspace flag, such as agents focus, falls back to the registered Agent
+// Sessions of every Workspace, so a reference still completes outside a Workspace
 // directory. A resolution failure gives no candidates, because a completion
 // must never report an error.
-func completionScopeOf(command *cobra.Command, projects *projectservice.Service) (completionScope, bool) {
-	flag := command.Flags().Lookup("project")
+func completionScopeOf(command *cobra.Command, workspaces *workspaceservice.Service) (completionScope, bool) {
+	flag := command.Flags().Lookup("workspace")
 	if flag != nil && flag.Changed {
-		project, err := resolveProject(projects, flag.Value.String())
+		workspace, err := resolveWorkspace(workspaces, flag.Value.String())
 		if err != nil {
 			return completionScope{}, false
 		}
-		return completionScope{projects: []domain.Project{project}, discover: true}, true
+		return completionScope{workspaces: []domain.Workspace{workspace}, discover: true}, true
 	}
-	if project, err := resolveProject(projects, currentProjectReference); err == nil {
-		return completionScope{projects: []domain.Project{project}, discover: true}, true
+	if workspace, err := resolveWorkspace(workspaces, currentWorkspaceReference); err == nil {
+		return completionScope{workspaces: []domain.Workspace{workspace}, discover: true}, true
 	}
 	if flag != nil {
 		return completionScope{}, false
 	}
-	list, err := projects.List()
+	list, err := workspaces.List()
 	if err != nil {
 		return completionScope{}, false
 	}
-	return completionScope{projects: list}, true
+	return completionScope{workspaces: list}, true
 }
 
 // withDescription builds one completion candidate with its shell description.
@@ -240,14 +240,14 @@ func withDescription(value, description string) string {
 	return value + "\t" + description
 }
 
-// adoptSessionCompletion completes the SESSION argument of projects adopt with
-// the tmux sessions that no Project owns.
-func adoptSessionCompletion(projects *projectservice.Service) completionFunc {
+// adoptSessionCompletion completes the SESSION argument of workspaces adopt with
+// the tmux sessions that no Workspace owns.
+func adoptSessionCompletion(workspaces *workspaceservice.Service) completionFunc {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
 		}
-		return matching(projects.AdoptableSessions(), toComplete), noFileCompletion
+		return matching(workspaces.AdoptableSessions(), toComplete), noFileCompletion
 	}
 }
 
