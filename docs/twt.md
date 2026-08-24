@@ -895,15 +895,21 @@ twt tickets unclaim TICKET --as codex-fix-auth --output json
 
 `twt next` with no name is the daily loop in a terminal. It opens a Ticket
 picker when open Tickets exist, then claims the selected Ticket and starts
-its Workspace. `tickets start TICKET...` uses the same claim flow for one or
-more Tickets. All Tickets must be open and belong to one Project. The
-Workspace name is `--name`, or the first Ticket slug. The Workspace record
-carries the Project and Ticket slugs, and `twt workspaces show` reports them.
-On success, twt appends a start comment to each Ticket. A create failure keeps
-the claims, and the error tells how to retry the setup. Both commands are
-interactive: they refuse `--output json` and have no apply operation.
+its Workspace. `tickets start` uses the same claim flow for one or more
+Tickets. It keeps the current Workspace active. Use `twt next TICKET` when
+the current Workspace must be archived. Without `TICKET`, and when standard
+input is a terminal, it shows the same Ticket picker. fzf shows a preview of
+`twt tickets show` for the highlighted Ticket. A numbered list is used when
+fzf is not installed. A script must pass `TICKET`. All Tickets must be open
+and belong to one Project. The Workspace name is `--name`, or the first
+Ticket slug. The Workspace record carries the Project and Ticket slugs, and
+`twt workspaces show` reports them. On success, twt appends a start comment
+to each Ticket. A create failure keeps the claims, and the error tells how
+to retry the setup. Both commands are interactive: they refuse
+`--output json` and have no apply operation.
 
 ```sh
+twt tickets start
 twt tickets start fix-auth-tokens
 twt tickets start fix-auth-tokens add-auth-tests
 twt tickets start fix-auth-tokens --name auth-fix --template everysphere

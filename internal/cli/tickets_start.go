@@ -12,29 +12,43 @@ import (
 
 func newTicketsStartCommand(options Options) *cobra.Command {
 	var name, templateName, as string
-	var keepCurrent bool
 	command := &cobra.Command{
-		Use:     "start TICKET... [--name NAME] [--template TEMPLATE] [--as NAME]",
+		Use:     "start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME]",
 		Short:   "Claim Tickets and start one Workspace for them",
-		Args:    oneOrMoreArgs("TICKET"),
+		Args:    cobra.ArbitraryArgs,
 		PreRunE: refuseJSONQuickCreate,
 		RunE: func(command *cobra.Command, args []string) error {
-			tickets, err := resolveStartTicketRefs(options, args)
+			request := quickCreateRequest{
+				Name:         name,
+				TemplateName: templateName,
+				KeepCurrent:  true,
+			}
+			if len(args) > 0 {
+				tickets, err := resolveStartTicketRefs(options, args)
+				if err != nil {
+					return err
+				}
+				return startFromTickets(command, options, tickets, request, as)
+			}
+			tickets, err := listStartableTickets(options)
 			if err != nil {
 				return err
 			}
-			return startFromTickets(command, options, tickets, quickCreateRequest{
-				Name:         name,
-				TemplateName: templateName,
-				KeepCurrent:  keepCurrent,
-			}, as)
+			if len(tickets) == 0 {
+				return invalidUsageWithHint(command, "Create a Ticket with --project, or pass TICKET.",
+					"no startable Tickets")
+			}
+			ticket, err := pickStartTicket(command, options, tickets)
+			if err != nil {
+				return err
+			}
+			return startFromTicket(command, options, ticket, request, as)
 		},
 	}
 	command.Flags().StringVar(&name, "name", "", "Set the Workspace name; empty uses the Ticket slug")
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
-	command.Flags().BoolVar(&keepCurrent, "keep-current", false, "Switch to the new Workspace and keep the current Workspace active")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
-	setArguments(command, variadicArgument("ticket", true, "all Tickets must be open and belong to one Project"))
+	setArguments(command, variadicArgument("ticket", false, "the picker asks for one Ticket when absent; many values must be Ticket slugs from one Project"))
 	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
@@ -44,6 +58,26 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 // links the new Workspace to that Ticket.
 func startFromTicket(command *cobra.Command, options Options, ticket domain.Ticket, request quickCreateRequest, as string) error {
 	return startFromTickets(command, options, []domain.Ticket{ticket}, request, as)
+}
+
+// listStartableTickets lists open Tickets that start can claim. A Ticket
+// without a Project cannot start a Workspace, so the picker omits it.
+func listStartableTickets(options Options) ([]domain.Ticket, error) {
+	service, err := options.ticketService()
+	if err != nil {
+		return nil, err
+	}
+	tickets, err := service.List(ticketservice.ListFilter{})
+	if err != nil {
+		return nil, err
+	}
+	startable := make([]domain.Ticket, 0, len(tickets))
+	for _, ticket := range tickets {
+		if ticket.Project != "" {
+			startable = append(startable, ticket)
+		}
+	}
+	return startable, nil
 }
 
 func resolveStartTicketRefs(options Options, refs []string) ([]domain.Ticket, error) {

@@ -182,6 +182,24 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 	}
 }
 
+func TestTicketsStartHelpExplainsThePicker(t *testing.T) {
+	output, err := execute(t, t.TempDir(), "tickets", "start", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"interactive Ticket picker",
+		"twt tickets show",
+		"twt tickets start",
+		"keeps the current Workspace active",
+		"twt next TICKET",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("tickets start help does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestNextHelpExplainsTheWorkspaceChange(t *testing.T) {
 	output, err := execute(t, t.TempDir(), "next", "--help")
 	if err != nil {

@@ -22,4 +22,7 @@ func TestWorkspaceShortcutsAreCreateAndNext(t *testing.T) {
 	if keepCurrent := findCommand(root, "next").Flags().Lookup("keep-current"); keepCurrent != nil {
 		t.Fatal("twt next can keep the current Workspace active")
 	}
+	if keepCurrent := findCommand(root, "tickets", "start").Flags().Lookup("keep-current"); keepCurrent != nil {
+		t.Fatal("twt tickets start still has --keep-current")
+	}
 }

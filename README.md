@@ -178,7 +178,7 @@ twt doctor                            # end-to-end health check
 | `twt projects` | Create, list, and show durable Ticket Projects |
 | `twt create` | Create a Workspace and keep other Workspaces active |
 | `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |
-| `twt tickets start` | Claim one or more Tickets and start one Workspace |
+| `twt tickets start` | Claim Tickets, start a Workspace, and keep the current Workspace active |
 | `twt switch` | Move the tmux client to a Workspace |
 | `twt agents` | List, open, resume, send, and read Agent Sessions |
 | `twt archive` | Stop a Workspace session and keep its data |

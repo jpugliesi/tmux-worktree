@@ -283,7 +283,10 @@ the user asks for one.
 A Project is a durable group of Tickets. Create it with `twt projects create`.
 A Workspace is the temporary environment that works on one or more open
 Tickets from one Project. `twt tickets start TICKET...` claims the Tickets and
-starts one Workspace.
+starts one Workspace. It keeps the current Workspace active. Use `twt next`
+when the current Workspace must be archived. A person at a terminal can omit
+`TICKET`. twt then shows the Ticket picker. An agent always passes every
+Ticket slug.
 
 Follow these rules for every ticket command:
 
