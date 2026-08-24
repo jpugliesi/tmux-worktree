@@ -68,7 +68,7 @@ func newNextCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
-	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
+	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not fetch the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name when next claims a Ticket")
 	setArguments(command, variadicArgument("name_or_ticket", false, "one value can be a Workspace name or Ticket slug; many values must be Ticket slugs from one Project"))

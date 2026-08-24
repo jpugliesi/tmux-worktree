@@ -271,8 +271,8 @@ command lists the available names and stops.
 Two flags control the Git start point:
 
 - `--branch NAME` sets a custom Workspace branch name.
-- `--no-fetch` uses the base commit of the Prepared Environment and does not
-  refresh the default branch first.
+- Create fetches `origin/<default-branch>` before it claims the Prepared
+  Environment. `--no-fetch` uses the saved base commit and skips that fetch.
 
 ### Workspace branch names
 

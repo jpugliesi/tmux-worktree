@@ -14,10 +14,6 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-// claimFreshnessWindow is the age after which a claim refreshes the default
-// branch of each repository before it creates the Workspace branch.
-const claimFreshnessWindow = 15 * time.Minute
-
 // ErrEnvironmentFailed marks a Prepared Environment that has the failed
 // status. Callers can branch on it with errors.Is.
 var ErrEnvironmentFailed = errors.New("the Prepared Environment failed")
@@ -423,9 +419,9 @@ func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, wo
 }
 
 // claimBaseCommit returns the base commit for the new Workspace branch of one
-// repository. It runs inside the repository cache lock. It refreshes a stale
-// base with refreshStaleBase and owns the one record update and save that a
-// moved base commit needs.
+// repository. It runs inside the repository cache lock. It fetches
+// origin/<default-branch> unless NoFetch is set, then owns the one record
+// update and save that a moved base commit needs.
 func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index int, spec domain.RepositorySpec, opts CreateOptions) (string, error) {
 	repository := environment.Repositories[index]
 	base := repository.BaseCommit
@@ -457,21 +453,19 @@ func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index
 	return base, nil
 }
 
-// refreshStaleBase refreshes origin/<branch> in the Repository Cache when the
-// Prepared Environment is stale, and moves the detached checkout to the new
-// tip when the saved base commit is its ancestor. It does Git work only and
-// returns the new base commit with the effective fetch time. The caller owns
-// the Prepared Environment record update and save.
+// refreshStaleBase fetches origin/<branch> in the Repository Cache and moves
+// the detached checkout to the new tip when the saved base commit is its
+// ancestor. It does Git work only and returns the new base commit with the
+// effective fetch time. The caller owns the Prepared Environment record
+// update and save.
 func (s *Service) refreshStaleBase(repository domain.PreparedRepository, spec domain.RepositorySpec, branch string, readyAt *time.Time) (string, *time.Time, error) {
 	base := repository.BaseCommit
 	fetchedAt := readyAt
-	if readyAt == nil || s.now().Sub(*readyAt) > claimFreshnessWindow {
-		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, branch); err != nil {
-			s.report("Warning: twt could not fetch origin for repository %q: %v. twt uses the saved base commit.", repository.Name, err)
-		} else {
-			now := s.now()
-			fetchedAt = &now
-		}
+	if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, branch); err != nil {
+		s.report("Warning: twt could not fetch origin for repository %q: %v. twt uses the saved base commit.", repository.Name, err)
+	} else {
+		now := s.now()
+		fetchedAt = &now
 	}
 	tip, err := output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+branch)
 	if err != nil || tip == base {

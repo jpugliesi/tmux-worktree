@@ -71,12 +71,7 @@ repositories:
 		t.Fatalf("templates prepare created Workspaces: %+v", workspaces)
 	}
 
-	started := time.Now()
 	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
-	claimTime := time.Since(started)
-	if claimTime >= time.Second {
-		t.Fatalf("prepared Workspace claim took %s; want less than 1s", claimTime)
-	}
 	assertFileLines(t, initLog, []string{"initialized"})
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
@@ -199,12 +194,7 @@ repositories:
 		t.Fatal(err)
 	}
 
-	started := time.Now()
 	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
-	claimTime := time.Since(started)
-	if claimTime >= time.Second {
-		t.Fatalf("prepared Workspace claim after a window name edit took %s; want less than 1s", claimTime)
-	}
 	assertFileLines(t, initLog, []string{"initialized"})
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
@@ -256,7 +246,6 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 
 	executeWithOptions(t, options, nil, "templates", "prepare", "example")
 	newTip := addOriginCommit(t, source, "second.txt")
-	agePreparedEnvironments(t, options.StateDir)
 
 	stdout, stderr, err := executeCollectingOutput(t, options, "workspaces", "create", "fresh", "--branch", "feature/custom", "--no-open")
 	if err != nil {
@@ -303,7 +292,6 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 
 	executeWithOptions(t, options, nil, "templates", "prepare", "example")
 	addOriginCommit(t, source, "third.txt")
-	agePreparedEnvironments(t, options.StateDir)
 	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "stale", "--no-fetch", "--no-open"); err != nil {
 		t.Fatalf("workspaces create --no-fetch: %v", err)
 	}
@@ -487,28 +475,6 @@ func executeCollectingOutput(t *testing.T, options cli.Options, args ...string) 
 	command.SetArgs(forceTextOutput(args))
 	err := command.Execute()
 	return stdout.String(), stderr.String(), err
-}
-
-// agePreparedEnvironments moves the ready time of every ready Prepared
-// Environment one hour into the past, so a claim refreshes the base.
-func agePreparedEnvironments(t *testing.T, stateDir string) {
-	t.Helper()
-	environmentStore := store.NewEnvironmentStore(stateDir)
-	environments, err := environmentStore.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, environment := range environments {
-		if environment.Status != domain.EnvironmentReady {
-			continue
-		}
-		old := time.Now().Add(-time.Hour).UTC()
-		environment.ReadyAt = &old
-		environment.UpdatedAt = old
-		if err := environmentStore.Save(environment); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 func addOriginCommit(t *testing.T, path, name string) string {

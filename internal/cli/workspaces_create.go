@@ -80,7 +80,7 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template")
 	command.Flags().BoolVar(&noOpen, "no-open", false, "Do not open the tmux session")
-	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not refresh the default branch before the claim")
+	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not fetch the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringArrayVar(&ticketRefs, "ticket", nil, "Link a Ticket; repeat for more Tickets")
 	setArguments(command, optionalArgument("name", "the prompt asks for it when stdin is a terminal and output is text"))
