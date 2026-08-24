@@ -231,9 +231,9 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"example (3 environments,",
+		"example (3 environments)",
 		ready.ID[:8] + "  ready",
-		"3.0 KiB  base a1b2c3d",
+		"base a1b2c3d",
 		failed.ID[:8] + "  failed",
 		"log: " + log,
 		claimed.ID[:8] + "  claimed",
@@ -245,6 +245,24 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 	}
 	if !strings.Contains(text, "└─") || !strings.Contains(text, "├─") {
 		t.Fatalf("environments list text is not a tree:\n%s", text)
+	}
+	if strings.Contains(text, "KiB") {
+		t.Fatalf("the default environments list calculates sizes:\n%s", text)
+	}
+
+	textWithSizes, _, err := runCLI(t, options, "environments", "list", "--size")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"example (3 environments, 4.0 KiB prepared)",
+		"3.0 KiB  base a1b2c3d",
+		"1.0 KiB  log: " + log,
+		claimed.ID[:8] + "  claimed",
+	} {
+		if !strings.Contains(textWithSizes, want) {
+			t.Fatalf("environments list --size text does not contain %q:\n%s", want, textWithSizes)
+		}
 	}
 
 	// A live Workspace record replaces the claim reservation snapshot.
@@ -270,7 +288,7 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 			Status      string            `json:"status"`
 			ReadyAt     string            `json:"readyAt"`
 			CreatedAt   string            `json:"createdAt"`
-			Bytes       int64             `json:"bytes"`
+			Bytes       *int64            `json:"bytes"`
 			BaseCommits map[string]string `json:"baseCommits"`
 			Failure     string            `json:"failure"`
 			Log         string            `json:"log"`
@@ -295,7 +313,7 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 		}
 		switch environment.Status {
 		case "ready":
-			if environment.Bytes != 3072 || environment.ReadyAt == "" || environment.BaseCommits["app"] != "a1b2c3d" {
+			if environment.Bytes == nil || *environment.Bytes != 3072 || environment.ReadyAt == "" || environment.BaseCommits["app"] != "a1b2c3d" {
 				t.Fatalf("ready environment JSON = %+v", environment)
 			}
 		case "failed":
@@ -303,7 +321,7 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 				t.Fatalf("failed environment JSON = %+v", environment)
 			}
 		case "claimed":
-			if environment.Workspace == nil || environment.Workspace.Name != "fix-auth" || environment.Workspace.Status != "archived" {
+			if environment.Bytes != nil || environment.Workspace == nil || environment.Workspace.Name != "fix-auth" || environment.Workspace.Status != "archived" {
 				t.Fatalf("claimed environment JSON = %+v", environment)
 			}
 		}

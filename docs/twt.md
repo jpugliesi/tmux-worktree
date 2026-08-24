@@ -712,15 +712,22 @@ Inspect the Prepared Environment pool:
 
 ```sh
 twt environments list
+twt environments list --size
 twt environments list --limit 10 --output json
 twt environments show ENVIRONMENT_ID --output json
 ```
 
 The text list groups the Prepared Environments by Workspace Template. Each line
-shows the short ID, status, age, size, and the most useful value for that
-status: the base commit, the preparation log of a failed environment, or the
-Workspace that claims it. `environments show` accepts a unique ID prefix and
+shows the short ID, status, age, and the most useful value for that status: the
+base commit, the preparation log of a failed environment, or the Workspace that
+claims it. Use `--size` to calculate and show Prepared Environment storage. The
+size scan can take time on a large worktree. It does not scan roots that are
+reserved for a Workspace. `environments show` accepts a unique ID prefix and
 adds the preparation steps.
+
+Full JSON and NDJSON output calculates the size of each Environment in the
+selected page. Use `--fields` without `bytes` for a fast metadata-only read.
+The `bytes` value is `null` when a Workspace owns or reserves the root.
 
 A ready environment that no longer matches its Workspace Template has status
 `obsolete`. The comparison uses the Environment Digest: the hash of the part

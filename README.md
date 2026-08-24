@@ -155,7 +155,8 @@ everything. `twt workspaces open NAME` brings it back, layout and all.
 twt config                            # resolved settings and their sources
 twt context                           # Workspace and repository for this directory
 twt storage show                      # active vs archived bytes
-twt environments list                 # the warm pool, with sizes and ages
+twt environments list                 # the warm pool, with status and age
+twt environments list --size          # also calculate prepared storage
 twt workspaces remove --all-archived --older-than 14d --apply
 twt storage clean --apply             # failed environments, orphan records
 twt doctor                            # end-to-end health check

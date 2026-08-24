@@ -19,7 +19,7 @@ type environmentOutput struct {
 	Status      string                      `json:"status"`
 	ReadyAt     string                      `json:"readyAt,omitempty"`
 	CreatedAt   string                      `json:"createdAt"`
-	Bytes       int64                       `json:"bytes"`
+	Bytes       *int64                      `json:"bytes"`
 	BaseCommits map[string]string           `json:"baseCommits"`
 	Failure     string                      `json:"failure,omitempty"`
 	Log         string                      `json:"log,omitempty"`
@@ -51,6 +51,11 @@ type environmentShowOutput struct {
 	Environment   environmentOutput `json:"environment"`
 }
 
+type environmentReportService interface {
+	EnvironmentReport() ([]maintenance.EnvironmentInfo, error)
+	MeasureEnvironmentSizes([]maintenance.EnvironmentInfo)
+}
+
 func newEnvironmentsCommand(options Options) *cobra.Command {
 	service := options.maintenanceService()
 	environments := groupCommand(&cobra.Command{
@@ -62,14 +67,19 @@ func newEnvironmentsCommand(options Options) *cobra.Command {
 	return environments
 }
 
-func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
+func newEnvironmentsListCommand(service environmentReportService) *cobra.Command {
 	var limit, offset int
+	var size bool
 	command := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List Prepared Environments",
 		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
+			measureSizes, err := environmentListMeasuresSizes(command, size)
+			if err != nil {
+				return err
+			}
 			report, err := service.EnvironmentReport()
 			if err != nil {
 				return err
@@ -78,6 +88,9 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 			report, total, truncated, err := applyWindow(report, offset, limit)
 			if err != nil {
 				return err
+			}
+			if measureSizes {
+				service.MeasureEnvironmentSizes(report)
 			}
 			if format := resolvedOutputFormat(command); format != outputText {
 				values := make([]environmentOutput, 0, len(report))
@@ -89,19 +102,24 @@ func newEnvironmentsListCommand(service *maintenance.Service) *cobra.Command {
 				}
 				return writeReadJSON(command, environmentsListOutput{SchemaVersion: jsonSchemaVersion, Environments: values, TotalCount: total, Truncated: truncated}, "environments")
 			}
-			return writeEnvironmentTree(command.OutOrStdout(), time.Now(), report)
+			return writeEnvironmentTree(command.OutOrStdout(), time.Now(), report, size)
 		},
 	}
 	addListReadFlags(command, &limit, &offset, environmentOutput{})
+	command.Flags().BoolVar(&size, "size", false, "Calculate and show Prepared Environment sizes")
 	return command
 }
 
-func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
+func newEnvironmentsShowCommand(service environmentReportService) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "show ENVIRONMENT_ID",
 		Short: "Show a Prepared Environment",
 		Args:  exactArgs("ENVIRONMENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
+			measureSize, err := environmentOutputMeasuresSize(command, true)
+			if err != nil {
+				return err
+			}
 			report, err := service.EnvironmentReport()
 			if err != nil {
 				return err
@@ -109,6 +127,11 @@ func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
 			info, err := findEnvironment(report, args[0])
 			if err != nil {
 				return err
+			}
+			if measureSize {
+				selected := []maintenance.EnvironmentInfo{info}
+				service.MeasureEnvironmentSizes(selected)
+				info = selected[0]
 			}
 			if WantsJSON(command) {
 				return writeReadJSON(command, environmentShowOutput{SchemaVersion: jsonSchemaVersion, Environment: toEnvironmentOutput(info, true)}, "environment")
@@ -120,6 +143,29 @@ func newEnvironmentsShowCommand(service *maintenance.Service) *cobra.Command {
 	addFieldsFlag(command, environmentOutput{})
 	command.ValidArgsFunction = environmentIDCompletion(service)
 	return command
+}
+
+// environmentListMeasuresSizes validates the text-only --size flag and
+// returns whether the selected list rows need directory sizes.
+func environmentListMeasuresSizes(command *cobra.Command, size bool) (bool, error) {
+	if size && resolvedOutputFormat(command) != outputText {
+		return false, invalidUsage(command, "use --size with --output text")
+	}
+	return environmentOutputMeasuresSize(command, size)
+}
+
+// environmentOutputMeasuresSize returns whether an Environment output needs
+// its bytes field. textDefault is the text command's size policy. JSON and
+// NDJSON need sizes unless --fields removes bytes.
+func environmentOutputMeasuresSize(command *cobra.Command, textDefault bool) (bool, error) {
+	if resolvedOutputFormat(command) == outputText {
+		return textDefault, nil
+	}
+	mask, err := fieldMask(command)
+	if err != nil {
+		return false, err
+	}
+	return mask == nil || mask["bytes"], nil
 }
 
 // findEnvironment accepts a complete Prepared Environment ID or a unique
@@ -154,7 +200,7 @@ func sortEnvironmentReport(report []maintenance.EnvironmentInfo) {
 }
 
 // writeEnvironmentTree groups the Prepared Environments by Workspace Template.
-func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.EnvironmentInfo) error {
+func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.EnvironmentInfo, withSizes bool) error {
 	if len(report) == 0 {
 		_, err := fmt.Fprintln(out, "No Prepared Environments.")
 		return err
@@ -170,11 +216,17 @@ func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.Env
 	sort.Strings(names)
 	for _, name := range names {
 		group := grouped[name]
-		var bytes int64
-		for _, info := range group {
-			bytes += info.Bytes
+		header := fmt.Sprintf("%s (%d environments)", name, len(group))
+		if withSizes {
+			var bytes int64
+			for _, info := range group {
+				if info.Bytes != nil {
+					bytes += *info.Bytes
+				}
+			}
+			header = fmt.Sprintf("%s (%d environments, %s prepared)", name, len(group), formatBytes(bytes))
 		}
-		if _, err := fmt.Fprintf(out, "%s (%d environments, %s)\n", name, len(group), formatBytes(bytes)); err != nil {
+		if _, err := fmt.Fprintln(out, header); err != nil {
 			return err
 		}
 		for index, info := range group {
@@ -182,7 +234,14 @@ func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.Env
 			if index == len(group)-1 {
 				branch = "└─"
 			}
-			line := fmt.Sprintf("%s %s  %-8s %-4s %10s", branch, shortEnvironmentID(info.ID), info.Status, environmentAge(now, info), formatBytes(info.Bytes))
+			line := fmt.Sprintf("%s %s  %-8s %-4s", branch, shortEnvironmentID(info.ID), info.Status, environmentAge(now, info))
+			if withSizes {
+				size := "-"
+				if info.Bytes != nil {
+					size = formatBytes(*info.Bytes)
+				}
+				line += fmt.Sprintf(" %10s", size)
+			}
 			if detail := environmentDetail(info); detail != "" {
 				line += "  " + detail
 			}
@@ -195,12 +254,18 @@ func writeEnvironmentTree(out io.Writer, now time.Time, report []maintenance.Env
 }
 
 func writeEnvironmentDetail(out io.Writer, now time.Time, info maintenance.EnvironmentInfo) error {
+	size := "Not measured"
+	if info.Bytes != nil {
+		size = formatBytes(*info.Bytes)
+	} else if info.Workspace != nil {
+		size = "Workspace-reserved"
+	}
 	fields := [][2]string{
 		{"Prepared Environment", info.ID},
 		{"Template", info.TemplateName},
 		{"Status", info.Status},
 		{"Age", environmentAge(now, info)},
-		{"Size", formatBytes(info.Bytes)},
+		{"Size", size},
 		{"Created", info.CreatedAt.UTC().Format(time.RFC3339)},
 	}
 	if info.ReadyAt != nil {
@@ -298,9 +363,10 @@ func shortEnvironmentID(id string) string {
 func toEnvironmentOutput(info maintenance.EnvironmentInfo, withSteps bool) environmentOutput {
 	result := environmentOutput{
 		ID: info.ID, Template: info.TemplateName, Status: info.Status,
-		CreatedAt: info.CreatedAt.UTC().Format(time.RFC3339), Bytes: info.Bytes,
+		CreatedAt:   info.CreatedAt.UTC().Format(time.RFC3339),
 		BaseCommits: info.BaseCommits, Failure: info.Failure, Log: info.LogPath,
 	}
+	result.Bytes = info.Bytes
 	if result.BaseCommits == nil {
 		result.BaseCommits = map[string]string{}
 	}

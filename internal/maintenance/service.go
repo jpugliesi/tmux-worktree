@@ -42,19 +42,21 @@ type StorageStatus struct {
 // status, or "obsolete" for a ready Prepared Environment that no longer
 // matches its Workspace Template.
 type EnvironmentInfo struct {
-	ID           string
-	TemplateName string
-	Status       string
-	ReadyAt      *time.Time
-	CreatedAt    time.Time
-	Bytes        int64
-	BaseCommits  map[string]string
-	Failure      string
-	LogPath      string
-	Steps        []domain.SetupStep
-	Workspace    *EnvironmentWorkspace
+	ID                string
+	TemplateName      string
+	Status            string
+	ReadyAt           *time.Time
+	CreatedAt         time.Time
+	Bytes             *int64
+	BaseCommits       map[string]string
+	Failure           string
+	LogPath           string
+	Steps             []domain.SetupStep
+	Workspace         *EnvironmentWorkspace
+	root              string
+	environmentStatus domain.PreparedEnvironmentStatus
 	// SizeWarning tells why twt could not measure the Prepared Environment
-	// root. Bytes is zero in that case.
+	// root. Bytes is nil in that case.
 	SizeWarning string
 }
 
@@ -80,6 +82,8 @@ type Service struct {
 	configDir string
 	stateDir  string
 	dataDir   string
+	// directoryBytes is a replaceable boundary for directory traversal.
+	directoryBytes func(string) (int64, string)
 	// ticketsHome is the resolved Tickets home, or empty when no source sets
 	// one. Doctor reports its state.
 	ticketsHome string
@@ -92,7 +96,10 @@ type Service struct {
 }
 
 func NewService(configDir, stateDir, dataDir, ticketsHome string) *Service {
-	return &Service{configDir: configDir, stateDir: stateDir, dataDir: dataDir, ticketsHome: ticketsHome}
+	return &Service{
+		configDir: configDir, stateDir: stateDir, dataDir: dataDir, ticketsHome: ticketsHome,
+		directoryBytes: bestEffortDirectoryBytes,
+	}
 }
 
 // WithSkillCheck adds the agent skill drift check to doctor. version is the
@@ -107,7 +114,7 @@ func (s *Service) WithSkillCheck(version string, paths []string) *Service {
 func (s *Service) StorageStatus() (StorageStatus, error) {
 	var warnings []string
 	measure := func(root string) int64 {
-		bytes, warning := bestEffortDirectoryBytes(root)
+		bytes, warning := s.measureDirectoryBytes(root)
 		if warning != "" {
 			warnings = append(warnings, warning)
 		}
@@ -181,10 +188,18 @@ func bestEffortDirectoryBytes(root string) (int64, string) {
 	return bytes, ""
 }
 
-// EnvironmentReport describes each Prepared Environment record. It joins the
-// Prepared Environment store, the Workspace Template digests, and the Workspace
-// store. A Workspace Template that twt cannot load keeps the record status,
-// because twt cannot know if its Prepared Environments are obsolete.
+func (s *Service) measureDirectoryBytes(root string) (int64, string) {
+	if s.directoryBytes == nil {
+		return bestEffortDirectoryBytes(root)
+	}
+	return s.directoryBytes(root)
+}
+
+// EnvironmentReport describes each Prepared Environment record without
+// traversing its root. It joins the Prepared Environment store, the Workspace
+// Template digests, and the Workspace store. A Workspace Template that twt
+// cannot load keeps the record status, because twt cannot know if its Prepared
+// Environments are obsolete.
 func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	environments, err := store.NewEnvironmentStore(s.stateDir).List()
 	if err != nil {
@@ -208,12 +223,12 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 			ID: environment.ID, TemplateName: environment.TemplateName, Status: string(environment.Status),
 			ReadyAt: environment.ReadyAt, CreatedAt: environment.CreatedAt, Failure: environment.Failure,
 			BaseCommits: map[string]string{}, Steps: environment.Steps,
+			root: environment.Root, environmentStatus: environment.Status,
 		}
 		if environment.Status == domain.EnvironmentReady &&
 			catalog.Disposition(environment.TemplateName, environment.TemplateDigest) == store.TemplateObsolete {
 			info.Status = "obsolete"
 		}
-		info.Bytes, info.SizeWarning = bestEffortDirectoryBytes(environment.Root)
 		for _, repository := range environment.Repositories {
 			info.BaseCommits[repository.Name] = shortCommit(repository.BaseCommit)
 		}
@@ -230,6 +245,23 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 		report = append(report, info)
 	}
 	return report, nil
+}
+
+// MeasureEnvironmentSizes adds directory sizes to the selected report rows.
+// Claimed and claiming roots are reserved for a Workspace, so this method does
+// not traverse them.
+func (s *Service) MeasureEnvironmentSizes(report []EnvironmentInfo) {
+	for index := range report {
+		info := &report[index]
+		if info.environmentStatus == domain.EnvironmentClaimed || info.environmentStatus == domain.EnvironmentClaiming {
+			continue
+		}
+		bytes, warning := s.measureDirectoryBytes(info.root)
+		info.SizeWarning = warning
+		if warning == "" {
+			info.Bytes = &bytes
+		}
+	}
 }
 
 // prepareLogPath returns the twt-owned preparation log of one Prepared

@@ -6,7 +6,6 @@ import (
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
@@ -252,7 +251,7 @@ func adoptSessionCompletion(workspaces *workspaceservice.Service) completionFunc
 }
 
 // environmentIDCompletion completes Prepared Environment IDs.
-func environmentIDCompletion(service *maintenance.Service) completionFunc {
+func environmentIDCompletion(service environmentReportService) completionFunc {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
