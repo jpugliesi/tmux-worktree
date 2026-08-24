@@ -276,7 +276,11 @@ repository, and a set of resumable coding Agent Sessions.`,
 
   # Close the ticket and remove the Workspace.
   twt tickets close fix-auth-tokens
-  twt done`,
+  twt done
+
+  # Restore active Workspace sessions after tmux restarts.
+  twt workspaces open --all-active --dry-run
+  twt workspaces open --all-active`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(command *cobra.Command, _ []string) error {
