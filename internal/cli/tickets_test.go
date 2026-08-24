@@ -595,6 +595,124 @@ func TestTicketsLsMatchesList(t *testing.T) {
 	}
 }
 
+func TestTicketsListTextGroupsByProject(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"change-monitor", "core"} {
+		if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	creates := [][]string{
+		{"tickets", "create", "monitor work", "--project", "change-monitor"},
+		{"tickets", "create", "high monitor work", "--project", "change-monitor"},
+		{"tickets", "create", "core work", "--project", "core"},
+		{"tickets", "create", "inbox note"},
+	}
+	for _, args := range creates {
+		if _, _, err := executeCollectingInput(t, options, nil, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "set", "high-monitor-work", "--priority", "0"); err != nil {
+		t.Fatal(err)
+	}
+
+	textOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(textOut, "PROJECT") {
+		t.Fatalf("grouped list still has a PROJECT column:\n%s", textOut)
+	}
+	got := parseGroupedTicketList(t, textOut)
+	want := []ticketListGroup{
+		{name: "change-monitor", slugs: []string{"high-monitor-work", "monitor-work"}},
+		{name: "core", slugs: []string{"core-work"}},
+		{name: "(none)", slugs: []string{"inbox-note"}},
+	}
+	if !ticketListGroupsEqual(got, want) {
+		t.Fatalf("grouped list = %#v, want %#v\n%s", got, want, textOut)
+	}
+
+	filtered, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--project", "change-monitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = parseGroupedTicketList(t, filtered)
+	want = []ticketListGroup{{name: "change-monitor", slugs: []string{"high-monitor-work", "monitor-work"}}}
+	if !ticketListGroupsEqual(got, want) {
+		t.Fatalf("--project list = %#v, want %#v\n%s", got, want, filtered)
+	}
+
+	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tickets []struct {
+			Slug    string `json:"slug"`
+			Project string `json:"project"`
+		} `json:"tickets"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &list); err != nil {
+		t.Fatalf("decode list: %v\n%s", err, jsonOut)
+	}
+	slugs := make([]string, 0, len(list.Tickets))
+	for _, ticket := range list.Tickets {
+		slugs = append(slugs, ticket.Slug)
+	}
+	if strings.Join(slugs, ",") != "high-monitor-work,core-work,inbox-note,monitor-work" {
+		t.Fatalf("JSON list order = %v\n%s", slugs, jsonOut)
+	}
+	if list.Tickets[2].Project != "" || list.Tickets[0].Project != "change-monitor" {
+		t.Fatalf("JSON list is not a flat Ticket array:\n%s", jsonOut)
+	}
+}
+
+type ticketListGroup struct {
+	name  string
+	slugs []string
+}
+
+func parseGroupedTicketList(t *testing.T, output string) []ticketListGroup {
+	t.Helper()
+	var groups []ticketListGroup
+	for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
+		line = strings.TrimRight(line, " ")
+		if line == "" || strings.HasPrefix(line, "SLUG") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) == 1 {
+			groups = append(groups, ticketListGroup{name: fields[0]})
+			continue
+		}
+		if len(groups) == 0 {
+			t.Fatalf("ticket row %q has no Project header:\n%s", line, output)
+		}
+		groups[len(groups)-1].slugs = append(groups[len(groups)-1].slugs, fields[0])
+	}
+	return groups
+}
+
+func ticketListGroupsEqual(got, want []ticketListGroup) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i].name != want[i].name || strings.Join(got[i].slugs, ",") != strings.Join(want[i].slugs, ",") {
+			return false
+		}
+	}
+	return true
+}
+
 func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
 	t.Setenv("TWT_CLAIMANT", "")
 	options, home := ticketTestOptions(t)

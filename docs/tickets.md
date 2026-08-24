@@ -239,6 +239,10 @@ Sort by `priority` ascending, then slug.
 tickets. If both `--ready` and `--status` are set, exit 2 with a hint to use
 only one.
 
+Text output groups Tickets by Project. Named Projects come first in name
+order. Ungrouped Tickets follow under `(none)`. JSON and NDJSON stay a flat
+array in the sort order above.
+
 List results omit the body. `show` returns metadata plus body.
 
 ### Claimant identity

@@ -842,6 +842,10 @@ has status `done` or `wontfix`. Results sort by `priority` ascending, then
 slug. Passing both `--ready` and `--status` exits 2 with a hint to use only
 one.
 
+Text output groups Tickets by Project. Named Projects come first in name
+order. Ungrouped Tickets follow under `(none)`. JSON and NDJSON stay a flat
+array in the sort order above.
+
 ```sh
 twt tickets list --ready --output json --limit 20
 twt tickets list --all --output json --limit 20
