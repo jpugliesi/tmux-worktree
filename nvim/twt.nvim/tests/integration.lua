@@ -97,17 +97,54 @@ local pane_two, command_two, start_two = start_agent_pane("workspace-two", "work
 make_agent("a1a1a1a1b2b2c3c3d4d4e5e5", "workspace-one", "session-one", pane_one, command_one, start_one)
 make_agent("f6f6f6f6a7a7b8b8c9c9d0d0", "workspace-two", "session-two", pane_two, command_two, start_two)
 make_transcript("session-one", repository_one, "Workspace one transcript")
+make_transcript("session-discovered", repository_one, "Discovered Workspace one transcript")
 make_transcript("session-two", repository_two, "Workspace two transcript")
 
 local directory = repository_one
+local select_action = "pick"
+local selected_agent_id
+local preview_agent_id
+local preview_expected
+local preview_text
 require("twt").setup({
   command = binary,
   default_keymaps = false,
   directory = function() return directory end,
-  select = function(items, _, done) done(items[1]) end,
+  select = function(items, opts, done)
+    local selected
+    for _, item in ipairs(items) do
+      if item.id == (select_action == "preview" and preview_agent_id or selected_agent_id) then selected = item end
+    end
+    assert(selected, "the expected Agent Session is not in the picker")
+    if select_action == "pick" then
+      done(selected)
+      return
+    end
+    assert(opts.kind == "twt_agent_session")
+    assert(opts.snacks and opts.snacks.preview and opts.snacks.layout.preset == "default")
+    local completed = false
+    opts.snacks.preview({
+      item = { item = selected },
+      picker = { closed = false },
+      preview = {
+        reset = function() preview_text = "" end,
+        set_title = function() end,
+        set_lines = function(_, lines)
+          preview_text = table.concat(lines, "\n")
+          if not completed and preview_text:find(preview_expected, 1, true) then
+            completed = true
+            vim.schedule(function() done(nil) end)
+          end
+        end,
+        highlight = function(_, value) assert(value.ft == "markdown") end,
+      },
+    })
+  end,
 })
 
 local function pick(expected_agent)
+  select_action = "pick"
+  selected_agent_id = expected_agent
   local finished = false
   local result_error
   require("twt").agents.pick(function(err, result)
@@ -118,6 +155,34 @@ local function pick(expected_agent)
   assert(vim.wait(5000, function() return finished end), "Agent Session picker timed out")
   assert(result_error == nil, result_error)
 end
+
+local function preview(expected_agent, expected_text)
+  select_action = "preview"
+  preview_agent_id = expected_agent
+  preview_expected = expected_text
+  preview_text = ""
+  local finished = false
+  local result_error
+  require("twt").agents.pick(function(err, result)
+    result_error = err
+    assert(result == nil)
+    finished = true
+  end)
+  assert(vim.wait(5000, function() return finished end), "Agent Transcript preview timed out")
+  assert(result_error == nil, result_error)
+  assert(preview_text:find(expected_text, 1, true), preview_text)
+end
+
+local function registered_count(workspace_id)
+  local result = vim.system({ binary, "agents", "list", "--workspace", workspace_id, "--registered", "--output", "json" }, { text = true }):wait()
+  assert(result.code == 0, result.stderr)
+  return #(vim.json.decode(result.stdout).agents or {})
+end
+
+local before_preview = registered_count("workspace-one")
+preview("a1a1a1a1b2b2c3c3d4d4e5e5", "Workspace one transcript")
+preview("session-discovered", "Discovered Workspace one transcript")
+assert(registered_count("workspace-one") == before_preview, "preview adopted the discovered Agent Session")
 
 pick("a1a1a1a1b2b2c3c3d4d4e5e5")
 directory = repository_two

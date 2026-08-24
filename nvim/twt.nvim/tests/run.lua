@@ -141,6 +141,192 @@ test("lists and selects Agents through exact Workspace context", function()
   assert(table.concat(calls[2].argv, " ") == "/test/twt agents list --workspace workspace-1 --limit 40 --output json")
 end)
 
+test("gives duplicate Agent labels stable unique row identities and a visible Snacks preview", function()
+  local saved = agents_response.agents
+  agents_response.agents = {
+    {
+      id = "aaaaaaaa-1111-2222-3333-444444444444",
+      workspaceId = "workspace-1",
+      provider = "Codex",
+      label = "codex",
+      status = "discovered",
+      lastActivity = "2026-08-24T18:07:05Z",
+      capabilities = { canResume = true, canSend = false, canFocus = false, canReadTranscript = true },
+    },
+    {
+      id = "aaaaaaaa-2222-3333-4444-555555555555",
+      workspaceId = "workspace-1",
+      provider = "codex",
+      label = "codex",
+      status = "stopped",
+      updatedAt = "2026-08-24T17:07:05Z",
+      capabilities = { canResume = true, canSend = false, canFocus = false, canReadTranscript = true },
+    },
+  }
+  local items, opts
+  local call_count = #calls
+  with_config({
+    select = function(pick_items, pick_opts, done)
+      items, opts = pick_items, pick_opts
+      done(nil)
+    end,
+  }, function()
+    require("twt").agents.pick(function(err, result)
+      assert(err == nil, err)
+      assert(result == nil)
+    end)
+  end)
+  agents_response.agents = saved
+
+  assert(#calls == call_count + 2, "opening the picker must not load a transcript")
+  assert(opts and opts.kind == "twt_agent_session", vim.inspect(opts))
+  assert(opts.snacks and opts.snacks.preview, "the Agent picker must configure a Snacks preview")
+  assert(opts.snacks.layout and opts.snacks.layout.preset == "default", vim.inspect(opts.snacks))
+  local first = opts.format_item(items[1])
+  local second = opts.format_item(items[2])
+  local _, codex_count = first:lower():gsub("codex", "")
+  assert(codex_count == 1, first)
+  assert(first:find("aaaaaaaa%-1") and second:find("aaaaaaaa%-2"), first .. " / " .. second)
+  assert(first:find("discovered", 1, true) and first:find("2026-08-24 18:07 UTC", 1, true), first)
+end)
+
+test("rejects duplicate Agent Session IDs before opening the picker", function()
+  local saved = agents_response.agents
+  local duplicate = vim.deepcopy(saved[1])
+  agents_response.agents = { saved[1], duplicate }
+  local selected = false
+  local received
+  with_config({
+    select = function() selected = true end,
+  }, function()
+    require("twt").agents.pick(function(err) received = err end)
+  end)
+  agents_response.agents = saved
+  assert(received == "twt returned duplicate Agent Session IDs", tostring(received))
+  assert(not selected, "invalid Agent Sessions reached the picker")
+end)
+
+test("loads only the latest Agent Transcript preview and caches successful results", function()
+  local first = {
+    id = "preview-agent-a",
+    workspaceId = "workspace-1",
+    provider = "codex",
+    label = "first",
+    status = "discovered",
+    capabilities = { canResume = true, canSend = false, canFocus = false, canReadTranscript = true },
+  }
+  local second = vim.deepcopy(first)
+  second.id, second.label = "preview-agent-b", "second"
+  local missing = vim.deepcopy(first)
+  missing.id, missing.label = "preview-agent-missing", "missing"
+  missing.capabilities.canReadTranscript = false
+  local retry = vim.deepcopy(first)
+  retry.id, retry.label = "preview-agent-retry", "retry"
+  local saved = agents_response.agents
+  agents_response.agents = { first, second, missing, retry }
+  local items, opts
+  local choose
+  local pending = {}
+  local ok, test_err = pcall(function() with_config({
+    select = function(pick_items, pick_opts, done)
+      items, opts = pick_items, pick_opts
+      choose = done
+    end,
+    runner = function(argv, runner_opts, done)
+      if table.concat(argv, " "):find(" agents open %-%-preview ") then
+        pending[#pending + 1] = { argv = vim.deepcopy(argv), opts = runner_opts, done = done }
+      else
+        runner(argv, runner_opts, done)
+      end
+    end,
+  }, function()
+    require("twt").agents.pick(function(err) assert(err == nil, err) end)
+
+    local rendered = {}
+    local title
+    local highlights = 0
+    local picker = { closed = false }
+    local preview = {
+      reset = function() rendered = {} end,
+      set_title = function(_, value) title = value end,
+      set_lines = function(_, lines) rendered = vim.deepcopy(lines) end,
+      highlight = function(_, value)
+        assert(value.ft == "markdown")
+        highlights = highlights + 1
+      end,
+    }
+    local function context(agent)
+      return { item = { item = agent }, picker = picker, preview = preview }
+    end
+    local function text()
+      return table.concat(rendered, "\n")
+    end
+    local function finish(request, agent, markdown)
+      request.done({
+        code = 0,
+        stdout = vim.json.encode({
+          schemaVersion = 2,
+          workspaceId = "workspace-1",
+          agentId = agent.id,
+          provider = agent.provider,
+          repositoryName = "app",
+          updatedAt = "2026-08-24T18:07:05Z",
+          untrusted = true,
+          markdown = markdown,
+        }),
+        stderr = "",
+      })
+    end
+
+    opts.snacks.preview(context(items[1]))
+    assert(text():find("Loading Agent Transcript", 1, true), text())
+    assert(#pending == 0, "the first preview must start asynchronously")
+    assert(vim.wait(1000, function() return #pending == 1 end), "the first preview did not start")
+    assert(table.concat(pending[1].argv, " ") == "/test/twt agents open --preview preview-agent-a --workspace workspace-1 --output json")
+    assert(pending[1].opts.cwd == "/work/app")
+
+    opts.snacks.preview(context(items[2]))
+    assert(text():find("Loading Agent Transcript", 1, true), text())
+    vim.wait(20)
+    assert(#pending == 1, "only one transcript process can run")
+    finish(pending[1], first, "# First transcript\n\27[31mnot terminal code")
+    assert(not text():find("First transcript", 1, true), "a stale transcript replaced the current preview")
+    assert(vim.wait(1000, function() return #pending == 2 end), "the latest preview did not start")
+    finish(pending[2], second, "# Second transcript\nCurrent work")
+    assert(text():find("Second transcript", 1, true), text())
+    assert(title and title:find("preview%-agent%-b"), tostring(title))
+    assert(highlights > 0)
+
+    local process_count = #pending
+    opts.snacks.preview(context(items[1]))
+    assert(text():find("First transcript", 1, true), text())
+    vim.wait(20)
+    assert(#pending == process_count, "a cached transcript started another process")
+
+    opts.snacks.preview(context(items[3]))
+    assert(text():find("has no linked transcript", 1, true), text())
+    vim.wait(20)
+    assert(#pending == process_count, "a missing transcript started a process")
+
+    opts.snacks.preview(context(items[4]))
+    assert(vim.wait(1000, function() return #pending == process_count + 1 end), "the failed preview did not start")
+    pending[#pending].done({
+      code = 3,
+      stdout = "",
+      stderr = vim.json.encode({ schemaVersion = 2, error = { message = "injected preview failure" } }),
+    })
+    assert(text():find("injected preview failure", 1, true), text())
+    opts.snacks.preview(context(items[4]))
+    assert(vim.wait(1000, function() return #pending == process_count + 2 end), "a failed preview could not retry")
+    picker.closed = true
+    finish(pending[#pending], retry, "# Late transcript")
+    assert(not text():find("Late transcript", 1, true), "a closed picker accepted a late transcript")
+    choose(nil)
+  end) end)
+  agents_response.agents = saved
+  if not ok then error(test_err, 0) end
+end)
+
 test("keeps the registered ID after a discovered transcript snapshot adopts the session", function()
   local discovered = {
     id = "codex-session-1",

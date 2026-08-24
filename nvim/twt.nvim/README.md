@@ -23,8 +23,8 @@ The plug-in needs Neovim 0.10 or later. Direct pane delivery also needs tmux.
 Agent Session features need a `twt` executable in `PATH`. Review Note and
 clipboard features do not need either executable. The plug-in uses core
 `vim.ui.select`, so a picker provider is optional. LazyVim replaces that call
-with the Snacks picker. The notes list passes Snacks options so the picker
-shows a preview of the highlighted note.
+with the Snacks picker. The Agent Session picker and the notes list pass
+Snacks options that show a preview.
 
 ## Main mappings
 
@@ -80,6 +80,18 @@ available:
 
 Each mapping has a command. The commands and the mappings do the same work and
 show the same messages.
+
+`<leader>arp` identifies each Agent Session with its label, provider when it
+adds information, shortest unique ID prefix, status, and last activity time.
+The Snacks picker shows the Agent Transcript for the highlighted row. It opens
+the picker before it reads a transcript, reads only the latest requested row,
+and runs at most one transcript read at a time. It keeps a small, bounded cache
+only while that picker is open. A picker without Snacks still shows the full
+row identity and can select the Agent Session.
+
+Preview is read-only. It does not register a discovered Agent Session and does
+not write a Transcript Snapshot. Confirming a row writes and opens its private
+Transcript Snapshot. That selection can register a discovered Agent Session.
 
 `:TwtNotes`, `<leader>al`, and `<leader>arl` show all Review Notes in the
 current Neovim session. The Snacks picker preview shows the file, the selected
@@ -204,7 +216,8 @@ meaning: it sends to the selected Agent Session through `twt`.
 
 `setup` accepts a `confirm` function for the resume question and for clearing
 review notes. It also accepts clipboard and tmux adapters for custom setups or
-tests:
+tests. `agent_preview_max_bytes` limits one displayed transcript preview, and
+`agent_preview_cache_bytes` limits the picker-local preview cache:
 
 ```lua
 require("twt").setup({
@@ -213,6 +226,8 @@ require("twt").setup({
     done(vim.fn.confirm(question, "&Yes\n&No", 2) == 1)
   end,
   tmux_command = "tmux",
+  agent_preview_max_bytes = 262144,
+  agent_preview_cache_bytes = 524288,
 })
 ```
 

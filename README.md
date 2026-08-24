@@ -106,10 +106,12 @@ twt agents resume AGENT_ID
 ```
 
 In Neovim, [twt.nvim](nvim/twt.nvim/README.md) picks an Agent Session with
-`<leader>arp` and opens its transcript. Collect Review Notes from any regular
-file buffer with `<leader>an`. Use `<leader>arr` to select a tmux pane or the
-clipboard. Use `<leader>ara` to send through the selected Agent Session. Log
-progress on the Ticket as you go:
+`<leader>arp`. The LazyVim Snacks picker shows the highlighted Agent Transcript
+before selection. Its rows include a unique Agent Session ID prefix, status,
+and activity time. Confirming a row opens its Transcript Snapshot. Collect
+Review Notes from any regular file buffer with `<leader>an`. Use `<leader>arr`
+to select a tmux pane or the clipboard. Use `<leader>ara` to send through the
+selected Agent Session. Log progress on the Ticket as you go:
 
 ```sh
 echo "Root cause found in token refresh path." | twt tickets comment fix-auth-tokens --stdin

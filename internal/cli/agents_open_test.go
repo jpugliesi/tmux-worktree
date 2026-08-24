@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,40 @@ func TestAgentsOpenPreviewWritesTheSameMarkdownAsTranscriptShow(t *testing.T) {
 	}
 	if !strings.Contains(preview, "Workspace question") || !strings.Contains(preview, "Workspace answer") {
 		t.Fatalf("preview markdown = %q", preview)
+	}
+}
+
+func TestAgentsOpenPreviewWritesStructuredJSONWithoutAdopting(t *testing.T) {
+	options, workspace, _ := agentsOpenFixture(t)
+	before := directorySnapshot(t, options.StateDir)
+	stdout, _, err := executeRaw(t, options,
+		"agents", "open", "--preview", "claude-one", "--workspace", workspace.ID, "--output", "json")
+	if err != nil {
+		t.Fatalf("open --preview JSON: %v", err)
+	}
+	var value struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		WorkspaceID   string `json:"workspaceId"`
+		AgentID       string `json:"agentId"`
+		Untrusted     bool   `json:"untrusted"`
+		Markdown      string `json:"markdown"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &value); err != nil {
+		t.Fatalf("decode open --preview JSON: %v\n%s", err, stdout)
+	}
+	if value.SchemaVersion != 2 || value.WorkspaceID != workspace.ID || value.AgentID != "claude-one" || !value.Untrusted {
+		t.Fatalf("open --preview JSON = %+v", value)
+	}
+	if !strings.Contains(value.Markdown, "Claude question") || !strings.Contains(value.Markdown, "Claude answer") {
+		t.Fatalf("open --preview markdown = %q", value.Markdown)
+	}
+	after := directorySnapshot(t, options.StateDir)
+	if len(after) != len(before) {
+		t.Fatal("open --preview JSON changed the state directory")
+	}
+	listed, listErr := store.NewAgentStore(options.StateDir).List(workspace.ID)
+	if listErr != nil || len(listed) != 1 {
+		t.Fatalf("open --preview JSON adopted a session: %+v, %v", listed, listErr)
 	}
 }
 

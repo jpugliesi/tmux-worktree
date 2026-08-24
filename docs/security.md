@@ -60,9 +60,16 @@ coding agent. `twt` treats that text as data:
 - `twt agents transcript show` and `twt agents transcript snapshot` mark the
   JSON payload with `"untrusted": true`.
 - `twt agents open --preview` writes the same sanitized markdown as
-  `twt agents transcript show`. That path never writes JSON.
+  `twt agents transcript show`. An explicit `--output json` returns the normal
+  transcript envelope with `"untrusted": true`; text output stays suitable for
+  the fzf preview.
 - A snapshot Markdown file holds the same sanitized text, because that file
   goes into an agent context.
+
+The Neovim Agent Session picker puts preview Markdown only in a scratch buffer.
+It never evaluates the text. Preview does not register a discovered Agent
+Session and does not write a Transcript Snapshot. Confirming a picker row can
+do both actions.
 
 The `agents discover` result carries no free text: `twt` validates each
 provider session ID and matches each repository name against the Workspace.

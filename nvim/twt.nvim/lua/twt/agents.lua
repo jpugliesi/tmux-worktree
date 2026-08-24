@@ -1,4 +1,5 @@
 local buffers = require("twt.buffers")
+local agent_preview = require("twt.agent_preview")
 local client = require("twt.client")
 local config = require("twt.config")
 local input = require("twt.input")
@@ -45,6 +46,17 @@ local function remember(workspace_id, agents)
   last_workspace_id = workspace_id
 end
 
+local function validate(agents)
+  local seen = {}
+  for _, agent in ipairs(agents) do
+    if type(agent.id) ~= "string" or agent.id == "" then
+      return "twt returned an Agent Session without an ID"
+    end
+    if seen[agent.id] then return "twt returned duplicate Agent Session IDs" end
+    seen[agent.id] = true
+  end
+end
+
 function M.status()
   local workspace_id = vim.b[buffers.workspace_id] or last_workspace_id
   local record = workspace_id and workspaces[workspace_id]
@@ -72,9 +84,52 @@ local function list_for(context, directory, done)
       return
     end
     local agents = result.agents or {}
+    local validation_err = validate(agents)
+    if validation_err then
+      done(validation_err)
+      return
+    end
     remember(context.workspace.id, agents)
     done(nil, agents, context, directory)
   end)
+end
+
+local function unique_prefixes(agents)
+  local prefixes = {}
+  for _, agent in ipairs(agents) do
+    local length = math.min(8, #agent.id)
+    while length < #agent.id do
+      local prefix = agent.id:sub(1, length)
+      local unique = true
+      for _, other in ipairs(agents) do
+        if other ~= agent and other.id:sub(1, length) == prefix then
+          unique = false
+          break
+        end
+      end
+      if unique then break end
+      length = length + 1
+    end
+    prefixes[agent.id] = agent.id:sub(1, length)
+  end
+  return prefixes
+end
+
+local function display_time(agent)
+  local value = agent.lastActivity or agent.updatedAt
+  if not value or value == "" then return nil end
+  local date, clock = value:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d):%d%dZ$")
+  return date and (date .. " " .. clock .. " UTC") or value
+end
+
+local function picker_label(agent, prefixes)
+  local parts = { agent.label or agent.provider or "Agent Session" }
+  if agent.provider and agent.provider:lower() ~= parts[1]:lower() then parts[#parts + 1] = agent.provider end
+  parts[#parts + 1] = prefixes[agent.id]
+  parts[#parts + 1] = agent.status or "unknown"
+  local time = display_time(agent)
+  if time then parts[#parts + 1] = time end
+  return table.concat(parts, " · ")
 end
 
 function M.list(done)
@@ -152,12 +207,25 @@ function M.pick(done)
       done("this Workspace has no Agent Sessions")
       return
     end
+    local prefixes = unique_prefixes(agents)
+    local cfg = config.get()
+    local preview = agent_preview.new({
+      workspace_id = context.workspace.id,
+      directory = directory,
+      max_bytes = cfg.agent_preview_max_bytes,
+      cache_bytes = cfg.agent_preview_cache_bytes,
+      title = function(agent) return "Agent Transcript · " .. prefixes[agent.id] end,
+    })
     config.get().select(agents, {
       prompt = "Select a twt Agent Session",
-      format_item = function(agent)
-        return string.format("%s · %s · %s", agent.label, agent.provider, agent.status)
-      end,
+      kind = "twt_agent_session",
+      format_item = function(agent) return picker_label(agent, prefixes) end,
+      snacks = {
+        preview = function(ctx) preview:show(ctx) end,
+        layout = { preset = "default" },
+      },
     }, function(agent)
+      preview:close()
       if not agent then
         done(nil)
         return

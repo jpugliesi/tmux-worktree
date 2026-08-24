@@ -472,8 +472,9 @@ preview shows the same transcript text as `twt agents transcript show`. A
 selection starts the provider resume command in the current pane:
 `codex resume`, `claude --resume`, or `grok --resume`. twt replaces this
 process with that command. It does not start a new tmux window.
-`--preview` writes that transcript as markdown. That path never registers a
-discovered session and never writes a snapshot.
+`--preview` writes that transcript as markdown with text output. An explicit
+`--output json` writes the normal transcript envelope. Preview never registers
+a discovered session and never writes a snapshot.
 
 `agents list` also scans the Codex, Claude, and Grok stores. A provider
 session that ran inside a repository of the Workspace, and that no Agent

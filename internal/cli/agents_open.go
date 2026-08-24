@@ -68,7 +68,7 @@ func newAgentsOpenCommand(options Options, agents *agentservice.Service, workspa
 		},
 	}
 	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
-	command.Flags().BoolVar(&preview, "preview", false, "Write the Agent Session transcript as markdown. The fzf preview uses this. This path never registers a session and never writes a snapshot")
+	command.Flags().BoolVar(&preview, "preview", false, "Preview the Agent Session transcript. Text output writes markdown. This path never registers a session and never writes a snapshot")
 	setArguments(command, optionalArgument("agent_id", "the interactive picker asks for it when absent. --preview requires it"))
 	command.ValidArgsFunction = agentReferenceCompletion(agents, workspaces, stateDir)
 	_ = command.RegisterFlagCompletionFunc("workspace", workspaceFlagCompletion(workspaces))
@@ -191,10 +191,10 @@ func agentOpenPreviewCommand(workspaceID string) string {
 func previewAgentTranscript(command *cobra.Command, agents *agentservice.Service, workspace domain.Workspace, stateDir, reference string) error {
 	agent, err := findAgentForPreview(agents, workspace, stateDir, reference)
 	if err != nil {
-		return writePreviewMessage(command, err)
+		return previewError(command, err)
 	}
 	if agent.ProviderSessionID == "" {
-		return writePreviewMessage(command, clierr.WithHint(
+		return previewError(command, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "Agent Session %q has no linked provider session ID", agent.ID),
 			"Run 'twt agents discover --workspace %s' to find sessions.", workspace.ID,
 		))
@@ -205,10 +205,29 @@ func previewAgentTranscript(command *cobra.Command, agents *agentservice.Service
 	}
 	value, err := transcriptservice.New(home, stateDir).Read(agent.Provider, agent.ProviderSessionID, workspace)
 	if err != nil {
-		return writePreviewMessage(command, err)
+		return previewError(command, err)
+	}
+	if previewWantsJSON(command) {
+		return writeAgentTranscript(command, workspace.ID, agent.ID, value)
 	}
 	_, err = io.WriteString(command.OutOrStdout(), value.Markdown)
 	return err
+}
+
+// previewError keeps fzf's text preview useful, but gives JSON callers the
+// normal structured error and nonzero exit contract.
+func previewError(command *cobra.Command, err error) error {
+	if previewWantsJSON(command) {
+		return err
+	}
+	return writePreviewMessage(command, err)
+}
+
+// A preview keeps its historical Markdown default for fzf and pipes. Only an
+// explicit JSON request selects the structured Neovim contract.
+func previewWantsJSON(command *cobra.Command) bool {
+	flag := command.Flags().Lookup("output")
+	return flag != nil && flag.Changed && flag.Value.String() == outputJSON
 }
 
 // findAgentForPreview resolves one AGENT reference without a write. A
