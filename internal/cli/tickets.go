@@ -386,13 +386,22 @@ func writeTicketList(out io.Writer, tickets []domain.Ticket) error {
 		}
 		rows := make([][]string, 0, len(group.tickets))
 		for _, ticket := range group.tickets {
-			rows = append(rows, []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), ticket.Title})
+			rows = append(rows, []string{ticket.Slug, ticketDisplayState(ticket), ticket.ClaimedBy, fmt.Sprintf("%d", ticket.Priority), ticket.Title})
 		}
-		if err := writeTable(out, []string{"SLUG", "STATUS", "PRIORITY", "TITLE"}, rows); err != nil {
+		if err := writeTable(out, []string{"SLUG", "STATE", "CLAIMED_BY", "PRIORITY", "TITLE"}, rows); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ticketDisplayState folds the claim into the human table state: a claimed
+// open Ticket is in progress. JSON output keeps the raw status and claimant.
+func ticketDisplayState(ticket domain.Ticket) string {
+	if ticket.ClaimedBy != "" && ticket.Status != domain.TicketDone && ticket.Status != domain.TicketWontfix {
+		return "in-progress"
+	}
+	return string(ticket.Status)
 }
 
 func groupTicketsByProject(tickets []domain.Ticket) []ticketListGroup {
