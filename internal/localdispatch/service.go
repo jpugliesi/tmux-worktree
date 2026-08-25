@@ -62,6 +62,8 @@ type ServiceOptions struct {
 	// Launcher is required for a real dispatch. Read-only paths (sync,
 	// abandon) leave it nil.
 	Launcher WorkspaceLauncher
+	// Observer is required for Sync. Dispatch and Abandon leave it nil.
+	Observer WorkspaceObserver
 	// Config is the resolved machine ticketAgent config: the fallback for
 	// provider, effort, and instructions when the Template sets none.
 	Config store.TicketAgentConfig
