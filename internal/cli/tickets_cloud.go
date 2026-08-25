@@ -33,6 +33,7 @@ type cursorCloudMutationOutput struct {
 	SchemaVersion int                          `json:"schemaVersion"`
 	Operation     string                       `json:"operation"`
 	Status        string                       `json:"status"`
+	Backend       string                       `json:"backend,omitempty"`
 	Capacity      *cursorcloud.CloudCapacity   `json:"capacity,omitempty"`
 	Session       *cursorCloudSessionOutput    `json:"session,omitempty"`
 	Sessions      []cursorCloudSessionOutput   `json:"sessions,omitempty"`
@@ -42,19 +43,48 @@ type cursorCloudMutationOutput struct {
 func newTicketsDispatchCommand(options Options) *cobra.Command {
 	var plan bool
 	var maxConcurrency int
+	var backend string
 	command := &cobra.Command{
 		Use:   "dispatch TICKET",
-		Short: "Start a Cursor Cloud Session for one ready Ticket",
+		Short: "Start one implementation Session for a ready Ticket",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			return runCursorCloudDispatch(command, options, args[0], plan, maxConcurrency)
+			return runTicketsDispatch(command, options, args[0], backend, plan, maxConcurrency)
 		},
 	}
-	command.Flags().BoolVar(&plan, "plan", false, "Ask the Cloud Agent to create a plan without changing code")
-	command.Flags().IntVar(&maxConcurrency, "max-concurrency", 0, "Override the Project-wide active Cloud Session limit")
+	command.Flags().BoolVar(&plan, "plan", false, "Ask the agent to create a plan without changing code")
+	command.Flags().IntVar(&maxConcurrency, "max-concurrency", 0, "Override the Project-wide active Session limit")
+	command.Flags().StringVar(&backend, "backend", "", "Session backend: local or cursor-cloud (the default follows the Template)")
+	_ = command.RegisterFlagCompletionFunc("backend", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{dispatchBackendLocal, dispatchBackendCursorCloud}, cobra.ShellCompDirectiveNoFileComp
+	})
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketFlagCompletion(options)
 	return command
+}
+
+// runTicketsDispatch routes one dispatch to its backend. An omitted backend
+// selects cursor-cloud when the Project Template has cursor_cloud settings,
+// otherwise local.
+func runTicketsDispatch(command *cobra.Command, options Options, ticket, backend string, plan bool, maxConcurrency int) error {
+	resolved := backend
+	if resolved == "" {
+		var err error
+		resolved, err = resolveDispatchBackend(options, ticket)
+		if err != nil {
+			return err
+		}
+	}
+	switch resolved {
+	case dispatchBackendCursorCloud:
+		return runCursorCloudDispatch(command, options, ticket, plan, maxConcurrency)
+	case dispatchBackendLocal:
+		return runLocalDispatch(command, options, ticket, plan, maxConcurrency)
+	default:
+		return invalidUsageWithHint(command,
+			fmt.Sprintf("Use --backend %s or --backend %s.", dispatchBackendLocal, dispatchBackendCursorCloud),
+			fmt.Sprintf("unsupported dispatch backend %q", resolved))
+	}
 }
 
 func newTicketsCloudSyncCommand(options Options) *cobra.Command {
@@ -116,7 +146,8 @@ func runCursorCloudDispatch(command *cobra.Command, options Options, ticket stri
 	if WantsJSON(command) {
 		output := toCursorCloudSessionOutput(session)
 		return writeJSONOutput(command, cursorCloudMutationOutput{
-			SchemaVersion: jsonSchemaVersion, Operation: "tickets.dispatch", Status: status, Session: &output,
+			SchemaVersion: jsonSchemaVersion, Operation: "tickets.dispatch", Status: status,
+			Backend: dispatchBackendCursorCloud, Session: &output,
 		})
 	}
 	verb := "Started"

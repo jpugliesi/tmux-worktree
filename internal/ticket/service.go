@@ -3,6 +3,7 @@ package ticket
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -530,6 +531,7 @@ func renderNewTicket(ticket domain.Ticket, body string) ([]byte, error) {
 	setMapBlockedBy(mapping, ticket.BlockedBy)
 	setMapNull(mapping, "claimed_by")
 	setMapNull(mapping, "claimed_at")
+	setMapStringList(mapping, "pull_requests", nil)
 	setMapDate(mapping, "created", ticket.Created)
 	setMapDate(mapping, "updated", ticket.Updated)
 	file.Body = newTicketBody(ticket.Title, body, ticket.BlockedBy)
@@ -881,6 +883,14 @@ func (s *Service) ClaimReady(ref, claimant string, dryRun bool) (domain.Ticket, 
 // CompleteClaim changes the Ticket status and clears one expected claim in one
 // locked write.
 func (s *Service) CompleteClaim(ref, claimant string, status domain.TicketStatus, dryRun bool) (domain.Ticket, error) {
+	return s.CompleteWork(ref, claimant, status, nil, dryRun)
+}
+
+// CompleteWork records pull requests and completes one expected claim in one
+// locked write. It is the worker-facing terminal mutation: the URL write and
+// the claim clear cannot race a new claimant. A retry after success is a
+// no-op when the status and the URLs already match.
+func (s *Service) CompleteWork(ref, claimant string, status domain.TicketStatus, pullRequests []string, dryRun bool) (domain.Ticket, error) {
 	claimant, err := validClaimant(claimant)
 	if err != nil {
 		return domain.Ticket{}, err
@@ -889,10 +899,19 @@ func (s *Service) CompleteClaim(ref, claimant string, status domain.TicketStatus
 		return domain.Ticket{}, clierr.New(clierr.InvalidUsage,
 			"claim completion status %q must be ready-for-agent or ready-for-human", status)
 	}
+	normalized := make([]string, 0, len(pullRequests))
+	for _, raw := range pullRequests {
+		value := strings.TrimSpace(raw)
+		if err := validatePullRequestURL(value); err != nil {
+			return domain.Ticket{}, clierr.Wrap(clierr.InvalidUsage, err)
+		}
+		normalized = append(normalized, value)
+	}
 	return s.mutate(ref, dryRun, false, syncRequired, func() string {
 		return fmt.Sprintf("twt: complete %s (%s)", ref, status)
 	}, func(m *mutation) error {
-		if m.ticket.ClaimedBy == "" && m.ticket.Status == status {
+		merged, changed := mergePullRequests(m.ticket.PullRequests, normalized)
+		if m.ticket.ClaimedBy == "" && m.ticket.Status == status && !changed {
 			m.skipWrite = true
 			return nil
 		}
@@ -902,12 +921,44 @@ func (s *Service) CompleteClaim(ref, claimant string, status domain.TicketStatus
 		if m.ticket.ClaimedBy != claimant {
 			return claimedByOther(m.ticket.Slug, m.ticket.ClaimedBy)
 		}
+		if len(merged) > 0 {
+			setMapStringList(m.mapping, "pull_requests", merged)
+		}
 		setMapString(m.mapping, "status", string(status))
 		setMapNull(m.mapping, "claimed_by")
 		setMapNull(m.mapping, "claimed_at")
 		m.relocate = true
 		return nil
 	})
+}
+
+// validatePullRequestURL accepts only HTTPS URLs with a host.
+func validatePullRequestURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("pull request URL %q is not an HTTPS URL", value)
+	}
+	return nil
+}
+
+// mergePullRequests appends new URLs after the existing ones, dropping
+// duplicates and keeping order.
+func mergePullRequests(existing, additions []string) ([]string, bool) {
+	merged := append([]string(nil), existing...)
+	seen := make(map[string]bool, len(existing))
+	for _, value := range existing {
+		seen[value] = true
+	}
+	changed := false
+	for _, value := range additions {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		merged = append(merged, value)
+		changed = true
+	}
+	return merged, changed
 }
 
 // Unclaim clears the claim of claimant. An unclaimed Ticket succeeds without

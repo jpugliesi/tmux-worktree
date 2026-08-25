@@ -134,6 +134,7 @@ type ticketDispatchApplyRequest struct {
 	Reference      string `json:"reference"`
 	Plan           bool   `json:"plan,omitempty"`
 	MaxConcurrency int    `json:"maxConcurrency,omitempty"`
+	Backend        string `json:"backend,omitempty"`
 }
 
 type ticketCloudSyncApplyRequest struct {
@@ -315,7 +316,8 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
 			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
-			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Cloud Session limit"},
+			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Session limit"},
+			{Path: "ticket.backend", Type: "string", Required: false, Enum: []string{"local", "cursor-cloud"}, Condition: "absent follows the Template: cursor-cloud when cursor_cloud is set, else local"},
 		}}, applyTicketsDispatch},
 		{applyOperationSchema{Operation: "tickets.cloud-sync", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.project", Type: "string", Required: true},
@@ -856,7 +858,7 @@ func applyTicketsDispatch(command *cobra.Command, options Options, request apply
 	if payload.Reference == "" {
 		return fmt.Errorf("ticket.reference is required for tickets.dispatch")
 	}
-	return runCursorCloudDispatch(command, options, payload.Reference, payload.Plan, payload.MaxConcurrency)
+	return runTicketsDispatch(command, options, payload.Reference, payload.Backend, payload.Plan, payload.MaxConcurrency)
 }
 
 func applyTicketsCloudSync(command *cobra.Command, options Options, request applyRequest) error {

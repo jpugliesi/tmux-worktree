@@ -1,0 +1,110 @@
+package cli_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
+)
+
+// fakeProviderOnPath puts an executable fake provider CLI on PATH so
+// dispatch validation can resolve it without a real install.
+func fakeProviderOnPath(t *testing.T, name string) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestTicketsDispatchRoutesToTheLocalBackend(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	fakeProviderOnPath(t, "grok")
+	writeTwtConfigFile(t, options.ConfigDir, "ticketAgent:\n  provider: grok\n")
+	writeTemplateFile(t, options.ConfigDir, domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "product",
+		Repositories: []domain.RepositorySpec{{
+			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
+		}},
+	})
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--project", "core", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+
+	// No cursor_cloud block: the default backend is local.
+	dryJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "dispatch", "fix-auth", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("local dry-run dispatch: %v\n%s", err, dryJSON)
+	}
+	for _, want := range []string{`"backend":"local"`, `"status":"valid"`, `"provider":"grok"`, `"agentLabel":"ticket-impl"`} {
+		if !strings.Contains(dryJSON, want) {
+			t.Fatalf("dry-run JSON lacks %s:\n%s", want, dryJSON)
+		}
+	}
+	claimedJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "list", "--claimed", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(claimedJSON, "fix-auth") {
+		t.Fatalf("dry-run dispatch claimed the ticket:\n%s", claimedJSON)
+	}
+
+	// An explicit cloud backend without cursor_cloud settings fails.
+	_, _, err = executeCollectingInput(t, options, nil,
+		"tickets", "dispatch", "fix-auth", "--backend", "cursor-cloud", "--dry-run", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "cursor_cloud") {
+		t.Fatalf("cloud backend on a local-only Template error = %v", err)
+	}
+
+	// An unknown backend is invalid usage.
+	_, _, err = executeCollectingInput(t, options, nil,
+		"tickets", "dispatch", "fix-auth", "--backend", "codespaces", "--dry-run", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "unsupported dispatch backend") {
+		t.Fatalf("unknown backend error = %v", err)
+	}
+}
+
+func TestApplyTicketsDispatchAcceptsTheBackendField(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	fakeProviderOnPath(t, "grok")
+	writeTwtConfigFile(t, options.ConfigDir, "ticketAgent:\n  provider: grok\n")
+	writeTemplateFile(t, options.ConfigDir, domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "product",
+		Repositories: []domain.RepositorySpec{{
+			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
+		}},
+	})
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--project", "core", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.dispatch","ticket":{"reference":"fix-auth","backend":"local"}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply local dispatch dry run: %v\n%s", err, applyJSON)
+	}
+	if !strings.Contains(applyJSON, `"backend":"local"`) || !strings.Contains(applyJSON, `"status":"valid"`) {
+		t.Fatalf("apply JSON = %s", applyJSON)
+	}
+}

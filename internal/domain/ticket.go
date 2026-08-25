@@ -59,6 +59,9 @@ type Ticket struct {
 	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
 	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
 	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
+	// PullRequests are the pull request URLs that shipped this Ticket's
+	// work. Workers record them through 'twt tickets complete'.
+	PullRequests []string `yaml:"pull_requests" json:"pullRequests,omitempty"`
 	Created     string       `yaml:"created" json:"created"`
 	Updated     string       `yaml:"updated" json:"updated"`
 	Path        string       `yaml:"-" json:"path"`
