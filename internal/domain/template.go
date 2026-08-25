@@ -45,6 +45,57 @@ type Template struct {
 	// CursorCloud configures remote Cursor Cloud Sessions for Tickets that use
 	// this Workspace Template. It does not change local Workspace preparation.
 	CursorCloud *CursorCloudSpec `yaml:"cursor_cloud,omitempty" json:"cursorCloud,omitempty"`
+	// LocalDispatch configures local implementation dispatch for Tickets that
+	// use this Workspace Template. It does not change Workspace preparation
+	// or the Prepared Environment digest.
+	LocalDispatch *LocalDispatchSpec `yaml:"local_dispatch,omitempty" json:"localDispatch,omitempty"`
+}
+
+// LocalDispatchSpec declares the defaults for local implementation dispatch.
+// Empty fields fall back to the machine ticketAgent config, so a shared
+// Template normally leaves provider unset and each machine selects an
+// installed provider.
+type LocalDispatchSpec struct {
+	Provider       string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Effort         string `yaml:"effort,omitempty" json:"effort,omitempty"`
+	Instructions   string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	MaxConcurrency int    `yaml:"max_concurrency,omitempty" json:"maxConcurrency,omitempty"`
+}
+
+// EffectiveProvider returns the Template provider or the fallback. The
+// receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveProvider(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Provider) == "" {
+		return fallback
+	}
+	return c.Provider
+}
+
+// EffectiveEffort returns the Template effort or the fallback. The receiver
+// may be nil.
+func (c *LocalDispatchSpec) EffectiveEffort(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Effort) == "" {
+		return fallback
+	}
+	return c.Effort
+}
+
+// EffectiveInstructions returns the Template instructions or the fallback.
+// The receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveInstructions(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Instructions) == "" {
+		return fallback
+	}
+	return c.Instructions
+}
+
+// EffectiveMaxConcurrency returns the Project budget for concurrent local
+// dispatch Sessions. The receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveMaxConcurrency() int {
+	if c == nil || c.MaxConcurrency == 0 {
+		return DefaultLocalDispatchMaxConcurrency
+	}
+	return c.MaxConcurrency
 }
 
 // CursorCloudSpec declares the defaults for remote Cursor Cloud Sessions.
@@ -218,6 +269,29 @@ func (t Template) Validate() error {
 	}
 	if err := validateCursorCloud(t.CursorCloud, seen); err != nil {
 		return err
+	}
+	if err := validateLocalDispatch(t.LocalDispatch); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLocalDispatch(config *LocalDispatchSpec) error {
+	if config == nil {
+		return nil
+	}
+	switch config.Provider {
+	case "", "codex", "claude", "cursor", "grok":
+	default:
+		return fmt.Errorf("local_dispatch provider %q is invalid: use codex, claude, cursor, or grok", config.Provider)
+	}
+	switch config.Effort {
+	case "", CursorCloudEffortSmall, CursorCloudEffortMedium, CursorCloudEffortLarge, CursorCloudEffortXLarge:
+	default:
+		return fmt.Errorf("local_dispatch effort %q is invalid: use small, medium, large, or xlarge", config.Effort)
+	}
+	if config.MaxConcurrency < 0 {
+		return fmt.Errorf("local_dispatch max_concurrency %d is negative", config.MaxConcurrency)
 	}
 	return nil
 }

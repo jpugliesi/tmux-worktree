@@ -205,6 +205,45 @@ func TestTemplateValidatesCursorCloudDefaults(t *testing.T) {
 	}
 }
 
+func TestTemplateValidatesLocalDispatchDefaults(t *testing.T) {
+	template := Template{
+		Version: TemplateVersion,
+		Name:    "product",
+		Repositories: []RepositorySpec{
+			{Name: "api", Clone: CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main"},
+		},
+		LocalDispatch: &LocalDispatchSpec{Provider: "grok", Effort: CursorCloudEffortLarge, MaxConcurrency: 3},
+	}
+	if err := template.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got := template.LocalDispatch.EffectiveProvider("codex"); got != "grok" {
+		t.Fatalf("EffectiveProvider() = %q, want grok", got)
+	}
+	if got := template.LocalDispatch.EffectiveMaxConcurrency(); got != 3 {
+		t.Fatalf("EffectiveMaxConcurrency() = %d, want 3", got)
+	}
+	var nilSpec *LocalDispatchSpec
+	if got := nilSpec.EffectiveProvider("codex"); got != "codex" {
+		t.Fatalf("nil EffectiveProvider() = %q, want codex", got)
+	}
+	if got := nilSpec.EffectiveMaxConcurrency(); got != DefaultLocalDispatchMaxConcurrency {
+		t.Fatalf("nil EffectiveMaxConcurrency() = %d, want %d", got, DefaultLocalDispatchMaxConcurrency)
+	}
+	template.LocalDispatch = &LocalDispatchSpec{Provider: "vim"}
+	if err := template.Validate(); err == nil {
+		t.Fatal("Validate() accepted an invalid local_dispatch provider")
+	}
+	template.LocalDispatch = &LocalDispatchSpec{Effort: "huge"}
+	if err := template.Validate(); err == nil {
+		t.Fatal("Validate() accepted an invalid local_dispatch effort")
+	}
+	template.LocalDispatch = &LocalDispatchSpec{MaxConcurrency: -1}
+	if err := template.Validate(); err == nil {
+		t.Fatal("Validate() accepted a negative local_dispatch max_concurrency")
+	}
+}
+
 func TestTemplateRejectsInvalidCursorCloudConfiguration(t *testing.T) {
 	base := Template{
 		Version: TemplateVersion,
