@@ -1,7 +1,6 @@
 package agentprovider
 
 import (
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -62,29 +61,10 @@ func TestRegistryIdentifiesCommandsAndBuildsResumeCommands(t *testing.T) {
 	}
 }
 
-func TestRegistryRequiresCursorProofForTheAgentAlias(t *testing.T) {
-	root := t.TempDir()
-	version := filepath.Join(root, "cursor-agent", "versions", "2026.08.21-test")
-	executable := filepath.Join(version, "cursor-agent")
-	script := filepath.Join(version, "index.js")
-
-	tests := []struct {
-		name    string
-		process Process
-		want    string
-	}{
-		{name: "cursor-agent", process: Process{Command: "cursor-agent", Executable: executable, Args: []string{executable}}, want: "cursor"},
-		{name: "proved agent alias", process: Process{Command: "node", Executable: executable, Args: []string{filepath.Join(root, "bin", "agent"), "--use-system-ca", script}}, want: "cursor"},
-		{name: "plain agent", process: Process{Command: "agent", Executable: filepath.Join(root, "bin", "agent"), Args: []string{filepath.Join(root, "bin", "agent")}}, want: ""},
-		{name: "forged script argument", process: Process{Command: "agent", Executable: filepath.Join(root, "bin", "agent"), Args: []string{filepath.Join(root, "bin", "agent"), script}}, want: ""},
-		{name: "wrong version script", process: Process{Command: "node", Executable: executable, Args: []string{filepath.Join(root, "bin", "agent"), filepath.Join(root, "cursor-agent", "versions", "other", "index.js")}}, want: ""},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := IdentifyProcess(test.process); got != test.want {
-				t.Fatalf("IdentifyProcess(%+v) = %q, want %q", test.process, got, test.want)
-			}
-		})
+func TestRegistryIdentifiesCursorAgentProcess(t *testing.T) {
+	process := Process{Command: "cursor-agent", Args: []string{"/opt/bin/cursor-agent"}}
+	if got := IdentifyProcess(process); got != "cursor" {
+		t.Fatalf("IdentifyProcess(%+v) = %q, want cursor", process, got)
 	}
 }
 

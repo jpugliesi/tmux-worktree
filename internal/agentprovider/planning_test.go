@@ -25,8 +25,8 @@ func TestBuildTicketPlanningLaunches(t *testing.T) {
 		},
 		{
 			provider:   "cursor",
-			wantStart:  []string{"agent", "--plan", "PROMPT"},
-			wantResume: []string{"agent", "--plan"},
+			wantStart:  []string{"cursor-agent", "--plan", "PROMPT"},
+			wantResume: []string{"cursor-agent", "--plan"},
 		},
 		{
 			provider:   "grok",
@@ -118,15 +118,10 @@ func TestBuildTicketPlanningLaunchValidatesBeforeUse(t *testing.T) {
 	}
 }
 
-func TestTicketPlanningCursorFallsBackToCursorAgent(t *testing.T) {
+func TestTicketPlanningCursorRequiresCursorAgent(t *testing.T) {
 	launch, err := BuildTicketPlanningLaunch(TicketPlanningRequest{
 		Provider: "cursor", Effort: TicketPlanningEffortLarge, Tickets: []string{"one"},
-	}, func(name string) (string, error) {
-		if name == "agent" {
-			return "", errors.New("missing")
-		}
-		return "/bin/cursor-agent", nil
-	})
+	}, func(name string) (string, error) { return "/bin/" + name, nil })
 	if err != nil {
 		t.Fatal(err)
 	}

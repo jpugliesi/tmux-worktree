@@ -189,6 +189,9 @@ twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
 twt tickets queue --project PROJECT [--limit N]
+twt tickets dispatch TICKET [--plan] [--max-concurrency N]
+twt tickets cloud-sync --project PROJECT
+twt tickets cloud-abandon SESSION --force
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -199,6 +202,7 @@ twt tickets comment TICKET --stdin
 twt tickets doctor
 twt tickets repair
 twt projects create NAME
+twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects show NAME
 ```
@@ -236,6 +240,51 @@ cycles that stop affected Tickets from becoming ready.
 `--limit` cuts only `ready`. The complete graph and cycle diagnostics stay in
 the result. Use `--fields ready,readyTotalCount` when an agent does not need
 the graph.
+
+### Cursor Cloud coordinator
+
+A Project can select one Workspace Template. The Template can include a
+`cursor_cloud` block with a model, generic effort, prompt instructions,
+maximum Project concurrency, and a repository selection. The generic effort
+is `small`, `medium`, `large`, or `xlarge`; its default is `large`. Each Cloud
+Session saves a Template snapshot, so a later Template edit does not change a
+run that already exists.
+
+One coordinator wave first syncs existing Sessions, reads its available
+capacity, and then reads that number of ready Tickets:
+
+```sh
+twt tickets cloud-sync --project change-monitor --dry-run --output json
+twt tickets cloud-sync --project change-monitor --output json
+twt tickets queue --project change-monitor --limit AVAILABLE --output json
+twt tickets dispatch canonical-pr-comment --dry-run --output json
+twt tickets dispatch canonical-pr-comment --output json
+```
+
+If `capacity.known` is false, do not dispatch. Read the sync diagnostics and
+stop the wave. If it is true, pass `capacity.available` to queue as `--limit`.
+
+The Project dispatch lock makes the capacity reservation atomic. Agent mode
+asks Cursor to implement, test, and create pull requests for changed
+repositories. `--plan` asks for a plan only.
+
+Dispatch saves a private, versioned Cloud Session and claims the Ticket before
+it calls Cursor. A definite create failure returns the Ticket to
+`ready-for-agent`. An uncertain result keeps the claim. Sync can recover a
+remote Agent by the local Session ID in Cursor metadata. Do not dispatch that
+Ticket again while its Session is active.
+
+A finished run moves the Ticket to `ready-for-human`. A failed or cancelled
+run returns it to `ready-for-agent`. No Cloud result sets `done`. A changed
+repository without a pull request sets `handoffIncomplete`. One failed local
+Session update does not stop the other updates. The sync result then has
+`status: "partial"` and a `diagnostics` item for that Session.
+
+If repeated syncs cannot recover one Session, `cloud-abandon SESSION --force`
+stops its local recovery. It releases the Ticket only when the saved Cloud
+claimant still owns it. It does not cancel the remote Agent. That Agent can
+continue and can create a pull request. Run `--dry-run` before you apply this
+recovery command.
 
 ### `tickets create`
 

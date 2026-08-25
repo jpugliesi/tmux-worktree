@@ -317,6 +317,47 @@ One planning Agent covers all Ticket arguments. `ticketAgent` in
 Configured instructions come before the generated Ticket request. Codex uses
 the planning prompt in normal mode. The other providers use their plan mode.
 
+### Dispatch a Project to Cursor Cloud
+
+Use Cursor Cloud only when the Project has a Workspace Template and that
+Template has `cursor_cloud` settings. The settings select the model, generic
+effort, maximum Project concurrency, prompt instructions, and repositories.
+The default effort is `large`.
+
+A coordinator runs one wave and then stops:
+
+```sh
+twt tickets cloud-sync --project PROJECT --dry-run --output json
+twt tickets cloud-sync --project PROJECT --output json
+twt tickets queue --project PROJECT --limit AVAILABLE --output json
+twt tickets dispatch TICKET --dry-run --output json
+twt tickets dispatch TICKET --output json
+```
+
+First check `capacity.known`. If it is false, do not dispatch. Read the
+diagnostics and stop the wave. If it is true, pass `capacity.available` to
+queue as `--limit`. Dispatch only the Tickets in `ready`. Run dispatch once
+for each selected Ticket. Add `--plan` only when the user asks for a plan. A
+normal dispatch asks Cursor to implement the Ticket, run tests, and create a
+pull request for each changed repository.
+
+After the wave, stop. Do not poll in a tight loop. Run a new wave when the user
+or coordinator schedule asks for one. A sync can have `status: "partial"`.
+Read `diagnostics`, correct each named Session when possible, and keep the
+successful Session updates. If dispatch or sync reports an uncertain remote
+result, keep the Ticket claim and run `cloud-sync` later. Do not dispatch that
+Ticket again while its Cloud Session is active.
+
+If repeated syncs cannot recover one Session, report the stuck Session to the
+user. With user authority, run `twt tickets cloud-abandon SESSION --force`
+first with `--dry-run` and then without it. This stops local recovery and can
+release the Ticket. It does not cancel the remote Cursor Agent. That Agent can
+continue and can create a pull request. Do not use this command without clear
+user authority.
+
+Cursor Cloud Sessions are separate from local tmux Agent Sessions. Do not use
+`twt tickets start --with-agent` for a Cursor Cloud dispatch.
+
 Follow these rules for every ticket command:
 
 1. Run `twt schema` when the installed version is not known. The schema is

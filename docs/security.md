@@ -48,6 +48,39 @@ agent must read the blockers and correct the cause; it must not repeat the
 same request. Every mutation also accepts `--dry-run`, which validates the
 request and reports `status: "valid"` without a state, Git, or tmux change.
 
+## Cursor Cloud boundary
+
+`twt tickets dispatch` sends the Ticket body, configured prompt instructions,
+repository URLs, and starting refs to Cursor Cloud. The operator must use it
+only for content and repositories that Cursor can receive. The command does
+not put credentials in its JSON request. The compiled Cursor SDK harness uses
+the Cursor authentication that is already available to that process.
+
+The Go CLI starts the harness directly, without a shell. It sends one strict,
+versioned JSON value on standard input and limits both standard output and
+standard error. The harness also limits its input and rejects unknown fields.
+Cloud Session state has mode `0600`. It contains the frozen Ticket prompt and
+idempotency keys. Normal CLI output omits those private state fields.
+
+`TWT_CURSOR_CLOUD_HARNESS` can select a different executable. This is an
+operator trust decision because the process receives the private dispatch
+request and the Cursor authentication environment. Without that setting,
+`twt` checks for `twt-cursor-cloud` next to its own executable and then on
+`PATH`.
+
+Dispatch saves local state and claims the Ticket before it calls Cursor. An
+uncertain network result keeps that claim. This rule prevents an automatic
+retry from creating a second Cloud Agent. `cloud-sync` can recover the remote
+Agent from private Session metadata. It keeps an unknown run claimed. A
+coordinator must not dispatch the same Ticket while that Session is active.
+`cloud-abandon --force` is an explicit local recovery override. It does not
+cancel the remote Agent, which can continue and can create a pull request.
+
+The Project concurrency check and the local reservation use one Project lock.
+Two dispatch commands cannot both take the last capacity slot. A sync error
+for one Session does not stop updates for other Sessions. JSON uses
+`status: "partial"` and names each failed Session in `diagnostics`.
+
 ## Untrusted transcript text
 
 A provider transcript holds the words of any person or tool that talked to a

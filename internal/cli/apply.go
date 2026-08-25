@@ -130,8 +130,29 @@ type ticketCommentApplyRequest struct {
 	Text      string `json:"text"`
 }
 
+type ticketDispatchApplyRequest struct {
+	Reference      string `json:"reference"`
+	Plan           bool   `json:"plan,omitempty"`
+	MaxConcurrency int    `json:"maxConcurrency,omitempty"`
+}
+
+type ticketCloudSyncApplyRequest struct {
+	Project string `json:"project"`
+}
+
+type ticketCloudAbandonApplyRequest struct {
+	Session string `json:"session"`
+	Force   bool   `json:"force"`
+}
+
 type projectCreateApplyRequest struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Template string `json:"template,omitempty"`
+}
+
+type projectSetApplyRequest struct {
+	Name     string `json:"name"`
+	Template string `json:"template"`
 }
 
 type agentRegisterRequest struct {
@@ -291,10 +312,27 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
 		}}, applyTicketsComment},
+		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
+			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
+			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Cloud Session limit"},
+		}}, applyTicketsDispatch},
+		{applyOperationSchema{Operation: "tickets.cloud-sync", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.project", Type: "string", Required: true},
+		}}, applyTicketsCloudSync},
+		{applyOperationSchema{Operation: "tickets.cloud-abandon", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.session", Type: "string", Required: true},
+			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the remote Cursor Agent can continue"},
+		}}, applyTicketsCloudAbandon},
 		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
 		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.template", Type: "string", Required: false},
 		}}, applyTicketsProjectsCreate},
+		{applyOperationSchema{Operation: "projects.set", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.template", Type: "string", Required: true},
+		}}, applyTicketsProjectsSet},
 	}
 }
 
@@ -810,6 +848,39 @@ func applyTicketsComment(command *cobra.Command, options Options, request applyR
 	return commentTicket(command, service, payload.Reference, payload.Text)
 }
 
+func applyTicketsDispatch(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketDispatchApplyRequest
+	if err := decodeApplyPayload("tickets.dispatch", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" {
+		return fmt.Errorf("ticket.reference is required for tickets.dispatch")
+	}
+	return runCursorCloudDispatch(command, options, payload.Reference, payload.Plan, payload.MaxConcurrency)
+}
+
+func applyTicketsCloudSync(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudSyncApplyRequest
+	if err := decodeApplyPayload("tickets.cloud-sync", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Project == "" {
+		return fmt.Errorf("ticket.project is required for tickets.cloud-sync")
+	}
+	return runCursorCloudSync(command, options, payload.Project)
+}
+
+func applyTicketsCloudAbandon(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudAbandonApplyRequest
+	if err := decodeApplyPayload("tickets.cloud-abandon", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Session == "" || !payload.Force {
+		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.cloud-abandon")
+	}
+	return runCursorCloudAbandon(command, options, payload.Session)
+}
+
 func applyTicketsRepair(command *cobra.Command, options Options, request applyRequest) error {
 	if len(request.Template) > 0 || len(request.Workspace) > 0 || len(request.Agent) > 0 ||
 		len(request.Storage) > 0 || len(request.Ticket) > 0 || len(request.Project) > 0 {
@@ -834,5 +905,23 @@ func applyTicketsProjectsCreate(command *cobra.Command, options Options, request
 	if err != nil {
 		return err
 	}
-	return createProject(command, service, payload.Name)
+	return createProject(command, options, service, payload.Name, payload.Template)
+}
+
+func applyTicketsProjectsSet(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectSetApplyRequest
+	if err := decodeApplyPayload("projects.set", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Template == "" {
+		return fmt.Errorf("project.name and project.template are required for projects.set")
+	}
+	if _, err := options.templateStore().Load(payload.Template); err != nil {
+		return err
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return setProjectTemplate(command, service, payload.Name, payload.Template)
 }

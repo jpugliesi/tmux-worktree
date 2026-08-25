@@ -412,24 +412,44 @@ func removeTemplate(command *cobra.Command, options Options, templateStore store
 }
 
 // checkTemplateIsUnused refuses Workspace Template removal while a Workspace
-// record still names the Workspace Template.
+// or Ticket Project still names the Workspace Template.
 func checkTemplateIsUnused(options Options, name string) error {
 	workspaces, err := store.NewWorkspaceStore(options.StateDir).List()
 	if err != nil {
 		return err
 	}
-	users := make([]string, 0, len(workspaces))
+	workspaceUsers := make([]string, 0, len(workspaces))
 	for _, workspace := range workspaces {
 		if workspace.TemplateName == name {
-			users = append(users, workspace.Name)
+			workspaceUsers = append(workspaceUsers, workspace.Name)
 		}
 	}
-	if len(users) == 0 {
-		return nil
+	projectUsers := []string{}
+	tickets, ticketErr := options.ticketService()
+	if ticketErr == nil {
+		projects, listErr := tickets.Projects()
+		if listErr != nil {
+			return listErr
+		}
+		for _, project := range projects {
+			if project.TemplateName == name {
+				projectUsers = append(projectUsers, project.Name)
+			}
+		}
+	} else if clierr.CodeOf(ticketErr) != clierr.PreconditionFailed {
+		return ticketErr
 	}
-	return clierr.WithHint(
-		clierr.New(clierr.PreconditionFailed, "Workspace Template %q is used by %d Workspaces: %s", name, len(users), strings.Join(users, ", ")),
-		"Remove these Workspaces first with 'twt workspaces remove WORKSPACE --apply'.")
+	if len(workspaceUsers) > 0 {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Workspace Template %q is used by %d Workspaces: %s", name, len(workspaceUsers), strings.Join(workspaceUsers, ", ")),
+			"Remove these Workspaces first with 'twt workspaces remove WORKSPACE --apply'.")
+	}
+	if len(projectUsers) > 0 {
+		return clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Workspace Template %q is used by %d Projects: %s", name, len(projectUsers), strings.Join(projectUsers, ", ")),
+			"Set a different Workspace Template on these Projects first.")
+	}
+	return nil
 }
 
 func newTemplateRepositoriesCommand(options Options, templateStore store.TemplateStore) *cobra.Command {

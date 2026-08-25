@@ -66,10 +66,11 @@ type Ticket struct {
 
 // Project is one directory of Tickets under the Tickets home.
 type Project struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Tickets  int    `json:"tickets"`
-	HasIndex bool   `json:"hasIndex"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Tickets      int    `json:"tickets"`
+	HasIndex     bool   `json:"hasIndex"`
+	TemplateName string `json:"templateName,omitempty"`
 }
 
 // Validate checks a Ticket before a write. Reads stay tolerant; this check

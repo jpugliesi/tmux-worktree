@@ -27,12 +27,14 @@ type projectShowOutput struct {
 func newProjectsCommand(options Options) *cobra.Command {
 	projects := groupCommand(&cobra.Command{Use: "projects", Short: "Manage Ticket Projects"})
 	projects.AddCommand(newProjectsCreateCommand(options))
+	projects.AddCommand(newProjectsSetCommand(options))
 	projects.AddCommand(newProjectsListCommand(options))
 	projects.AddCommand(newProjectsShowCommand(options))
 	return projects
 }
 
 func newProjectsCreateCommand(options Options) *cobra.Command {
+	var templateName string
 	command := &cobra.Command{
 		Use:   "create NAME",
 		Short: "Create a Project directory",
@@ -42,26 +44,76 @@ func newProjectsCreateCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return createProject(command, service, args[0])
+			return createProject(command, options, service, args[0], templateName)
 		},
 	}
+	command.Flags().StringVar(&templateName, "template", "", "Save the Workspace Template for this Project")
 	setArguments(command, requiredArgument("name"))
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }
 
 // createProject creates one Project. Both the command and apply use it.
-func createProject(command *cobra.Command, service *ticketservice.Service, name string) error {
+func createProject(command *cobra.Command, options Options, service *ticketservice.Service, name, templateName string) error {
+	if templateName != "" {
+		if _, err := options.templateStore().Load(templateName); err != nil {
+			return err
+		}
+	}
 	return runMutation(command, "projects.create",
 		func() (string, string, error) {
-			project, err := service.CreateProject(name, true)
+			project, err := service.CreateProjectWithTemplate(name, templateName, true)
 			return project.Name, project.Name, err
 		},
 		func() (string, string, error) {
-			project, err := service.CreateProject(name, false)
+			project, err := service.CreateProjectWithTemplate(name, templateName, false)
 			return project.Name, project.Name, err
 		},
 		func(out io.Writer, _, projectName string) error {
 			_, err := fmt.Fprintf(out, "Created Project %q\n", projectName)
+			return err
+		})
+}
+
+func newProjectsSetCommand(options Options) *cobra.Command {
+	var templateName string
+	command := &cobra.Command{
+		Use:   "set NAME --template TEMPLATE",
+		Short: "Set Project configuration",
+		Args:  exactArgs("NAME"),
+		RunE: func(command *cobra.Command, args []string) error {
+			if !command.Flags().Changed("template") || templateName == "" {
+				return invalidUsage(command, "pass --template TEMPLATE")
+			}
+			if _, err := options.templateStore().Load(templateName); err != nil {
+				return err
+			}
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			return setProjectTemplate(command, service, args[0], templateName)
+		},
+	}
+	command.Flags().StringVar(&templateName, "template", "", "Set the Workspace Template for this Project")
+	setArguments(command, requiredArgument("name"))
+	command.ValidArgsFunction = ticketProjectNameCompletion(options)
+	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
+	return command
+}
+
+func setProjectTemplate(command *cobra.Command, service *ticketservice.Service, name, templateName string) error {
+	return runMutation(command, "projects.set",
+		func() (string, string, error) {
+			project, err := service.SetProjectTemplate(name, templateName, true)
+			return project.Name, project.Name, err
+		},
+		func() (string, string, error) {
+			project, err := service.SetProjectTemplate(name, templateName, false)
+			return project.Name, project.Name, err
+		},
+		func(out io.Writer, _, projectName string) error {
+			_, err := fmt.Fprintf(out, "Set Workspace Template %q on Project %q\n", templateName, projectName)
 			return err
 		})
 }

@@ -103,14 +103,12 @@ func isTicketPlanningProvider(provider string) bool {
 }
 
 func planningExecutable(provider string, lookPath func(string) (string, error)) (string, error) {
-	candidates := []string{provider}
+	executable := provider
 	if provider == "cursor" {
-		candidates = []string{"agent", "cursor-agent"}
+		executable = "cursor-agent"
 	}
-	for _, candidate := range candidates {
-		if _, err := lookPath(candidate); err == nil {
-			return candidate, nil
-		}
+	if _, err := lookPath(executable); err == nil {
+		return executable, nil
 	}
 	return "", fmt.Errorf("cannot find the %q Ticket planning provider on PATH", provider)
 }

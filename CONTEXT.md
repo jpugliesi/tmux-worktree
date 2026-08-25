@@ -43,6 +43,11 @@ checkout lease. It can have a verified live process, a resume command, a
 linked Agent Transcript, or a combination of these.
 _Avoid_: Agent process, tmux pane
 
+**Cursor Cloud Session**:
+A remote Cursor Agent conversation for one Ticket. It can contain multiple
+runs and the pull-request handoff for each repository.
+_Avoid_: Agent Session, cloud Workspace, local Cursor process
+
 **Agent Candidate**:
 A verified provider transcript or live provider process that belongs to a
 Workspace but has no Agent Session record. It has a provider-qualified,
@@ -106,15 +111,16 @@ _Avoid_: Closed Project, archive Project
 
 **Project**:
 One durable directory under Tickets home, with `index.md`. It groups Tickets
-and can have many Workspaces over time. Its Ticket count includes active and
-closed Tickets.
+and selects one Workspace Template for local or cloud work. A Project can have
+many Workspaces and Cursor Cloud Sessions over time. Its Ticket count includes
+active and closed Tickets.
 _Avoid_: Board, workspace, epic folder
 
 **Ticket**:
-One Markdown file with YAML frontmatter. A Ticket belongs to one Project and
-can belong to only one active Workspace. `twt_workspace_id` is that
-Workspace ID while the Ticket is in flight. Its directory defines its
-Project, including below the Closed Tickets directory.
+One Markdown file with YAML frontmatter. A Ticket belongs to one Project. A
+claim gives one worker exclusive work authority. A Ticket can link to one
+active Workspace, and it can have one active Cursor Cloud Session. Its
+directory defines its Project, including below the Closed Tickets directory.
 _Avoid_: Issue, task file, combined tickets note
 
 **Topic note**:

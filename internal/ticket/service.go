@@ -103,6 +103,17 @@ func (s *Service) Init(dryRun bool) (InitResult, error) {
 // CreateProject creates one Project directory and writes its index.md only when
 // that file is missing.
 func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error) {
+	return s.CreateProjectWithTemplate(name, "", dryRun)
+}
+
+// CreateProjectWithTemplate creates one Project and saves its Workspace
+// Template reference. An empty templateName keeps the current reference.
+func (s *Service) CreateProjectWithTemplate(name, templateName string, dryRun bool) (domain.Project, error) {
+	if templateName != "" {
+		if err := store.ValidateResourceName(templateName); err != nil {
+			return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
+		}
+	}
 	home, err := s.home()
 	if err != nil {
 		return domain.Project{}, err
@@ -131,6 +142,9 @@ func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error
 			}
 		}
 		project.HasIndex = true
+		if templateName != "" {
+			project.TemplateName = templateName
+		}
 		return project, nil
 	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -143,6 +157,9 @@ func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error
 		if err := store.WriteFileAtomic(indexPath, projectIndexContent(name, s.today()), 0o644, "Project index"); err != nil {
 			return domain.Project{}, err
 		}
+	}
+	if templateName != "" {
+		return s.SetProjectTemplate(name, templateName, false)
 	}
 	return s.projectInfo(home, name)
 }
@@ -217,6 +234,21 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 		}
 		if entry.Name() == "index.md" {
 			project.HasIndex = true
+			indexPath := filepath.Join(path, entry.Name())
+			raw, readErr := os.ReadFile(indexPath)
+			if readErr != nil {
+				return domain.Project{}, fmt.Errorf("read Project %q index: %w", name, readErr)
+			}
+			file, parseErr := ParseTicketFile(indexPath, raw)
+			if parseErr != nil {
+				return domain.Project{}, parseErr
+			}
+			if value := findMapValue(file.Mapping(), "twt_template"); value != nil && value.Tag != "!!null" {
+				if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
+					return domain.Project{}, clierr.New(clierr.UnsafeState, "Project %q has an invalid twt_template value", name)
+				}
+				project.TemplateName = strings.TrimSpace(value.Value)
+			}
 			continue
 		}
 		project.Tickets++
@@ -239,6 +271,55 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 		}
 	}
 	return project, nil
+}
+
+// SetProjectTemplate saves the Workspace Template that supplies Cloud Session
+// settings for a Project. The rest of index.md stays byte-stable apart from
+// normalized frontmatter rendering.
+func (s *Service) SetProjectTemplate(name, templateName string, dryRun bool) (domain.Project, error) {
+	if err := store.ValidateResourceName(templateName); err != nil {
+		return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
+	}
+	home, err := s.home()
+	if err != nil {
+		return domain.Project{}, err
+	}
+	project, err := s.Project(name)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if !project.HasIndex {
+		return domain.Project{}, clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Project %q has no index.md", name),
+			"Run 'twt projects create %s' to add the Project index.", name)
+	}
+	indexPath := filepath.Join(home, name, "index.md")
+	lock, err := store.AcquireNamedLock(s.options.StateDir, "project", name)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	defer lock.Release()
+	raw, err := os.ReadFile(indexPath)
+	if err != nil {
+		return domain.Project{}, fmt.Errorf("read Project %q index: %w", name, err)
+	}
+	file, err := ParseTicketFile(indexPath, raw)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	setMapString(file.ensureMapping(), "twt_template", templateName)
+	content, err := file.Render()
+	if err != nil {
+		return domain.Project{}, err
+	}
+	project.TemplateName = templateName
+	if dryRun {
+		return project, nil
+	}
+	if err := store.WriteFileAtomic(indexPath, content, 0o644, "Project index"); err != nil {
+		return domain.Project{}, err
+	}
+	return s.projectInfo(home, name)
 }
 
 // CreateRequest describes one new Ticket. Priority -1 selects the default
@@ -722,6 +803,55 @@ func (s *Service) Claim(ref, claimant string, dryRun bool) (domain.Ticket, error
 	})
 }
 
+// ClaimReady claims one Ticket only when it is in the ready queue. The
+// readiness check and claim write use the same per-Ticket lock.
+func (s *Service) ClaimReady(ref, claimant string, dryRun bool) (domain.Ticket, error) {
+	claimant, err := validClaimant(claimant)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+		if !m.index.ready(m.ticket) {
+			return clierr.WithHint(
+				clierr.New(clierr.PreconditionFailed, "ticket %q is not ready to claim", m.ticket.Slug),
+				"Run 'twt tickets queue --project PROJECT' and select a ready Ticket.")
+		}
+		setMapString(m.mapping, "claimed_by", claimant)
+		setMapDate(m.mapping, "claimed_at", s.today())
+		return nil
+	})
+}
+
+// CompleteClaim changes the Ticket status and clears one expected claim in one
+// locked write.
+func (s *Service) CompleteClaim(ref, claimant string, status domain.TicketStatus, dryRun bool) (domain.Ticket, error) {
+	claimant, err := validClaimant(claimant)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	if status != domain.TicketReadyForAgent && status != domain.TicketReadyForHuman {
+		return domain.Ticket{}, clierr.New(clierr.InvalidUsage,
+			"claim completion status %q must be ready-for-agent or ready-for-human", status)
+	}
+	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+		if m.ticket.ClaimedBy == "" && m.ticket.Status == status {
+			m.skipWrite = true
+			return nil
+		}
+		if m.ticket.ClaimedBy == "" {
+			return clierr.New(clierr.UnsafeState, "ticket %q no longer has the expected claim", m.ticket.Slug)
+		}
+		if m.ticket.ClaimedBy != claimant {
+			return claimedByOther(m.ticket.Slug, m.ticket.ClaimedBy)
+		}
+		setMapString(m.mapping, "status", string(status))
+		setMapNull(m.mapping, "claimed_by")
+		setMapNull(m.mapping, "claimed_at")
+		m.relocate = true
+		return nil
+	})
+}
+
 // Unclaim clears the claim of claimant. An unclaimed Ticket succeeds without
 // a write. A different claimant gets locked.
 func (s *Service) Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, error) {
@@ -839,6 +969,7 @@ type mutation struct {
 	file      *TicketFile
 	mapping   *yaml.Node
 	ticket    domain.Ticket
+	index     *index
 	project   string
 	destPath  string
 	relocate  bool
@@ -866,6 +997,15 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 		return domain.Ticket{}, err
 	}
 	defer lock.Release()
+	// Rebuild the index after the lock. A previous mutation can move the file
+	// between the initial resolution and this lock acquisition.
+	idx, err = buildIndex(home)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	if _, err := idx.resolve(home, slug); err != nil {
+		return domain.Ticket{}, err
+	}
 	path := idx.path(slug)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -889,7 +1029,7 @@ func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func
 			"Set one of %s with 'twt tickets set %s --status STATUS'.",
 			strings.Join(domain.TicketStatuses(), ", "), slug)
 	}
-	m := &mutation{file: file, mapping: file.ensureMapping(), ticket: ticket, project: ticket.Project, destPath: path}
+	m := &mutation{file: file, mapping: file.ensureMapping(), ticket: ticket, index: idx, project: ticket.Project, destPath: path}
 	if err := apply(m); err != nil {
 		return domain.Ticket{}, err
 	}

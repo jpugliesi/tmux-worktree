@@ -180,6 +180,15 @@ var commandHelp = map[string]helpContent{
 	"twt tickets queue": {
 		long: "Show the complete open Ticket dependency graph for one Project. ready contains only ready-for-agent, unclaimed Tickets whose blockers are done or wontfix. The command sorts graph and ready by priority and then by Ticket slug. --limit cuts ready but does not cut graph. cycles reports dependency cycles that stop affected Tickets from becoming ready.", example: "  twt tickets queue --project change-monitor --output json\n  twt tickets queue --project change-monitor --limit 4 --fields ready,readyTotalCount --output json",
 	},
+	"twt tickets dispatch": {
+		long: "Start one Cursor Cloud Session for a ready Ticket. The Project must reference a Workspace Template with cursor_cloud settings. Agent mode implements the Ticket and asks Cursor to create pull requests. --plan starts a planning run. twt saves the dispatch and claims the Ticket before it calls Cursor. A network result that is not clear keeps the claim so that a retry cannot create a duplicate Agent.", example: "  twt tickets dispatch canonical-pr-comment --dry-run --output json\n  twt tickets dispatch canonical-pr-comment --output json\n  twt tickets dispatch canonical-pr-comment --plan --output json",
+	},
+	"twt tickets cloud-sync": {
+		long: "Read active Cursor Cloud runs for one Project and update their saved Sessions. A finished Agent run moves its Ticket to ready-for-human. A failed or cancelled run returns its Ticket to ready-for-agent. A network result that is not clear keeps the Ticket claim. One Session error does not stop updates for other Sessions; JSON reports partial status and a diagnostic for that Session.", example: "  twt tickets cloud-sync --project change-monitor --dry-run --output json\n  twt tickets cloud-sync --project change-monitor --output json",
+	},
+	"twt tickets cloud-abandon": {
+		long: "Stop local recovery for one stuck Cursor Cloud Session. If the saved Cloud claimant still owns the Ticket, twt releases it and returns it to ready-for-agent. twt does not cancel the remote Agent. It preserves a Ticket that another worker claims. Use this command only after sync cannot recover the Session and you accept that the remote Agent can continue.", example: "  twt tickets cloud-abandon SESSION --force --dry-run --output json\n  twt tickets cloud-abandon SESSION --force --output json",
+	},
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
 	},
@@ -221,6 +230,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt projects show": {
 		long: "Show one Project and its coordinator board: ready Tickets, in-flight (claimed) Tickets, and Workspaces linked to the Project.", example: "  twt projects show change-monitor --output json",
+	},
+	"twt projects set": {
+		long: "Set the Workspace Template that a Project uses for future local Workspaces and Cursor Cloud Sessions. Existing Workspaces and Cloud Sessions keep their saved Template snapshots.", example: "  twt projects set change-monitor --template product\n  twt projects set change-monitor --template product --dry-run --output json",
 	},
 	"twt context": {
 		long: "Show the Workspace, tmux session, and repository context for a directory or the current tmux pane. When Tickets home is set, JSON also lists the linked Tickets and the ready queue for the Workspace Project.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
