@@ -62,17 +62,27 @@ type InitResult struct {
 	WroteIndex        bool   `json:"wroteIndex"`
 	WroteTemplate     bool   `json:"wroteTemplate"`
 	WroteClosedMarker bool   `json:"wroteClosedMarker"`
+	WroteGitignore    bool   `json:"wroteGitignore"`
 }
 
 // Init creates the Tickets home with its hub index and create template. It
 // writes each file only when that file is missing. It never overwrites notes.
 func (s *Service) Init(dryRun bool) (InitResult, error) {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
+		return "twt: init tickets home"
+	}, func() (InitResult, error) {
+		return s.initOnce(dryRun)
+	})
+}
+
+func (s *Service) initOnce(dryRun bool) (InitResult, error) {
 	home, err := s.home()
 	if err != nil {
 		return InitResult{}, err
 	}
 	indexPath := filepath.Join(home, "index.md")
 	templatePath := filepath.Join(home, "templates", "ticket.md")
+	gitignorePath := filepath.Join(home, ".gitignore")
 	closedExists, err := closedRootExists(home)
 	if err != nil {
 		return InitResult{}, err
@@ -82,6 +92,7 @@ func (s *Service) Init(dryRun bool) (InitResult, error) {
 		WroteIndex:        !fileExists(indexPath),
 		WroteTemplate:     !fileExists(templatePath),
 		WroteClosedMarker: !closedExists,
+		WroteGitignore:    !fileExists(gitignorePath),
 	}
 	if dryRun {
 		return result, nil
@@ -102,6 +113,12 @@ func (s *Service) Init(dryRun bool) (InitResult, error) {
 			return InitResult{}, err
 		}
 	}
+	if result.WroteGitignore {
+		// Atomic-write temp files must never enter a sync commit.
+		if err := store.WriteFileAtomic(gitignorePath, []byte(".twt-write-*\n"), 0o644, "Tickets gitignore"); err != nil {
+			return InitResult{}, err
+		}
+	}
 	return result, nil
 }
 
@@ -114,6 +131,14 @@ func (s *Service) CreateProject(name string, dryRun bool) (domain.Project, error
 // CreateProjectWithTemplate creates one Project and saves its Workspace
 // Template reference. An empty templateName keeps the current reference.
 func (s *Service) CreateProjectWithTemplate(name, templateName string, dryRun bool) (domain.Project, error) {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
+		return fmt.Sprintf("twt: create project %s", name)
+	}, func() (domain.Project, error) {
+		return s.createProjectWithTemplateOnce(name, templateName, dryRun)
+	})
+}
+
+func (s *Service) createProjectWithTemplateOnce(name, templateName string, dryRun bool) (domain.Project, error) {
 	if templateName != "" {
 		if err := store.ValidateResourceName(templateName); err != nil {
 			return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
@@ -164,7 +189,7 @@ func (s *Service) CreateProjectWithTemplate(name, templateName string, dryRun bo
 		}
 	}
 	if templateName != "" {
-		return s.SetProjectTemplate(name, templateName, false)
+		return s.setProjectTemplateOnce(name, templateName, false)
 	}
 	return s.projectInfo(home, name)
 }
@@ -282,6 +307,14 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 // settings for a Project. The rest of index.md stays byte-stable apart from
 // normalized frontmatter rendering.
 func (s *Service) SetProjectTemplate(name, templateName string, dryRun bool) (domain.Project, error) {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
+		return fmt.Sprintf("twt: set project %s template", name)
+	}, func() (domain.Project, error) {
+		return s.setProjectTemplateOnce(name, templateName, dryRun)
+	})
+}
+
+func (s *Service) setProjectTemplateOnce(name, templateName string, dryRun bool) (domain.Project, error) {
 	if err := store.ValidateResourceName(templateName); err != nil {
 		return domain.Project{}, clierr.Wrap(clierr.InvalidUsage, err)
 	}
@@ -354,6 +387,18 @@ type CreateResult struct {
 
 // Create writes one new Ticket file.
 func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
+		slug := req.Slug
+		if slug == "" {
+			slug = domain.Slugify(req.Title)
+		}
+		return fmt.Sprintf("twt: create %s", slug)
+	}, func() (CreateResult, error) {
+		return s.createOnce(req, dryRun)
+	})
+}
+
+func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, error) {
 	home, err := s.home()
 	if err != nil {
 		return CreateResult{}, err
@@ -414,7 +459,7 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 	projectExists := true
 	if req.Project != "" {
 		if req.EnsureProject {
-			if _, err := s.CreateProject(req.Project, dryRun); err != nil {
+			if _, err := s.createProjectWithTemplateOnce(req.Project, "", dryRun); err != nil {
 				return CreateResult{}, err
 			}
 		}
@@ -763,7 +808,9 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 			return domain.Ticket{}, normalizeErr
 		}
 	}
-	return s.mutate(ref, dryRun, req.StatusSet, func(m *mutation) error {
+	return s.mutate(ref, dryRun, req.StatusSet, syncBestEffort, func() string {
+		return fmt.Sprintf("twt: set %s", ref)
+	}, func(m *mutation) error {
 		if req.StatusSet {
 			setMapString(m.mapping, "status", req.Status)
 			m.relocate = true
@@ -793,7 +840,9 @@ func (s *Service) Claim(ref, claimant string, dryRun bool) (domain.Ticket, error
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: claim %s (as %s)", ref, claimant)
+	}, func(m *mutation) error {
 		current := m.ticket.ClaimedBy
 		if current == claimant {
 			m.skipWrite = true
@@ -815,7 +864,9 @@ func (s *Service) ClaimReady(ref, claimant string, dryRun bool) (domain.Ticket, 
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: claim %s (as %s)", ref, claimant)
+	}, func(m *mutation) error {
 		if !m.index.ready(m.ticket) {
 			return clierr.WithHint(
 				clierr.New(clierr.PreconditionFailed, "ticket %q is not ready to claim", m.ticket.Slug),
@@ -838,7 +889,9 @@ func (s *Service) CompleteClaim(ref, claimant string, status domain.TicketStatus
 		return domain.Ticket{}, clierr.New(clierr.InvalidUsage,
 			"claim completion status %q must be ready-for-agent or ready-for-human", status)
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: complete %s (%s)", ref, status)
+	}, func(m *mutation) error {
 		if m.ticket.ClaimedBy == "" && m.ticket.Status == status {
 			m.skipWrite = true
 			return nil
@@ -864,7 +917,9 @@ func (s *Service) Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, err
 	if err != nil {
 		return domain.Ticket{}, err
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: unclaim %s (as %s)", ref, claimant)
+	}, func(m *mutation) error {
 		current := m.ticket.ClaimedBy
 		if current == "" {
 			m.skipWrite = true
@@ -892,7 +947,9 @@ func (s *Service) Close(ref, claimant string, dryRun bool) (domain.Ticket, error
 	// Close writes the status, so it is a resolution escape hatch like Set
 	// with --status: it overwrites an unrecognized legacy status instead of
 	// refusing the mutation.
-	return s.mutate(ref, dryRun, true, func(m *mutation) error {
+	return s.mutate(ref, dryRun, true, syncRequired, func() string {
+		return fmt.Sprintf("twt: close %s (as %s)", ref, claimant)
+	}, func(m *mutation) error {
 		if current := m.ticket.ClaimedBy; current != "" && current != claimant {
 			return claimedByOther(m.ticket.Slug, current)
 		}
@@ -915,7 +972,9 @@ func (s *Service) SetWorkspace(ref, workspaceID string, dryRun bool) (domain.Tic
 			return domain.Ticket{}, clierr.Wrap(clierr.InvalidUsage, err)
 		}
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
+		return fmt.Sprintf("twt: set %s workspace", ref)
+	}, func(m *mutation) error {
 		if workspaceID == "" {
 			if m.ticket.WorkspaceID == "" {
 				m.skipWrite = true
@@ -943,7 +1002,9 @@ func (s *Service) Comment(ref, text string, dryRun bool) (domain.Ticket, error) 
 			clierr.New(clierr.InvalidUsage, "the comment text is empty"),
 			"Pass the comment text on stdin.")
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
+		return fmt.Sprintf("twt: comment on %s", ref)
+	}, func(m *mutation) error {
 		body := m.file.Body
 		if !commentsHeading.MatchString(body) {
 			body = strings.TrimRight(body, "\n") + "\n\n## Comments\n"
@@ -961,7 +1022,9 @@ func (s *Service) Edit(ref, body string, dryRun bool) (domain.Ticket, error) {
 			clierr.New(clierr.InvalidUsage, "the new body is empty: refusing to erase the ticket body"),
 			"Pass the new body on stdin.")
 	}
-	return s.mutate(ref, dryRun, false, func(m *mutation) error {
+	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
+		return fmt.Sprintf("twt: edit %s", ref)
+	}, func(m *mutation) error {
 		m.file.Body = "\n" + strings.Trim(body, "\n") + "\n"
 		return nil
 	})
@@ -981,10 +1044,18 @@ type mutation struct {
 	skipWrite bool
 }
 
-// mutate is the shared write path: resolve, lock, re-read under the lock,
+// mutate wraps one ticket write in the git sync round. The class selects the
+// push policy, and message names the sync commit.
+func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, class syncClass, message func() string, apply func(*mutation) error) (domain.Ticket, error) {
+	return syncWrite(s, class, dryRun, message, func() (domain.Ticket, error) {
+		return s.mutateOnce(ref, dryRun, allowUnknownStatus, apply)
+	})
+}
+
+// mutateOnce is the shared write path: resolve, lock, re-read under the lock,
 // apply, bump updated, heal project, render, and write atomically. A dry run
 // performs every check and skips only the write and the source removal.
-func (s *Service) mutate(ref string, dryRun, allowUnknownStatus bool, apply func(*mutation) error) (domain.Ticket, error) {
+func (s *Service) mutateOnce(ref string, dryRun, allowUnknownStatus bool, apply func(*mutation) error) (domain.Ticket, error) {
 	home, err := s.home()
 	if err != nil {
 		return domain.Ticket{}, err

@@ -81,6 +81,14 @@ func (s *Service) Doctor() (TicketDoctorReport, error) {
 // Repair moves every repairable location mismatch. It applies no move when
 // the audit has a blocker. A dry run returns the same plan without writes.
 func (s *Service) Repair(dryRun bool) (TicketRepairResult, error) {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
+		return "twt: repair"
+	}, func() (TicketRepairResult, error) {
+		return s.repairOnce(dryRun)
+	})
+}
+
+func (s *Service) repairOnce(dryRun bool) (TicketRepairResult, error) {
 	report, err := s.Doctor()
 	if err != nil {
 		return TicketRepairResult{}, err
