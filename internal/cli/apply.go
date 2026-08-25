@@ -316,7 +316,7 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
 			{Path: "ticket.status", Type: "string", Required: false, Enum: []string{"ready-for-human", "ready-for-agent"}, Condition: "absent selects ready-for-human"},
-			{Path: "ticket.pullRequests", Type: "array of string", Required: false, Condition: "HTTPS pull request URLs to record"},
+			{Path: "ticket.pullRequests", Type: "array[string]", Required: false, Condition: "HTTPS pull request URLs to record"},
 		}}, applyTicketsComplete},
 		{applyOperationSchema{Operation: "tickets.close", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
