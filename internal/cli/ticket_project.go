@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 
-	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -15,9 +14,8 @@ type ticketProjectScope struct {
 }
 
 // resolveTicketProject picks the Project for a tickets command. The order is
-// --project, then TWT_PROJECT, then the current Workspace Project, then a
-// saved current Project. The saved file is only for interactive text. JSON,
-// ndjson, and non-interactive calls never read it.
+// --project, then TWT_PROJECT, then the current Workspace Project. With no
+// Project in scope, the result is unset so a list includes every Project.
 func resolveTicketProject(command *cobra.Command, options Options, flagProject string, flagSet, allProjects bool) (ticketProjectScope, error) {
 	if allProjects && flagSet {
 		return ticketProjectScope{}, invalidUsageWithHint(command,
@@ -36,17 +34,7 @@ func resolveTicketProject(command *cobra.Command, options Options, flagProject s
 	if project := currentWorkspaceProject(options); project != "" {
 		return ticketProjectScope{Project: project, Set: true}, nil
 	}
-	if allowSavedTicketProject(command) {
-		project, err := store.LoadCurrentProject(options.StateDir)
-		if err != nil {
-			return ticketProjectScope{}, err
-		}
-		if project != "" {
-			return ticketProjectScope{Project: project, Set: true}, nil
-		}
-	}
-	return ticketProjectScope{}, invalidUsageWithHint(command, ticketProjectScopeHint(command),
-		"no Project is in scope")
+	return ticketProjectScope{}, nil
 }
 
 func ticketProjectScopeHint(command *cobra.Command) string {
@@ -54,10 +42,6 @@ func ticketProjectScopeHint(command *cobra.Command) string {
 		return "Pass --project PROJECT, set TWT_PROJECT, or pass --all-projects."
 	}
 	return "Pass --project PROJECT, or set TWT_PROJECT."
-}
-
-func allowSavedTicketProject(command *cobra.Command) bool {
-	return resolvedOutputFormat(command) == outputText && interactiveTicketSession(command)
 }
 
 func currentWorkspaceProject(options Options) string {

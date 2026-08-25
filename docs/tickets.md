@@ -188,7 +188,6 @@ twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--limit N]
-twt tickets use [PROJECT] [--unset]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
@@ -304,14 +303,12 @@ Sort by `priority` ascending, then slug.
 tickets. If both `--ready` and `--status` are set, exit 2 with a hint to use
 only one.
 
-A list needs a Project in scope unless `--all-projects` is set. The order
-is `--project`, then `TWT_PROJECT`, then the current Workspace Project,
-then the saved current Project. The saved file is only for interactive
-text. JSON, NDJSON, and non-interactive calls never read it.
+The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
+Project. With no Project in scope, the list includes every Project.
+`--all-projects` lists every Project even when a Workspace Project is set.
 
-A scoped text list is a simple table. `--all-projects` text adds a
-`PROJECT` column. JSON and NDJSON stay a flat array in the sort order
-above.
+A scoped text list is a simple table. A wide text table adds a `PROJECT`
+column. JSON and NDJSON stay a flat array in the sort order above.
 
 List results omit the body. `show` returns metadata plus body.
 
@@ -462,7 +459,7 @@ Skill rules:
 7. Claim before work with `--as NAME`. Resolve with `set --status done`
    and `unclaim --as NAME`.
 8. Link tickets with `[[slug]]`.
-9. List pickable work with `twt tickets list --ready --project PROJECT --output json`.
+9. List pickable work with `twt tickets list --ready --output json`.
 
 Description trigger (keep third person):
 
@@ -530,7 +527,7 @@ Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 - `twt tickets create` with no args in a terminal asks for a title and a
   Project, then opens the editor on an empty description. The same command in
   a pipe exits 2 with a hint.
-- `twt tickets list --ready --project PROJECT --output json` returns only unblocked,
+- `twt tickets list --ready --output json` returns only unblocked,
   unclaimed, `ready-for-agent` tickets.
 - `twt schema` includes the new commands and apply operations.
 - A second `claim` by a different claimant returns `locked`.

@@ -817,7 +817,6 @@ twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
-twt tickets use [PROJECT] [--unset]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
@@ -839,16 +838,11 @@ in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing.
 
-`twt tickets use PROJECT` writes the saved current Project. That file is
-only for an interactive text session. Agents must not run `tickets use`.
-They pass `--project` or set `TWT_PROJECT`.
-
 `twt tickets queue` reads one Ticket index snapshot. The Project comes from
-`--project`, then `TWT_PROJECT`, then the current Workspace Project, then
-the saved current Project. It returns the complete open Project graph and a
-deterministic `ready` list. Each dependency reports its state and Project.
-`cycles` reports dependency cycles. `--limit` cuts only `ready`. It does not
-cut the graph.
+`--project`, then `TWT_PROJECT`, then the current Workspace Project. It
+returns the complete open Project graph and a deterministic `ready` list.
+Each dependency reports its state and Project. `cycles` reports dependency
+cycles. `--limit` cuts only `ready`. It does not cut the graph.
 
 ### Create a ticket
 
@@ -891,17 +885,16 @@ has status `done` or `wontfix`. Results sort by `priority` ascending, then
 slug. Passing both `--ready` and `--status` exits 2 with a hint to use only
 one.
 
-A list needs a Project in scope unless `--all-projects` is set. The order
-is `--project`, then `TWT_PROJECT`, then the current Workspace Project,
-then the saved current Project. The saved file is only for interactive
-text. JSON, NDJSON, and non-interactive calls never read it.
+The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
+Project. With no Project in scope, the list includes every Project.
+`--all-projects` lists every Project even when a Workspace Project is set.
 
-A scoped text list is a simple table. `--all-projects` text adds a
-`PROJECT` column. Ungrouped Tickets show `(none)` in that column. JSON and
-NDJSON stay a flat array in the sort order above.
+A scoped text list is a simple table. A wide text table adds a `PROJECT`
+column. Ungrouped Tickets show `(none)` in that column. JSON and NDJSON
+stay a flat array in the sort order above.
 
 ```sh
-twt tickets list --project change-monitor --ready --output json --limit 20
+twt tickets list --ready --output json --limit 20
 twt tickets list --all-projects --all --output json --limit 20
 twt tickets list --project change-monitor --status needs-triage --output json
 ```
@@ -1008,8 +1001,7 @@ twt projects show change-monitor --output json
 `projects show` is the coordinator board. JSON includes `ready` Tickets,
 `inFlight` (claimed) Tickets, and Workspaces linked to the Project.
 `create --ticket` and `tickets start` stamp `workspaceId` on each Ticket.
-`tickets list --claimed` lists in-flight Tickets. Pass `--project` or
-`--all-projects` when no Project is in scope. `context` includes the
+`tickets list --claimed` lists in-flight Tickets. `context` includes the
 linked Tickets and the ready queue for the current Workspace Project.
 
 ### Resolve a TICKET argument

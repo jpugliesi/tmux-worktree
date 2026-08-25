@@ -44,7 +44,6 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsHomeCommand(options))
 	tickets.AddCommand(newTicketsCreateCommand(options))
 	tickets.AddCommand(newTicketsListCommand(options))
-	tickets.AddCommand(newTicketsUseCommand(options))
 	tickets.AddCommand(newTicketsQueueCommand(options))
 	tickets.AddCommand(newTicketsShowCommand(options))
 	tickets.AddCommand(newTicketsEditCommand(options))

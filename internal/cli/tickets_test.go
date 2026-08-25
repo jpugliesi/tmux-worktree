@@ -582,11 +582,11 @@ func TestTicketsLsMatchesList(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "ls alias work"); err != nil {
 		t.Fatal(err)
 	}
-	listOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects")
+	listOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	lsOut, _, err := executeCollectingInput(t, options, nil, "tickets", "ls", "--all-projects")
+	lsOut, _, err := executeCollectingInput(t, options, nil, "tickets", "ls")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,18 +620,18 @@ func TestTicketsListTextUsesAProjectColumnOnlyForAllProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	textOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects")
+	textOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(textOut, "PROJECT") {
-		t.Fatalf("--all-projects list has no PROJECT column:\n%s", textOut)
+		t.Fatalf("wide list has no PROJECT column:\n%s", textOut)
 	}
 	if got := ticketTableSlugs(t, textOut); strings.Join(got, ",") != "high-monitor-work,core-work,inbox-note,monitor-work" {
-		t.Fatalf("--all-projects slugs = %v\n%s", got, textOut)
+		t.Fatalf("wide list slugs = %v\n%s", got, textOut)
 	}
 	if !strings.Contains(textOut, "(none)") {
-		t.Fatalf("--all-projects list hides ungrouped Tickets:\n%s", textOut)
+		t.Fatalf("wide list hides ungrouped Tickets:\n%s", textOut)
 	}
 
 	filtered, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--project", "change-monitor")
@@ -648,7 +648,7 @@ func TestTicketsListTextUsesAProjectColumnOnlyForAllProjects(t *testing.T) {
 		t.Fatalf("--project list leaked other Projects:\n%s", filtered)
 	}
 
-	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects", "--output", "json")
+	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -859,7 +859,7 @@ func TestTicketsListHidesClosedTicketsByDefault(t *testing.T) {
 
 	slugs := func(args ...string) []string {
 		t.Helper()
-		stdout, _, err := executeCollectingInput(t, options, nil, append([]string{"tickets", "list", "--all-projects", "--output", "json"}, args...)...)
+		stdout, _, err := executeCollectingInput(t, options, nil, append([]string{"tickets", "list", "--output", "json"}, args...)...)
 		if err != nil {
 			t.Fatalf("tickets list %v: %v", args, err)
 		}
@@ -926,7 +926,7 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects", "--ready", "--output", "json")
+	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -955,7 +955,7 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 		t.Fatalf("ticket object keys = %v, want %s", keys, want)
 	}
 
-	_, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects", "--ready", "--status", "done")
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--status", "done")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("--ready with --status = %v (code %q)", err, clierr.CodeOf(err))
 	}
@@ -1095,7 +1095,7 @@ func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
 		t.Fatalf("create --blocked-by:\n%s", content)
 	}
 
-	ready, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects", "--ready", "--output", "json")
+	ready, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1113,7 +1113,7 @@ func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
 	if !strings.Contains(readTicketFile(t, filepath.Join(home, "follow-up-work.md")), "blocked_by: []\n") {
 		t.Fatalf("set --blocked-by empty:\n%s", readTicketFile(t, filepath.Join(home, "follow-up-work.md")))
 	}
-	ready, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--all-projects", "--ready", "--output", "json")
+	ready, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1407,7 +1407,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, command := range []string{
-		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets use"`, `"twt tickets show"`,
+		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`,
