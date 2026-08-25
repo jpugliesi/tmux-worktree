@@ -130,6 +130,13 @@ type ticketCommentApplyRequest struct {
 	Text      string `json:"text"`
 }
 
+type ticketCompleteApplyRequest struct {
+	Reference    string   `json:"reference"`
+	As           string   `json:"as"`
+	Status       string   `json:"status,omitempty"`
+	PullRequests []string `json:"pullRequests,omitempty"`
+}
+
 type ticketDispatchApplyRequest struct {
 	Reference      string `json:"reference"`
 	Plan           bool   `json:"plan,omitempty"`
@@ -305,6 +312,12 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
 		}}, applyTicketsUnclaim},
+		{applyOperationSchema{Operation: "tickets.complete", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: []string{"ready-for-human", "ready-for-agent"}, Condition: "absent selects ready-for-human"},
+			{Path: "ticket.pullRequests", Type: "array of string", Required: false, Condition: "HTTPS pull request URLs to record"},
+		}}, applyTicketsComplete},
 		{applyOperationSchema{Operation: "tickets.close", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
@@ -821,6 +834,24 @@ func applyTicketsUnclaim(command *cobra.Command, options Options, request applyR
 		return err
 	}
 	return unclaimTicket(command, service, payload.Reference, payload.As)
+}
+
+func applyTicketsComplete(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCompleteApplyRequest
+	if err := decodeApplyPayload("tickets.complete", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.As == "" {
+		return fmt.Errorf("ticket.reference and ticket.as are required for tickets.complete")
+	}
+	if payload.Status == "" {
+		payload.Status = string(domain.TicketReadyForHuman)
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return completeTicketWork(command, service, payload.Reference, payload.As, domain.TicketStatus(payload.Status), payload.PullRequests)
 }
 
 func applyTicketsClose(command *cobra.Command, options Options, request applyRequest) error {

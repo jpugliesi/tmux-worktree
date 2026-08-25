@@ -55,6 +55,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsClaimCommand(options))
 	tickets.AddCommand(newTicketsStartCommand(options))
 	tickets.AddCommand(newTicketsUnclaimCommand(options))
+	tickets.AddCommand(newTicketsCompleteCommand(options))
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
 	tickets.AddCommand(newTicketsDoctorCommand(options))
@@ -677,6 +678,53 @@ func newTicketsUnclaimCommand(options Options) *cobra.Command {
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
+}
+
+func newTicketsCompleteCommand(options Options) *cobra.Command {
+	var as string
+	var status string
+	var pullRequests []string
+	command := &cobra.Command{
+		Use:   "complete TICKET [--as NAME] [--status STATUS] [--pr URL]...",
+		Short: "Record pull requests and release the claim in one write",
+		Args:  exactArgs("TICKET"),
+		RunE: func(command *cobra.Command, args []string) error {
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			claimant, err := resolveClaimant(command, as)
+			if err != nil {
+				return err
+			}
+			return completeTicketWork(command, service, args[0], claimant, domain.TicketStatus(status), pullRequests)
+		},
+	}
+	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	command.Flags().StringVar(&status, "status", string(domain.TicketReadyForHuman), "Completion status: ready-for-human or ready-for-agent")
+	command.Flags().StringArrayVar(&pullRequests, "pr", nil, "Record one pull request URL; repeat for more")
+	setFlagEnum(command, "status", string(domain.TicketReadyForHuman), string(domain.TicketReadyForAgent))
+	setArguments(command, requiredArgument("ticket"))
+	command.ValidArgsFunction = ticketSlugCompletion(options)
+	return command
+}
+
+// completeTicketWork runs the shared complete mutation for the command and
+// apply.
+func completeTicketWork(command *cobra.Command, service *ticketservice.Service, ref, claimant string, status domain.TicketStatus, pullRequests []string) error {
+	return runMutation(command, "tickets.complete",
+		func() (string, string, error) {
+			ticket, err := service.CompleteWork(ref, claimant, status, pullRequests, true)
+			return ticket.Slug, ticket.Title, err
+		},
+		func() (string, string, error) {
+			ticket, err := service.CompleteWork(ref, claimant, status, pullRequests, false)
+			return ticket.Slug, ticket.Title, err
+		},
+		func(out io.Writer, id, _ string) error {
+			_, err := fmt.Fprintf(out, "Completed ticket %q (%s, %d pull request(s))\n", id, status, len(pullRequests))
+			return err
+		})
 }
 
 func newTicketsCloseCommand(options Options) *cobra.Command {

@@ -108,3 +108,45 @@ func TestApplyTicketsDispatchAcceptsTheBackendField(t *testing.T) {
 		t.Fatalf("apply JSON = %s", applyJSON)
 	}
 }
+
+func TestTicketsCompleteRecordsPullRequestsAndReleasesTheClaim(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "claim", "fix-auth", "--as", "twt-local-01234567"); err != nil {
+		t.Fatal(err)
+	}
+	completeJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "complete", "fix-auth", "--as", "twt-local-01234567",
+		"--pr", "https://origin.cursor.com/acme/api/pull/7", "--output", "json")
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, completeJSON)
+	}
+	if !strings.Contains(completeJSON, `"operation":"tickets.complete"`) || !strings.Contains(completeJSON, `"status":"applied"`) {
+		t.Fatalf("complete JSON = %s", completeJSON)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, `"status":"ready-for-human"`) ||
+		!strings.Contains(showJSON, `"pullRequests":["https://origin.cursor.com/acme/api/pull/7"]`) ||
+		!strings.Contains(showJSON, `"claimedBy":""`) {
+		t.Fatalf("show after complete = %s", showJSON)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.complete","ticket":{"reference":"fix-auth","as":"twt-local-01234567","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply complete dry run: %v\n%s", err, applyJSON)
+	}
+	if !strings.Contains(applyJSON, `"status":"valid"`) {
+		t.Fatalf("apply complete JSON = %s", applyJSON)
+	}
+}
