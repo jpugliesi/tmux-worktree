@@ -195,12 +195,17 @@ func (s *Service) StartDeclared(workspace domain.Workspace, session domain.Agent
 
 // attachStartedPane attaches a direct provider process. Cursor's agent command
 // is a wrapper, so its verified provider can be a foreground child process.
+// cursorStartTimeout bounds the wait for the cursor-agent wrapper script to
+// exec the real provider process. A first run in a fresh Workspace can take
+// several seconds before the pane shows the provider.
+var cursorStartTimeout = 20 * time.Second
+
 func (s *Service) attachStartedPane(workspace domain.Workspace, session *domain.AgentSession, pane string) error {
 	directErr := s.attachPane(workspace, session, pane)
 	if directErr == nil || session.Provider != "cursor" {
 		return directErr
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(cursorStartTimeout)
 	for time.Now().Before(deadline) {
 		panes, err := s.tmux.ObserveWorkspace(workspace)
 		if err == nil {
