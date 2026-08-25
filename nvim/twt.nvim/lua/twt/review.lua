@@ -10,9 +10,20 @@ local M = {}
 -- caller decides what to show.
 
 local namespace = vim.api.nvim_create_namespace("twt_review")
-local notes = {}
-local next_id = 1
-local delivering = false
+-- Lua modules can reload during one Neovim session, but named extmarks remain.
+-- Keep the records outside package.loaded so each R sign stays listable. When
+-- this state does not exist, old-version signs have no recoverable comments.
+local state = vim._twt_review_state
+if not state then
+  state = { notes = {}, next_id = 1, delivering = false }
+  vim._twt_review_state = state
+  for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buffer) then
+      pcall(vim.api.nvim_buf_clear_namespace, buffer, namespace, 0, -1)
+    end
+  end
+end
+local notes = state.notes
 
 local function file_path(buffer)
   if not vim.api.nvim_buf_is_valid(buffer) or not vim.api.nvim_buf_is_loaded(buffer) then
@@ -40,7 +51,8 @@ local function remove(index)
   local note = notes[index]
   if not note then return false end
   if vim.api.nvim_buf_is_valid(note.buffer) then
-    pcall(vim.api.nvim_buf_del_extmark, note.buffer, namespace, note.mark)
+    local ok = pcall(vim.api.nvim_buf_del_extmark, note.buffer, namespace, note.mark)
+    if not ok then return false end
   end
   table.remove(notes, index)
   return true
@@ -87,13 +99,13 @@ function M.add(comment, start_line, end_line, done)
     sign_hl_group = "DiagnosticWarn",
   })
   notes[#notes + 1] = {
-    id = next_id,
+    id = state.next_id,
     revision = 1,
     buffer = buffer,
     mark = mark,
     comment = vim.trim(comment),
   }
-  next_id = next_id + 1
+  state.next_id = state.next_id + 1
   done(nil, notes[#notes])
 end
 
@@ -226,7 +238,7 @@ end
 
 local function start_delivery(done, route)
   done = done or function() end
-  if delivering then
+  if state.delivering then
     done("a review delivery is already in progress")
     return
   end
@@ -235,12 +247,12 @@ local function start_delivery(done, route)
     done(format_err)
     return
   end
-  delivering = true
+  state.delivering = true
   local finished = false
   local function finish(err, result, clear_after)
     if finished then return end
     finished = true
-    delivering = false
+    state.delivering = false
     if not err and clear_after then clear_batch(batch.notes) end
     done(err, result)
   end

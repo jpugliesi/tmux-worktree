@@ -506,6 +506,21 @@ test("revalidates the selected Agent and sends feedback on standard input", func
   assert(sent.stdin == "review text")
 end)
 
+local function review_sign_count(buffer)
+  local namespace = assert(vim.api.nvim_get_namespaces().twt_review)
+  return #vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {})
+end
+
+local function review_source(lines)
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root, "p")
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buffer, root .. "/other.go")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+  vim.api.nvim_set_current_buf(buffer)
+  return buffer
+end
+
 test("adds and formats one session batch without Git or twt", function()
   local review = require("twt").review
   review.clear()
@@ -796,6 +811,7 @@ test("routes Review Batch delivery without requiring twt", function()
   end)
   assert(#selected_items == 2 and selected_items[1].kind == "pane" and selected_items[2].kind == "clipboard", vim.inspect(selected_items))
   assert(#review.list() == 0, "a confirmed pane send must clear the delivered notes")
+  assert(review_sign_count(buffer) == 0, "a confirmed pane send left its Review Note sign")
   local load
   for _, call in ipairs(tmux_calls) do if call.argv[2] == "load-buffer" then load = call end end
   assert(load and load.stdin:find("route note", 1, true), vim.inspect(tmux_calls))
@@ -1382,6 +1398,93 @@ test("asks the notes picker for a snacks preview of the highlighted note", funct
   review.clear()
 end)
 
+test("keeps a Review Note listable after twt reloads", function()
+  local buffer = review_source({ "one", "two" })
+
+  local original_twt = package.loaded.twt
+  local original_review = require("twt.review")
+  original_review.clear()
+  original_review.add("first note", 2, 2, function(err) assert(err == nil, err) end)
+
+  local ok, err = pcall(function()
+    assert(review_sign_count(buffer) == 1, "the Review Note sign is missing")
+    package.loaded.twt = nil
+    package.loaded["twt.review"] = nil
+    local reloaded = require("twt")
+    local selected
+    local list_error = "not called"
+    with_config({
+      select = function(items, _, done)
+        selected = vim.deepcopy(items)
+        done(nil)
+      end,
+    }, function()
+      reloaded.review.prompt_notes(function(value) list_error = value end)
+    end)
+    assert(list_error == nil, tostring(list_error))
+    assert(#selected == 1 and selected[1].comment == "first note", vim.inspect(selected))
+    assert(review_sign_count(buffer) == 1, "the Review Note sign did not survive the reload")
+  end)
+  package.loaded.twt = original_twt
+  package.loaded["twt.review"] = original_review
+  original_review.clear()
+  if not ok then error(err, 0) end
+end)
+
+test("clears legacy Review Note signs that have no session state", function()
+  local buffer = review_source({ "one" })
+
+  local original_twt = package.loaded.twt
+  local original_review = require("twt.review")
+  original_review.clear()
+  local original_state = vim._twt_review_state
+  local namespace = assert(vim.api.nvim_get_namespaces().twt_review)
+  vim.api.nvim_buf_set_extmark(buffer, namespace, 0, 0, {
+    sign_text = "R",
+    sign_hl_group = "DiagnosticWarn",
+  })
+
+  local ok, err = pcall(function()
+    vim._twt_review_state = nil
+    package.loaded.twt = nil
+    package.loaded["twt.review"] = nil
+    local reloaded = require("twt")
+    assert(#reloaded.review.list() == 0, vim.inspect(reloaded.review.list()))
+    assert(review_sign_count(buffer) == 0, "a legacy Review Note sign is still visible")
+  end)
+  vim._twt_review_state = original_state
+  package.loaded.twt = original_twt
+  package.loaded["twt.review"] = original_review
+  if not ok then error(err, 0) end
+end)
+
+test("keeps a Review Note when its sign cannot be deleted", function()
+  local buffer = review_source({ "one" })
+
+  local review = require("twt.review")
+  review.clear()
+  local note
+  review.add("first note", 1, 1, function(err, value)
+    assert(err == nil, err)
+    note = value
+  end)
+
+  local delete_extmark = vim.api.nvim_buf_del_extmark
+  local ok, err = pcall(function()
+    vim.api.nvim_buf_del_extmark = function(target, namespace, mark)
+      if target == buffer and mark == note.mark then error("delete failed") end
+      return delete_extmark(target, namespace, mark)
+    end
+    assert(review.delete(note.id) == false, "deletion reported success")
+    local left = review.list()
+    assert(#left == 1 and left[1].comment == "first note", vim.inspect(left))
+    assert(review_sign_count(buffer) == 1, "the Review Note sign is missing")
+  end)
+  vim.api.nvim_buf_del_extmark = delete_extmark
+  review.clear()
+  if not ok then error(err, 0) end
+end)
+
 test("opens a selected review note and deletes it with Control-D", function()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/src", "p")
@@ -1424,6 +1527,7 @@ test("opens a selected review note and deletes it with Control-D", function()
   assert(deleted == "review note deleted", tostring(deleted))
   local left = vim.tbl_map(function(note) return note.comment end, review.list())
   assert(#left == 1 and left[1] == "first note", table.concat(left, ","))
+  assert(review_sign_count(buffer) == 1, "deleting one Review Note changed the wrong signs")
   review.clear()
 end)
 
@@ -1579,6 +1683,7 @@ test("asks before it clears the session review notes", function()
     assert(#questions == 2)
     left = vim.tbl_map(function(note) return note.comment end, review.list())
     assert(#left == 0, table.concat(left, ","))
+    assert(review_sign_count(buffer) == 0, "clearing Review Notes left an R sign")
   end)
   review.clear()
 end)
