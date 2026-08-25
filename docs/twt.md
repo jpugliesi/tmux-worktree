@@ -816,8 +816,8 @@ reports whether Tickets home is set, exists, and is writable.
 twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
-twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
-twt tickets queue --project PROJECT [--limit N]
+twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
+twt tickets queue [--project PROJECT] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -838,10 +838,11 @@ in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing.
 
-`twt tickets queue --project PROJECT` reads one Ticket index snapshot. It
+`twt tickets queue` reads one Ticket index snapshot. The Project comes from
+`--project`, then `TWT_PROJECT`, then the current Workspace Project. It
 returns the complete open Project graph and a deterministic `ready` list.
 Each dependency reports its state and Project. `cycles` reports dependency
-cycles. `--limit` cuts only `ready`; it does not cut the graph.
+cycles. `--limit` cuts only `ready`. It does not cut the graph.
 
 ### Create a ticket
 
@@ -884,13 +885,17 @@ has status `done` or `wontfix`. Results sort by `priority` ascending, then
 slug. Passing both `--ready` and `--status` exits 2 with a hint to use only
 one.
 
-Text output groups Tickets by Project. Named Projects come first in name
-order. Ungrouped Tickets follow under `(none)`. JSON and NDJSON stay a flat
-array in the sort order above.
+The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
+Project. With no Project in scope, the list includes every Project.
+`--all-projects` lists every Project even when a Workspace Project is set.
+
+A scoped text list is a simple table. A wide text table adds a `PROJECT`
+column. Ungrouped Tickets show `(none)` in that column. JSON and NDJSON
+stay a flat array in the sort order above.
 
 ```sh
 twt tickets list --ready --output json --limit 20
-twt tickets list --all --output json --limit 20
+twt tickets list --all-projects --all --output json --limit 20
 twt tickets list --project change-monitor --status needs-triage --output json
 ```
 

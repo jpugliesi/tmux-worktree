@@ -187,8 +187,8 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
-twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
-twt tickets queue --project PROJECT [--limit N]
+twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--limit N]
+twt tickets queue [--project PROJECT] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -303,9 +303,12 @@ Sort by `priority` ascending, then slug.
 tickets. If both `--ready` and `--status` are set, exit 2 with a hint to use
 only one.
 
-Text output groups Tickets by Project. Named Projects come first in name
-order. Ungrouped Tickets follow under `(none)`. JSON and NDJSON stay a flat
-array in the sort order above.
+The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
+Project. With no Project in scope, the list includes every Project.
+`--all-projects` lists every Project even when a Workspace Project is set.
+
+A scoped text list is a simple table. A wide text table adds a `PROJECT`
+column. JSON and NDJSON stay a flat array in the sort order above.
 
 List results omit the body. `show` returns metadata plus body.
 

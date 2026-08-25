@@ -26,7 +26,15 @@ func newTicketsQueueCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := service.Queue(project, limit)
+			scope, err := resolveTicketProject(command, options, project, command.Flags().Changed("project"), false)
+			if err != nil {
+				return err
+			}
+			if scope.Project == "" {
+				return invalidUsageWithHint(command, ticketProjectScopeHint(command),
+					"queue needs a Project name")
+			}
+			result, err := service.Queue(scope.Project, limit)
 			if err != nil {
 				return err
 			}
@@ -39,7 +47,6 @@ func newTicketsQueueCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&project, "project", "", "Show the queue for this Project")
 	command.Flags().IntVar(&limit, "limit", 0, "Limit the number of ready Tickets; zero returns all ready Tickets")
 	addFieldsFlag(command, ticketservice.QueueResult{})
-	_ = command.MarkFlagRequired("project")
 	registerProjectFlagCompletion(command, options)
 	return command
 }

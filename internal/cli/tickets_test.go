@@ -595,7 +595,7 @@ func TestTicketsLsMatchesList(t *testing.T) {
 	}
 }
 
-func TestTicketsListTextGroupsByProject(t *testing.T) {
+func TestTicketsListTextUsesAProjectColumnOnlyForAllProjects(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
@@ -624,27 +624,28 @@ func TestTicketsListTextGroupsByProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(textOut, "PROJECT") {
-		t.Fatalf("grouped list still has a PROJECT column:\n%s", textOut)
+	if !strings.Contains(textOut, "PROJECT") {
+		t.Fatalf("wide list has no PROJECT column:\n%s", textOut)
 	}
-	got := parseGroupedTicketList(t, textOut)
-	want := []ticketListGroup{
-		{name: "change-monitor", slugs: []string{"high-monitor-work", "monitor-work"}},
-		{name: "core", slugs: []string{"core-work"}},
-		{name: "(none)", slugs: []string{"inbox-note"}},
+	if got := ticketTableSlugs(t, textOut); strings.Join(got, ",") != "high-monitor-work,core-work,inbox-note,monitor-work" {
+		t.Fatalf("wide list slugs = %v\n%s", got, textOut)
 	}
-	if !ticketListGroupsEqual(got, want) {
-		t.Fatalf("grouped list = %#v, want %#v\n%s", got, want, textOut)
+	if !strings.Contains(textOut, "(none)") {
+		t.Fatalf("wide list hides ungrouped Tickets:\n%s", textOut)
 	}
 
 	filtered, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--project", "change-monitor")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = parseGroupedTicketList(t, filtered)
-	want = []ticketListGroup{{name: "change-monitor", slugs: []string{"high-monitor-work", "monitor-work"}}}
-	if !ticketListGroupsEqual(got, want) {
-		t.Fatalf("--project list = %#v, want %#v\n%s", got, want, filtered)
+	if strings.Contains(filtered, "PROJECT") {
+		t.Fatalf("scoped list still has a PROJECT column:\n%s", filtered)
+	}
+	if got := ticketTableSlugs(t, filtered); strings.Join(got, ",") != "high-monitor-work,monitor-work" {
+		t.Fatalf("--project slugs = %v\n%s", got, filtered)
+	}
+	if strings.Contains(filtered, "core-work") || strings.Contains(filtered, "inbox-note") {
+		t.Fatalf("--project list leaked other Projects:\n%s", filtered)
 	}
 
 	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--output", "json")
@@ -672,45 +673,29 @@ func TestTicketsListTextGroupsByProject(t *testing.T) {
 	}
 }
 
-type ticketListGroup struct {
-	name  string
-	slugs []string
-}
-
-func parseGroupedTicketList(t *testing.T, output string) []ticketListGroup {
+func ticketTableSlugs(t *testing.T, output string) []string {
 	t.Helper()
-	var groups []ticketListGroup
+	slugIndex := 0
+	var slugs []string
 	for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
-		line = strings.TrimRight(line, " ")
-		if line == "" || strings.HasPrefix(line, "SLUG") {
-			continue
-		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
-		if len(fields) == 1 {
-			groups = append(groups, ticketListGroup{name: fields[0]})
+		if fields[0] == "PROJECT" || fields[0] == "SLUG" {
+			for index, field := range fields {
+				if field == "SLUG" {
+					slugIndex = index
+				}
+			}
 			continue
 		}
-		if len(groups) == 0 {
-			t.Fatalf("ticket row %q has no Project header:\n%s", line, output)
+		if slugIndex >= len(fields) {
+			t.Fatalf("ticket row %q has no slug column:\n%s", line, output)
 		}
-		groups[len(groups)-1].slugs = append(groups[len(groups)-1].slugs, fields[0])
+		slugs = append(slugs, fields[slugIndex])
 	}
-	return groups
-}
-
-func ticketListGroupsEqual(got, want []ticketListGroup) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i].name != want[i].name || strings.Join(got[i].slugs, ",") != strings.Join(want[i].slugs, ",") {
-			return false
-		}
-	}
-	return true
+	return slugs
 }
 
 func TestTicketsCloseResolvesInOneCommand(t *testing.T) {

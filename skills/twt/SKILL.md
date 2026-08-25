@@ -338,9 +338,12 @@ Follow these rules for every ticket command:
    apply array clears the list. Keep a waiting ticket at `ready-for-agent`.
    `twt tickets list --ready` is the pickable queue, and it hides a ticket
    whose blockers are still open.
-9. List pickable work with `twt tickets list --ready --output json`. A plain
-   `twt tickets list` hides `done` and `wontfix` tickets; pass `--all` to
-   include them. A coordinator reads one Project with
+9. List pickable work with `twt tickets list --ready --output json`. The
+   list uses `--project`, then `TWT_PROJECT`, then the current Workspace
+   Project. With no Project in scope, the list includes every Project.
+   `--all-projects` lists every Project even when a Workspace Project is
+   set. A plain `twt tickets list` hides `done` and `wontfix` tickets. Pass
+   `--all` to include them. A coordinator reads one Project with
    `twt projects show PROJECT --output json`. That envelope includes `ready`,
    `inFlight`, and `workspaces`. `twt context --output json` includes the
    linked Tickets and the ready queue for the current Workspace Project.

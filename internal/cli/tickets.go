@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -307,7 +306,7 @@ func createTicket(command *cobra.Command, service *ticketservice.Service, reques
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var project, status string
-	var ready, claimed, all bool
+	var ready, claimed, all, allProjects bool
 	var limit, offset int
 	command := &cobra.Command{
 		Use:     "list",
@@ -319,9 +318,13 @@ func newTicketsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			scope, err := resolveTicketProject(command, options, project, command.Flags().Changed("project"), allProjects)
+			if err != nil {
+				return err
+			}
 			tickets, err := service.List(ticketservice.ListFilter{
-				Project:    project,
-				ProjectSet: command.Flags().Changed("project"),
+				Project:    scope.Project,
+				ProjectSet: scope.Set,
 				Status:     status,
 				Ready:      ready,
 				Claimed:    claimed,
@@ -344,10 +347,11 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No tickets match. Run 'twt tickets create DESCRIPTION'.")
 				return err
 			}
-			return writeTicketList(command.OutOrStdout(), tickets)
+			return writeTicketList(command.OutOrStdout(), tickets, !scope.Set)
 		},
 	}
 	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
+	command.Flags().BoolVar(&allProjects, "all-projects", false, "List Tickets from every Project")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
@@ -358,59 +362,26 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	return command
 }
 
-type ticketListGroup struct {
-	name    string
-	tickets []domain.Ticket
-}
-
-// writeTicketList writes Tickets grouped by Project. Named Projects come
-// first in name order. Ungrouped Tickets follow under (none). JSON list
-// output stays a flat array and does not use this grouping.
-func writeTicketList(out io.Writer, tickets []domain.Ticket) error {
-	groups := groupTicketsByProject(tickets)
-	for index, group := range groups {
-		if index > 0 {
-			if _, err := fmt.Fprintln(out); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintln(out, group.name); err != nil {
-			return err
-		}
-		rows := make([][]string, 0, len(group.tickets))
-		for _, ticket := range group.tickets {
-			rows = append(rows, []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), ticket.Title})
-		}
-		if err := writeTable(out, []string{"SLUG", "STATUS", "PRIORITY", "TITLE"}, rows); err != nil {
-			return err
-		}
+// writeTicketList writes one Ticket table. A wide list includes a PROJECT
+// column. A scoped list is a simple table.
+func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool) error {
+	headers := []string{"SLUG", "STATUS", "PRIORITY", "TITLE"}
+	if includeProject {
+		headers = append([]string{"PROJECT"}, headers...)
 	}
-	return nil
-}
-
-func groupTicketsByProject(tickets []domain.Ticket) []ticketListGroup {
-	named := map[string][]domain.Ticket{}
-	var names []string
-	var ungrouped []domain.Ticket
+	rows := make([][]string, 0, len(tickets))
 	for _, ticket := range tickets {
-		if ticket.Project == "" {
-			ungrouped = append(ungrouped, ticket)
-			continue
+		row := []string{ticket.Slug, string(ticket.Status), fmt.Sprintf("%d", ticket.Priority), ticket.Title}
+		if includeProject {
+			project := ticket.Project
+			if project == "" {
+				project = ungroupedProjectSentinel
+			}
+			row = append([]string{project}, row...)
 		}
-		if _, found := named[ticket.Project]; !found {
-			names = append(names, ticket.Project)
-		}
-		named[ticket.Project] = append(named[ticket.Project], ticket)
+		rows = append(rows, row)
 	}
-	sort.Strings(names)
-	groups := make([]ticketListGroup, 0, len(names)+1)
-	for _, name := range names {
-		groups = append(groups, ticketListGroup{name: name, tickets: named[name]})
-	}
-	if len(ungrouped) > 0 {
-		groups = append(groups, ticketListGroup{name: ungroupedProjectSentinel, tickets: ungrouped})
-	}
-	return groups
+	return writeTable(out, headers, rows)
 }
 
 func newTicketsShowCommand(options Options) *cobra.Command {
