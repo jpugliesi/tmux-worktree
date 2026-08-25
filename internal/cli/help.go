@@ -216,6 +216,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets doctor": {
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
+	"twt tickets git-sync": {
+		long: "Reconcile the Tickets home with its git remote in one round: commit manual edits, pull, rebase local commits, and push everything the remote lacks. Run it to recover after offline work or to refresh the local view. It needs ticketsSync.mode git.", example: "  twt tickets git-sync --dry-run --output json\n  twt tickets git-sync --output json",
+	},
 	"twt tickets repair": {
 		long: "Move Tickets to the correct active or closed location from the current status and Project directory. Repair applies no move while the doctor report has a blocker. Run --dry-run first.", example: "  twt tickets repair --dry-run --output json\n  twt tickets repair --output json",
 	},

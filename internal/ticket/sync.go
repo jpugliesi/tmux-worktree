@@ -73,11 +73,15 @@ const (
 	syncRequired
 )
 
-const (
-	// syncRemoteTimeout bounds each git command that reaches the remote.
+// syncRemoteTimeout bounds each git command that reaches the remote, and
+// syncLocalTimeout bounds each local git command. They are variables so
+// tests can widen them on loaded machines.
+var (
 	syncRemoteTimeout = 10 * time.Second
-	// syncLocalTimeout bounds each local git command.
-	syncLocalTimeout = 5 * time.Second
+	syncLocalTimeout  = 5 * time.Second
+)
+
+const (
 	// syncDryRunFetchTimeout bounds the best-effort dry-run fetch.
 	syncDryRunFetchTimeout = 3 * time.Second
 	// syncMaxReplays bounds the push-rejection replay loop.
@@ -270,61 +274,261 @@ func (g *gitSync) sweepManualEdits() error {
 	return g.commit("twt: sync manual edits")
 }
 
-// reconcile brings the local branch up to date with the remote. When
-// required is true a fetch failure fails the operation; otherwise the
-// operation continues offline with a warning. Local commits that predate
-// this operation rebase onto the remote; a conflict aborts the rebase and
-// reports unsafe_state.
-func (g *gitSync) reconcile(required bool, fetchTimeout time.Duration) error {
-	if _, err := runTicketGit(fetchTimeout, g.toplevel, "fetch", g.remote, g.branch); err != nil {
+// remoteRef names the remote-tracking ref of the sync branch.
+func (g *gitSync) remoteRef() string {
+	return g.remote + "/" + g.branch
+}
+
+// fetch updates the remote-tracking ref. It reports whether that ref exists.
+// When required is true a fetch failure fails the operation; otherwise the
+// operation continues offline with a warning.
+func (g *gitSync) fetch(required bool, timeout time.Duration) (bool, error) {
+	if _, err := runTicketGit(timeout, g.toplevel, "fetch", g.remote, g.branch); err != nil {
 		if strings.Contains(err.Error(), "couldn't find remote ref") {
 			// The remote branch does not exist yet. The first push creates it.
-			return nil
+			return false, nil
 		}
 		if required {
-			return clierr.WithHint(
+			return false, clierr.WithHint(
 				clierr.New(clierr.PreconditionFailed, "twt could not reach the tickets remote %q: %v", g.remote, err),
 				"This change needs the remote for the claim handshake. Check the network, then run the command again.")
 		}
 		g.logf("Warning: twt could not fetch the tickets remote %q. The change stays local until the next successful sync.", g.remote)
-		return nil
+		return false, nil
 	}
-	remoteRef := g.remote + "/" + g.branch
-	if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-parse", "--verify", "--quiet", remoteRef); err != nil {
-		return nil
+	if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-parse", "--verify", "--quiet", g.remoteRef()); err != nil {
+		return false, nil
 	}
-	if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-parse", "--verify", "--quiet", "HEAD"); err != nil {
-		// A fresh clone of a repository that gained commits later has an
-		// unborn branch. Point it at the remote state.
-		if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "reset", "--hard", remoteRef); err != nil {
-			return err
-		}
-		return nil
-	}
-	counts, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-list", "--left-right", "--count", "HEAD..."+remoteRef)
+	return true, nil
+}
+
+// headExists reports whether the local branch has a commit yet.
+func (g *gitSync) headExists() bool {
+	_, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err == nil
+}
+
+// aheadBehind counts local commits the remote lacks and remote commits the
+// local branch lacks. The caller must know that the remote ref exists.
+func (g *gitSync) aheadBehind() (ahead, behind int, err error) {
+	counts, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-list", "--left-right", "--count", "HEAD..."+g.remoteRef())
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	var ahead, behind int
 	if _, err := fmt.Sscanf(counts, "%d\t%d", &ahead, &behind); err != nil {
-		return fmt.Errorf("parse rev-list counts %q: %w", counts, err)
+		return 0, 0, fmt.Errorf("parse rev-list counts %q: %w", counts, err)
 	}
+	return ahead, behind, nil
+}
+
+// advance brings the local branch up to the remote: fast-forward when the
+// local branch has nothing of its own, or rebase pre-existing local commits.
+// A rebase conflict aborts and reports unsafe_state.
+func (g *gitSync) advance(ahead, behind int) error {
 	if behind == 0 {
 		return nil
 	}
 	if ahead == 0 {
-		if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "merge", "--ff-only", remoteRef); err != nil {
+		if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "merge", "--ff-only", g.remoteRef()); err != nil {
 			return err
 		}
 		return nil
 	}
-	if _, err := runTicketGit(syncRemoteTimeout, g.toplevel, "rebase", remoteRef); err != nil {
+	if _, err := runTicketGit(syncRemoteTimeout, g.toplevel, "rebase", g.remoteRef()); err != nil {
 		_, _ = runTicketGit(syncLocalTimeout, g.toplevel, "rebase", "--abort")
 		return clierr.WithHint(
-			clierr.New(clierr.UnsafeState, "the tickets repository %q diverged from %s and the rebase conflicts", g.toplevel, remoteRef),
-			"Run 'twt tickets git-sync', or resolve the conflict in %q.", g.toplevel)
+			clierr.New(clierr.UnsafeState, "the tickets repository %q diverged from %s and the rebase conflicts", g.toplevel, g.remoteRef()),
+			"Resolve the conflict in %q, then run 'twt tickets git-sync'.", g.toplevel)
 	}
 	return nil
+}
+
+// reconcile brings the local branch up to date with the remote before a
+// mutation.
+func (g *gitSync) reconcile(required bool, fetchTimeout time.Duration) error {
+	hasRemote, err := g.fetch(required, fetchTimeout)
+	if err != nil || !hasRemote {
+		return err
+	}
+	if !g.headExists() {
+		// A fresh clone of a repository that gained commits later has an
+		// unborn branch. Point it at the remote state.
+		_, err := runTicketGit(syncLocalTimeout, g.toplevel, "reset", "--hard", g.remoteRef())
+		return err
+	}
+	ahead, behind, err := g.aheadBehind()
+	if err != nil {
+		return err
+	}
+	return g.advance(ahead, behind)
+}
+
+// Sync doctor issue codes. These are findings, not errors, and they never
+// block repair.
+const (
+	syncIssueNoRepo       = "sync_no_repo"
+	syncIssueNoRemote     = "sync_no_remote"
+	syncIssueDetachedHead = "sync_detached_head"
+	syncIssueNoUpstream   = "sync_no_upstream"
+	syncIssueDirty        = "sync_dirty"
+	syncIssueUnpushed     = "sync_unpushed"
+	syncIssueGitignore    = "sync_gitignore"
+	syncIssueInProgress   = "sync_in_progress"
+)
+
+// syncDoctor collects the local-only git sync findings for the doctor
+// report. It returns nil when sync is disabled and never reaches the remote.
+func (s *Service) syncDoctor(home string) *SyncDoctorInfo {
+	if !s.options.Sync.enabled() {
+		return nil
+	}
+	info := &SyncDoctorInfo{Remote: s.options.Sync.remote(), Issues: []SyncDoctorIssue{}}
+	report := func(code, message string) {
+		info.Issues = append(info.Issues, SyncDoctorIssue{Code: code, Message: message})
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		report(syncIssueNoRepo, "ticketsSync.mode is git but git is not installed")
+		return info
+	}
+	base := existingAncestor(home)
+	toplevel, err := runTicketGit(syncLocalTimeout, base, "rev-parse", "--show-toplevel")
+	if err != nil {
+		report(syncIssueNoRepo, fmt.Sprintf("the Tickets home %q is not inside a git work tree", home))
+		return info
+	}
+	pathspec, err := ticketsPathspec(toplevel, base, home)
+	if err != nil {
+		report(syncIssueNoRepo, err.Error())
+		return info
+	}
+	branch, err := runTicketGit(syncLocalTimeout, toplevel, "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		report(syncIssueDetachedHead, fmt.Sprintf("the tickets repository %q has a detached HEAD", toplevel))
+		return info
+	}
+	info.Branch = branch
+	if _, err := runTicketGit(syncLocalTimeout, toplevel, "remote", "get-url", info.Remote); err != nil {
+		report(syncIssueNoRemote, fmt.Sprintf("the tickets repository %q has no remote %q", toplevel, info.Remote))
+	}
+	gitDir, err := runTicketGit(syncLocalTimeout, toplevel, "rev-parse", "--absolute-git-dir")
+	if err == nil {
+		for _, marker := range []string{"rebase-merge", "rebase-apply", "MERGE_HEAD"} {
+			if _, statErr := os.Stat(filepath.Join(gitDir, marker)); statErr == nil {
+				report(syncIssueInProgress, fmt.Sprintf("a git operation is in progress in %q (%s)", toplevel, marker))
+				break
+			}
+		}
+	}
+	if status, err := runTicketGit(syncLocalTimeout, toplevel, "status", "--porcelain", "--", pathspec); err == nil && status != "" {
+		info.Dirty = true
+		report(syncIssueDirty, "the Tickets home has uncommitted changes; the next mutation or 'twt tickets git-sync' commits them")
+	}
+	remoteRef := info.Remote + "/" + branch
+	if _, err := runTicketGit(syncLocalTimeout, toplevel, "rev-parse", "--verify", "--quiet", remoteRef); err != nil {
+		report(syncIssueNoUpstream, fmt.Sprintf("the branch %q has no remote-tracking ref yet; the first push creates it", branch))
+	} else if counts, err := runTicketGit(syncLocalTimeout, toplevel, "rev-list", "--count", remoteRef+"..HEAD"); err == nil {
+		if _, scanErr := fmt.Sscanf(counts, "%d", &info.UnpushedCommits); scanErr == nil && info.UnpushedCommits > 0 {
+			report(syncIssueUnpushed, fmt.Sprintf("%d local commit(s) are not on %q; run 'twt tickets git-sync'", info.UnpushedCommits, remoteRef))
+		}
+	}
+	gitignore, err := os.ReadFile(filepath.Join(home, ".gitignore"))
+	if err != nil || !strings.Contains(string(gitignore), ".twt-write-*") {
+		report(syncIssueGitignore, "the Tickets home .gitignore does not exclude .twt-write-* temp files; run 'twt tickets init'")
+	}
+	return info
+}
+
+// SyncStatus reports one explicit reconcile-and-push round.
+type SyncStatus struct {
+	Remote               string `json:"remote"`
+	Branch               string `json:"branch"`
+	PulledCommits        int    `json:"pulledCommits"`
+	PushedCommits        int    `json:"pushedCommits"`
+	CommittedManualEdits bool   `json:"committedManualEdits"`
+}
+
+// Sync reconciles the Tickets home with its git remote in one explicit
+// round: commit manual edits, pull, rebase pre-existing local commits, and
+// push everything the remote lacks. It is the recovery path after offline
+// work and the manual refresh for reads.
+func (s *Service) Sync(dryRun bool) (SyncStatus, error) {
+	g, err := s.syncer()
+	if err != nil {
+		return SyncStatus{}, err
+	}
+	if g == nil {
+		return SyncStatus{}, clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "ticketsSync is off"),
+			"Set ticketsSync.mode to git in ~/.config/twt/config.yaml or TWT_TICKETS_SYNC.")
+	}
+	lock, err := g.lock()
+	if err != nil {
+		return SyncStatus{}, err
+	}
+	defer lock.Release()
+	status := SyncStatus{Remote: g.remote, Branch: g.branch}
+	dirty, err := g.dirty()
+	if err != nil {
+		return SyncStatus{}, err
+	}
+	if !dryRun && dirty {
+		if err := g.commit("twt: sync manual edits"); err != nil {
+			return SyncStatus{}, err
+		}
+		status.CommittedManualEdits = true
+	}
+	hasRemote, err := g.fetch(true, syncRemoteTimeout)
+	if err != nil {
+		return SyncStatus{}, err
+	}
+	ahead := 0
+	if g.headExists() {
+		if hasRemote {
+			var behind int
+			ahead, behind, err = g.aheadBehind()
+			if err != nil {
+				return SyncStatus{}, err
+			}
+			status.PulledCommits = behind
+		} else {
+			total, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-list", "--count", "HEAD")
+			if err != nil {
+				return SyncStatus{}, err
+			}
+			if _, err := fmt.Sscanf(total, "%d", &ahead); err != nil {
+				return SyncStatus{}, fmt.Errorf("parse rev-list count %q: %w", total, err)
+			}
+		}
+	}
+	if dryRun && dirty {
+		ahead++
+	}
+	status.PushedCommits = ahead
+	if dryRun {
+		return status, nil
+	}
+	if hasRemote {
+		if !g.headExists() {
+			if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "reset", "--hard", g.remoteRef()); err != nil {
+				return SyncStatus{}, err
+			}
+		} else if err := g.advance(ahead, status.PulledCommits); err != nil {
+			return SyncStatus{}, err
+		}
+	}
+	if ahead > 0 {
+		if err := g.push(); err != nil {
+			if errors.Is(err, errPushRejected) {
+				return SyncStatus{}, clierr.WithHint(
+					clierr.New(clierr.Locked, "the tickets remote changed during the sync"),
+					"Run 'twt tickets git-sync' again.")
+			}
+			return SyncStatus{}, clierr.WithHint(
+				clierr.New(clierr.PreconditionFailed, "twt could not push to the tickets remote %q: %v", g.remote, err),
+				"Check the network, then run 'twt tickets git-sync' again.")
+		}
+	}
+	return status, nil
 }
 
 // syncWrite wraps one Service write in the sync round: sweep, pull, run the

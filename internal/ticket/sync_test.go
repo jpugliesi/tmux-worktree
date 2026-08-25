@@ -62,6 +62,11 @@ func newSyncEnv(t *testing.T) *syncEnv {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
+	// Widen the git timeouts: package tests run in parallel with the whole
+	// module suite and a loaded machine can push a file fetch past 10s.
+	originalRemote, originalLocal := syncRemoteTimeout, syncLocalTimeout
+	syncRemoteTimeout, syncLocalTimeout = 120*time.Second, 60*time.Second
+	t.Cleanup(func() { syncRemoteTimeout, syncLocalTimeout = originalRemote, originalLocal })
 	root := t.TempDir()
 	globalConfig := filepath.Join(root, "gitconfig")
 	if err := os.WriteFile(globalConfig, nil, 0o644); err != nil {
@@ -251,10 +256,8 @@ func TestSyncReplaysARejectedPushAndSucceeds(t *testing.T) {
 func TestSyncReplayLosesACompetingClaimWithLocked(t *testing.T) {
 	env := newSyncEnv(t)
 	env.createTicket(t, env.serviceA, "fix-auth")
-	// B resolves the ticket once so its clone has it before the intercept.
-	if _, err := env.serviceB.Set("fix-auth", SetRequest{Priority: 1, PrioritySet: true}, false); err != nil {
-		t.Fatalf("warm clone B: %v", err)
-	}
+	// B pulls once so its clone has the ticket before the intercept.
+	testGit(t, env.cloneB, "pull", "-q", "origin", "main")
 
 	// After B reconciles and commits its claim, another machine claims the
 	// same ticket by hand and pushes first.
@@ -466,9 +469,7 @@ func TestSyncDivergedConflictAbortsTheRebaseAndReportsUnsafeState(t *testing.T) 
 	env := newSyncEnv(t)
 	env.createTicket(t, env.serviceA, "fix-auth")
 	// Warm clone B, then take both clones offline and edit the same line.
-	if _, err := env.serviceB.Comment("fix-auth", "Warm clone B.", false); err != nil {
-		t.Fatal(err)
-	}
+	testGit(t, env.cloneB, "pull", "-q", "origin", "main")
 	offline := true
 	interceptTicketGit(t, func(original func(time.Duration, string, ...string) (string, error), timeout time.Duration, dir string, args ...string) (string, error) {
 		if offline && len(args) > 0 && (args[0] == "fetch" || args[0] == "push") {
@@ -531,6 +532,88 @@ func TestSyncConcurrentClaimsHaveExactlyOneWinner(t *testing.T) {
 	}
 	if winners != 1 {
 		t.Fatalf("winners = %d, want exactly 1 (results: %v)", winners, results)
+	}
+}
+
+func TestServiceSyncPushesOfflineCommitsAndReportsCounts(t *testing.T) {
+	env := newSyncEnv(t)
+	env.createTicket(t, env.serviceA, "fix-auth")
+
+	offline := true
+	interceptTicketGit(t, func(original func(time.Duration, string, ...string) (string, error), timeout time.Duration, dir string, args ...string) (string, error) {
+		if offline && len(args) > 0 && (args[0] == "fetch" || args[0] == "push") {
+			return "", errors.New("network is unreachable")
+		}
+		return original(timeout, dir, args...)
+	})
+	if _, err := env.serviceA.Set("fix-auth", SetRequest{Priority: 3, PrioritySet: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	offline = false
+
+	status, err := env.serviceA.Sync(false)
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if status.PushedCommits != 1 || status.PulledCommits != 0 {
+		t.Fatalf("sync status = %+v, want 1 pushed and 0 pulled", status)
+	}
+	if ahead := testGit(t, env.cloneA, "rev-list", "--count", "origin/main..HEAD"); ahead != "0" {
+		t.Fatalf("clone A is still ahead by %s after sync", ahead)
+	}
+}
+
+func TestServiceSyncFailsWhenSyncIsOff(t *testing.T) {
+	service, _ := newTestService(t)
+	_, err := service.Sync(false)
+	if clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("sync-off error = %v, want precondition_failed", err)
+	}
+}
+
+func TestDoctorReportsSyncFindingsWithoutBlockingRepair(t *testing.T) {
+	env := newSyncEnv(t)
+	env.createTicket(t, env.serviceA, "fix-auth")
+
+	offline := true
+	interceptTicketGit(t, func(original func(time.Duration, string, ...string) (string, error), timeout time.Duration, dir string, args ...string) (string, error) {
+		if offline && len(args) > 0 && (args[0] == "fetch" || args[0] == "push") {
+			return "", errors.New("network is unreachable")
+		}
+		return original(timeout, dir, args...)
+	})
+	if _, err := env.serviceA.Set("fix-auth", SetRequest{Priority: 3, PrioritySet: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	offline = false
+	path := filepath.Join(env.cloneA, "tickets", "fix-auth.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(content, []byte("\nHand edit.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := env.serviceA.Doctor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Sync == nil {
+		t.Fatal("doctor report has no sync block")
+	}
+	codes := map[string]bool{}
+	for _, issue := range report.Sync.Issues {
+		codes[issue.Code] = true
+	}
+	if !codes[syncIssueUnpushed] || !codes[syncIssueDirty] {
+		t.Fatalf("sync issues = %+v, want unpushed and dirty", report.Sync.Issues)
+	}
+	if !report.Healthy {
+		t.Fatalf("sync findings must not make the ticket report unhealthy: %+v", report.Issues)
+	}
+	if report.Sync.UnpushedCommits != 1 || !report.Sync.Dirty {
+		t.Fatalf("sync block = %+v", report.Sync)
 	}
 }
 

@@ -99,6 +99,8 @@ func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 		{"ticketAgent.provider", "codex", "default", ""},
 		{"ticketAgent.effort", "large", "default", ""},
 		{"ticketAgent.instructions", "", "default", ""},
+		{"ticketsSync.mode", "off", "default", ""},
+		{"ticketsSync.remote", "origin", "default", ""},
 	}
 	if len(envelope.Config) != len(want) {
 		t.Fatalf("config setting count = %d, want %d\n%+v", len(envelope.Config), len(want), envelope.Config)
@@ -355,6 +357,12 @@ func TestConfigCommandIncludesEveryConfigFileKey(t *testing.T) {
 		}
 		if tag == "ticketAgent" {
 			if !reported["ticketAgent.provider"] || !reported["ticketAgent.effort"] || !reported["ticketAgent.instructions"] {
+				t.Errorf("config command does not report every %q setting", tag)
+			}
+			continue
+		}
+		if tag == "ticketsSync" {
+			if !reported["ticketsSync.mode"] || !reported["ticketsSync.remote"] {
 				t.Errorf("config command does not report every %q setting", tag)
 			}
 			continue

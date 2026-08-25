@@ -42,6 +42,25 @@ type TicketDoctorReport struct {
 	Healthy     bool          `json:"healthy"`
 	TicketCount int           `json:"ticketCount"`
 	Issues      []TicketIssue `json:"issues"`
+	// Sync reports the git sync state when ticketsSync is enabled. Its
+	// findings never block repair: repair blockers come from Issues only.
+	Sync *SyncDoctorInfo `json:"sync,omitempty"`
+}
+
+// SyncDoctorIssue is one local-only git sync finding.
+type SyncDoctorIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// SyncDoctorInfo is the additive git sync block of the doctor report. Every
+// check is local; doctor never reaches the remote.
+type SyncDoctorInfo struct {
+	Remote          string            `json:"remote"`
+	Branch          string            `json:"branch,omitempty"`
+	Dirty           bool              `json:"dirty"`
+	UnpushedCommits int               `json:"unpushedCommits"`
+	Issues          []SyncDoctorIssue `json:"issues"`
 }
 
 // TicketMove is one byte-preserving path repair.
@@ -75,7 +94,12 @@ func (s *Service) Doctor() (TicketDoctorReport, error) {
 	if err != nil {
 		return TicketDoctorReport{}, err
 	}
-	return auditTickets(home)
+	report, err := auditTickets(home)
+	if err != nil {
+		return report, err
+	}
+	report.Sync = s.syncDoctor(home)
+	return report, nil
 }
 
 // Repair moves every repairable location mismatch. It applies no move when

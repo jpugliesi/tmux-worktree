@@ -58,6 +58,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
 	tickets.AddCommand(newTicketsDoctorCommand(options))
+	tickets.AddCommand(newTicketsGitSyncCommand(options))
 	tickets.AddCommand(newTicketsRepairCommand(options))
 	return tickets
 }
