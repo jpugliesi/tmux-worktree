@@ -37,6 +37,17 @@ twt tickets create "Fix auth token refresh" --project core --status ready-for-ag
 A claim is compare-and-set. When two agents race for one Ticket, the second
 gets `locked` and the name of the holder. Agents claim with `--as NAME`.
 
+Read one Project queue when you need its dependency graph and its available
+work:
+
+```sh
+twt tickets queue --project core --limit 4 --output json
+```
+
+The `ready` list is deterministic. It contains only ready-for-agent,
+unclaimed Tickets whose blockers are done or wontfix. The queue also reports
+missing dependencies and dependency cycles.
+
 ### 2. Create a Workspace or move to the next Workspace
 
 Create a Workspace and keep all other Workspaces active:
@@ -179,7 +190,7 @@ twt tickets repair                    # move tickets to the correct paths
 
 | Command | Job |
 | --- | --- |
-| `twt tickets` | Create, list, claim, start, close, check, and repair Markdown Tickets |
+| `twt tickets` | Create, list, queue, claim, start, close, check, and repair Markdown Tickets |
 | `twt projects` | Create, list, and show durable Ticket Projects |
 | `twt create` | Create a Workspace and keep other Workspaces active |
 | `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |

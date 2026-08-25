@@ -344,6 +344,9 @@ Follow these rules for every ticket command:
    `twt projects show PROJECT --output json`. That envelope includes `ready`,
    `inFlight`, and `workspaces`. `twt context --output json` includes the
    linked Tickets and the ready queue for the current Workspace Project.
+   Use `twt tickets queue --project PROJECT --limit N --output json` to read
+   the complete dependency graph, cycle diagnostics, and up to N ready
+   Tickets from one index snapshot.
 
 ```sh
 twt tickets list --ready --output json --limit 20

@@ -188,6 +188,7 @@ twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
+twt tickets queue --project PROJECT [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -221,6 +222,20 @@ from the store.
 An ambiguous prefix is `invalid_usage`. Put the candidate slugs in `hint`.
 Path lookup uses the current path. An old path does not follow a moved
 Ticket; use its bare slug or `[[slug]]` instead.
+
+### Project queue
+
+`twt tickets queue --project PROJECT` reads one Ticket index snapshot. It
+returns the complete open Project graph and a `ready` list. Both lists sort by
+priority and then by Ticket slug.
+
+Each graph dependency reports whether its Ticket is open, closed, missing, or
+invalid. It also reports the dependency Project. `cycles` lists dependency
+cycles that stop affected Tickets from becoming ready.
+
+`--limit` cuts only `ready`. The complete graph and cycle diagnostics stay in
+the result. Use `--fields ready,readyTotalCount` when an agent does not need
+the graph.
 
 ### `tickets create`
 

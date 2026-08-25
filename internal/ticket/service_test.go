@@ -86,6 +86,87 @@ func TestShowReportsOpenAndMissingBlockers(t *testing.T) {
 	}
 }
 
+func TestQueueReturnsTheOpenProjectGraphAndDispatchableTickets(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "core", "index.md"), "# core\n")
+	writeFixture(t, filepath.Join(home, "core", "done-dep.md"),
+		fixture{title: "Done dep", status: "done", priority: "0"}.content())
+	writeFixture(t, filepath.Join(home, "core", "available-z.md"),
+		fixture{title: "Available Z", status: "ready-for-agent", priority: "1", blocked: []string{"done-dep"}}.content())
+	writeFixture(t, filepath.Join(home, "core", "available-a.md"),
+		fixture{title: "Available A", status: "ready-for-agent", priority: "0"}.content())
+	writeFixture(t, filepath.Join(home, "core", "blocked.md"),
+		fixture{title: "Blocked", status: "ready-for-agent", priority: "0", blocked: []string{"missing-dep"}}.content())
+	writeFixture(t, filepath.Join(home, "core", "claimed.md"),
+		fixture{title: "Claimed", status: "ready-for-agent", priority: "0", claimedBy: "agent-a"}.content())
+	writeFixture(t, filepath.Join(home, "core", "triage.md"),
+		fixture{title: "Triage", status: "needs-triage", priority: "0"}.content())
+
+	result, err := service.Queue("core", 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	graph := make([]string, 0, len(result.Graph))
+	for _, ticket := range result.Graph {
+		graph = append(graph, ticket.Slug)
+	}
+	if got := strings.Join(graph, ","); got != "available-a,blocked,claimed,triage,available-z" {
+		t.Fatalf("graph order = %q", got)
+	}
+	if result.ReadyTotalCount != 2 || result.ReadyTruncated || len(result.Ready) != 2 ||
+		result.Ready[0].Slug != "available-a" || result.Ready[1].Slug != "available-z" {
+		t.Fatalf("Ready = %+v, count = %d, truncated = %v", result.Ready, result.ReadyTotalCount, result.ReadyTruncated)
+	}
+	if result.Graph[1].Ready || len(result.Graph[1].Dependencies) != 1 || result.Graph[1].Dependencies[0].State != QueueDependencyMissing {
+		t.Fatalf("blocked graph entry = %+v", result.Graph[1])
+	}
+	if result.Graph[2].Ready || result.Graph[2].ClaimedBy != "agent-a" {
+		t.Fatalf("claimed graph entry = %+v", result.Graph[2])
+	}
+	for _, ticket := range result.Graph {
+		if ticket.Slug == "done-dep" {
+			t.Fatal("the open graph includes a closed Ticket")
+		}
+	}
+
+	limited, err := service.Queue("core", 1)
+	if err != nil || len(limited.Graph) != len(result.Graph) || len(limited.Ready) != 1 ||
+		limited.ReadyTotalCount != 2 || !limited.ReadyTruncated {
+		t.Fatalf("limited Queue = %+v, error = %v", limited, err)
+	}
+	if _, err := service.Queue("core", -1); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("Queue with negative limit = %v, want invalid_usage", err)
+	}
+	if _, err := service.Queue("missing", 0); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("Queue(missing) = %v, want not_found", err)
+	}
+}
+
+func TestQueueReportsCyclesAndCrossProjectDependencies(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "core", "index.md"), "# core\n")
+	writeFixture(t, filepath.Join(home, "other", "index.md"), "# other\n")
+	writeFixture(t, filepath.Join(home, "core", "cycle-a.md"),
+		fixture{title: "Cycle A", status: "ready-for-agent", blocked: []string{"cycle-b", "other-work"}}.content())
+	writeFixture(t, filepath.Join(home, "core", "cycle-b.md"),
+		fixture{title: "Cycle B", status: "ready-for-agent", blocked: []string{"cycle-a"}}.content())
+	writeFixture(t, filepath.Join(home, "other", "other-work.md"),
+		fixture{title: "Other work", status: "needs-triage"}.content())
+
+	result, err := service.Queue("core", 0)
+	if err != nil {
+		t.Fatalf("Queue: %v", err)
+	}
+	if len(result.Cycles) != 1 || strings.Join(result.Cycles[0], ",") != "cycle-a,cycle-b" {
+		t.Fatalf("Cycles = %v", result.Cycles)
+	}
+	dependency := result.Graph[0].Dependencies[1]
+	if dependency.Slug != "other-work" || dependency.State != QueueDependencyOpen ||
+		dependency.Project != "other" || dependency.InProject {
+		t.Fatalf("cross-Project dependency = %+v", dependency)
+	}
+}
+
 func TestMutationRenamesTheLegacyBoardFieldToProject(t *testing.T) {
 	service, home := newTestService(t)
 	path := filepath.Join(home, "core", "legacy.md")
