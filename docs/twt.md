@@ -833,7 +833,11 @@ twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
 twt tickets queue --project PROJECT [--limit N]
-twt tickets dispatch TICKET [--plan] [--max-concurrency N]
+twt tickets dispatch TICKET [--backend local|cursor-cloud] [--plan] [--max-concurrency N]
+twt tickets sync --project PROJECT
+twt tickets abandon SESSION --force
+twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
+twt tickets git-sync
 twt tickets cloud-sync --project PROJECT
 twt tickets cloud-abandon SESSION --force
 twt tickets show TICKET
@@ -1050,11 +1054,18 @@ HTTPS `url` replaces the clone URL for Cursor. An optional `starting_ref`
 replaces the Template default branch. Cursor accepts at most 20 repositories
 for one Cloud Agent.
 
+`twt tickets sync` is the current coordinator entry point: it reconciles
+both the local and the cursor-cloud backend of one Project and reports each
+backend's capacity, sessions, and diagnostics under `backends`.
+`tickets cloud-sync` stays as a deprecated delegate for the cloud half; the
+wave below still works with it. See docs/tickets.md for the full coordinator
+and the local dispatch backend.
+
 Run one coordinator wave in this order:
 
 ```sh
-twt tickets cloud-sync --project change-monitor --dry-run --output json
-twt tickets cloud-sync --project change-monitor --output json
+twt tickets sync --project change-monitor --dry-run --output json
+twt tickets sync --project change-monitor --output json
 twt tickets queue --project change-monitor --limit AVAILABLE --output json
 twt tickets dispatch factory-api --dry-run --output json
 twt tickets dispatch factory-api --output json

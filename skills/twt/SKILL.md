@@ -317,46 +317,94 @@ One planning Agent covers all Ticket arguments. `ticketAgent` in
 Configured instructions come before the generated Ticket request. Codex uses
 the planning prompt in normal mode. The other providers use their plan mode.
 
-### Dispatch a Project to Cursor Cloud
+### Dispatch Tickets to implementation Sessions
 
-Use Cursor Cloud only when the Project has a Workspace Template and that
-Template has `cursor_cloud` settings. The settings select the model, generic
-effort, maximum Project concurrency, prompt instructions, and repositories.
-The default effort is `large`.
+`twt tickets dispatch` starts one implementation Session for one ready
+Ticket on one of two backends:
+
+- `local` creates a Workspace on this machine and starts one autonomous
+  implementation agent in tmux. The Template `local_dispatch` settings select
+  the provider, effort, instructions, and the Project concurrency (default
+  2). Empty settings fall back to the machine `ticketAgent` config, so a
+  shared Template normally leaves the provider unset and each machine uses an
+  installed provider. A person can attach to the Workspace tmux session at
+  any time and steer.
+- `cursor-cloud` starts a remote Cursor Agent. It needs `cursor_cloud`
+  settings on the Template (model, effort, concurrency default 4,
+  instructions, repositories).
+
+An omitted `--backend` follows the Template: `cursor-cloud` when
+`cursor_cloud` is set, else `local`. A local dispatch can take minutes when
+no Prepared Environment is ready.
 
 A coordinator runs one wave and then stops:
 
 ```sh
-twt tickets cloud-sync --project PROJECT --dry-run --output json
-twt tickets cloud-sync --project PROJECT --output json
+twt tickets sync --project PROJECT --dry-run --output json
+twt tickets sync --project PROJECT --output json
 twt tickets queue --project PROJECT --limit AVAILABLE --output json
 twt tickets dispatch TICKET --dry-run --output json
 twt tickets dispatch TICKET --output json
 ```
 
-First check `capacity.known`. If it is false, do not dispatch. Read the
-diagnostics and stop the wave. If it is true, pass `capacity.available` to
-queue as `--limit`. Dispatch only the Tickets in `ready`. Run dispatch once
-for each selected Ticket. Add `--plan` only when the user asks for a plan. A
-normal dispatch asks Cursor to implement the Ticket, run tests, and create a
-pull request for each changed repository.
+`tickets sync` reports each backend under `backends` with its own
+`capacity`, `sessions`, and `diagnostics`. Check `capacity.known` for each
+backend. If it is false, do not dispatch on that backend; read the
+diagnostics. If it is true, pass the combined `capacity.available` to queue
+as `--limit`. Dispatch only the Tickets in `ready`. Run dispatch once for
+each selected Ticket. Add `--plan` only when the user asks for a plan. A
+normal dispatch asks the agent to implement the Ticket, run tests, create a
+pull request for each changed repository, and then report through
+`twt tickets complete`.
 
-After the wave, stop. Do not poll in a tight loop. Run a new wave when the user
-or coordinator schedule asks for one. A sync can have `status: "partial"`.
-Read `diagnostics`, correct each named Session when possible, and keep the
-successful Session updates. If dispatch or sync reports an uncertain remote
-result, keep the Ticket claim and run `cloud-sync` later. Do not dispatch that
-Ticket again while its Cloud Session is active.
+The worker contract: a local implementation agent finishes with
+`twt tickets complete TICKET --as CLAIMANT --pr URL`, which records the pull
+requests and sets the Ticket to `ready-for-human` in one write. A worker
+that cannot finish comments the blocker and runs `twt tickets unclaim`.
+Completion detection is a state read: never infer it from pane output.
 
-If repeated syncs cannot recover one Session, report the stuck Session to the
-user. With user authority, run `twt tickets cloud-abandon SESSION --force`
-first with `--dry-run` and then without it. This stops local recovery and can
-release the Ticket. It does not cancel the remote Cursor Agent. That Agent can
-continue and can create a pull request. Do not use this command without clear
+After the wave, stop. Do not poll in a tight loop. Run a new wave when the
+user or coordinator schedule asks for one. A sync can have
+`status: "partial"`. Read `diagnostics`, correct each named Session when
+possible, and keep the successful Session updates. If a cloud dispatch or
+sync reports an uncertain remote result, keep the Ticket claim and run
+`tickets sync` later. Do not dispatch a Ticket again while any of its
+Sessions is active.
+
+A local `stuck` diagnostic means the agent stopped while the Ticket stays
+claimed. Resume it with `twt agents resume`, or, with user authority, run
+`twt tickets abandon SESSION --force` (dry-run first). Abandon returns the
+Ticket to the queue but never stops tmux: inspect the Workspace, then run
+`twt done WORKSPACE`. For a stuck Cursor Cloud Session the command is
+`twt tickets cloud-abandon SESSION --force`; the remote Agent can continue
+and can still create a pull request. Do not use either command without clear
 user authority.
 
-Cursor Cloud Sessions are separate from local tmux Agent Sessions. Do not use
-`twt tickets start --with-agent` for a Cursor Cloud dispatch.
+Three different verbs start ticket agents. `twt tickets start --with-agent`
+opens a planning Workspace for a person. `twt tickets dispatch` (local)
+starts an autonomous implementation Workspace. `twt tickets dispatch
+--backend cursor-cloud` starts a remote Cursor Agent with no local
+Workspace.
+
+### Sync the Tickets home between machines
+
+With `ticketsSync.mode: git` in config.yaml (or `TWT_TICKETS_SYNC=git`), twt
+syncs every ticket write through the git remote of the Tickets home. Claim,
+claim-ready, complete, unclaim, and close need a reachable remote: the push
+is the cross-machine compare-and-swap, and a lost race returns the normal
+`locked` error - pick another Ticket from the ready queue. Other writes
+commit locally and push best-effort; a warning means the change stays local
+until the next successful sync. `precondition_failed` on a claim means the
+remote was unreachable. Reads never touch git. Recover after offline work
+with:
+
+```sh
+twt tickets git-sync --dry-run --output json
+twt tickets git-sync --output json
+```
+
+`twt tickets doctor` includes a `sync` block with local-only findings such
+as `sync_unpushed` and `sync_dirty`.
 
 Follow these rules for every ticket command:
 
@@ -427,6 +475,16 @@ drops the claim in one write, and it uses the same claimant rules as `claim`:
 ```sh
 twt tickets close TICKET --as codex-fix-auth --dry-run --output json
 twt tickets close TICKET --as codex-fix-auth --output json
+```
+
+A worker that ships code hands off with `complete` instead of `close`:
+it records the pull request URLs in the `pull_requests` frontmatter and sets
+the status to `ready-for-human` (or `ready-for-agent`) in the same write.
+A retry after success is a no-op:
+
+```sh
+twt tickets complete TICKET --as CLAIMANT --pr URL --dry-run --output json
+twt tickets complete TICKET --as CLAIMANT --pr URL --output json
 ```
 
 `set --status` and `unclaim` stay available as the granular forms. Use them

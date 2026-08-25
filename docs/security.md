@@ -48,9 +48,21 @@ agent must read the blockers and correct the cause; it must not repeat the
 same request. Every mutation also accepts `--dry-run`, which validates the
 request and reports `status: "valid"` without a state, Git, or tmux change.
 
+## Local dispatch boundary
+
+`twt tickets dispatch --backend local` sends nothing off the machine, but it
+starts an autonomous implementation agent with full permissions inside a real
+Workspace worktree. The agent can edit files, run commands, and push
+branches. The operator accepts that risk by configuring `local_dispatch` (or
+`ticketAgent`) and by running dispatch; the Workspace stays visible in tmux
+so a person can inspect or stop it at any time. `tickets sync` never
+releases a claim by itself, and `tickets abandon --force` is an explicit
+operator override that leaves the Workspace running until `twt done`.
+
 ## Cursor Cloud boundary
 
-`twt tickets dispatch` sends the Ticket body, configured prompt instructions,
+`twt tickets dispatch --backend cursor-cloud` sends the Ticket body,
+configured prompt instructions,
 repository URLs, and starting refs to Cursor Cloud. The operator must use it
 only for content and repositories that Cursor can receive. The command does
 not put credentials in its JSON request. The compiled Cursor SDK harness uses

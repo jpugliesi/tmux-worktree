@@ -112,11 +112,16 @@ project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
+pull_requests: []
 twt_workspace_id:
 created: 2026-08-20
 updated: 2026-08-20
 ---
 ```
+
+`pull_requests` holds the HTTPS pull request URLs that shipped the Ticket's
+work. `twt tickets complete` and the Cursor Cloud sync write it; do not edit
+it by hand.
 
 Ungrouped tickets omit `project` or leave it empty.
 
@@ -189,9 +194,13 @@ twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
 twt tickets queue --project PROJECT [--limit N]
-twt tickets dispatch TICKET [--plan] [--max-concurrency N]
-twt tickets cloud-sync --project PROJECT
+twt tickets dispatch TICKET [--backend local|cursor-cloud] [--plan] [--max-concurrency N]
+twt tickets sync --project PROJECT
+twt tickets abandon SESSION --force
+twt tickets cloud-sync --project PROJECT   (deprecated: use tickets sync)
 twt tickets cloud-abandon SESSION --force
+twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
+twt tickets git-sync
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -241,28 +250,44 @@ cycles that stop affected Tickets from becoming ready.
 the result. Use `--fields ready,readyTotalCount` when an agent does not need
 the graph.
 
-### Cursor Cloud coordinator
+### Dispatch coordinator
 
 A Project can select one Workspace Template. The Template can include a
-`cursor_cloud` block with a model, generic effort, prompt instructions,
-maximum Project concurrency, and a repository selection. The generic effort
-is `small`, `medium`, `large`, or `xlarge`; its default is `large`. Each Cloud
-Session saves a Template snapshot, so a later Template edit does not change a
-run that already exists.
+`cursor_cloud` block (model, generic effort, prompt instructions, maximum
+Project concurrency default 4, repository selection) for remote Cursor
+Agents, a `local_dispatch` block (provider, effort, instructions, maximum
+Project concurrency default 2) for local implementation Workspaces, or both.
+The generic effort is `small`, `medium`, `large`, or `xlarge`; its default is
+`large`. Empty `local_dispatch` fields fall back to the machine `ticketAgent`
+config, so a shared Template normally leaves the provider unset and each
+machine uses an installed provider. Each Cloud Session saves a Template
+snapshot, so a later Template edit does not change a run that already exists;
+a Local Dispatch Session defers to its Workspace's snapshot.
 
-One coordinator wave first syncs existing Sessions, reads its available
-capacity, and then reads that number of ready Tickets:
+`twt tickets dispatch TICKET` selects the backend from the Template:
+`cursor-cloud` when `cursor_cloud` is set, else `local`. Pass `--backend` to
+select one explicitly. A local dispatch creates a Workspace and starts one
+autonomous implementation agent in tmux; a person can attach and steer at
+any time.
+
+One coordinator wave first syncs existing Sessions, reads the available
+capacity per backend, and then reads that number of ready Tickets:
 
 ```sh
-twt tickets cloud-sync --project change-monitor --dry-run --output json
-twt tickets cloud-sync --project change-monitor --output json
+twt tickets sync --project change-monitor --dry-run --output json
+twt tickets sync --project change-monitor --output json
 twt tickets queue --project change-monitor --limit AVAILABLE --output json
 twt tickets dispatch canonical-pr-comment --dry-run --output json
 twt tickets dispatch canonical-pr-comment --output json
 ```
 
-If `capacity.known` is false, do not dispatch. Read the sync diagnostics and
-stop the wave. If it is true, pass `capacity.available` to queue as `--limit`.
+The sync result groups `capacity`, `sessions`, and `diagnostics` under
+`backends.local` and `backends."cursor-cloud"`. The cloud half runs only
+when pending Cloud Sessions exist, so a local-only Project needs no Cursor
+harness. If a backend's `capacity.known` is false, do not dispatch on that
+backend. Read the sync diagnostics. If it is true, pass `capacity.available`
+to queue as `--limit`. `tickets cloud-sync` stays as a deprecated delegate
+for the cloud half.
 
 The Project dispatch lock makes the capacity reservation atomic. Agent mode
 asks Cursor to implement, test, and create pull requests for changed
@@ -274,17 +299,53 @@ it calls Cursor. A definite create failure returns the Ticket to
 remote Agent by the local Session ID in Cursor metadata. Do not dispatch that
 Ticket again while its Session is active.
 
-A finished run moves the Ticket to `ready-for-human`. A failed or cancelled
-run returns it to `ready-for-agent`. No Cloud result sets `done`. A changed
-repository without a pull request sets `handoffIncomplete`. One failed local
+A finished cloud run moves the Ticket to `ready-for-human` and records its
+pull request URLs in the `pull_requests` frontmatter. A failed or cancelled
+run returns it to `ready-for-agent`. No Session result sets `done`. A changed
+repository without a pull request sets `handoffIncomplete`. One failed
 Session update does not stop the other updates. The sync result then has
 `status: "partial"` and a `diagnostics` item for that Session.
 
-If repeated syncs cannot recover one Session, `cloud-abandon SESSION --force`
-stops its local recovery. It releases the Ticket only when the saved Cloud
-claimant still owns it. It does not cancel the remote Agent. That Agent can
-continue and can create a pull request. Run `--dry-run` before you apply this
-recovery command.
+A local implementation agent reports its own completion:
+`twt tickets complete TICKET --as CLAIMANT --pr URL` records the pull
+requests and sets `ready-for-human` in one write. The local sync half then
+marks the Session finished. A stopped agent whose Ticket stays claimed
+becomes a `stuck` diagnostic; sync never releases a claim by itself.
+
+If repeated syncs cannot recover one Session, abandon stops its local
+recovery: `tickets abandon SESSION --force` for a local Session,
+`tickets cloud-abandon SESSION --force` for a cloud Session. Both release
+the Ticket only when the saved claimant still owns it. Neither stops the
+agent: the local Workspace keeps running until `twt done WORKSPACE`, and the
+remote Cursor Agent can continue and can create a pull request. Run
+`--dry-run` before you apply either recovery command.
+
+### Syncing the Tickets home between machines
+
+Set `ticketsSync` in `~/.config/twt/config.yaml` (or `TWT_TICKETS_SYNC` and
+`TWT_TICKETS_SYNC_REMOTE`) when two machines share one Tickets home through a
+git remote:
+
+```yaml
+ticketsSync:
+  mode: git      # off (default) or git
+  remote: origin # optional
+```
+
+The Tickets home must live inside a clone of the shared repository. Every twt
+write then runs one sync round: commit stray manual edits, pull, apply the
+write, commit only the Tickets home path, push. Claim-class writes (`claim`,
+`start`, `dispatch`, `complete`, `unclaim`, `close`) require the push: it is
+the cross-machine compare-and-swap. A rejected push pulls and replays the
+write against the fresh state, so a lost race returns the normal `locked`
+error, and an unreachable remote returns `precondition_failed`. Other writes
+commit locally and push best-effort with a warning. Reads never touch git.
+
+`twt tickets git-sync` runs one explicit round: it commits manual edits,
+pulls, rebases local commits, and pushes everything the remote lacks. Run it
+after offline work, or when `twt tickets doctor` reports `sync_unpushed`,
+`sync_dirty`, or a diverged tree. `twt tickets init` writes a `.gitignore`
+that keeps atomic-write temp files out of every commit.
 
 ### `tickets create`
 

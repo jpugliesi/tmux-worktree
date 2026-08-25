@@ -48,6 +48,13 @@ A remote Cursor Agent conversation for one Ticket. It can contain multiple
 runs and the pull-request handoff for each repository.
 _Avoid_: Agent Session, cloud Workspace, local Cursor process
 
+**Local Dispatch Session**:
+One local implementation run for one Ticket: a Workspace plus one autonomous
+implementation Agent Session, tracked as a durable session record so a
+coordinator can dispatch, observe, and recover it. Its Workspace is the
+Ticket's active Workspace.
+_Avoid_: local Cloud Session, dispatch Workspace, worker record
+
 **Agent Candidate**:
 A verified provider transcript or live provider process that belongs to a
 Workspace but has no Agent Session record. It has a provider-qualified,
@@ -119,8 +126,10 @@ _Avoid_: Board, workspace, epic folder
 **Ticket**:
 One Markdown file with YAML frontmatter. A Ticket belongs to one Project. A
 claim gives one worker exclusive work authority. A Ticket can link to one
-active Workspace, and it can have one active Cursor Cloud Session. Its
-directory defines its Project, including below the Closed Tickets directory.
+active Workspace, one active Cursor Cloud Session, and one active Local
+Dispatch Session; a Local Dispatch Session's Workspace is the Ticket's
+active Workspace, so a local dispatch uses both links. Its directory defines
+its Project, including below the Closed Tickets directory.
 _Avoid_: Issue, task file, combined tickets note
 
 **Topic note**:
