@@ -177,6 +177,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets list": {
 		long: "List Tickets sorted by priority, then by slug. Text output groups those Tickets by Project, with ungrouped Tickets last under (none). JSON stays a flat array. The list hides done and wontfix Tickets by default; --all includes them, and an explicit --status shows that status. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --claimed lists Tickets that have a claimant. --status is a raw filter; do not use it together with --ready.", example: "  twt tickets list --ready --output json\n  twt tickets list --claimed --output json\n  twt tickets list --project change-monitor --limit 10",
 	},
+	"twt tickets queue": {
+		long: "Show the complete open Ticket dependency graph for one Project. ready contains only ready-for-agent, unclaimed Tickets whose blockers are done or wontfix. The command sorts graph and ready by priority and then by Ticket slug. --limit cuts ready but does not cut graph. cycles reports dependency cycles that stop affected Tickets from becoming ready.", example: "  twt tickets queue --project change-monitor --output json\n  twt tickets queue --project change-monitor --limit 4 --fields ready,readyTotalCount --output json",
+	},
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
 	},

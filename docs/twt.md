@@ -817,6 +817,7 @@ twt tickets init
 twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
+twt tickets queue --project PROJECT [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -836,6 +837,11 @@ never overwrites an existing note. `twt tickets home` opens that directory
 in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing.
+
+`twt tickets queue --project PROJECT` reads one Ticket index snapshot. It
+returns the complete open Project graph and a deterministic `ready` list.
+Each dependency reports its state and Project. `cycles` reports dependency
+cycles. `--limit` cuts only `ready`; it does not cut the graph.
 
 ### Create a ticket
 
