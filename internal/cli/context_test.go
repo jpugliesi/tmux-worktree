@@ -52,6 +52,33 @@ func TestContextDirectoryUsesAnAdoptedRepositoryThenFallsBackToTheSession(t *tes
 	}
 }
 
+func TestContextShowsTheTmuxSessionName(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-session", Name: "cm-comment",
+		Status: domain.WorkspaceActive, Root: root, TmuxSession: "everysphere-cm-comment",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	stateDir := filepath.Join(root, "state")
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
+	t.Setenv("TMUX_PANE", "")
+	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
+
+	text := executeWithOptions(t, options, nil, "context")
+	if !strings.Contains(text, "Tmux session") || !strings.Contains(text, "everysphere-cm-comment") {
+		t.Fatalf("context text missing tmux session: %s", text)
+	}
+
+	jsonOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
+	if !strings.Contains(jsonOutput, `"tmuxSession":"everysphere-cm-comment"`) {
+		t.Fatalf("context JSON missing tmux session: %s", jsonOutput)
+	}
+}
+
 func TestContextListsLinkedTicketsAndReadyWork(t *testing.T) {
 	options, _ := ticketsStartFixture(t)
 	t.Setenv("TMUX_PANE", "")

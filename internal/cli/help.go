@@ -220,7 +220,7 @@ var commandHelp = map[string]helpContent{
 		long: "Show one Project and its coordinator board: ready Tickets, in-flight (claimed) Tickets, and Workspaces linked to the Project.", example: "  twt projects show change-monitor --output json",
 	},
 	"twt context": {
-		long: "Show the Workspace and repository context for a directory or the current tmux pane. When Tickets home is set, JSON also lists the linked Tickets and the ready queue for the Workspace Project.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
+		long: "Show the Workspace, tmux session, and repository context for a directory or the current tmux pane. When Tickets home is set, JSON also lists the linked Tickets and the ready queue for the Workspace Project.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",
 	},
 	"twt config": {
 		long: "Show every resolved twt setting, including defaults. Each setting reports its value and its source: env for an environment variable, file for config.yaml, or default.", example: "  twt config\n  twt config --output json",

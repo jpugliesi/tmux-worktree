@@ -13,6 +13,7 @@ import (
 type contextOutput struct {
 	SchemaVersion  int             `json:"schemaVersion"`
 	Workspace      workspaceOutput `json:"workspace"`
+	TmuxSession    string          `json:"tmuxSession,omitempty"`
 	RepositoryName string          `json:"repositoryName,omitempty"`
 	Tickets        []domain.Ticket `json:"tickets,omitempty"`
 	Ready          []domain.Ticket `json:"ready,omitempty"`
@@ -58,12 +59,16 @@ func writeContext(command *cobra.Command, options Options, workspace domain.Work
 		return writeReadJSON(command, contextOutput{
 			SchemaVersion:  jsonSchemaVersion,
 			Workspace:      toWorkspaceOutput(workspace),
+			TmuxSession:    workspace.TmuxSession,
 			RepositoryName: repositoryForDirectory(workspace, directory),
 			Tickets:        tickets,
 			Ready:          ready,
 		}, "")
 	}
 	fields := [][2]string{{"Workspace", workspace.Name}}
+	if workspace.TmuxSession != "" {
+		fields = append(fields, [2]string{"Tmux session", workspace.TmuxSession})
+	}
 	if repository := repositoryForDirectory(workspace, directory); repository != "" {
 		fields = append(fields, [2]string{"Repository", repository})
 	}

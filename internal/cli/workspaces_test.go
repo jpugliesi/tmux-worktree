@@ -1002,7 +1002,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 	t.Setenv("TWT_WORKSPACE_ID", "")
 	t.Setenv("TMUX_PANE", pane)
 	contextOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
-	if !strings.Contains(contextOutput, `"name":"json-test"`) || strings.Contains(contextOutput, "tmuxSession") {
+	if !strings.Contains(contextOutput, `"name":"json-test"`) || !strings.Contains(contextOutput, `"tmuxSession":"example-json-test"`) {
 		t.Fatalf("context JSON has an invalid contract: %s", contextOutput)
 	}
 	workspaceRoots, err := os.ReadDir(filepath.Join(root, "data", "projects"))
