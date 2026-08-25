@@ -372,6 +372,45 @@ func TestSyncCapturesPullRequestsAndMovesTheTicketToHumanReview(t *testing.T) {
 	if resolved.Status != domain.TicketReadyForHuman || resolved.ClaimedBy != "" {
 		t.Fatalf("Ticket after sync = %+v", resolved)
 	}
+	if len(resolved.PullRequests) != 1 || resolved.PullRequests[0] != "https://github.com/acme/api/pull/42" {
+		t.Fatalf("Ticket pull requests after sync = %v", resolved.PullRequests)
+	}
+}
+
+func TestSyncDryRunLeavesTheSessionAndTicketUntouched(t *testing.T) {
+	fixture := newCloudFixture(t)
+	ticket := fixture.createTicket(t, "Fix auth")
+	session, err := fixture.service.Dispatch(context.Background(), DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	fixture.harness.syncResult = SyncResult{Sessions: []SyncObservation{{
+		SessionID: session.ID, Status: "finished", Result: "Implemented.", Repositories: []RepositoryResult{{
+			URL: "https://github.com/acme/api.git", Branch: "cursor/fix-auth", PRURL: "https://github.com/acme/api/pull/42",
+		}},
+	}}}
+
+	result, err := fixture.service.Sync(context.Background(), "core", true)
+	if err != nil {
+		t.Fatalf("dry-run Sync: %v", err)
+	}
+	if len(result.Sessions) != 1 {
+		t.Fatalf("dry-run Sync result = %+v", result)
+	}
+	if result.Sessions[0].TicketTransitioned {
+		t.Fatal("dry-run sync reported an in-memory ticket transition")
+	}
+	saved, err := store.NewCursorCloudSessionStore(fixture.state).Find(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != domain.CursorCloudRunning || saved.TicketTransitioned {
+		t.Fatalf("dry-run sync changed the saved session: %+v", saved)
+	}
+	resolved, _ := fixture.tickets.Resolve(ticket.Slug)
+	if resolved.ClaimedBy != session.Claimant || resolved.Status != domain.TicketReadyForAgent {
+		t.Fatalf("dry-run sync changed the ticket: %+v", resolved)
+	}
 }
 
 func TestSyncMarksAnAgentRunWithoutAPullRequestForHumanReview(t *testing.T) {

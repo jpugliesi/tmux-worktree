@@ -568,20 +568,36 @@ func (s *Service) reconcileTerminal(session *domain.CursorCloudSession, dryRun b
 }
 
 func (s *Service) finishTicketTransition(session *domain.CursorCloudSession, target domain.TicketStatus, dryRun bool) error {
-	if !dryRun {
-		if err := s.sessions.Save(*session); err != nil {
-			return err
-		}
+	if dryRun {
+		// A dry run validates the claim completion and changes nothing, on
+		// disk or in memory.
+		_, err := s.options.Tickets.CompleteWork(session.TicketSlug, session.Claimant, target, pullRequestURLs(session.Repositories), true)
+		return err
 	}
-	if _, err := s.options.Tickets.CompleteClaim(session.TicketSlug, session.Claimant, target, dryRun); err != nil {
+	if err := s.sessions.Save(*session); err != nil {
+		return err
+	}
+	// Record the pull requests on the Ticket in the same write that
+	// completes the claim, so the coordinator can read them without the
+	// session store. A failed run can also have opened pull requests;
+	// recording them is strictly more information.
+	if _, err := s.options.Tickets.CompleteWork(session.TicketSlug, session.Claimant, target, pullRequestURLs(session.Repositories), false); err != nil {
 		return err
 	}
 	session.TicketTransitioned = true
 	session.UpdatedAt = s.options.Now().UTC()
-	if !dryRun {
-		return s.sessions.Save(*session)
+	return s.sessions.Save(*session)
+}
+
+// pullRequestURLs collects the non-empty pull request URLs of a session.
+func pullRequestURLs(repositories []domain.CursorCloudRepository) []string {
+	urls := make([]string, 0, len(repositories))
+	for _, repository := range repositories {
+		if strings.TrimSpace(repository.PRURL) != "" {
+			urls = append(urls, repository.PRURL)
+		}
 	}
-	return nil
+	return urls
 }
 
 func resolveRepositories(template domain.Template) ([]domain.CursorCloudRepository, error) {
