@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -200,6 +201,21 @@ func (s *Service) StartDeclared(workspace domain.Workspace, session domain.Agent
 // several seconds before the pane shows the provider.
 var cursorStartTimeout = 20 * time.Second
 
+// debugAgentStart appends one line to the file that TWT_DEBUG_AGENT_START
+// names. It is a temporary diagnostic and off by default.
+func debugAgentStart(format string, a ...any) {
+	path := os.Getenv("TWT_DEBUG_AGENT_START")
+	if path == "" {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	fmt.Fprintf(file, format+"\n", a...)
+}
+
 func (s *Service) attachStartedPane(workspace domain.Workspace, session *domain.AgentSession, pane string) error {
 	directErr := s.attachPane(workspace, session, pane)
 	if directErr == nil || session.Provider != "cursor" {
@@ -208,12 +224,15 @@ func (s *Service) attachStartedPane(workspace domain.Workspace, session *domain.
 	deadline := time.Now().Add(cursorStartTimeout)
 	for time.Now().Before(deadline) {
 		panes, err := s.tmux.ObserveWorkspace(workspace)
+		debugAgentStart("observe err=%v panes=%d want=%s", err, len(panes), pane)
 		if err == nil {
 			for _, observedPane := range panes {
 				if observedPane.ID != pane {
 					continue
 				}
 				process, ok := observedProviderProcess(observedPane, session.Provider)
+				debugAgentStart("pane=%s current=%q dead=%v foreground=%d ok=%v process=%+v",
+					observedPane.ID, observedPane.CurrentCommand, observedPane.Dead, len(observedPane.Foreground), ok, process)
 				if !ok {
 					break
 				}
