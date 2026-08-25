@@ -83,7 +83,7 @@ func BuildTicketPlanningLaunch(request TicketPlanningRequest, lookPath func(stri
 	if len(request.Tickets) == 0 {
 		return TicketPlanningLaunch{}, fmt.Errorf("at least one Ticket is required for a planning agent")
 	}
-	executable, err := planningExecutable(request.Provider, lookPath)
+	executable, err := providerExecutable(request.Provider, lookPath)
 	if err != nil {
 		return TicketPlanningLaunch{}, err
 	}
@@ -102,7 +102,7 @@ func isTicketPlanningProvider(provider string) bool {
 	return false
 }
 
-func planningExecutable(provider string, lookPath func(string) (string, error)) (string, error) {
+func providerExecutable(provider string, lookPath func(string) (string, error)) (string, error) {
 	executable := provider
 	if provider == "cursor" {
 		executable = "cursor-agent"
