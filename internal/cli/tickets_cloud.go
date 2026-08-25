@@ -91,7 +91,7 @@ func newTicketsCloudSyncCommand(options Options) *cobra.Command {
 	var project string
 	command := &cobra.Command{
 		Use:   "cloud-sync",
-		Short: "Sync Cursor Cloud runs and Ticket states",
+		Short: "Sync Cursor Cloud runs and Ticket states (deprecated: use 'twt tickets sync')",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return runCursorCloudSync(command, options, project)

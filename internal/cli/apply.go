@@ -332,6 +332,13 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Session limit"},
 			{Path: "ticket.backend", Type: "string", Required: false, Enum: []string{"local", "cursor-cloud"}, Condition: "absent follows the Template: cursor-cloud when cursor_cloud is set, else local"},
 		}}, applyTicketsDispatch},
+		{applyOperationSchema{Operation: "tickets.sync", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.project", Type: "string", Required: true},
+		}}, applyTicketsSync},
+		{applyOperationSchema{Operation: "tickets.abandon", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.session", Type: "string", Required: true},
+			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the Workspace and its agent keep running"},
+		}}, applyTicketsAbandon},
 		{applyOperationSchema{Operation: "tickets.cloud-sync", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.project", Type: "string", Required: true},
 		}}, applyTicketsCloudSync},
@@ -890,6 +897,28 @@ func applyTicketsDispatch(command *cobra.Command, options Options, request apply
 		return fmt.Errorf("ticket.reference is required for tickets.dispatch")
 	}
 	return runTicketsDispatch(command, options, payload.Reference, payload.Backend, payload.Plan, payload.MaxConcurrency)
+}
+
+func applyTicketsSync(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudSyncApplyRequest
+	if err := decodeApplyPayload("tickets.sync", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Project == "" {
+		return fmt.Errorf("ticket.project is required for tickets.sync")
+	}
+	return runTicketsSync(command, options, payload.Project)
+}
+
+func applyTicketsAbandon(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudAbandonApplyRequest
+	if err := decodeApplyPayload("tickets.abandon", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Session == "" || !payload.Force {
+		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.abandon")
+	}
+	return runLocalDispatchAbandon(command, options, payload.Session)
 }
 
 func applyTicketsCloudSync(command *cobra.Command, options Options, request applyRequest) error {

@@ -150,3 +150,70 @@ func TestTicketsCompleteRecordsPullRequestsAndReleasesTheClaim(t *testing.T) {
 		t.Fatalf("apply complete JSON = %s", applyJSON)
 	}
 }
+
+func TestTicketsSyncWorksWithoutTheCursorHarnessOnALocalOnlyProject(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	writeTemplateFile(t, options.ConfigDir, domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "product",
+		Repositories: []domain.RepositorySpec{{
+			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
+		}},
+	})
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	syncJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "sync", "--project", "core", "--output", "json")
+	if err != nil {
+		t.Fatalf("local-only sync: %v\n%s", err, syncJSON)
+	}
+	for _, want := range []string{`"operation":"tickets.sync"`, `"status":"applied"`, `"local":{`, `"known":true`} {
+		if !strings.Contains(syncJSON, want) {
+			t.Fatalf("sync JSON lacks %s:\n%s", want, syncJSON)
+		}
+	}
+	if strings.Contains(syncJSON, `"cursor-cloud"`) {
+		t.Fatalf("local-only sync reports a cloud backend:\n%s", syncJSON)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.sync","ticket":{"project":"core"}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply sync dry run: %v\n%s", err, applyJSON)
+	}
+	if !strings.Contains(applyJSON, `"status":"valid"`) {
+		t.Fatalf("apply sync JSON = %s", applyJSON)
+	}
+}
+
+func TestTicketsSyncReportsCloudCapacityWithoutPendingSessions(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	writeTemplateFile(t, options.ConfigDir, domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "product",
+		Repositories: []domain.RepositorySpec{{
+			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
+		}},
+		CursorCloud: &domain.CursorCloudSpec{MaxConcurrency: 3},
+	})
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	// No pending cloud sessions and no harness installed: sync still
+	// reports the configured cloud capacity.
+	syncJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "sync", "--project", "core", "--output", "json")
+	if err != nil {
+		t.Fatalf("sync with cloud config: %v\n%s", err, syncJSON)
+	}
+	if !strings.Contains(syncJSON, `"cursor-cloud":{"capacity":{"maximum":3,"active":0,"available":3,"known":true}`) {
+		t.Fatalf("sync JSON lacks the cloud capacity block:\n%s", syncJSON)
+	}
+}

@@ -65,6 +65,7 @@ func (o Options) localDispatchService(command *cobra.Command, withLauncher bool)
 		Tickets:   tickets,
 		Config:    resolved,
 	}
+	serviceOptions.Observer = cliWorkspaceObserver{options: o}
 	if withLauncher {
 		serviceOptions.Launcher = &cliWorkspaceLauncher{command: command, options: o}
 	}
