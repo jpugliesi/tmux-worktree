@@ -189,6 +189,14 @@ func parsePanes(rows string) []PaneObservation {
 	// which can contain a multi-line prompt. Parse the whole output as one
 	// separator-delimited token stream instead; tmux joins rows with "\n",
 	// which lands at the front of the next row's first token.
+	//
+	// Some tmux builds (3.4 on Linux) escape the separator byte in format
+	// output as the literal text "\037" and escape value newlines too;
+	// others (3.7 on macOS) emit raw bytes. Normalize the escaped form when
+	// no raw separator is present.
+	if !strings.Contains(rows, paneFieldSeparator) {
+		rows = strings.ReplaceAll(rows, `\037`, paneFieldSeparator)
+	}
 	tokens := strings.Split(rows, paneFieldSeparator)
 	panes := []PaneObservation{}
 	for start := 0; start+8 < len(tokens); start += 8 {
