@@ -94,21 +94,23 @@ type storageCleanApplyRequest struct {
 }
 
 type ticketCreateApplyRequest struct {
-	Title    string `json:"title"`
-	Body     string `json:"body,omitempty"`
-	Project  string `json:"project,omitempty"`
-	Slug     string `json:"slug,omitempty"`
-	Status   string `json:"status,omitempty"`
-	Priority *int   `json:"priority,omitempty"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body,omitempty"`
+	Project   string   `json:"project,omitempty"`
+	Slug      string   `json:"slug,omitempty"`
+	Status    string   `json:"status,omitempty"`
+	Priority  *int     `json:"priority,omitempty"`
+	BlockedBy []string `json:"blockedBy,omitempty"`
 }
 
 // ticketSetApplyRequest uses pointers so apply can tell an absent field from
 // an empty value, the same as a flag presence check.
 type ticketSetApplyRequest struct {
-	Reference string  `json:"reference"`
-	Status    *string `json:"status,omitempty"`
-	Priority  *int    `json:"priority,omitempty"`
-	Project   *string `json:"project,omitempty"`
+	Reference string    `json:"reference"`
+	Status    *string   `json:"status,omitempty"`
+	Priority  *int      `json:"priority,omitempty"`
+	Project   *string   `json:"project,omitempty"`
+	BlockedBy *[]string `json:"blockedBy,omitempty"`
 }
 
 // ticketEditApplyRequest replaces the body of one Ticket. Body is a pointer,
@@ -260,6 +262,7 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.slug", Type: "string", Required: false, Condition: "absent derives the slug from the title"},
 			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "absent selects needs-triage"},
 			{Path: "ticket.priority", Type: "integer", Required: false, Condition: "0 (highest) to 4 (lowest); absent selects 2"},
+			{Path: "ticket.blockedBy", Type: "array[string]", Required: false, Condition: "each value is a slug or wiki-link; absent writes an empty list"},
 		}}, applyTicketsCreate},
 		{applyOperationSchema{Operation: "tickets.edit", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
@@ -267,9 +270,10 @@ func applyOperations() []applyOperation {
 		}}, applyTicketsEdit},
 		{applyOperationSchema{Operation: "tickets.set", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
-			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, or ticket.project"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, ticket.project, or ticket.blockedBy"},
 			{Path: "ticket.priority", Type: "integer", Required: false},
 			{Path: "ticket.project", Type: "string", Required: false},
+			{Path: "ticket.blockedBy", Type: "array[string]", Required: false, Condition: "replaces the blocker list; an empty array clears it"},
 		}}, applyTicketsSet},
 		{applyOperationSchema{Operation: "tickets.claim", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
@@ -701,12 +705,13 @@ func applyTicketsCreate(command *cobra.Command, options Options, request applyRe
 		priority = *payload.Priority
 	}
 	return createTicket(command, service, ticketservice.CreateRequest{
-		Title:    payload.Title,
-		Slug:     payload.Slug,
-		Project:  payload.Project,
-		Body:     payload.Body,
-		Status:   domain.TicketStatus(payload.Status),
-		Priority: priority,
+		Title:     payload.Title,
+		Slug:      payload.Slug,
+		Project:   payload.Project,
+		Body:      payload.Body,
+		Status:    domain.TicketStatus(payload.Status),
+		Priority:  priority,
+		BlockedBy: payload.BlockedBy,
 	})
 }
 
@@ -728,8 +733,11 @@ func applyTicketsSet(command *cobra.Command, options Options, request applyReque
 	if payload.Project != nil {
 		setRequest.Project, setRequest.ProjectSet = *payload.Project, true
 	}
-	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.ProjectSet {
-		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, or ticket.project")
+	if payload.BlockedBy != nil {
+		setRequest.BlockedBy, setRequest.BlockedBySet = *payload.BlockedBy, true
+	}
+	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.ProjectSet && !setRequest.BlockedBySet {
+		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, ticket.project, or ticket.blockedBy")
 	}
 	service, err := options.ticketService()
 	if err != nil {

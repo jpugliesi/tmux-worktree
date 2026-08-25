@@ -799,11 +799,11 @@ reports whether Tickets home is set, exists, and is writable.
 ```sh
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
-twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT]
+twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
@@ -837,8 +837,13 @@ interactive picker may create a Project after confirm.
 ```sh
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
+twt tickets create "follow-up work" --status ready-for-agent --blocked-by fix-the-vfs-tools --output json
 printf '%s' "$BODY" | twt tickets create --stdin --title "Fix the vfs tools" --output json
 ```
+
+`--blocked-by` writes `blocked_by` as wiki-links. Repeat the flag. Each
+value may be a slug or `[[slug]]`. A Ticket cannot list itself. A missing
+blocker stays allowed. `--ready` treats that missing blocker as open.
 
 ### List and filter
 
@@ -905,8 +910,13 @@ such as a `wontfix` resolution or a hand-off of open work:
 
 ```sh
 twt tickets set TICKET --status wontfix --output json
+twt tickets set TICKET --blocked-by other-ticket --output json
+twt tickets set TICKET --blocked-by "" --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
+
+`--blocked-by` replaces the whole blocker list. Pass an empty value to
+write `[]`. Apply uses `ticket.blockedBy` as an array of strings.
 
 `twt next` with no name is the daily loop in a terminal. It opens a Ticket
 picker when open Tickets exist, then claims the selected Ticket and starts

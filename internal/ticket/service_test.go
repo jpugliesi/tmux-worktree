@@ -799,6 +799,53 @@ func TestSetValidation(t *testing.T) {
 	}
 }
 
+func TestSetReplacesBlockedBy(t *testing.T) {
+	service, home := newTestService(t)
+	path := filepath.Join(home, "work.md")
+	writeFixture(t, path, fixture{title: "Work", status: "ready-for-agent", blocked: []string{"old-dep"}}.content())
+
+	ticket, err := service.Set("work", SetRequest{
+		BlockedBy:    []string{"[[new-dep]]", "new-dep", ""},
+		BlockedBySet: true,
+	}, false)
+	if err != nil {
+		t.Fatalf("Set blocked_by: %v", err)
+	}
+	if strings.Join(ticket.BlockedBy, ",") != "new-dep" {
+		t.Fatalf("BlockedBy = %v", ticket.BlockedBy)
+	}
+	content := readFile(t, path)
+	if !strings.Contains(content, "blocked_by:\n  - \"[[new-dep]]\"\n") {
+		t.Fatalf("set blocked_by:\n%s", content)
+	}
+	if strings.Contains(content, "old-dep") {
+		t.Fatalf("old blocker remains:\n%s", content)
+	}
+
+	cleared, err := service.Set("work", SetRequest{BlockedBySet: true}, false)
+	if err != nil {
+		t.Fatalf("clear blocked_by: %v", err)
+	}
+	if len(cleared.BlockedBy) != 0 {
+		t.Fatalf("cleared BlockedBy = %v", cleared.BlockedBy)
+	}
+	if !strings.Contains(readFile(t, path), "blocked_by: []\n") {
+		t.Fatalf("cleared file:\n%s", readFile(t, path))
+	}
+
+	if _, err := service.Set("work", SetRequest{Priority: 1, PrioritySet: true}, false); err != nil {
+		t.Fatalf("priority-only Set: %v", err)
+	}
+	if !strings.Contains(readFile(t, path), "blocked_by: []\n") {
+		t.Fatalf("unrelated Set rewrote blocked_by:\n%s", readFile(t, path))
+	}
+
+	_, err = service.Set("work", SetRequest{BlockedBy: []string{"work"}, BlockedBySet: true}, false)
+	if clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("self blocker = %v, want invalid_usage", err)
+	}
+}
+
 func TestSetStatusIsTheUnknownStatusEscapeHatch(t *testing.T) {
 	service, home := newTestService(t)
 	writeFixture(t, filepath.Join(home, "odd.md"), fixture{title: "Odd", status: "in-progress"}.content())
@@ -958,6 +1005,48 @@ None - can start immediately
 	// The new file round-trips through the resolver.
 	if _, err := service.Resolve("[[fix-the-vfs-tools]]"); err != nil {
 		t.Fatalf("Resolve of the new ticket: %v", err)
+	}
+}
+
+func TestCreateWritesBlockedByWikiLinks(t *testing.T) {
+	service, home := newTestService(t)
+	result, err := service.Create(CreateRequest{
+		Title:     "Follow-up work",
+		Priority:  -1,
+		Status:    domain.TicketReadyForAgent,
+		BlockedBy: []string{"[[dep-one|A dep]]", "dep-two", "dep-two", "  "},
+	}, false)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if strings.Join(result.Ticket.BlockedBy, ",") != "dep-one,dep-two" {
+		t.Fatalf("BlockedBy = %v", result.Ticket.BlockedBy)
+	}
+	content := string(result.Content)
+	if !strings.Contains(content, "blocked_by:\n  - \"[[dep-one]]\"\n  - \"[[dep-two]]\"\n") {
+		t.Fatalf("frontmatter blocked_by:\n%s", content)
+	}
+	if !strings.Contains(content, "## Blocked by\n\n- [[dep-one]]\n- [[dep-two]]\n") {
+		t.Fatalf("body blocked_by:\n%s", content)
+	}
+	shown, err := service.Show("follow-up-work")
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	if shown.Ready {
+		t.Fatal("a ticket with missing blockers must not be ready")
+	}
+	if readFile(t, filepath.Join(home, "follow-up-work.md")) != content {
+		t.Fatal("written file differs from the returned content")
+	}
+
+	_, err = service.Create(CreateRequest{Title: "Bad blocker", Priority: -1, BlockedBy: []string{"Not A Slug"}}, false)
+	if clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("invalid blocker = %v, want invalid_usage", err)
+	}
+	_, err = service.Create(CreateRequest{Title: "Self block", Slug: "self-block", Priority: -1, BlockedBy: []string{"self-block"}}, false)
+	if clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("self blocker = %v, want invalid_usage", err)
 	}
 }
 

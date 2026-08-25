@@ -199,6 +199,7 @@ func newTicketsHomeCommand(options Options) *cobra.Command {
 
 func newTicketsCreateCommand(options Options) *cobra.Command {
 	var project, title, slug, status string
+	var blockedBy []string
 	var fromStdin bool
 	command := &cobra.Command{
 		Use:   "create [DESCRIPTION...]",
@@ -210,11 +211,12 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 				return err
 			}
 			request := ticketservice.CreateRequest{
-				Title:    title,
-				Slug:     slug,
-				Project:  project,
-				Status:   domain.TicketStatus(status),
-				Priority: -1,
+				Title:     title,
+				Slug:      slug,
+				Project:   project,
+				Status:    domain.TicketStatus(status),
+				Priority:  -1,
+				BlockedBy: blockedBy,
 			}
 			switch {
 			case fromStdin:
@@ -256,10 +258,12 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&title, "title", "", "Set the Ticket title")
 	command.Flags().StringVar(&slug, "slug", "", "Set the file slug; empty derives it from the title")
 	command.Flags().StringVar(&status, "status", "", "Set the initial status; empty selects needs-triage")
+	command.Flags().StringArrayVar(&blockedBy, "blocked-by", nil, "Add a blocker slug or wiki-link; repeat for more blockers")
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the Ticket body from standard input; requires --title")
 	setArguments(command, variadicArgument("description", false, "the body; the first line becomes the title when --title is absent"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
+	_ = command.RegisterFlagCompletionFunc("blocked-by", ticketFlagCompletion(options))
 	return command
 }
 
@@ -540,9 +544,10 @@ func editTicket(command *cobra.Command, service *ticketservice.Service, ref, bod
 
 func newTicketsSetCommand(options Options) *cobra.Command {
 	var status, project string
+	var blockedBy []string
 	var priority int
 	command := &cobra.Command{
-		Use:   "set TICKET [--status STATUS] [--priority N] [--project PROJECT]",
+		Use:   "set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]",
 		Short: "Change Ticket fields",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -551,15 +556,17 @@ func newTicketsSetCommand(options Options) *cobra.Command {
 				return err
 			}
 			request := ticketservice.SetRequest{
-				Status:      status,
-				StatusSet:   command.Flags().Changed("status"),
-				Priority:    priority,
-				PrioritySet: command.Flags().Changed("priority"),
-				Project:     project,
-				ProjectSet:  command.Flags().Changed("project"),
+				Status:       status,
+				StatusSet:    command.Flags().Changed("status"),
+				Priority:     priority,
+				PrioritySet:  command.Flags().Changed("priority"),
+				Project:      project,
+				ProjectSet:   command.Flags().Changed("project"),
+				BlockedBy:    blockedBy,
+				BlockedBySet: command.Flags().Changed("blocked-by"),
 			}
-			if !request.StatusSet && !request.PrioritySet && !request.ProjectSet {
-				return invalidUsage(command, "pass at least one of --status, --priority, or --project")
+			if !request.StatusSet && !request.PrioritySet && !request.ProjectSet && !request.BlockedBySet {
+				return invalidUsage(command, "pass at least one of --status, --priority, --project, or --blocked-by")
 			}
 			return setTicket(command, service, args[0], request)
 		},
@@ -567,9 +574,11 @@ func newTicketsSetCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&status, "status", "", "Set the status")
 	command.Flags().IntVar(&priority, "priority", 2, "Set the priority, 0 (highest) to 4 (lowest)")
 	command.Flags().StringVar(&project, "project", "", "Move the Ticket to this Project")
+	command.Flags().StringArrayVar(&blockedBy, "blocked-by", nil, "Replace blockers with this slug or wiki-link; repeat for more; pass an empty value to clear")
 	setArguments(command, requiredArgument("ticket"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
+	_ = command.RegisterFlagCompletionFunc("blocked-by", ticketFlagCompletion(options))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }

@@ -125,6 +125,47 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if !foundArchiveOperation {
 		t.Fatal("schema does not contain workspaces.archive")
 	}
+
+	foundCreateBlockedBy := false
+	foundSetBlockedBy := false
+	for _, command := range schema.Commands {
+		if command.Path != "twt tickets create" && command.Path != "twt tickets set" {
+			continue
+		}
+		hasBlockedBy := false
+		for _, flag := range command.Flags {
+			if flag.Name == "blocked-by" {
+				hasBlockedBy = true
+				break
+			}
+		}
+		if !hasBlockedBy {
+			t.Fatalf("%s schema misses --blocked-by: %+v", command.Path, command.Flags)
+		}
+	}
+	for _, operation := range schema.ApplyOperations {
+		if operation.Operation != "tickets.create" && operation.Operation != "tickets.set" {
+			continue
+		}
+		found := false
+		for _, field := range operation.Fields {
+			if field.Path == "ticket.blockedBy" && field.Type == "array[string]" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s schema misses ticket.blockedBy: %+v", operation.Operation, operation.Fields)
+		}
+		if operation.Operation == "tickets.create" {
+			foundCreateBlockedBy = true
+		} else {
+			foundSetBlockedBy = true
+		}
+	}
+	if !foundCreateBlockedBy || !foundSetBlockedBy {
+		t.Fatal("schema misses tickets.create or tickets.set blockedBy")
+	}
 }
 
 func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {

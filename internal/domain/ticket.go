@@ -49,13 +49,13 @@ const TicketSlugMaxLength = 60
 // Ticket is one Markdown ticket file. The yaml tags name the frontmatter
 // keys. The json tags follow the twt JSON envelope.
 type Ticket struct {
-	Slug      string       `yaml:"-" json:"slug"`
-	Title     string       `yaml:"title" json:"title"`
-	Aliases   []string     `yaml:"aliases" json:"-"`
-	Status    TicketStatus `yaml:"status" json:"status"`
-	Priority  int          `yaml:"priority" json:"priority"`
-	Project   string       `yaml:"project" json:"project"`
-	BlockedBy []string     `yaml:"blocked_by" json:"blockedBy"`
+	Slug        string       `yaml:"-" json:"slug"`
+	Title       string       `yaml:"title" json:"title"`
+	Aliases     []string     `yaml:"aliases" json:"-"`
+	Status      TicketStatus `yaml:"status" json:"status"`
+	Priority    int          `yaml:"priority" json:"priority"`
+	Project     string       `yaml:"project" json:"project"`
+	BlockedBy   []string     `yaml:"blocked_by" json:"blockedBy"`
 	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
 	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
 	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
@@ -84,13 +84,18 @@ func (t Ticket) Validate() error {
 	if t.Priority < 0 || t.Priority > 4 {
 		return fmt.Errorf("ticket priority %d is not in the range 0 to 4", t.Priority)
 	}
-	if len(t.Slug) > TicketSlugMaxLength {
-		return fmt.Errorf("ticket slug %q is longer than %d characters", t.Slug, TicketSlugMaxLength)
-	}
-	if !ticketSlugPattern.MatchString(t.Slug) {
+	if !ValidTicketSlug(t.Slug) {
+		if len(t.Slug) > TicketSlugMaxLength {
+			return fmt.Errorf("ticket slug %q is longer than %d characters", t.Slug, TicketSlugMaxLength)
+		}
 		return fmt.Errorf("ticket slug %q is invalid: use lowercase letters, digits, and hyphens", t.Slug)
 	}
 	return nil
+}
+
+// ValidTicketSlug reports whether slug follows the Ticket slug rule.
+func ValidTicketSlug(slug string) bool {
+	return len(slug) <= TicketSlugMaxLength && ticketSlugPattern.MatchString(slug)
 }
 
 // Slugify derives a kebab slug from a title. It lowercases ASCII letters,

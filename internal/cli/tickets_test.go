@@ -1091,6 +1091,73 @@ func TestTicketsSetChangesFields(t *testing.T) {
 	}
 }
 
+func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "base work", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "follow-up work", "--status", "ready-for-agent",
+		"--blocked-by", "[[base-work]]", "--blocked-by", "base-work"); err != nil {
+		t.Fatal(err)
+	}
+	content := readTicketFile(t, filepath.Join(home, "follow-up-work.md"))
+	if !strings.Contains(content, "blocked_by:\n  - \"[[base-work]]\"\n") {
+		t.Fatalf("create --blocked-by:\n%s", content)
+	}
+
+	ready, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ready, `"slug":"follow-up-work"`) {
+		t.Fatalf("--ready listed a blocked ticket: %s", ready)
+	}
+	if !strings.Contains(ready, `"slug":"base-work"`) {
+		t.Fatalf("--ready missed the startable ticket: %s", ready)
+	}
+
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "set", "follow-up-work", "--blocked-by", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readTicketFile(t, filepath.Join(home, "follow-up-work.md")), "blocked_by: []\n") {
+		t.Fatalf("set --blocked-by empty:\n%s", readTicketFile(t, filepath.Join(home, "follow-up-work.md")))
+	}
+	ready, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ready, `"slug":"follow-up-work"`) {
+		t.Fatalf("--ready missed the unblocked ticket: %s", ready)
+	}
+
+	stdout, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"apply blocked","status":"ready-for-agent","blockedBy":["base-work"]}}`),
+		"apply", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created := decodeTicketMutation(t, stdout); created.ID != "apply-blocked" {
+		t.Fatalf("apply create = %+v", created)
+	}
+	if !strings.Contains(readTicketFile(t, filepath.Join(home, "apply-blocked.md")), "[[base-work]]") {
+		t.Fatalf("apply create blocked_by:\n%s", readTicketFile(t, filepath.Join(home, "apply-blocked.md")))
+	}
+	if _, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.set","ticket":{"reference":"apply-blocked","blockedBy":[]}}`),
+		"apply", "--stdin", "--output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readTicketFile(t, filepath.Join(home, "apply-blocked.md")), "blocked_by: []\n") {
+		t.Fatalf("apply set cleared blocked_by:\n%s", readTicketFile(t, filepath.Join(home, "apply-blocked.md")))
+	}
+}
+
 func TestTicketsEditAndComment(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
@@ -1269,6 +1336,23 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	names, _ = projectFlag(create, nil, "")
 	if strings.Join(names, ",") != "change-monitor" {
 		t.Fatalf("--project completion = %v", names)
+	}
+	blockedByFlag, found := create.GetFlagCompletionFunc("blocked-by")
+	if !found {
+		t.Fatal("create --blocked-by has no completion function")
+	}
+	names, _ = blockedByFlag(create, nil, "")
+	if strings.Join(names, ",") != "fix-the-vfs-tools" {
+		t.Fatalf("create --blocked-by completion = %v", names)
+	}
+	setCommand := findCommand(command, "tickets", "set")
+	setBlockedBy, found := setCommand.GetFlagCompletionFunc("blocked-by")
+	if !found {
+		t.Fatal("set --blocked-by has no completion function")
+	}
+	names, _ = setBlockedBy(setCommand, nil, "")
+	if strings.Join(names, ",") != "fix-the-vfs-tools" {
+		t.Fatalf("set --blocked-by completion = %v", names)
 	}
 	projectsShow := findCommand(command, "projects", "show")
 	names, _ = projectsShow.ValidArgsFunction(projectsShow, nil, "")

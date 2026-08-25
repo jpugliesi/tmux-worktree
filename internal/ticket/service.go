@@ -251,6 +251,9 @@ type CreateRequest struct {
 	Body     string
 	Status   domain.TicketStatus
 	Priority int
+	// BlockedBy is the list of blocker slugs or wiki-links. Create writes
+	// them as wiki-links. An empty list writes blocked_by: [].
+	BlockedBy []string
 	// EnsureProject creates Project when it is missing. The interactive create
 	// wizard sets this after confirm. --project and apply never set it.
 	EnsureProject bool
@@ -292,6 +295,13 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 				"Pass --slug.")
 		}
 	}
+	blockedBy, err := normalizeBlockedBy(req.BlockedBy)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := rejectSelfBlock(slug, blockedBy); err != nil {
+		return CreateResult{}, err
+	}
 	ticket := domain.Ticket{
 		Slug:      slug,
 		Title:     title,
@@ -299,7 +309,7 @@ func (s *Service) Create(req CreateRequest, dryRun bool) (CreateResult, error) {
 		Status:    status,
 		Priority:  priority,
 		Project:   req.Project,
-		BlockedBy: []string{},
+		BlockedBy: blockedBy,
 		Created:   s.today(),
 		Updated:   s.today(),
 	}
@@ -386,18 +396,18 @@ func renderNewTicket(ticket domain.Ticket, body string) ([]byte, error) {
 	} else {
 		setMapString(mapping, "project", ticket.Project)
 	}
-	setMapStringList(mapping, "blocked_by", nil)
+	setMapBlockedBy(mapping, ticket.BlockedBy)
 	setMapNull(mapping, "claimed_by")
 	setMapNull(mapping, "claimed_at")
 	setMapDate(mapping, "created", ticket.Created)
 	setMapDate(mapping, "updated", ticket.Updated)
-	file.Body = newTicketBody(ticket.Title, body)
+	file.Body = newTicketBody(ticket.Title, body, ticket.BlockedBy)
 	return file.Render()
 }
 
 // newTicketBody builds the initial body: the H1, then the given body or the
 // spec skeleton.
-func newTicketBody(title, body string) string {
+func newTicketBody(title, body string, blockedBy []string) string {
 	if strings.TrimSpace(body) == "" {
 		return fmt.Sprintf(`
 # %s
@@ -410,12 +420,60 @@ func newTicketBody(title, body string) string {
 
 ## Blocked by
 
-None - can start immediately
+%s
 
 ## Comments
-`, title)
+`, title, blockedBySection(blockedBy))
 	}
 	return "\n# " + title + "\n\n" + strings.Trim(body, "\n") + "\n"
+}
+
+// blockedBySection is the default body list under ## Blocked by.
+func blockedBySection(slugs []string) string {
+	if len(slugs) == 0 {
+		return "None - can start immediately"
+	}
+	lines := make([]string, 0, len(slugs))
+	for _, slug := range slugs {
+		lines = append(lines, "- [["+slug+"]]")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// normalizeBlockedBy turns wiki-links and bare slugs into unique bare slugs.
+// Empty values drop out. An invalid slug is invalid_usage.
+func normalizeBlockedBy(values []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		slug := stripWikiLink(value)
+		if slug == "" {
+			continue
+		}
+		if !domain.ValidTicketSlug(slug) {
+			return nil, clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "blocked_by value %q is not a ticket slug", value),
+				"Pass a slug or a wiki-link such as [[other-ticket]].")
+		}
+		if seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		out = append(out, slug)
+	}
+	return out, nil
+}
+
+// rejectSelfBlock refuses a Ticket that lists itself as a blocker.
+func rejectSelfBlock(slug string, blockers []string) error {
+	for _, blocker := range blockers {
+		if blocker == slug {
+			return clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "ticket %q cannot block itself", slug),
+				"Remove %q from blocked_by.", slug)
+		}
+	}
+	return nil
 }
 
 // ListFilter selects Tickets. ProjectSet with an empty Project selects only
@@ -571,17 +629,19 @@ func (s *Service) Slugs() ([]string, error) {
 // SetRequest carries the field changes of one set mutation. Each Set flag
 // tells whether the caller passed that field.
 type SetRequest struct {
-	Status      string
-	StatusSet   bool
-	Priority    int
-	PrioritySet bool
-	Project     string
-	ProjectSet  bool
+	Status       string
+	StatusSet    bool
+	Priority     int
+	PrioritySet  bool
+	Project      string
+	ProjectSet   bool
+	BlockedBy    []string
+	BlockedBySet bool
 }
 
-// Set changes status, priority, or Project of one Ticket. A Project change moves
-// the file. Set with StatusSet is the escape hatch for a Ticket that carries
-// an unrecognized status.
+// Set changes status, priority, Project, or blocked_by of one Ticket. A
+// Project change moves the file. Set with StatusSet is the escape hatch for
+// a Ticket that carries an unrecognized status.
 func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, error) {
 	if req.StatusSet && !domain.ValidTicketStatus(domain.TicketStatus(req.Status)) {
 		return domain.Ticket{}, clierr.WithHint(
@@ -609,6 +669,14 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 			return domain.Ticket{}, projectMissing(req.Project)
 		}
 	}
+	var blockedBy []string
+	if req.BlockedBySet {
+		var normalizeErr error
+		blockedBy, normalizeErr = normalizeBlockedBy(req.BlockedBy)
+		if normalizeErr != nil {
+			return domain.Ticket{}, normalizeErr
+		}
+	}
 	return s.mutate(ref, dryRun, req.StatusSet, func(m *mutation) error {
 		if req.StatusSet {
 			setMapString(m.mapping, "status", req.Status)
@@ -620,6 +688,12 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 		if req.ProjectSet {
 			m.project = req.Project
 			m.relocate = true
+		}
+		if req.BlockedBySet {
+			if err := rejectSelfBlock(m.ticket.Slug, blockedBy); err != nil {
+				return err
+			}
+			setMapBlockedBy(m.mapping, blockedBy)
 		}
 		return nil
 	})

@@ -226,6 +226,29 @@ func setMapStringList(mapping *yaml.Node, key string, values []string) {
 	}
 }
 
+// setMapBlockedBy writes blocked_by as quoted wiki-links, or as [] when
+// slugs is empty.
+func setMapBlockedBy(mapping *yaml.Node, slugs []string) {
+	node := mapValueForUpdate(mapping, "blocked_by")
+	node.Kind = yaml.SequenceNode
+	node.Tag = "!!seq"
+	node.Value = ""
+	node.Style = 0
+	node.Content = nil
+	if len(slugs) == 0 {
+		node.Style = yaml.FlowStyle
+		return
+	}
+	for _, slug := range slugs {
+		node.Content = append(node.Content, &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: "[[" + slug + "]]",
+			Style: yaml.DoubleQuotedStyle,
+		})
+	}
+}
+
 // stripWikiLink turns "[[slug|display]]" or "[[slug#heading]]" into "slug".
 // A value without wiki-link brackets only loses surrounding spaces.
 func stripWikiLink(s string) string {

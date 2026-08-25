@@ -1,6 +1,6 @@
 ---
 name: twt
-description: Manage twt Workspace Templates, Workspace creation and archive, repository worktrees, tmux windows, and Workspace Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt. Manage personal Markdown tickets through `twt tickets`. Use when creating, listing, claiming, or updating tickets, projects, or a tickets home in an Obsidian vault.
+description: Manage twt Workspace Templates, Workspace creation and archive, repository worktrees, tmux windows, and Workspace Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt. Manage personal Markdown tickets through `twt tickets`. Use when creating, listing, claiming, updating, or setting blocked-by on tickets, projects, or a tickets home in an Obsidian vault.
 ---
 
 # twt
@@ -315,8 +315,11 @@ Follow these rules for every ticket command:
    `twt projects create NAME`.
 7. Claim a ticket before starting work. Close it with
    `twt tickets close TICKET` when the work ships.
-8. Link related tickets with a bare slug or `[[slug]]`. These references stay
-   stable when twt moves a Ticket. An old path reference does not.
+8. Set a dependency with `--blocked-by` or apply `ticket.blockedBy`. Each
+   value is a slug or `[[slug]]`. Repeat the flag for more blockers. An empty
+   apply array clears the list. Keep a waiting ticket at `ready-for-agent`.
+   `twt tickets list --ready` is the pickable queue, and it hides a ticket
+   whose blockers are still open.
 9. List pickable work with `twt tickets list --ready --output json`. A plain
    `twt tickets list` hides `done` and `wontfix` tickets; pass `--all` to
    include them. A coordinator reads one Project with
@@ -333,6 +336,13 @@ twt projects show PROJECT --output json
 twt workspaces list --project PROJECT --status active --output json
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
+twt tickets create "follow-up work" --status ready-for-agent \
+  --blocked-by fix-the-vfs-tools --dry-run --output json
+twt tickets create "follow-up work" --status ready-for-agent \
+  --blocked-by fix-the-vfs-tools --output json
+twt tickets set follow-up-work --blocked-by fix-the-vfs-tools --output json
+printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work","blockedBy":[]}}' \
+  | twt apply --stdin --dry-run --output json
 ```
 
 ### Claim and close
@@ -363,6 +373,7 @@ hand-off that leaves the ticket open:
 
 ```sh
 twt tickets set TICKET --status wontfix --output json
+twt tickets set TICKET --blocked-by other-ticket --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 

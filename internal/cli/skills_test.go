@@ -170,6 +170,15 @@ func TestSkillsShowPrintsTheStampedSkill(t *testing.T) {
 	}
 }
 
+func TestSkillDocumentsTicketBlockedBy(t *testing.T) {
+	content := skillasset.Canonical()
+	for _, want := range []string{"--blocked-by", "ticket.blockedBy", "tickets list --ready"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("canonical skill misses %q", want)
+		}
+	}
+}
+
 // firstLines shortens a long failure message.
 func firstLines(text string) string {
 	lines := strings.Split(text, "\n")

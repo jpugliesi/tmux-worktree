@@ -186,11 +186,11 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 ```
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--stdin]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--status STATUS] [--ready] [--limit N]
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
-twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT]
+twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
@@ -232,6 +232,11 @@ Ticket; use its bare slug or `[[slug]]` instead.
 | `--stdin` | Read the body from stdin. Require `--title`. Never open the wizard. |
 
 Default status is `needs-triage`. `--status ready-for-agent` is allowed.
+`--blocked-by` writes `blocked_by` as wiki-links. Repeat the flag. Each
+value may be a slug or `[[slug]]`. An empty list is the default. A Ticket
+cannot list itself. A missing blocker stays allowed. `--ready` treats a
+missing blocker as open.
+
 `--dry-run` prints the file that would be written and does not write it.
 When the wizard would create a Project, text dry-run prints that Project first,
 then the Ticket file. JSON dry-run stays one `tickets.create` envelope.
@@ -245,6 +250,15 @@ If `--project` names a missing Project, return `not_found` and hint
 `twt projects create NAME`. `--project` never creates a Project. The
 interactive picker may create a Project after confirm. Apply `tickets.create`
 still requires an existing Project.
+
+### `tickets set`
+
+`set` changes `status`, `priority`, `project`, or `blocked_by`. Pass at
+least one flag.
+
+`--blocked-by` replaces the whole blocker list. Pass an empty value to
+write `[]`. Apply uses `ticket.blockedBy` as an array of strings. An empty
+array clears the list.
 
 ### Ticket moves
 
@@ -363,6 +377,9 @@ operation.
 `tickets.claim` and `tickets.unclaim` require `ticket.as`. Apply is never a
 TTY path, so it has no OS-username default.
 
+`tickets.create` and `tickets.set` accept `ticket.blockedBy` as an array of
+slugs or wiki-links. An empty array on `tickets.set` clears the list.
+
 ### JSON envelopes
 
 ```json
@@ -477,6 +494,8 @@ Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 - TTY claim without `--as` writes the OS username into `claimed_by`
 - `--ready` omits blocked, claimed, and non-ready statuses
 - `--ready` with `--status` returns `invalid_usage`
+- `create --blocked-by` and `set --blocked-by` write wiki-links
+- apply `ticket.blockedBy` creates or replaces the same list
 - Wiki-link, prefix, and title resolve
 - `init` does not overwrite existing notes
 - JSON envelopes match the shapes above
