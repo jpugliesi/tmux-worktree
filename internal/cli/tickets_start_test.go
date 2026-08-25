@@ -322,7 +322,7 @@ func TestProjectsShowReportsTheCoordinatorBoard(t *testing.T) {
 		t.Fatalf("Workspace missing from Project board: %s", output)
 	}
 
-	claimed := executeWithOptions(t, options, nil, "tickets", "list", "--claimed", "--output", "json")
+	claimed := executeWithOptions(t, options, nil, "tickets", "list", "--project", "core", "--claimed", "--output", "json")
 	if !strings.Contains(claimed, `"slug":"started-work"`) || strings.Contains(claimed, `"slug":"ready-work"`) {
 		t.Fatalf("--claimed list = %s", claimed)
 	}
