@@ -73,6 +73,8 @@ agents:
   - label: review
     provider: codex
     start: [codex]
+    resume: [codex, resume]
+    prefer_provider_resume: true
 `
 	if err := os.WriteFile(filepath.Join(directory, "example.yaml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -87,7 +89,7 @@ agents:
 		t.Fatalf("loaded Agent Sessions = %+v", loaded.Agents)
 	}
 	agent := loaded.Agents[0]
-	if agent.Label != "review" || agent.Provider != "codex" || len(agent.Start) != 1 || agent.Start[0] != "codex" {
+	if agent.Label != "review" || agent.Provider != "codex" || len(agent.Start) != 1 || agent.Start[0] != "codex" || strings.Join(agent.Resume, " ") != "codex resume" || !agent.PreferProviderResume {
 		t.Fatalf("loaded declared Agent Session = %+v", agent)
 	}
 
@@ -98,7 +100,7 @@ agents:
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"agents:", "label: review", "provider: codex", "start:"} {
+	for _, want := range []string{"agents:", "label: review", "provider: codex", "start:", "resume:", "prefer_provider_resume: true"} {
 		if !strings.Contains(string(encoded), want) {
 			t.Fatalf("saved Workspace Template does not keep %q:\n%s", want, encoded)
 		}

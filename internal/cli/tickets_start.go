@@ -12,16 +12,24 @@ import (
 
 func newTicketsStartCommand(options Options) *cobra.Command {
 	var name, templateName, as string
+	var withAgent, detached bool
 	command := &cobra.Command{
-		Use:     "start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME]",
-		Short:   "Claim Tickets and start one Workspace for them",
-		Args:    cobra.ArbitraryArgs,
-		PreRunE: refuseJSONQuickCreate,
+		Use:   "start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]",
+		Short: "Claim Tickets and start one Workspace for them",
+		Args:  cobra.ArbitraryArgs,
+		PreRunE: func(command *cobra.Command, args []string) error {
+			if WantsJSON(command) && (!detached || len(args) == 0) {
+				return invalidUsage(command, "%s uses interactive text output; JSON requires explicit TICKET arguments and --detached", command.CommandPath())
+			}
+			return nil
+		},
 		RunE: func(command *cobra.Command, args []string) error {
 			request := quickCreateRequest{
 				Name:         name,
 				TemplateName: templateName,
 				KeepCurrent:  true,
+				WithAgent:    withAgent,
+				Detached:     detached,
 			}
 			if len(args) > 0 {
 				tickets, err := resolveStartTicketRefs(options, args)
@@ -48,6 +56,8 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&name, "name", "", "Set the Workspace name; empty uses the Ticket slug")
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	command.Flags().BoolVar(&withAgent, "with-agent", false, "Start one configured Ticket planning Agent Session")
+	command.Flags().BoolVarP(&detached, "detached", "d", false, "Create and start the Workspace without opening or switching tmux")
 	setArguments(command, variadicArgument("ticket", false, "the picker asks for one Ticket when absent; many values must be Ticket slugs from one Project"))
 	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
@@ -101,6 +111,23 @@ func startFromTickets(command *cobra.Command, options Options, tickets []domain.
 	if err != nil {
 		return err
 	}
+	workspaceName := strings.TrimSpace(request.Name)
+	if workspaceName == "" {
+		workspaceName = tickets[0].Slug
+	}
+	request.Name = workspaceName
+	request.Project = project
+	request.Tickets = make([]string, 0, len(tickets))
+	for _, ticket := range tickets {
+		request.Tickets = append(request.Tickets, ticket.Slug)
+	}
+	if request.WithAgent {
+		launch, err := options.ticketPlanningLaunch(request.Tickets)
+		if err != nil {
+			return err
+		}
+		request.PlanningAgent = &launch
+	}
 	service, err := options.ticketService()
 	if err != nil {
 		return err
@@ -114,16 +141,6 @@ func startFromTickets(command *cobra.Command, options Options, tickets []domain.
 	if err := claimStartTickets(command, service, tickets, claimant); err != nil {
 		return err
 	}
-	workspaceName := strings.TrimSpace(request.Name)
-	if workspaceName == "" {
-		workspaceName = tickets[0].Slug
-	}
-	request.Name = workspaceName
-	request.Project = project
-	request.Tickets = make([]string, 0, len(tickets))
-	for _, ticket := range tickets {
-		request.Tickets = append(request.Tickets, ticket.Slug)
-	}
 	// A create failure keeps the claim: the create error already tells how to
 	// retry the setup.
 	if err := runQuickCreate(command, options, request); err != nil {
@@ -134,7 +151,13 @@ func startFromTickets(command *cobra.Command, options Options, tickets []domain.
 	}
 	// A start comment is best-effort: a comment failure does not fail start.
 	for _, ticket := range tickets {
-		if err := commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Workspace %s.", workspaceName)); err != nil {
+		var err error
+		if WantsJSON(command) {
+			_, err = service.Comment(ticket.Slug, fmt.Sprintf("Started Workspace %s.", workspaceName), false)
+		} else {
+			err = commentTicket(command, service, ticket.Slug, fmt.Sprintf("Started Workspace %s.", workspaceName))
+		}
+		if err != nil {
 			_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: twt could not add the start comment to Ticket %q: %v\n", ticket.Slug, err)
 		}
 	}
@@ -174,6 +197,9 @@ func claimStartTickets(command *cobra.Command, service *ticketservice.Service, t
 		}
 	}
 	if isDryRun(command) {
+		if WantsJSON(command) {
+			return nil
+		}
 		for _, ticket := range tickets {
 			if err := claimTicket(command, service, ticket.Slug, claimant); err != nil {
 				return err
@@ -194,6 +220,9 @@ func claimStartTickets(command *cobra.Command, service *ticketservice.Service, t
 		}
 	}
 	for _, ticket := range tickets {
+		if WantsJSON(command) {
+			continue
+		}
 		if _, err := fmt.Fprintf(command.OutOrStdout(), "Claimed ticket %q as %q\n", ticket.Slug, claimant); err != nil {
 			return err
 		}

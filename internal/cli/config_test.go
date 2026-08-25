@@ -94,6 +94,9 @@ func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 		{"tmuxSocket", "", "default", ""},
 		{"ticketsHome", "", "default", ""},
 		{"branchPrefix", "", "default", ""},
+		{"ticketAgent.provider", "codex", "default", ""},
+		{"ticketAgent.effort", "large", "default", ""},
+		{"ticketAgent.instructions", "", "default", ""},
 	}
 	if len(envelope.Config) != len(want) {
 		t.Fatalf("config setting count = %d, want %d\n%+v", len(envelope.Config), len(want), envelope.Config)
@@ -186,6 +189,31 @@ func TestConfigCommandReportsFileSources(t *testing.T) {
 	}
 }
 
+func TestConfigCommandReportsTicketAgentSettings(t *testing.T) {
+	options := configTestOptions(t)
+	writeTwtConfigFile(t, options.ConfigDir, "ticketAgent:\n  provider: grok\n  effort: xlarge\n  instructions: |\n    Read CONTEXT.md first.\n    Check the CLI.\n")
+	configFile := filepath.Join(options.ConfigDir, "config.yaml")
+
+	envelope := decodeConfig(t, mustConfigJSON(t, options))
+	for key, value := range map[string]string{
+		"ticketAgent.provider":     "grok",
+		"ticketAgent.effort":       "xlarge",
+		"ticketAgent.instructions": "Read CONTEXT.md first.\nCheck the CLI.\n",
+	} {
+		got := settingByKey(t, envelope, key)
+		if got.Value != value || got.Source != "file" || got.Origin != configFile {
+			t.Errorf("%s = %+v", key, got)
+		}
+	}
+	textOutput, _, err := executeRaw(t, options, "config", "--output", "text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(textOutput, `Read CONTEXT.md first.\nCheck the CLI.\n`) {
+		t.Fatalf("text config did not escape the multiline instructions:\n%s", textOutput)
+	}
+}
+
 func TestConfigCommandPrefersEnvironmentOverTheConfigFile(t *testing.T) {
 	options := configTestOptions(t)
 	writeTwtConfigFile(t, options.ConfigDir, "ticketsHome: /from-file\nbranchPrefix: file/\n")
@@ -274,6 +302,12 @@ func TestConfigCommandIncludesEveryConfigFileKey(t *testing.T) {
 		field := configType.Field(index)
 		tag := strings.Split(field.Tag.Get("yaml"), ",")[0]
 		if tag == "" || tag == "-" {
+			continue
+		}
+		if tag == "ticketAgent" {
+			if !reported["ticketAgent.provider"] || !reported["ticketAgent.effort"] || !reported["ticketAgent.instructions"] {
+				t.Errorf("config command does not report every %q setting", tag)
+			}
 			continue
 		}
 		if !reported[tag] {

@@ -9,25 +9,29 @@ import (
 const AgentVersion = 1
 
 type AgentSession struct {
-	Version           int       `json:"version"`
-	ID                string    `json:"id"`
-	WorkspaceID       string    `json:"workspaceId"`
-	Provider          string    `json:"provider"`
-	Label             string    `json:"label"`
-	ProviderSessionID string    `json:"providerSessionId,omitempty"`
-	ResumeCommand     []string  `json:"resumeCommand,omitempty"`
-	TmuxPane          string    `json:"tmuxPane,omitempty"`
-	PaneCommand       string    `json:"paneCommand,omitempty"`
-	PaneStart         string    `json:"paneStart,omitempty"`
-	RuntimeReference  string    `json:"runtimeReference,omitempty"`
-	PaneRootProcessID int       `json:"paneRootProcessId,omitempty"`
-	PaneRootStarted   string    `json:"paneRootStarted,omitempty"`
-	ProcessID         int       `json:"processId,omitempty"`
-	ProcessStarted    string    `json:"processStarted,omitempty"`
-	ProcessCommand    string    `json:"processCommand,omitempty"`
-	ProcessEvidence   string    `json:"processEvidence,omitempty"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	Version           int      `json:"version"`
+	ID                string   `json:"id"`
+	WorkspaceID       string   `json:"workspaceId"`
+	Provider          string   `json:"provider"`
+	Label             string   `json:"label"`
+	ProviderSessionID string   `json:"providerSessionId,omitempty"`
+	ResumeCommand     []string `json:"resumeCommand,omitempty"`
+	// PreferProviderResume makes a linked provider session take precedence
+	// over the saved fallback command. Old records keep the saved-command-first
+	// behavior through the false zero value.
+	PreferProviderResume bool      `json:"preferProviderResume,omitempty"`
+	TmuxPane             string    `json:"tmuxPane,omitempty"`
+	PaneCommand          string    `json:"paneCommand,omitempty"`
+	PaneStart            string    `json:"paneStart,omitempty"`
+	RuntimeReference     string    `json:"runtimeReference,omitempty"`
+	PaneRootProcessID    int       `json:"paneRootProcessId,omitempty"`
+	PaneRootStarted      string    `json:"paneRootStarted,omitempty"`
+	ProcessID            int       `json:"processId,omitempty"`
+	ProcessStarted       string    `json:"processStarted,omitempty"`
+	ProcessCommand       string    `json:"processCommand,omitempty"`
+	ProcessEvidence      string    `json:"processEvidence,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 // UnmarshalJSON accepts the version-one projectId key. New records always

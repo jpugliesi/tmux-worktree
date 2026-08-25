@@ -39,9 +39,14 @@ type Template struct {
 type TemplateAgent struct {
 	Label    string `yaml:"label" json:"label"`
 	Provider string `yaml:"provider" json:"provider"`
-	// Start is the command that twt runs in a new Workspace window. It is also
-	// the resume command of the Agent Session.
+	// Start is the command that twt runs in a new Workspace window.
 	Start []string `yaml:"start" json:"start"`
+	// Resume is the prompt-free fallback command for a stopped Agent Session.
+	// An empty value keeps the legacy behavior and uses Start.
+	Resume []string `yaml:"resume,omitempty" json:"resume,omitempty"`
+	// PreferProviderResume makes a verified linked provider session take
+	// precedence over Resume.
+	PreferProviderResume bool `yaml:"prefer_provider_resume,omitempty" json:"preferProviderResume,omitempty"`
 }
 
 // AgentProviders are the supported Agent Session provider names.
@@ -192,6 +197,9 @@ func validateTemplateAgents(agents []TemplateAgent) error {
 		}
 		if len(agent.Start) == 0 || strings.TrimSpace(agent.Start[0]) == "" {
 			return fmt.Errorf("Agent Session %q has no start command", label)
+		}
+		if len(agent.Resume) > 0 && strings.TrimSpace(agent.Resume[0]) == "" {
+			return fmt.Errorf("Agent Session %q has an invalid resume command", label)
 		}
 	}
 	return nil

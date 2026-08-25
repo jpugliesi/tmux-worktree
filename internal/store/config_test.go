@@ -43,6 +43,26 @@ func TestLoadConfigReadsBranchPrefix(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReadsTicketAgent(t *testing.T) {
+	configDir := t.TempDir()
+	writeConfig(t, configDir, "ticketAgent:\n  provider: claude\n  effort: xlarge\n  instructions: |\n    Read CONTEXT.md first.\n")
+	config, err := store.LoadConfig(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.TicketAgent.Provider != "claude" || config.TicketAgent.Effort != "xlarge" || config.TicketAgent.Instructions != "Read CONTEXT.md first.\n" {
+		t.Fatalf("TicketAgent = %#v", config.TicketAgent)
+	}
+}
+
+func TestLoadConfigRejectsUnknownTicketAgentFields(t *testing.T) {
+	configDir := t.TempDir()
+	writeConfig(t, configDir, "ticketAgent:\n  model: opus\n")
+	if _, err := store.LoadConfig(configDir); err == nil || !strings.Contains(err.Error(), "model") {
+		t.Fatalf("unknown nested field error = %v", err)
+	}
+}
+
 func TestLoadConfigRejectsUnknownFields(t *testing.T) {
 	configDir := t.TempDir()
 	writeConfig(t, configDir, "ticketsHome: /vault/tickets\nclaimant: me\n")

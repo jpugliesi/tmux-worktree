@@ -228,6 +228,24 @@ func TestBuildSessionMakesARecordWithoutALockOrAStoreWrite(t *testing.T) {
 	}
 }
 
+func TestEffectiveResumeCommandCanPreferALinkedProviderSession(t *testing.T) {
+	agent := domain.AgentSession{
+		Provider: "codex", ProviderSessionID: "linked-one",
+		ResumeCommand: []string{"codex", "fallback"},
+	}
+	if got := strings.Join(EffectiveResumeCommand(agent), " "); got != "codex fallback" {
+		t.Fatalf("legacy resume command = %q", got)
+	}
+	agent.PreferProviderResume = true
+	if got := strings.Join(EffectiveResumeCommand(agent), " "); got != "codex resume linked-one" {
+		t.Fatalf("preferred linked resume command = %q", got)
+	}
+	agent.ProviderSessionID = ""
+	if got := strings.Join(EffectiveResumeCommand(agent), " "); got != "codex fallback" {
+		t.Fatalf("unlinked fallback resume command = %q", got)
+	}
+}
+
 func TestUserFacingErrorsCarryConsistentCodes(t *testing.T) {
 	service, workspace := activeWorkspace(t)
 	agent, err := service.Register(workspace, "", "", "", "", []string{"codex", "resume", "session-one"})

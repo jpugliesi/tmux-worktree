@@ -393,7 +393,7 @@ func (s *Service) Open(reference string) (domain.Workspace, error) {
 	if err != nil {
 		return domain.Workspace{}, err
 	}
-	if err := s.ensureTmux(&p); err != nil {
+	if err := s.ensureTmux(&p, claimUnownedSession); err != nil {
 		return p, err
 	}
 	sessionID, ownerID, exists, err := s.findSession(p.ID, p.TmuxSession)
@@ -481,7 +481,7 @@ func (s *Service) runStep(p *domain.Workspace, step domain.SetupStep) error {
 		}
 		return s.runInitialize(*p, repository.Path, spec.Initialize)
 	case domain.StepTmux:
-		return s.ensureTmux(p)
+		return s.ensureTmux(p, preserveUnownedSession)
 	case domain.StepWorkspaceInit:
 		init := p.TemplateSnapshot.Initialize
 		workingDirectory := filepath.Join(p.Root, filepath.FromSlash(init.WorkingDirectory))
@@ -538,10 +538,15 @@ func (s *Service) ensureTemplateAgent(p domain.Workspace, label string) error {
 			return nil
 		}
 	}
-	session, err := agent.BuildSession(p, declared.Provider, declared.Label, "", "", declared.Start, existing, s.now())
+	resume := declared.Start
+	if len(declared.Resume) > 0 {
+		resume = declared.Resume
+	}
+	session, err := agent.BuildSession(p, declared.Provider, declared.Label, "", "", resume, existing, s.now())
 	if err != nil {
 		return err
 	}
+	session.PreferProviderResume = declared.PreferProviderResume
 	_, ownerID, exists, err := s.findSession(p.ID, p.TmuxSession)
 	if err != nil {
 		return err

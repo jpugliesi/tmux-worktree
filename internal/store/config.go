@@ -18,6 +18,16 @@ type Config struct {
 	// Workspace branch patterns. twt concatenates it literally, so include the
 	// separator, for example "jpugliesi/". TWT_BRANCH_PREFIX overrides it.
 	BranchPrefix string `yaml:"branchPrefix"`
+	// TicketAgent configures the planning Agent Session that tickets start can
+	// add to a Workspace.
+	TicketAgent TicketAgentConfig `yaml:"ticketAgent,omitempty"`
+}
+
+// TicketAgentConfig is the provider-neutral Ticket planning agent config.
+type TicketAgentConfig struct {
+	Provider     string `yaml:"provider,omitempty"`
+	Effort       string `yaml:"effort,omitempty"`
+	Instructions string `yaml:"instructions,omitempty"`
 }
 
 // LoadConfig reads one strict twt config document from

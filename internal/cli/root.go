@@ -265,20 +265,22 @@ func New(options Options) *cobra.Command {
 
 Each Workspace can own multiple Git worktrees, one tmux window for each
 repository, and a set of resumable coding Agent Sessions.`,
-		Example: `  # File work, then pick a ticket.
+		Example: `  # Create, select, and claim a Ticket.
   twt tickets create "Fix auth token refresh"
-	# or just use the wizard to create a new workspace
-  twt create
   twt tickets ls --ready
-  twt tickets start # start ticket wizard
+  twt tickets claim fix-auth-tokens
 
+  # Create the next Workspace and work in it.
+  twt next fix-auth-tokens
   twt agents ls
 
-  # Archive current workspace, Create the next Workspace and work in it.
-  twt next fix-auth-tokens
-
-  # Close the workspace and optionally the ticket
+  # Close the Ticket and remove the Workspace.
+  twt tickets close fix-auth-tokens
   twt done
+
+  # Or use a wizard to create a Workspace or select a Ticket.
+  twt create
+  twt tickets start
 
   # Restore active Workspace sessions after tmux restarts.
   twt workspaces open --all-active --dry-run

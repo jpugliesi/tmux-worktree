@@ -183,7 +183,7 @@ twt tickets repair                    # move tickets to the correct paths
 | `twt projects` | Create, list, and show durable Ticket Projects |
 | `twt create` | Create a Workspace and keep other Workspaces active |
 | `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |
-| `twt tickets start` | Claim Tickets, start a Workspace, and keep the current Workspace active |
+| `twt tickets start` | Claim Tickets and start a Workspace, with an optional planning agent or detached caller |
 | `twt switch` | Move the tmux client to a Workspace |
 | `twt agents` | List, open, resume, send, and read Agent Sessions |
 | `twt archive` | Stop a Workspace session and keep its data |
@@ -217,7 +217,7 @@ These commands are interactive. They have no apply operation. They refuse
 `--output json`:
 
 - `twt next`
-- `twt tickets start`
+- `twt tickets start` without `--detached`
 - `twt tickets home`
 - `twt switch`
 - `twt done`
@@ -302,8 +302,12 @@ agents:
   - label: coder
     provider: claude
     start: [claude]
+    resume: [claude]
 pool_depth: 1
 ```
+
+`resume` is optional. Without it, twt uses `start` again. Set it when `start`
+contains an initial prompt that a resumed Agent must not receive again.
 
 Warm the pool once. twt keeps it warm after every claim:
 
@@ -313,10 +317,19 @@ twt templates prepare product
 
 ### Configure tickets
 
-Point twt at the directory in your Obsidian vault that holds tickets:
+Point twt at the directory in your Obsidian vault that holds Tickets. You can
+also set the Agent that `tickets start --with-agent` starts:
+
+```yaml
+ticketsHome: /Users/you/Vaults/yourvault/tickets
+ticketAgent:
+  provider: codex
+  effort: large
+  instructions: |
+    Read the repository design notes first.
+```
 
 ```sh
-echo 'ticketsHome: ~/Vaults/yourvault/tickets' > ~/.config/twt/config.yaml
 twt tickets init
 twt tickets home
 ```

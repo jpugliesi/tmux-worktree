@@ -179,6 +179,15 @@ func TestSkillDocumentsTicketBlockedBy(t *testing.T) {
 	}
 }
 
+func TestSkillDocumentsDetachedTicketPlanningAgents(t *testing.T) {
+	content := skillasset.Canonical()
+	for _, want := range []string{"--with-agent", "--detached", "UNIQUE_CLAIMANT", "ticketAgent", "The defaults are Codex and `large`."} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("canonical skill misses %q", want)
+		}
+	}
+}
+
 // firstLines shortens a long failure message.
 func firstLines(text string) string {
 	lines := strings.Split(text, "\n")

@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -135,6 +136,168 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	if !strings.Contains(namedContent, "Started Workspace custom-app.") {
 		t.Fatalf("ticket has no start comment for --name:\n%s", namedContent)
 	}
+}
+
+func TestTicketsStartWithAgentDetachedWritesOneJSONResult(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	fakeBin := buildFakePlanningProvider(t, "codex")
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeTwtConfigFile(t, options.ConfigDir, `ticketAgent:
+  provider: codex
+  effort: xlarge
+  instructions: |
+    Read CONTEXT.md first.
+`)
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+	switches := 0
+	options.QuickCreateSwitch = func(_, _ string) error {
+		switches++
+		return nil
+	}
+
+	stdout, stderr, err := executeCollectingInput(t, options, nil,
+		"tickets", "start", "fix-auth-tokens", "--as", "tester", "--with-agent", "-d", "--output", "json")
+	if err != nil {
+		t.Fatalf("detached start: %v\nstderr: %s", err, stderr)
+	}
+	var result struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Operation     string `json:"operation"`
+		Status        string `json:"status"`
+		ID            string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("detached JSON is not one value: %v\n%s", err, stdout)
+	}
+	if result.SchemaVersion != 2 || result.Operation != "tickets.start" || result.Status != "applied" || result.ID == "" {
+		t.Fatalf("detached result = %+v", result)
+	}
+	if switches != 0 {
+		t.Fatalf("detached start switched %d times", switches)
+	}
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find(result.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.TemplateSnapshot.Agents) != 1 {
+		t.Fatalf("snapshot agents = %+v", workspace.TemplateSnapshot.Agents)
+	}
+	declared := workspace.TemplateSnapshot.Agents[0]
+	if declared.Label != "ticket-plan" || declared.Provider != "codex" || len(declared.Resume) == 0 {
+		t.Fatalf("generated declaration = %+v", declared)
+	}
+	prompt := declared.Start[len(declared.Start)-1]
+	if !strings.HasPrefix(prompt, "Read CONTEXT.md first.\n\n") || !strings.Contains(prompt, "twt tickets show fix-auth-tokens --output json") {
+		t.Fatalf("generated prompt = %q", prompt)
+	}
+	if strings.Contains(strings.Join(declared.Resume, " "), "fix-auth-tokens") {
+		t.Fatalf("resume command repeats the Ticket prompt: %v", declared.Resume)
+	}
+	sessions, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
+	if err != nil || len(sessions) != 1 || sessions[0].Label != "ticket-plan" || !sessions[0].PreferProviderResume {
+		t.Fatalf("Agent Sessions = %+v, error=%v", sessions, err)
+	}
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
+	for _, want := range []string{"claimed_by: tester", "Started Workspace fix-auth-tokens.", "twt_workspace_id: " + workspace.ID} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("Ticket does not contain %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestTicketsStartDetachedJSONDryRunChangesNoState(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	fakeBin := buildFakePlanningProvider(t, "codex")
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+
+	stdout, stderr, err := executeCollectingInput(t, options, nil,
+		"tickets", "start", "fix-auth-tokens", "--as", "tester", "--with-agent", "--detached", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("detached dry-run: %v\nstderr: %s", err, stderr)
+	}
+	var result struct {
+		Operation string `json:"operation"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil || result.Operation != "tickets.start" || result.Status != "valid" {
+		t.Fatalf("dry-run result = %+v, error=%v\n%s", result, err, stdout)
+	}
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens"); err == nil {
+		t.Fatal("dry-run created a Workspace")
+	}
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
+	if strings.Contains(content, "claimed_by: tester") || strings.Contains(content, "Started Workspace") {
+		t.Fatalf("dry-run changed the Ticket:\n%s", content)
+	}
+}
+
+func TestTicketsStartAgentValidationRunsBeforeTheClaim(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	writeTwtConfigFile(t, options.ConfigDir, "ticketAgent:\n  provider: grok\n  effort: large\n")
+	t.Setenv("PATH", t.TempDir())
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+
+	_, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "start", "fix-auth-tokens", "--as", "tester", "--with-agent", "--detached", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "grok") {
+		t.Fatalf("missing provider error = %v", err)
+	}
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
+	if strings.Contains(content, "claimed_by: tester") {
+		t.Fatalf("provider validation failure claimed the Ticket:\n%s", content)
+	}
+}
+
+func TestTicketsStartAgentFailureKeepsAClaimedRetryableWorkspace(t *testing.T) {
+	options, home := ticketsStartFixture(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+
+	_, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "start", "fix-auth-tokens", "--as", "tester", "--with-agent", "--detached", "--output", "json")
+	if err == nil {
+		t.Fatal("a provider that exits immediately did not fail Workspace setup")
+	}
+	workspace, findErr := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
+	if findErr != nil || workspace.Status != domain.WorkspaceSetupFailed {
+		t.Fatalf("failed Workspace = %+v, error=%v", workspace, findErr)
+	}
+	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
+	if !strings.Contains(content, "tester") {
+		t.Fatalf("Agent failure did not keep the Ticket claim:\n%s", content)
+	}
+	if strings.Contains(content, "Started Workspace") || strings.Contains(content, "twt_workspace_id: "+workspace.ID) {
+		t.Fatalf("Agent failure recorded a successful start:\n%s", content)
+	}
+}
+
+func buildFakePlanningProvider(t *testing.T, name string) string {
+	t.Helper()
+	directory := t.TempDir()
+	source := filepath.Join(directory, "main.go")
+	if err := os.WriteFile(source, []byte("package main\nimport \"time\"\nfunc main() { time.Sleep(time.Hour) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "build", "-o", filepath.Join(directory, name), source)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build fake planning provider: %v\n%s", err, output)
+	}
+	return directory
 }
 
 func TestProjectsShowReportsTheCoordinatorBoard(t *testing.T) {

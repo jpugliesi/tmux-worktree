@@ -183,7 +183,7 @@ func (s *Service) StartDeclared(workspace domain.Workspace, session domain.Agent
 	if err != nil {
 		return session, err
 	}
-	if err := s.attachPane(workspace, &session, pane); err != nil {
+	if err := s.attachStartedPane(workspace, &session, pane); err != nil {
 		return session, err
 	}
 	session.UpdatedAt = s.now()
@@ -191,6 +191,51 @@ func (s *Service) StartDeclared(workspace domain.Workspace, session domain.Agent
 		return session, err
 	}
 	return session, nil
+}
+
+// attachStartedPane attaches a direct provider process. Cursor's agent command
+// is a wrapper, so its verified provider can be a foreground child process.
+func (s *Service) attachStartedPane(workspace domain.Workspace, session *domain.AgentSession, pane string) error {
+	directErr := s.attachPane(workspace, session, pane)
+	if directErr == nil || session.Provider != "cursor" {
+		return directErr
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		panes, err := s.tmux.ObserveWorkspace(workspace)
+		if err == nil {
+			for _, observedPane := range panes {
+				if observedPane.ID != pane {
+					continue
+				}
+				process, ok := observedProviderProcess(observedPane, session.Provider)
+				if !ok {
+					break
+				}
+				session.TmuxPane = pane
+				session.PaneCommand = observedPane.CurrentCommand
+				session.PaneStart = observedPane.StartCommand
+				session.RuntimeReference = livePaneReference(workspace.ID, observedPane, process, session.Provider)
+				session.PaneRootProcessID = observedPane.RootProcessID
+				session.PaneRootStarted = observedPane.RootStarted
+				session.ProcessID = process.ID
+				session.ProcessStarted = process.Started
+				session.ProcessCommand = process.Command
+				session.ProcessEvidence = tmuxclient.ProcessEvidence(process)
+				if err := s.tmux.ClaimAgentPane(pane, workspace.ID, session.ID); err != nil {
+					return err
+				}
+				binding, _ := processBinding(*session)
+				if s.tmux.ProcessPaneBelongs(workspace, pane, session.ID, binding, false) {
+					return nil
+				}
+				_ = s.tmux.ReleaseAgentPane(pane, workspace.ID, session.ID)
+				return clierr.New(clierr.PreconditionFailed, "the Cursor provider process changed during Agent Session start")
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return directErr
 }
 
 // ValidateLabel checks that the display label is free inside the Workspace. An
@@ -431,7 +476,7 @@ func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) 
 	if s.IsLive(agent) {
 		return agent, s.Focus(agent)
 	}
-	return s.StartDeclared(workspace, agent, agent.ResumeCommand)
+	return s.StartDeclared(workspace, agent, EffectiveResumeCommand(agent))
 }
 
 // Live returns the Agent Sessions of the Workspace that run live in their
@@ -457,10 +502,24 @@ func (s *Service) ValidateResume(agent domain.AgentSession, workspace domain.Wor
 	if workspace.Status != domain.WorkspaceActive {
 		return workspaceNotActiveError(workspace)
 	}
-	if !s.IsLive(agent) && len(agent.ResumeCommand) == 0 {
+	if !s.IsLive(agent) && len(EffectiveResumeCommand(agent)) == 0 {
 		return clierr.New(clierr.PreconditionFailed, "Agent Session %q has no live pane or resume command", agent.ID)
 	}
 	return nil
+}
+
+// EffectiveResumeCommand selects the command that continues or restarts one
+// Agent Session. New prompt-bearing declarations can prefer a verified linked
+// session. Old records keep the saved-command-first rule.
+func EffectiveResumeCommand(agent domain.AgentSession) []string {
+	linked := transcript.ResumeCommand(agent.Provider, agent.ProviderSessionID)
+	if agent.PreferProviderResume && len(linked) > 0 {
+		return linked
+	}
+	if len(agent.ResumeCommand) > 0 {
+		return append([]string(nil), agent.ResumeCommand...)
+	}
+	return linked
 }
 
 // NotLiveError reports that the Agent Session process is not live in its

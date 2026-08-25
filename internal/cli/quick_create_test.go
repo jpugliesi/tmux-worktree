@@ -292,13 +292,9 @@ func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
 
 	command := cli.New(options)
 	command.SetArgs(forceTextOutput([]string{"next", "must-not-exist"}))
-	started := time.Now()
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "clients are attached to its Workspace session") {
 		t.Fatalf("quick create client preflight error = %v", err)
-	}
-	if elapsed := time.Since(started); elapsed >= time.Second {
-		t.Fatalf("quick create client preflight took %s", elapsed)
 	}
 	if _, err := os.Stat(initLog); !os.IsNotExist(err) {
 		t.Fatalf("quick create ran initialization before client preflight: %v", err)

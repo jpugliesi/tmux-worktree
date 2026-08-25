@@ -12,7 +12,6 @@ import (
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
-	transcriptservice "github.com/jpugliesi/tmux-worktree/internal/transcript"
 	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -113,13 +112,10 @@ func openAgentSession(command *cobra.Command, options Options, agents *agentserv
 }
 
 // agentResumeCommand is the command that starts the Agent Session again in
-// this pane. A saved resume command wins. A linked provider session uses the
-// provider CLI.
+// this pane. New prompt-bearing declarations can prefer a linked provider
+// session. Other records use the saved resume command first.
 func agentResumeCommand(agent domain.AgentSession) []string {
-	if len(agent.ResumeCommand) > 0 {
-		return append([]string(nil), agent.ResumeCommand...)
-	}
-	return transcriptservice.ResumeCommand(agent.Provider, agent.ProviderSessionID)
+	return agentservice.EffectiveResumeCommand(agent)
 }
 
 // realAgentOpenExec replaces this process with the provider resume command.

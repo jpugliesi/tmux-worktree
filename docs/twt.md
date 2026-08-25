@@ -115,6 +115,12 @@ repositories:
     initialize:
       command:
         - ./init.sh
+agents:
+  - label: coder
+    provider: claude
+    start: [claude, "Create the first plan."]
+    resume: [claude]
+    prefer_provider_resume: true
 ```
 
 `pool_depth` is the number of ready Prepared Environments that `twt` keeps
@@ -123,6 +129,11 @@ for this Workspace Template. The default depth is 1.
 `branch_pattern` sets the default Workspace branch name of the Workspace
 Template, for example `branch_pattern: "{prefix}dev/{name}"`. See
 [Workspace branch names](#workspace-branch-names).
+
+An Agent declaration can set a separate `resume` command. If it is absent,
+twt uses `start` as before. Use `resume` when `start` contains an initial
+prompt that must run only one time. `prefer_provider_resume` makes a verified
+linked provider session take precedence over the fallback command.
 
 Work with the YAML file through these commands:
 
@@ -787,6 +798,11 @@ Set the root directory of ticket Markdown files in
 
 ```yaml
 ticketsHome: /Users/john.pugliesi/Vaults/spacexai/tickets
+ticketAgent:
+  provider: codex
+  effort: large
+  instructions: |
+    Read the repository design notes first.
 ```
 
 `TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
@@ -805,7 +821,7 @@ twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
-twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME]
+twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
@@ -930,14 +946,26 @@ and belong to one Project. The Workspace name is `--name`, or the first
 Ticket slug. The Workspace record carries the Project and Ticket slugs, and
 `twt workspaces show` reports them. On success, twt appends a start comment
 to each Ticket. A create failure keeps the claims, and the error tells how
-to retry the setup. Both commands are interactive: they refuse
-`--output json` and have no apply operation.
+to retry the setup. The picker and switching forms are interactive and refuse
+`--output json`. The form with explicit Tickets and `--detached` accepts JSON.
+It starts the Workspace processes but does not open or switch tmux. The command
+has no apply operation.
+
+`--with-agent` adds one planning Agent Session for all selected Tickets. The
+`ticketAgent` config selects `codex`, `claude`, `cursor`, or `grok`. Effort is
+`small`, `medium`, `large`, or `xlarge`; the default is `large`. Custom
+instructions come before the generated request. The request tells the Agent to
+read each Ticket with `twt tickets show`. Claude, Cursor, and Grok start in
+their plan mode. Codex receives the planning request in its normal mode because
+its CLI has no supported plan-mode start flag.
 
 ```sh
 twt tickets start
 twt tickets start fix-auth-tokens
 twt tickets start fix-auth-tokens add-auth-tests
 twt tickets start fix-auth-tokens --name auth-fix --template everysphere
+twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --dry-run --output json
+twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --output json
 ```
 
 `comment` requires `--stdin`. It appends the text under the `## Comments`

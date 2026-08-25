@@ -74,6 +74,38 @@ func TestTemplateAgentStepWithoutALiveTmuxSession(t *testing.T) {
 	}
 }
 
+func TestTemplateAgentUsesAnExplicitPromptFreeResumeCommand(t *testing.T) {
+	stateDir := t.TempDir()
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: "https://example.com/app.git"}}},
+		Agents: []domain.TemplateAgent{{
+			Label: "ticket-plan", Provider: "codex",
+			Start:                []string{"codex", "Create a plan for ticket-one."},
+			Resume:               []string{"codex"},
+			PreferProviderResume: true,
+		}},
+	}
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-one", Name: "workspace-one", TemplateName: template.Name,
+		TemplateSnapshot: template, Status: domain.WorkspaceInitializing, Root: t.TempDir(),
+		TmuxSession: "workspace-one", CreatedAt: now, UpdatedAt: now,
+	}
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir(), TmuxSocket: "missing-session"})
+
+	if err := service.ensureTemplateAgent(workspace, "ticket-plan"); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := store.NewAgentStore(stateDir).List(workspace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || strings.Join(sessions[0].ResumeCommand, " ") != "codex" || !sessions[0].PreferProviderResume {
+		t.Fatalf("planning Agent Session = %+v", sessions)
+	}
+}
+
 func TestCreateStartsTheDeclaredAgentSessions(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")

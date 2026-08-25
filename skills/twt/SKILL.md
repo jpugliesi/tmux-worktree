@@ -97,11 +97,11 @@ For typed input, send one strict JSON value to `twt apply --stdin`. It
 supports every non-interactive mutation. Read the current operation names and
 payload shapes from `twt schema`; this skill does not repeat them.
 
-An interactive command has no apply operation by design: `twt next`,
-`twt tickets start`, `twt tickets home`, `twt switch`, `twt done`, the tmux
-client move of an archive, `twt templates edit`, `twt agents focus`,
-`twt agents open`, and `twt agents register --pane current`. Run those in a
-terminal.
+An interactive command has no apply operation by design: `twt next`, the
+picker and switching forms of `twt tickets start`, `twt tickets home`,
+`twt switch`, `twt done`, and the tmux client move of an archive. The same rule
+applies to `twt templates edit`, `twt agents focus`, `twt agents open`, and
+`twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
 
@@ -298,6 +298,24 @@ starts one Workspace. It keeps the current Workspace active. Use `twt next`
 when the current Workspace must be archived. A person at a terminal can omit
 `TICKET`. twt then shows the Ticket picker. An agent always passes every
 Ticket slug.
+
+To start planning work in parallel, pass explicit Tickets, a unique claimant,
+`--with-agent`, and `--detached`. Detached mode starts the Workspace and its
+Agent Sessions, but it keeps the current tmux client in place. Run the dry run
+first. Both commands return one JSON value:
+
+```sh
+twt tickets start TICKET --with-agent --detached --as UNIQUE_CLAIMANT \
+  --dry-run --output json
+twt tickets start TICKET --with-agent --detached --as UNIQUE_CLAIMANT \
+  --output json
+```
+
+One planning Agent covers all Ticket arguments. `ticketAgent` in
+`config.yaml` selects `codex`, `claude`, `cursor`, or `grok`; the effort is
+`small`, `medium`, `large`, or `xlarge`. The defaults are Codex and `large`.
+Configured instructions come before the generated Ticket request. Codex uses
+the planning prompt in normal mode. The other providers use their plan mode.
 
 Follow these rules for every ticket command:
 

@@ -23,6 +23,15 @@ type tmuxSessionRow struct {
 	ownerID string
 }
 
+// unownedSessionPolicy controls whether an existing Workspace can adopt a
+// matching tmux session that has no Workspace owner marker.
+type unownedSessionPolicy uint8
+
+const (
+	preserveUnownedSession unownedSessionPolicy = iota
+	claimUnownedSession
+)
+
 // sessionName returns the tmux session name that twt uses for a new Workspace.
 // The Workspace Template name comes first, thus the native tmux session picker
 // groups the sessions of one codebase together. An adopted Workspace has no
@@ -36,7 +45,7 @@ func sessionName(templateName, workspaceName string) string {
 	return templateName + "-" + workspaceName
 }
 
-func (s *Service) ensureTmux(p *domain.Workspace) error {
+func (s *Service) ensureTmux(p *domain.Workspace, unownedPolicy unownedSessionPolicy) error {
 	if len(p.Repositories) == 0 {
 		// An adopted Workspace can have no repositories. Its session is fine
 		// while it runs, but twt cannot make it again.
@@ -54,14 +63,17 @@ func (s *Service) ensureTmux(p *domain.Workspace) error {
 	if err != nil {
 		return err
 	}
-	if exists && ownerID != "" && ownerID != p.ID {
+	nameUnavailable := func(exists bool, ownerID string) bool {
+		return exists && ownerID != p.ID && (ownerID != "" || unownedPolicy == preserveUnownedSession)
+	}
+	if nameUnavailable(exists, ownerID) {
 		fallback := name + "-" + p.ID[:8]
 		sessionID, ownerID, exists, err = s.findSession(p.ID, fallback)
 		if err != nil {
 			return err
 		}
-		if exists && ownerID != "" && ownerID != p.ID {
-			return fmt.Errorf("tmux sessions %q and %q already exist and belong to other Workspaces", name, fallback)
+		if nameUnavailable(exists, ownerID) {
+			return fmt.Errorf("tmux session names %q and %q are already in use", name, fallback)
 		}
 		name = fallback
 	}

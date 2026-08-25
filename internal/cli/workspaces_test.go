@@ -496,7 +496,15 @@ func TestWorkspacesCreateUsesSafeTmuxNameWhenAnUnownedNameExists(t *testing.T) {
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "workspaces", "create", "collision", "--template", "example", "--no-open")
 	sessions := strings.Split(runCommand(t, "", "tmux", "-L", socket, "list-sessions", "-F", "#{session_name}|#{@twt_workspace_id}"), "\n")
-	if len(sessions) != 2 || sessions[0] != "example-collision|" || !strings.HasPrefix(sessions[1], "example-collision-") || strings.HasSuffix(sessions[1], "|") {
+	if len(sessions) != 2 {
+		t.Fatalf("tmux collision sessions = %q", sessions)
+	}
+	seenUnowned, seenOwnedFallback := false, false
+	for _, session := range sessions {
+		seenUnowned = seenUnowned || session == "example-collision|"
+		seenOwnedFallback = seenOwnedFallback || strings.HasPrefix(session, "example-collision-") && !strings.HasSuffix(session, "|")
+	}
+	if !seenUnowned || !seenOwnedFallback {
 		t.Fatalf("tmux collision sessions = %q", sessions)
 	}
 }
@@ -1356,15 +1364,4 @@ func initGitRepository(t *testing.T, path string) {
 	}
 	runCommand(t, path, "git", "add", "README.md", "init.sh")
 	runCommand(t, path, "git", "commit", "-qm", "initial commit")
-}
-
-func runCommand(t *testing.T, dir, name string, args ...string) string {
-	t.Helper()
-	command := exec.Command(name, args...)
-	command.Dir = dir
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
 }

@@ -3,7 +3,9 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +43,7 @@ func newConfigCommand(options Options) *cobra.Command {
 			}
 			rows := make([][]string, 0, len(settings))
 			for _, setting := range settings {
-				rows = append(rows, []string{setting.Key, setting.Value, setting.Source, setting.Origin})
+				rows = append(rows, []string{setting.Key, escapedConfigValue(setting.Value), setting.Source, setting.Origin})
 			}
 			return writeTable(command.OutOrStdout(), []string{"KEY", "VALUE", "SOURCE", "ORIGIN"}, rows)
 		},
@@ -66,6 +68,10 @@ func (o Options) resolvedConfig() ([]configSettingOutput, error) {
 		return nil, err
 	}
 	configDir := envSetting("configDir", o.ConfigDir, "TWT_CONFIG_DIR", "XDG_CONFIG_HOME")
+	ticketAgent := resolvedTicketAgentConfig(file.TicketAgent)
+	if err := validateTicketAgentConfig(ticketAgent); err != nil {
+		return nil, err
+	}
 	return []configSettingOutput{
 		configDir,
 		envSetting("stateDir", o.StateDir, "TWT_STATE_DIR", "XDG_STATE_HOME"),
@@ -74,7 +80,24 @@ func (o Options) resolvedConfig() ([]configSettingOutput, error) {
 		envSetting("tmuxSocket", o.TmuxSocket, "TWT_TMUX_SOCKET", ""),
 		fileOrEnvSetting("ticketsHome", ticketsHome, "TWT_TICKETS_HOME", file.TicketsHome, o.ConfigDir),
 		fileOrEnvSetting("branchPrefix", branchPrefix, "TWT_BRANCH_PREFIX", file.BranchPrefix, o.ConfigDir),
+		fileOrDefaultSetting("ticketAgent.provider", ticketAgent.Provider, file.TicketAgent.Provider, o.ConfigDir),
+		fileOrDefaultSetting("ticketAgent.effort", ticketAgent.Effort, file.TicketAgent.Effort, o.ConfigDir),
+		fileOrDefaultSetting("ticketAgent.instructions", ticketAgent.Instructions, file.TicketAgent.Instructions, o.ConfigDir),
 	}, nil
+}
+
+func resolvedTicketAgentConfig(config store.TicketAgentConfig) store.TicketAgentConfig {
+	if strings.TrimSpace(config.Provider) == "" {
+		config.Provider = agentprovider.DefaultTicketPlanningProvider
+	}
+	if strings.TrimSpace(config.Effort) == "" {
+		config.Effort = string(agentprovider.DefaultTicketPlanningEffort)
+	}
+	return config
+}
+
+func escapedConfigValue(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
 }
 
 // envSetting classifies a value from a TWT_* variable, then an XDG variable,
@@ -98,6 +121,13 @@ func fileOrEnvSetting(key, value, envName, fileValue, configDir string) configSe
 		return configSettingOutput{Key: key, Value: value, Source: configSourceEnv, Origin: envName}
 	}
 	if fileValue != "" && fileValue == value {
+		return configSettingOutput{Key: key, Value: value, Source: configSourceFile, Origin: filepath.Join(configDir, "config.yaml")}
+	}
+	return configSettingOutput{Key: key, Value: value, Source: configSourceDefault}
+}
+
+func fileOrDefaultSetting(key, value, fileValue, configDir string) configSettingOutput {
+	if fileValue != "" {
 		return configSettingOutput{Key: key, Value: value, Source: configSourceFile, Origin: filepath.Join(configDir, "config.yaml")}
 	}
 	return configSettingOutput{Key: key, Value: value, Source: configSourceDefault}

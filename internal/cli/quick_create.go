@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
+	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
@@ -33,6 +34,13 @@ type quickCreateRequest struct {
 	Tickets []string
 	// Project is the durable Project of Tickets.
 	Project string
+	// Detached creates and starts the Workspace without opening or switching
+	// the calling tmux client.
+	Detached bool
+	// WithAgent asks tickets start to add one planning Agent Session.
+	WithAgent bool
+	// PlanningAgent is the validated provider launch for the generated Agent.
+	PlanningAgent *agentprovider.TicketPlanningLaunch
 }
 
 func newNextCommand(options Options) *cobra.Command {
@@ -259,7 +267,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		}
 	}
 	clientName := ""
-	if !outside && !isDryRun(command) {
+	if !request.Detached && !outside && !isDryRun(command) {
 		clientName, err = callingTmuxClient(options, currentPane)
 		if err != nil {
 			return err
@@ -268,6 +276,9 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 	template, err := templateStore.Load(selected)
 	if err != nil {
 		return err
+	}
+	if request.PlanningAgent != nil {
+		template = addTicketPlanningAgent(template, *request.PlanningAgent)
 	}
 	name := request.Name
 	if name == "" {
@@ -281,7 +292,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		if err := validateCreate(options, service, name, selected, template, createOptions); err != nil {
 			return err
 		}
-		return writeMutation(command, "workspaces.next", statusValid, "", name)
+		return writeMutation(command, quickCreateOperation(request), statusValid, "", name)
 	}
 
 	created, err := createWorkspace(command, options, name, selected, template, createOptions)
@@ -289,6 +300,13 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		return err
 	}
 	out := command.OutOrStdout()
+	if request.Detached {
+		if WantsJSON(command) {
+			return writeMutation(command, quickCreateOperation(request), statusApplied, created.ID, created.Name)
+		}
+		_, err := fmt.Fprintf(out, "Created Workspace %q (%s) in detached mode\n", created.Name, created.ID)
+		return err
+	}
 
 	if outside {
 		if _, err := fmt.Fprintf(out, "Created Workspace %q (%s)\n", created.Name, created.ID); err != nil {
@@ -324,6 +342,13 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		return fmt.Errorf("new Workspace %q is active, but old Workspace %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
 	}
 	return nil
+}
+
+func quickCreateOperation(request quickCreateRequest) string {
+	if request.Detached {
+		return "tickets.start"
+	}
+	return "workspaces.next"
 }
 
 // quickCreateSwitchFailure keeps the new Workspace active after a failed tmux

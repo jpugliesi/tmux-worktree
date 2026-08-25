@@ -48,6 +48,9 @@ func TestEnvironmentDigestIgnoresChangesThatKeepTheWorktreeSet(t *testing.T) {
 			template.Session = &domain.SessionSpec{Command: []string{"./scripts/layout.sh"}, CWD: "app"}
 		}},
 		{"branch pattern", func(template *domain.Template) { template.BranchPattern = "dev/{name}" }},
+		{"Agent Session", func(template *domain.Template) {
+			template.Agents = []domain.TemplateAgent{{Label: "ticket-plan", Provider: "codex", Start: []string{"codex", "prompt"}, Resume: []string{"codex"}}}
+		}},
 	}
 	base, err := EnvironmentDigest(digestTemplate())
 	if err != nil {
