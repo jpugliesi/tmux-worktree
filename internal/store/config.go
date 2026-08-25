@@ -21,6 +21,19 @@ type Config struct {
 	// TicketAgent configures the planning Agent Session that tickets start can
 	// add to a Workspace.
 	TicketAgent TicketAgentConfig `yaml:"ticketAgent,omitempty"`
+	// TicketsSync configures git synchronization of the Tickets home.
+	// TWT_TICKETS_SYNC and TWT_TICKETS_SYNC_REMOTE override its fields.
+	TicketsSync TicketsSyncConfig `yaml:"ticketsSync,omitempty"`
+}
+
+// TicketsSyncConfig is the git synchronization config for the Tickets home.
+type TicketsSyncConfig struct {
+	// Mode selects the synchronization mode: "off" or empty for none, or
+	// "git".
+	Mode string `yaml:"mode,omitempty"`
+	// Remote is the git remote name of the Tickets home repository. The
+	// default is "origin".
+	Remote string `yaml:"remote,omitempty"`
 }
 
 // TicketAgentConfig is the provider-neutral Ticket planning agent config.

@@ -168,6 +168,27 @@ func (o Options) resolveBranchPrefix() (string, error) {
 	return config.BranchPrefix, nil
 }
 
+// resolveTicketsSync resolves the tickets git sync configuration:
+// TWT_TICKETS_SYNC and TWT_TICKETS_SYNC_REMOTE, then the ticketsSync block of
+// config.yaml.
+func (o Options) resolveTicketsSync() (store.TicketsSyncConfig, error) {
+	config, err := store.LoadConfig(o.ConfigDir)
+	if err != nil {
+		return store.TicketsSyncConfig{}, err
+	}
+	resolved := config.TicketsSync
+	if value := os.Getenv("TWT_TICKETS_SYNC"); value != "" {
+		resolved.Mode = value
+	}
+	if value := os.Getenv("TWT_TICKETS_SYNC_REMOTE"); value != "" {
+		resolved.Remote = value
+	}
+	if err := validateTicketsSyncConfig(resolved); err != nil {
+		return store.TicketsSyncConfig{}, err
+	}
+	return resolved, nil
+}
+
 // ticketService builds the ticket service for these Options. It fails when no
 // Tickets home is set, so every tickets command reports the same
 // precondition error.
@@ -181,7 +202,18 @@ func (o Options) ticketService() (*ticketservice.Service, error) {
 			clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
 			"Set ticketsHome in ~/.config/twt/config.yaml or TWT_TICKETS_HOME.")
 	}
-	return ticketservice.NewService(ticketservice.Options{Home: home, StateDir: o.StateDir}), nil
+	sync, err := o.resolveTicketsSync()
+	if err != nil {
+		return nil, err
+	}
+	return ticketservice.NewService(ticketservice.Options{
+		Home:     home,
+		StateDir: o.StateDir,
+		Sync:     ticketservice.SyncOptions{Mode: sync.Mode, Remote: sync.Remote},
+		Logf: func(format string, a ...any) {
+			fmt.Fprintf(os.Stderr, format+"\n", a...)
+		},
+	}), nil
 }
 
 func (o Options) cursorCloudService(requireHarness bool) (*cursorcloud.Service, error) {

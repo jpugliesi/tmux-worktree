@@ -55,6 +55,26 @@ func TestLoadConfigReadsTicketAgent(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReadsTicketsSync(t *testing.T) {
+	configDir := t.TempDir()
+	writeConfig(t, configDir, "ticketsSync:\n  mode: git\n  remote: vault\n")
+	config, err := store.LoadConfig(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.TicketsSync.Mode != "git" || config.TicketsSync.Remote != "vault" {
+		t.Fatalf("TicketsSync = %#v", config.TicketsSync)
+	}
+}
+
+func TestLoadConfigRejectsUnknownTicketsSyncFields(t *testing.T) {
+	configDir := t.TempDir()
+	writeConfig(t, configDir, "ticketsSync:\n  branch: main\n")
+	if _, err := store.LoadConfig(configDir); err == nil || !strings.Contains(err.Error(), "branch") {
+		t.Fatalf("unknown nested field error = %v", err)
+	}
+}
+
 func TestLoadConfigRejectsUnknownTicketAgentFields(t *testing.T) {
 	configDir := t.TempDir()
 	writeConfig(t, configDir, "ticketAgent:\n  model: opus\n")

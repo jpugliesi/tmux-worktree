@@ -22,6 +22,11 @@ type Options struct {
 	Home string
 	// StateDir holds the per-ticket lock files. Locks never live in Home.
 	StateDir string
+	// Sync configures git synchronization of the Tickets home. The zero
+	// value disables it.
+	Sync SyncOptions
+	// Logf receives best-effort sync warnings. Nil means silent.
+	Logf func(format string, a ...any)
 }
 
 // Service owns every ticket read and write.
