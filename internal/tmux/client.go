@@ -130,7 +130,7 @@ func (c Client) PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, pane
 	return true
 }
 
-func (c Client) StartAgent(workspace domain.Workspace, label string, command []string) (string, error) {
+func (c Client) StartAgent(workspace domain.Workspace, label string, command, env []string) (string, error) {
 	if len(command) == 0 {
 		return "", fmt.Errorf("Agent Session has no resume command")
 	}
@@ -139,7 +139,11 @@ func (c Client) StartAgent(workspace domain.Workspace, label string, command []s
 		return "", err
 	}
 	windowName := safeWindowName(label)
-	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionID, "-n", windowName, "-c", workspace.Repositories[0].Path, "--"}
+	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionID, "-n", windowName, "-c", workspace.Repositories[0].Path}
+	for _, entry := range env {
+		args = append(args, "-e", entry)
+	}
+	args = append(args, "--")
 	args = append(args, command...)
 	pane, err := c.output(nil, args...)
 	if err != nil {

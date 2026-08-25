@@ -1103,6 +1103,7 @@ project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
+pull_requests: []
 created: 2026-08-20
 updated: 2026-08-20
 ---

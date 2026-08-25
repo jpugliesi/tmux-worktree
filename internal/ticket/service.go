@@ -47,6 +47,12 @@ func (s *Service) today() string {
 	return s.now().Format("2006-01-02")
 }
 
+// HomePath returns the cleaned Tickets home for callers that stamp it into
+// an agent environment.
+func (s *Service) HomePath() (string, error) {
+	return s.home()
+}
+
 // home returns the cleaned Tickets home.
 func (s *Service) home() (string, error) {
 	if strings.TrimSpace(s.options.Home) == "" {

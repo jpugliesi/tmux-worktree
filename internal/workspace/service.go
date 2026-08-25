@@ -547,6 +547,7 @@ func (s *Service) ensureTemplateAgent(p domain.Workspace, label string) error {
 		return err
 	}
 	session.PreferProviderResume = declared.PreferProviderResume
+	session.Env = append([]string(nil), declared.Env...)
 	_, ownerID, exists, err := s.findSession(p.ID, p.TmuxSession)
 	if err != nil {
 		return err
@@ -554,7 +555,7 @@ func (s *Service) ensureTemplateAgent(p domain.Workspace, label string) error {
 	if !exists || ownerID != p.ID {
 		return agents.Save(session)
 	}
-	if _, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).StartDeclared(p, session, declared.Start); err != nil {
+	if _, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).StartDeclared(p, session, declared.Start, declared.Env); err != nil {
 		return fmt.Errorf("start Agent Session %q: %w", label, err)
 	}
 	return nil

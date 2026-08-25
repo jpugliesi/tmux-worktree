@@ -127,7 +127,11 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	if err != nil {
 		return domain.LocalDispatchSession{}, err
 	}
-	launchTemplate, label := appendTicketAgent(template, label, launch)
+	home, err := s.options.Tickets.HomePath()
+	if err != nil {
+		return domain.LocalDispatchSession{}, err
+	}
+	launchTemplate, label := appendTicketAgent(template, label, launch, []string{"TWT_TICKETS_HOME=" + home})
 	now := s.options.Now().UTC()
 	session := domain.LocalDispatchSession{
 		Version:        domain.LocalDispatchSessionVersion,
@@ -379,8 +383,10 @@ func (s *Service) finishTicketTransition(session *domain.LocalDispatchSession, t
 }
 
 // appendTicketAgent copies the Template and appends the ticket agent under a
-// label that no declared agent uses.
-func appendTicketAgent(template domain.Template, wantLabel string, launch agentprovider.TicketPlanningLaunch) (domain.Template, string) {
+// label that no declared agent uses. The env pairs land in the agent's tmux
+// window, so the worker's twt commands see the right Tickets home even when
+// the tmux server environment differs.
+func appendTicketAgent(template domain.Template, wantLabel string, launch agentprovider.TicketPlanningLaunch, env []string) (domain.Template, string) {
 	template.Agents = append([]domain.TemplateAgent(nil), template.Agents...)
 	used := make(map[string]bool, len(template.Agents))
 	for _, declared := range template.Agents {
@@ -393,6 +399,7 @@ func appendTicketAgent(template domain.Template, wantLabel string, launch agentp
 	template.Agents = append(template.Agents, domain.TemplateAgent{
 		Label: label, Provider: launch.Provider,
 		Start: append([]string(nil), launch.Start...), Resume: append([]string(nil), launch.Resume...), PreferProviderResume: true,
+		Env: append([]string(nil), env...),
 	})
 	return template, label
 }

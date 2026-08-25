@@ -142,6 +142,9 @@ type TemplateAgent struct {
 	// PreferProviderResume makes a verified linked provider session take
 	// precedence over Resume.
 	PreferProviderResume bool `yaml:"prefer_provider_resume,omitempty" json:"preferProviderResume,omitempty"`
+	// Env sets KEY=VALUE pairs in the Agent Session window, so the agent's
+	// commands see them regardless of the tmux server environment.
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // AgentProviders are the supported Agent Session provider names.
@@ -368,6 +371,12 @@ func validateTemplateAgents(agents []TemplateAgent) error {
 		}
 		if len(agent.Resume) > 0 && strings.TrimSpace(agent.Resume[0]) == "" {
 			return fmt.Errorf("Agent Session %q has an invalid resume command", label)
+		}
+		for _, entry := range agent.Env {
+			key, _, found := strings.Cut(entry, "=")
+			if !found || strings.TrimSpace(key) == "" {
+				return fmt.Errorf("Agent Session %q env entry %q is not KEY=VALUE", label, entry)
+			}
 		}
 	}
 	return nil

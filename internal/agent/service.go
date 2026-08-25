@@ -179,8 +179,8 @@ func (s *Service) attachPane(workspace domain.Workspace, session *domain.AgentSe
 // verifies and claims the new pane, and saves the record. Like BuildSession,
 // it takes no mutation lock: Workspace setup calls it while the caller already
 // holds the global mutation lock, so a lock here would deadlock.
-func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start []string) (domain.AgentSession, error) {
-	pane, err := s.tmux.StartAgent(workspace, session.Label, start)
+func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start, env []string) (domain.AgentSession, error) {
+	pane, err := s.tmux.StartAgent(workspace, session.Label, start, env)
 	if err != nil {
 		return session, err
 	}
@@ -500,7 +500,7 @@ func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) 
 	if s.IsLive(agent) {
 		return agent, s.Focus(agent)
 	}
-	return s.StartDeclared(workspace, agent, EffectiveResumeCommand(agent))
+	return s.StartDeclared(workspace, agent, EffectiveResumeCommand(agent), agent.Env)
 }
 
 // Live returns the Agent Sessions of the Workspace that run live in their

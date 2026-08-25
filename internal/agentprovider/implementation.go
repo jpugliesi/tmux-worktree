@@ -58,7 +58,9 @@ func implementationBaseCommand(provider, executable, level string) []string {
 	case "claude":
 		return []string{executable, "--permission-mode", "bypassPermissions", "--effort", level}
 	case "cursor":
-		return []string{executable, "--force"}
+		// --trust skips the interactive workspace-trust prompt, which would
+		// otherwise hang an unattended run in a fresh worktree.
+		return []string{executable, "--force", "--trust"}
 	case "grok":
 		return []string{executable, "--permission-mode", "bypassPermissions", "--reasoning-effort", level}
 	default:

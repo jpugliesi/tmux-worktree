@@ -20,7 +20,7 @@ func TestAddTicketPlanningAgentUsesTheFirstFreeLabel(t *testing.T) {
 		Provider: "codex", Start: []string{"codex", "PROMPT"}, Resume: []string{"codex"},
 	}
 
-	got := addTicketPlanningAgent(template, launch)
+	got := addTicketPlanningAgent(template, launch, []string{"TWT_TICKETS_HOME=/vault/tickets"})
 	if len(got.Agents) != 4 || got.Agents[3].Label != "ticket-plan-3" {
 		t.Fatalf("generated agents = %+v", got.Agents)
 	}

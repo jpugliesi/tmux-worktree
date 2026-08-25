@@ -24,8 +24,8 @@ func TestBuildTicketImplementationLaunches(t *testing.T) {
 		},
 		{
 			provider:   "cursor",
-			wantStart:  []string{"cursor-agent", "--force", "PROMPT"},
-			wantResume: []string{"cursor-agent", "--force"},
+			wantStart:  []string{"cursor-agent", "--force", "--trust", "PROMPT"},
+			wantResume: []string{"cursor-agent", "--force", "--trust"},
 		},
 		{
 			provider:   "grok",
