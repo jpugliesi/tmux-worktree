@@ -33,6 +33,7 @@ type QueueTicket struct {
 	Dependencies []QueueDependency   `json:"dependencies"`
 	ClaimedBy    string              `json:"claimedBy,omitempty"`
 	Ready        bool                `json:"ready"`
+	PullRequests []string            `json:"pullRequests,omitempty"`
 }
 
 // QueueResult is one consistent view of a Project Ticket graph and its ready
@@ -49,6 +50,16 @@ type QueueResult struct {
 
 // Queue builds one Project queue from one Ticket index snapshot.
 func (s *Service) Queue(projectName string, limit int) (QueueResult, error) {
+	return s.queueGraph(projectName, limit, false)
+}
+
+// Tree builds the Project graph for rendering. includeClosed adds done and
+// wontfix Tickets as nodes; their edges resolve like open ones.
+func (s *Service) Tree(projectName string, includeClosed bool) (QueueResult, error) {
+	return s.queueGraph(projectName, 0, includeClosed)
+}
+
+func (s *Service) queueGraph(projectName string, limit int, includeClosed bool) (QueueResult, error) {
 	if limit < 0 {
 		return QueueResult{}, clierr.New(clierr.InvalidUsage, "--limit must be zero or greater")
 	}
@@ -66,7 +77,10 @@ func (s *Service) Queue(projectName string, limit int) (QueueResult, error) {
 
 	graph := make([]QueueTicket, 0)
 	for _, ticket := range idx.tickets {
-		if ticket.Project != projectName || closedStatus(ticket.Status) {
+		if ticket.Project != projectName {
+			continue
+		}
+		if closedStatus(ticket.Status) && !includeClosed {
 			continue
 		}
 		dependencies := make([]QueueDependency, 0, len(ticket.BlockedBy))
@@ -76,6 +90,7 @@ func (s *Service) Queue(projectName string, limit int) (QueueResult, error) {
 		graph = append(graph, QueueTicket{
 			Slug: ticket.Slug, Title: ticket.Title, Status: ticket.Status, Priority: ticket.Priority,
 			Dependencies: dependencies, ClaimedBy: ticket.ClaimedBy, Ready: idx.ready(ticket),
+			PullRequests: ticket.PullRequests,
 		})
 	}
 	sort.Slice(graph, func(i, j int) bool {

@@ -23,6 +23,7 @@ type Store interface {
 	Resolve(ref string) (domain.Ticket, error)
 	List(filter ListFilter) ([]domain.Ticket, error)
 	Queue(projectName string, limit int) (QueueResult, error)
+	Tree(projectName string, includeClosed bool) (QueueResult, error)
 	Slugs() ([]string, error)
 	Projects() ([]domain.Project, error)
 	Project(name string) (domain.Project, error)
