@@ -65,6 +65,12 @@ type Ticket struct {
 	// PullRequests are the pull request URLs that shipped this Ticket's
 	// work. Workers record them through 'twt tickets complete'.
 	PullRequests []string `yaml:"pull_requests" json:"pullRequests,omitempty"`
+	// PlanApprovedBy and PlanApprovedAt stamp the human approval of the
+	// Ticket's "## Plan" body section. A plan write clears them: a changed
+	// plan needs a new approval. Implementation dispatch refuses a Ticket
+	// whose plan lacks the stamp.
+	PlanApprovedBy string `yaml:"plan_approved_by" json:"planApprovedBy,omitempty"`
+	PlanApprovedAt string `yaml:"plan_approved_at" json:"planApprovedAt,omitempty"`
 	Created     string       `yaml:"created" json:"created"`
 	Updated     string       `yaml:"updated" json:"updated"`
 	// Path is the backend locator of this Ticket (a file path for the

@@ -29,6 +29,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
+		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
 	}
 	for _, testCase := range cases {
 		t.Run(backend+"/"+testCase.name, func(t *testing.T) {
@@ -181,6 +182,39 @@ func testDryRunWritesNothing(t *testing.T, store ticketservice.Store) {
 	}
 	if ticket.ClaimedBy != "" {
 		t.Fatalf("dry run claimed the ticket: %q", ticket.ClaimedBy)
+	}
+}
+
+func testApprovePlanLifecycle(t *testing.T, store ticketservice.Store) {
+	mustCreate(t, store, "fix-auth")
+	if _, err := store.Approve("fix-auth", "human", "", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("approve without a plan = %v, want precondition_failed", err)
+	}
+	if _, err := store.SetPlanSection("fix-auth", "", "Do the thing.", false); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	approved, err := store.Approve("fix-auth", "human", "looks good", false)
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if approved.PlanApprovedBy != "human" || approved.PlanApprovedAt == "" {
+		t.Fatalf("approval stamp = %+v", approved)
+	}
+	// A retry after success is a no-op success, and the first stamp stays.
+	retried, err := store.Approve("fix-auth", "someone-else", "", false)
+	if err != nil {
+		t.Fatalf("approve retry: %v", err)
+	}
+	if retried.PlanApprovedBy != "human" {
+		t.Fatalf("retry overwrote the stamp: %+v", retried)
+	}
+	// A plan rewrite clears the approval: a changed plan needs a new one.
+	replanned, err := store.SetPlanSection("fix-auth", "", "Do it differently.", false)
+	if err != nil {
+		t.Fatalf("rewrite plan: %v", err)
+	}
+	if replanned.PlanApprovedBy != "" || replanned.PlanApprovedAt != "" {
+		t.Fatalf("plan rewrite kept the approval: %+v", replanned)
 	}
 }
 

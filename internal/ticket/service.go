@@ -1199,7 +1199,10 @@ func (s *Service) SetPlanSection(ref, claimant, plan string, dryRun bool) (domai
 		if m.ticket.ClaimedBy != "" && m.ticket.ClaimedBy != claimant {
 			return claimedByOther(m.ticket.Slug, m.ticket.ClaimedBy)
 		}
-		m.file.Body = replaceBodySection(m.file.Body, "Plan", plan)
+		m.file.Body = replaceBodySection(m.file.Body, planHeadingName, plan)
+		// A changed plan needs a new approval.
+		deleteMapKey(m.mapping, "plan_approved_by")
+		deleteMapKey(m.mapping, "plan_approved_at")
 		return nil
 	})
 }
