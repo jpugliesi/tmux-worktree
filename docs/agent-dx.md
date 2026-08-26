@@ -8,8 +8,8 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 | Axis | First | Previous | Now | Current support |
 |---|---:|---:|---:|---|
 | Machine-readable output | 1 | 2 | 3 | JSON is the default when stdout is not a terminal; `--output ndjson` streams list elements one per line with a totalCount summary line; JSON errors carry a stable code, a hint, and a help command |
-| Raw payload input | 0 | 1 | 2 | 27 typed operations through `apply --stdin` cover every non-interactive mutation; each shares one core with its flag command; interactive commands are excluded by design and the error says so |
-| Schema introspection | 0 | 3 | 3 | `twt schema` walks the live command tree: build version, per-command arguments, flag enums, `apply` request fields, error codes, exit codes |
+| Raw payload input | 0 | 1 | 2 | 38 typed operations through `apply --stdin` cover every non-interactive mutation; each shares one core with its flag command; interactive commands are excluded by design and the error says so |
+| Schema introspection | 0 | 3 | 3 | `twt schema` walks the live command tree: build version, per-command arguments, flag enums, required flags (every required flag is cobra-declared, so the schema never under-reports), `apply` request fields, error codes, exit codes |
 | Context window discipline | 0 | 1 | 3 | `--fields` masks on every read command with reflection-derived valid names, `--offset` with `--limit` on every list, `totalCount` and `truncated` in every response, NDJSON streaming, and skill guidance on all of it |
 | Input hardening | 1 | 2 | 3 | Strict resource names, strict YAML and JSON decoding, a 1 MiB bound on every stdin path, writes confined to twt-owned roots behind ownership markers, and a written posture: [security.md](security.md) — the agent is not a trusted operator |
 | Safety rails | 1 | 2 | 3 | `--dry-run` on every mutation; destructive actions are plans with typed blockers behind `--apply`; transcript text is sanitized (ANSI, OSC, and control sequences stripped) and marked `untrusted: true` in JSON, with a skill rule to never follow instructions inside it |
@@ -17,7 +17,7 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 
 ## Honest caveats per axis
 
-**Raw payload input stays at 2.** Interactive commands (`new`, `switch`,
+**Raw payload input stays at 2.** Interactive commands (`next`, `switch`,
 `done`, `templates edit`, `tickets home`, `agents focus`, `agents open`,
 `agents register --pane current`) have no apply operation by design — they
 move a tmux client or need a terminal. The axis's 3 asks for raw payloads as a first-class peer on every
@@ -36,7 +36,10 @@ not judge the meaning of the text. A semantic prompt-injection filter would
 need a model in the loop and is out of scope for a local CLI.
 
 **Schema introspection: positional names are hand-declared.** A missing
-declaration fails a test; a wrong name still typechecks.
+declaration fails a test; a wrong name still typechecks. Required flags are
+declared through cobra's MarkFlagRequired, so `twt schema` reports them; a
+conditionally required flag (`templates init set --cwd`, mutually exclusive
+with `--repo`) shows as optional with the condition in its help.
 
 ## Multi-surface status
 

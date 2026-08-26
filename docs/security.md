@@ -116,7 +116,7 @@ copying does not confirm that another program received the text.
 
 An interactive path opens only for a person at a terminal:
 
-- `twt templates edit`, `twt tickets edit`, `twt tickets home`, and the
+- `twt templates edit`, `twt tickets home`, and the
   create wizard of `twt tickets create` start `VISUAL` or `EDITOR` only when
   standard input is a terminal. The create wizard also asks for a title and
   a Project on that terminal. With a pipe, each one reports `invalid_usage`

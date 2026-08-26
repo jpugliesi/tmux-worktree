@@ -128,9 +128,8 @@ _Avoid_: database, ticket file API
 **Ticket**:
 One Markdown file with YAML frontmatter. A Ticket belongs to one Project. A
 claim gives one worker exclusive work authority. A Ticket can link to one
-active Workspace, one active Cursor Cloud Session, and one active Local
-Dispatch Session; a Local Dispatch Session's Workspace is the Ticket's
-active Workspace, so a local dispatch uses both links. Its directory defines
+active Workspace and one active Local Dispatch Session; the Session's
+Workspace is the Ticket's active Workspace. Its directory defines
 its Project, including below the Closed Tickets directory.
 _Avoid_: Issue, task file, combined tickets note
 
