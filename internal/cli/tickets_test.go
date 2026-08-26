@@ -1487,7 +1487,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	}
 	for _, command := range []string{
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
-		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
+		`"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
 		`"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`,

@@ -17,7 +17,7 @@ guarantees that the CLI keeps.
   changing a different field.
 - **Bounded standard input.** Every command that reads standard input reads
   at most 1 MiB: `twt apply`, `twt templates create --from-stdin`,
-  `twt tickets create --stdin`, `twt tickets edit --stdin`,
+  `twt tickets create --stdin`,
   `twt tickets comment --stdin`, and `twt agents send --stdin`.
 - **Provider session IDs.** A provider session ID must be 3 to 256
   characters, and it may not hold a control character, a path separator, or

@@ -876,30 +876,6 @@ func TestCommentRejectsEmptyText(t *testing.T) {
 	}
 }
 
-func TestEditReplacesBodyOnly(t *testing.T) {
-	service, home := newTestService(t)
-	path := filepath.Join(home, "work.md")
-	writeFixture(t, path, fixture{title: "Work", status: "needs-triage"}.content())
-
-	if _, err := service.Edit("work", "\n\n# Work\n\nNew body.\n\n\n", false); err != nil {
-		t.Fatalf("Edit: %v", err)
-	}
-	content := readFile(t, path)
-	if !strings.HasSuffix(content, "---\n\n# Work\n\nNew body.\n") {
-		t.Fatalf("body not replaced:\n%s", content)
-	}
-	if !strings.Contains(content, "title: \"Work\"\n") || !strings.Contains(content, "status: needs-triage\n") {
-		t.Fatalf("frontmatter changed:\n%s", content)
-	}
-	if !strings.Contains(content, "updated: 2026-08-20\n") {
-		t.Fatalf("updated not bumped:\n%s", content)
-	}
-
-	if _, err := service.Edit("work", " \n ", false); clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("empty Edit = %v, want invalid_usage", err)
-	}
-}
-
 func TestSetValidation(t *testing.T) {
 	service, home := newTestService(t)
 	writeFixture(t, filepath.Join(home, "work.md"), fixture{title: "Work", status: "needs-triage"}.content())
@@ -1066,9 +1042,6 @@ func TestMutationDryRunWritesNothing(t *testing.T) {
 	}
 	if _, err := service.Comment("work", "note", true); err != nil {
 		t.Fatalf("dry-run Comment: %v", err)
-	}
-	if _, err := service.Edit("work", "new body", true); err != nil {
-		t.Fatalf("dry-run Edit: %v", err)
 	}
 	if readFile(t, path) != before {
 		t.Fatal("a dry run changed the file")

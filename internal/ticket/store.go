@@ -40,7 +40,6 @@ type Store interface {
 	WriteProjectPlan(name, content string, dryRun bool) (ProjectPlanResult, error)
 	InitProjectPlan(name string, dryRun bool) (ProjectPlanResult, error)
 	Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, error)
-	Edit(ref, body string, dryRun bool) (domain.Ticket, error)
 	Comment(ref, text string, dryRun bool) (domain.Ticket, error)
 	SetPlanSection(ref, claimant, plan string, dryRun bool) (domain.Ticket, error)
 	Approve(ref, approver, note string, dryRun bool) (domain.Ticket, error)

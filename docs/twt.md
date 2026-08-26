@@ -825,7 +825,6 @@ twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets git-sync
 twt tickets show TICKET
-twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]

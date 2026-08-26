@@ -216,7 +216,7 @@ func TestApplyPlansAndAppliesStorageClean(t *testing.T) {
 	}
 }
 
-func TestApplyEditsAndScaffoldsTickets(t *testing.T) {
+func TestApplyScaffoldsTickets(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	initialized := applyRequest(t, options, `{"operation":"tickets.init"}`)
 	if !strings.Contains(initialized, `"operation":"tickets.init"`) || !strings.Contains(initialized, `"status":"applied"`) {
@@ -226,17 +226,9 @@ func TestApplyEditsAndScaffoldsTickets(t *testing.T) {
 		t.Fatalf("apply tickets.init wrote no index: %v", err)
 	}
 	applyRequest(t, options, `{"operation":"tickets.create","ticket":{"title":"edit me","body":"First body."}}`)
-
-	edited := applyRequest(t, options, `{"operation":"tickets.edit","ticket":{"reference":"edit-me","body":"Second body.\n"}}`)
-	if !strings.Contains(edited, `"operation":"tickets.edit"`) || !strings.Contains(edited, `"status":"applied"`) {
-		t.Fatalf("apply tickets.edit = %s", edited)
-	}
 	content := readTicketFile(t, filepath.Join(home, "edit-me.md"))
-	if !strings.Contains(content, "Second body.") || strings.Contains(content, "First body.") {
-		t.Fatalf("ticket file after tickets.edit:\n%s", content)
-	}
-	if err := applyRequestError(t, options, `{"operation":"tickets.edit","ticket":{"reference":"edit-me"}}`); !strings.Contains(err.Error(), "ticket.body") {
-		t.Fatalf("tickets.edit without a body = %v", err)
+	if !strings.Contains(content, "First body.") {
+		t.Fatalf("ticket file after tickets.create:\n%s", content)
 	}
 }
 
@@ -333,7 +325,7 @@ func TestApplyRefusesInteractiveOperations(t *testing.T) {
 	for _, name := range []string{
 		"templates.remove", "templates.prepare", "templates.init.set", "templates.repos.remove",
 		"workspaces.open", "workspaces.setup.retry", "agents.send", "agents.resume", "agents.rm",
-		"agents.transcript.link", "storage.clean", "tickets.init", "tickets.edit",
+		"agents.transcript.link", "storage.clean", "tickets.init",
 	} {
 		if !strings.Contains(err.Error(), name) {
 			t.Fatalf("the unsupported operation error does not list %q: %v", name, err)

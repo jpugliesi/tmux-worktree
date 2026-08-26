@@ -115,11 +115,6 @@ type ticketSetApplyRequest struct {
 
 // ticketEditApplyRequest replaces the body of one Ticket. Body is a pointer,
 // so apply can tell an absent body from an empty body that clears the text.
-type ticketEditApplyRequest struct {
-	Reference string  `json:"reference"`
-	Body      *string `json:"body"`
-}
-
 type ticketClaimApplyRequest struct {
 	Reference string `json:"reference"`
 	As        string `json:"as"`
@@ -310,10 +305,6 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.priority", Type: "integer", Required: false, Condition: "0 (highest) to 4 (lowest); absent selects 2"},
 			{Path: "ticket.blockedBy", Type: "array[string]", Required: false, Condition: "each value is a slug or wiki-link; absent writes an empty list"},
 		}}, applyTicketsCreate},
-		{applyOperationSchema{Operation: "tickets.edit", Payload: "ticket", Fields: []requestFieldSchema{
-			{Path: "ticket.reference", Type: "string", Required: true},
-			{Path: "ticket.body", Type: "string", Required: true, Condition: "the text replaces the whole body; an empty string clears the body"},
-		}}, applyTicketsEdit},
 		{applyOperationSchema{Operation: "tickets.set", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, ticket.project, or ticket.blockedBy"},
@@ -774,21 +765,6 @@ func applyTicketsInit(command *cobra.Command, options Options, _ applyRequest) e
 		return err
 	}
 	return initializeTicketsHome(command, service)
-}
-
-func applyTicketsEdit(command *cobra.Command, options Options, request applyRequest) error {
-	var payload ticketEditApplyRequest
-	if err := decodeApplyPayload("tickets.edit", "ticket", request.Ticket, &payload); err != nil {
-		return err
-	}
-	if payload.Reference == "" || payload.Body == nil {
-		return fmt.Errorf("ticket.reference and ticket.body are required for tickets.edit")
-	}
-	service, err := options.ticketService()
-	if err != nil {
-		return err
-	}
-	return editTicket(command, service, payload.Reference, *payload.Body)
 }
 
 func applyTicketsCreate(command *cobra.Command, options Options, request applyRequest) error {

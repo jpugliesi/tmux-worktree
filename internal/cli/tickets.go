@@ -50,7 +50,6 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsSyncCommand(options))
 	tickets.AddCommand(newTicketsAbandonCommand(options))
 	tickets.AddCommand(newTicketsShowCommand(options))
-	tickets.AddCommand(newTicketsEditCommand(options))
 	tickets.AddCommand(newTicketsSetCommand(options))
 	tickets.AddCommand(newTicketsClaimCommand(options))
 	tickets.AddCommand(newTicketsStartCommand(options))
@@ -470,75 +469,6 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 	addFieldsFlag(command, ticketShowDetail{})
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
-}
-
-func newTicketsEditCommand(options Options) *cobra.Command {
-	var fromStdin bool
-	command := &cobra.Command{
-		Use:   "edit TICKET [--stdin]",
-		Short: "Replace the body of a Ticket",
-		Args:  exactArgs("TICKET"),
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			if fromStdin {
-				body, err := readTicketStdin(command)
-				if err != nil {
-					return err
-				}
-				return editTicket(command, service, args[0], body)
-			}
-			if !interactiveTicketSession(command) {
-				return invalidUsageWithHint(command, "Pass --stdin when twt runs without a terminal.",
-					"twt tickets edit has no terminal")
-			}
-			resolved, err := service.Resolve(args[0])
-			if err != nil {
-				return err
-			}
-			return runMutation(command, "tickets.edit",
-				func() (string, string, error) {
-					return resolved.Slug, resolved.Title, nil
-				},
-				func() (string, string, error) {
-					if err := options.OpenEditor(resolved.Path); err != nil {
-						return "", "", err
-					}
-					if _, err := service.Show(resolved.Slug); err != nil {
-						return "", "", clierr.WithHint(clierr.Wrap(clierr.UnsafeState, err),
-							"Fix the file %q, then run 'twt tickets show %s'.", resolved.Path, resolved.Slug)
-					}
-					return resolved.Slug, resolved.Title, nil
-				},
-				func(out io.Writer, id, _ string) error {
-					_, err := fmt.Fprintf(out, "Ticket %q is valid\n", id)
-					return err
-				})
-		},
-	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the new body from standard input")
-	setArguments(command, requiredArgument("ticket"))
-	command.ValidArgsFunction = ticketSlugCompletion(options)
-	return command
-}
-
-// editTicket replaces the body of one Ticket from stdin text.
-func editTicket(command *cobra.Command, service ticketservice.Store, ref, body string) error {
-	return runMutation(command, "tickets.edit",
-		func() (string, string, error) {
-			ticket, err := service.Edit(ref, body, true)
-			return ticket.Slug, ticket.Title, err
-		},
-		func() (string, string, error) {
-			ticket, err := service.Edit(ref, body, false)
-			return ticket.Slug, ticket.Title, err
-		},
-		func(out io.Writer, id, _ string) error {
-			_, err := fmt.Fprintf(out, "Replaced the body of ticket %q\n", id)
-			return err
-		})
 }
 
 func newTicketsSetCommand(options Options) *cobra.Command {

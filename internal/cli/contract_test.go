@@ -155,7 +155,6 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt templates repos remove": {"template", "repo"},
 		"twt tickets create":         {"description"},
 		"twt tickets show":           {"ticket"},
-		"twt tickets edit":           {"ticket"},
 		"twt tickets set":            {"ticket"},
 		"twt tickets claim":          {"ticket"},
 		"twt tickets unclaim":        {"ticket"},

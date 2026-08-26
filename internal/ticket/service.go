@@ -1224,22 +1224,6 @@ func (s *Service) SetPlanSection(ref, claimant, plan string, dryRun bool) (domai
 	})
 }
 
-// Edit replaces the whole body of one Ticket. The frontmatter stays as it
-// is, except the updated date and the project heal.
-func (s *Service) Edit(ref, body string, dryRun bool) (domain.Ticket, error) {
-	if strings.TrimSpace(body) == "" {
-		return domain.Ticket{}, clierr.WithHint(
-			clierr.New(clierr.InvalidUsage, "the new body is empty: refusing to erase the ticket body"),
-			"Pass the new body on stdin.")
-	}
-	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
-		return fmt.Sprintf("twt: edit %s", ref)
-	}, func(m *mutation) error {
-		m.file.Body = "\n" + strings.Trim(body, "\n") + "\n"
-		return nil
-	})
-}
-
 // mutation is one in-progress ticket write. apply functions change the
 // mapping nodes, the body, or the destination path. skipWrite ends the
 // mutation with success and without a write.

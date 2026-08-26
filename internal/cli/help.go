@@ -186,9 +186,6 @@ var commandHelp = map[string]helpContent{
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
 	},
-	"twt tickets edit": {
-		long: "Replace the body of one Ticket. With --stdin, twt reads the new body from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on the Ticket file and then validates the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  printf '%s\\n' '# Title' 'New body' | twt tickets edit fix-the-vfs-tools --stdin\n  twt tickets edit fix-the-vfs-tools",
-	},
 	"twt tickets set": {
 		long: "Change the status, the priority, the Project, or blocked_by of one Ticket. Pass at least one flag. A Project change moves the Ticket file into the Project directory. --blocked-by replaces the whole blocker list. Pass an empty value to clear it.", example: "  twt tickets set fix-the-vfs-tools --status done\n  twt tickets set follow-up-work --blocked-by fix-the-vfs-tools\n  twt tickets set follow-up-work --blocked-by \"\"\n  twt tickets set fix-the-vfs-tools --priority 1 --project change-monitor",
 	},
