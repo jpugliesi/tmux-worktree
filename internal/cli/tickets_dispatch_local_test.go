@@ -1,11 +1,13 @@
 package cli_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -259,6 +261,75 @@ func TestProjectsPlanCommands(t *testing.T) {
 		"apply", "--stdin", "--output", "json")
 	if err != nil || !strings.Contains(applyJSON, `"status":"applied"`) {
 		t.Fatalf("apply plan edit = %s err %v", applyJSON, err)
+	}
+}
+
+func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A missing plan is not_found with the init hint, before any editor opens.
+	options.OpenEditor = func(string) error {
+		return fmt.Errorf("the editor must not open for a missing plan")
+	}
+	_, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("edit of a missing plan = %v (code %q)", err, clierr.CodeOf(err))
+	}
+
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without a configured editor the command refuses with invalid_usage.
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+	options.OpenEditor = nil
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("edit without an editor = %v (code %q)", err, clierr.CodeOf(err))
+	}
+
+	// The editor gets a draft seeded with the current plan, and the saved
+	// text lands through the normal write.
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(seed), "# core Plan") {
+			return fmt.Errorf("the draft is not seeded with the plan: %q", seed)
+		}
+		return os.WriteFile(path, []byte("# core Plan\n\nEdited in the editor.\n"), 0o644)
+	}
+	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	if err != nil {
+		t.Fatalf("editor edit: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
+		t.Fatalf("editor edit stdout = %q", stdout)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "Edited in the editor.") {
+		t.Fatalf("plan show after editor edit = %s err %v", showJSON, err)
+	}
+
+	// An empty save refuses instead of erasing plan.md.
+	options.OpenEditor = func(path string) error {
+		return os.WriteFile(path, []byte(" \n"), 0o644)
+	}
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("empty editor save = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "Edited in the editor.") {
+		t.Fatalf("plan content after the empty save = %s err %v", showJSON, err)
 	}
 }
 

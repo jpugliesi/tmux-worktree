@@ -100,7 +100,8 @@ payload shapes from `twt schema`; this skill does not repeat them.
 An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
-applies to `twt templates edit`, `twt agents focus`, `twt agents open`, and
+applies to `twt templates edit`, `twt projects plan edit` without `--stdin`,
+`twt agents focus`, `twt agents open`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
@@ -163,6 +164,14 @@ name, or it creates a missing session:
 twt doctor --output json
 twt workspaces open --all-active --no-attach --dry-run --output json
 twt workspaces open --all-active --no-attach --output json
+```
+
+Rename only the Workspace display name. The ID, paths, branches, tmux session,
+Ticket links, and Agent Sessions stay unchanged.
+
+```bash
+twt workspaces rename WORKSPACE NAME --dry-run --output json
+twt workspaces rename WORKSPACE NAME --output json
 ```
 
 Archive a completed Workspace from outside its tmux session. Archive stops live
@@ -607,7 +616,9 @@ printf '%s' "$PLAN" | twt projects plan edit PROJECT --stdin --output json
 twt projects plan path PROJECT
 ```
 
-`plan edit` is an upsert: it creates plan.md when missing. `plan.md` and
+`plan edit --stdin` is an upsert: it creates plan.md when missing. An agent
+always passes `--stdin`. Without `--stdin` in an interactive terminal,
+`plan edit` opens VISUAL or EDITOR on the existing plan. `plan.md` and
 `index.md` are reserved names; they are never Tickets, and the slugs `plan`
 and `index` are rejected at create.
 

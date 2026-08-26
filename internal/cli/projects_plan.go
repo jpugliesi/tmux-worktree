@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
@@ -55,19 +57,32 @@ func newProjectsPlanShowCommand(options Options) *cobra.Command {
 func newProjectsPlanEditCommand(options Options) *cobra.Command {
 	var fromStdin bool
 	command := &cobra.Command{
-		Use:   "edit PROJECT --stdin",
+		Use:   "edit PROJECT [--stdin]",
 		Short: "Replace the plan document of a Project",
 		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !fromStdin {
-				return invalidUsageWithHint(command, "Pass the plan content on standard input with --stdin.",
-					"missing required flag --stdin")
-			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			content, err := readTicketStdin(command)
+			if fromStdin {
+				content, err := readTicketStdin(command)
+				if err != nil {
+					return err
+				}
+				return editProjectPlan(command, service, args[0], content)
+			}
+			// The editor is an interactive escape: it opens only for a person
+			// at a terminal, so a piped call never blocks in an editor.
+			if !interactiveInput(command.InOrStdin()) {
+				return invalidUsageWithHint(command, "Pass the plan content on standard input with --stdin.",
+					"twt projects plan edit has no terminal")
+			}
+			current, err := service.ProjectPlan(args[0])
+			if err != nil {
+				return err
+			}
+			content, err := readProjectPlanInEditor(command, options, current.Content)
 			if err != nil {
 				return err
 			}
@@ -75,10 +90,40 @@ func newProjectsPlanEditCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
-	_ = command.MarkFlagRequired("stdin")
 	setArguments(command, requiredArgument("project"))
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command
+}
+
+// readProjectPlanInEditor opens VISUAL or EDITOR on a draft copy of the plan
+// and returns the saved text. The plan.md file itself changes only through
+// WriteProjectPlan, so git sync sees every edit.
+func readProjectPlanInEditor(command *cobra.Command, options Options, seed string) (string, error) {
+	temp, err := os.CreateTemp("", "twt-plan-*.md")
+	if err != nil {
+		return "", fmt.Errorf("create the plan draft file: %w", err)
+	}
+	path := temp.Name()
+	defer os.Remove(path)
+	if _, err := temp.WriteString(seed); err != nil {
+		_ = temp.Close()
+		return "", fmt.Errorf("write the plan draft file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return "", fmt.Errorf("write the plan draft file: %w", err)
+	}
+	if err := options.OpenEditor(path); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read the plan draft file: %w", err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "", invalidUsageWithHint(command, "Write the plan and save the file, or pass --stdin.",
+			"the editor saved an empty plan")
+	}
+	return string(data), nil
 }
 
 // editProjectPlan replaces the plan document. Both the projects plan edit

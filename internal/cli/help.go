@@ -102,6 +102,9 @@ var commandHelp = map[string]helpContent{
 	"twt workspaces show": {
 		long: "Show one Workspace by name or immutable ID.", example: "  twt workspaces show fix-auth --output json",
 	},
+	"twt workspaces rename": {
+		long: "Change the display name of a Workspace. The Workspace ID, root, checkouts, branches, tmux session, and Agent Sessions do not change. Without WORKSPACE, twt shows the interactive Workspace picker. Without NAME, twt asks for the new name. Scripts and JSON output require both arguments.", example: "  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
+	},
 	"twt workspaces current": {
 		long: "Find the Workspace for the current directory or tmux pane.", example: "  twt workspaces current",
 	},
@@ -214,7 +217,7 @@ var commandHelp = map[string]helpContent{
 		long: "Print the plan document of a Project. JSON includes the content, path, and updated time. A missing plan is not_found with the init hint.", example: "  twt projects plan show change-monitor\n  twt projects plan show change-monitor --output json",
 	},
 	"twt projects plan edit": {
-		long: "Replace the whole plan document of a Project from standard input. The edit is an upsert: it creates plan.md when missing. Edits through twt trigger the tickets git sync; do not edit plan.md on disk from an agent.", example: "  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor --stdin --output json",
+		long: "Replace the whole plan document of a Project. With --stdin, twt reads the content from standard input, and the edit is an upsert: it creates plan.md when missing. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on a draft of the existing plan and writes the saved result. Edits through twt trigger the tickets git sync; do not edit plan.md on disk from an agent.", example: "  twt projects plan edit change-monitor\n  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor --stdin --output json",
 	},
 	"twt projects plan init": {
 		long: "Create the plan document scaffold (Goals, Non-goals, Design, Milestones, Ticket DAG, Decision log). It refuses an existing plan.md.", example: "  twt projects plan init change-monitor --output json",
