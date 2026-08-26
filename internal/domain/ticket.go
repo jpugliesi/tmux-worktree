@@ -59,6 +59,9 @@ type Ticket struct {
 	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
 	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
 	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
+	// AskStatus remembers the status a Ticket had before an agent parked it
+	// on needs-info with an ask. Answer restores and clears it.
+	AskStatus string `yaml:"twt_ask_status" json:"-"`
 	// PullRequests are the pull request URLs that shipped this Ticket's
 	// work. Workers record them through 'twt tickets complete'.
 	PullRequests []string `yaml:"pull_requests" json:"pullRequests,omitempty"`

@@ -640,6 +640,9 @@ type ListFilter struct {
 	Status     string
 	Ready      bool
 	Claimed    bool
+	// NeedsInput selects Tickets whose agent is waiting on the human:
+	// claimed and parked on needs-info by an ask.
+	NeedsInput bool
 	All        bool
 }
 
@@ -662,6 +665,11 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 		return nil, clierr.WithHint(
 			clierr.New(clierr.InvalidUsage, "--ready and --claimed select different sets"),
 			"Use --ready or --claimed, not both.")
+	}
+	if filter.Ready && filter.NeedsInput {
+		return nil, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "--ready and --needs-input select different sets"),
+			"Use --ready or --needs-input, not both.")
 	}
 	home, err := s.home()
 	if err != nil {
@@ -687,6 +695,9 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 			continue
 		}
 		if filter.Claimed && ticket.ClaimedBy == "" {
+			continue
+		}
+		if filter.NeedsInput && (ticket.ClaimedBy == "" || ticket.Status != domain.TicketNeedsInfo) {
 			continue
 		}
 		tickets = append(tickets, ticket)
