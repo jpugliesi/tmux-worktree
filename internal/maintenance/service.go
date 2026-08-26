@@ -333,6 +333,11 @@ func (s *Service) Doctor() DoctorReport {
 	} else {
 		valid := true
 		for _, workspace := range workspaces {
+			// An adopted Workspace wraps directories twt did not create, so
+			// it never carries an ownership marker.
+			if workspace.Adopted {
+				continue
+			}
 			if err := workspaceservice.ValidateWorkspaceMarker(workspace.Root, workspace.ID); err != nil {
 				report.addFailure("workspace:"+workspace.Name, err.Error())
 				valid = false
