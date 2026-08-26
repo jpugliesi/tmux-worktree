@@ -287,6 +287,15 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 			}
 			continue
 		}
+		if entry.Name() == "plan.md" {
+			project.HasPlan = true
+			planPath := filepath.Join(path, entry.Name())
+			if info, statErr := os.Stat(planPath); statErr == nil {
+				project.PlanUpdatedAt = info.ModTime().UTC().Format(time.RFC3339)
+			}
+			project.PlanTitle = planTitle(planPath)
+			continue
+		}
 		if reservedProjectFile(entry.Name()) {
 			continue
 		}

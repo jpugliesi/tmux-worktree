@@ -253,3 +253,50 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 		t.Fatalf("apply plan JSON = %s", applyJSON)
 	}
 }
+
+func TestProjectsPlanCommands(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core"); err != nil {
+		t.Fatal(err)
+	}
+	initJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core", "--output", "json")
+	if err != nil {
+		t.Fatalf("plan init: %v\n%s", err, initJSON)
+	}
+	if !strings.Contains(initJSON, `"operation":"projects.plan.init"`) || !strings.Contains(initJSON, `"status":"applied"`) {
+		t.Fatalf("plan init JSON = %s", initJSON)
+	}
+	editJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader("# core Plan\n\n## Goals\n\nShip it.\n"),
+		"projects", "plan", "edit", "core", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatalf("plan edit: %v\n%s", err, editJSON)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, "Ship it.") {
+		t.Fatalf("plan show JSON = %s", showJSON)
+	}
+	pathOut, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "path", "core")
+	if err != nil || !strings.Contains(pathOut, "core/plan.md") {
+		t.Fatalf("plan path = %q err %v", pathOut, err)
+	}
+	projectJSON, _, err := executeCollectingInput(t, options, nil, "projects", "show", "core", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(projectJSON, `"hasPlan":true`) || !strings.Contains(projectJSON, `"planTitle":"core Plan"`) {
+		t.Fatalf("projects show lacks plan fields:\n%s", projectJSON)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"projects.plan.edit","project":{"name":"core","plan":"# core Plan\n\nvia apply\n"}}`),
+		"apply", "--stdin", "--output", "json")
+	if err != nil || !strings.Contains(applyJSON, `"status":"applied"`) {
+		t.Fatalf("apply plan edit = %s err %v", applyJSON, err)
+	}
+}

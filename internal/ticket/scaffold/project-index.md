@@ -16,6 +16,7 @@ filters:
     - file.folder == this.file.folder
     - file.ext == "md"
     - file.name != "index"
+    - file.name != "plan"
 views:
   - type: table
     name: Recent

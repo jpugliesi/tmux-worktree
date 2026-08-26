@@ -216,6 +216,21 @@ var commandHelp = map[string]helpContent{
 	"twt tickets doctor": {
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
+	"twt projects plan": {
+		long: "Manage the plan document of a Project: plan.md beside the Project's tickets, Obsidian-visible and git-synced. The plan is the top-level design the human and the PM agent iterate; the ticket DAG mirrors it.", example: "  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
+	},
+	"twt projects plan show": {
+		long: "Print the plan document of a Project. JSON includes the content, path, and updated time. A missing plan is not_found with the init hint.", example: "  twt projects plan show change-monitor\n  twt projects plan show change-monitor --output json",
+	},
+	"twt projects plan edit": {
+		long: "Replace the whole plan document of a Project from standard input. The edit is an upsert: it creates plan.md when missing. Edits through twt trigger the tickets git sync; do not edit plan.md on disk from an agent.", example: "  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor --stdin --output json",
+	},
+	"twt projects plan init": {
+		long: "Create the plan document scaffold (Goals, Non-goals, Design, Milestones, Ticket DAG, Decision log). It refuses an existing plan.md.", example: "  twt projects plan init change-monitor --output json",
+	},
+	"twt projects plan path": {
+		long: "Print the plan document path for editor use. The file itself may not exist yet.", example: "  nvim \"$(twt projects plan path change-monitor)\"",
+	},
 	"twt tickets plan": {
 		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
 	},

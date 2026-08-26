@@ -352,6 +352,10 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the remote Cursor Agent can continue"},
 		}}, applyTicketsCloudAbandon},
 		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
+		{applyOperationSchema{Operation: "projects.plan.edit", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.plan", Type: "string", Required: true, Condition: "replaces the whole plan.md; creates it when missing"},
+		}}, applyProjectsPlanEdit},
 		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.template", Type: "string", Required: false},
@@ -852,6 +856,26 @@ type ticketPlanApplyRequest struct {
 	Reference string `json:"reference"`
 	Plan      string `json:"plan"`
 	As        string `json:"as,omitempty"`
+}
+
+type projectPlanApplyRequest struct {
+	Name string `json:"name"`
+	Plan string `json:"plan"`
+}
+
+func applyProjectsPlanEdit(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectPlanApplyRequest
+	if err := decodeApplyPayload("projects.plan.edit", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Plan == "" {
+		return fmt.Errorf("project.name and project.plan are required for projects.plan.edit")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return editProjectPlan(command, service, payload.Name, payload.Plan)
 }
 
 func applyTicketsPlan(command *cobra.Command, options Options, request applyRequest) error {

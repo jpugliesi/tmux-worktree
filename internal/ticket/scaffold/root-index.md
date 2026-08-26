@@ -16,6 +16,7 @@ filters:
     - file.inFolder("{{FOLDER}}")
     - file.ext == "md"
     - file.name != "index"
+    - file.name != "plan"
     - '!file.inFolder("{{FOLDER}}/templates")'
     - '!file.inFolder("{{FOLDER}}/closed")'
 views:

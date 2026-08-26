@@ -27,6 +27,8 @@ type Store interface {
 	Projects() ([]domain.Project, error)
 	Project(name string) (domain.Project, error)
 	HomePath() (string, error)
+	ProjectPlan(name string) (ProjectPlanResult, error)
+	ProjectPlanPath(name string) (ProjectPlanResult, error)
 
 	// Writes.
 	Init(dryRun bool) (InitResult, error)
@@ -34,6 +36,8 @@ type Store interface {
 	CreateProject(name string, dryRun bool) (domain.Project, error)
 	CreateProjectWithTemplate(name, templateName string, dryRun bool) (domain.Project, error)
 	SetProjectTemplate(name, templateName string, dryRun bool) (domain.Project, error)
+	WriteProjectPlan(name, content string, dryRun bool) (ProjectPlanResult, error)
+	InitProjectPlan(name string, dryRun bool) (ProjectPlanResult, error)
 	Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, error)
 	Edit(ref, body string, dryRun bool) (domain.Ticket, error)
 	Comment(ref, text string, dryRun bool) (domain.Ticket, error)

@@ -30,6 +30,7 @@ func newProjectsCommand(options Options) *cobra.Command {
 	projects.AddCommand(newProjectsSetCommand(options))
 	projects.AddCommand(newProjectsListCommand(options))
 	projects.AddCommand(newProjectsShowCommand(options))
+	projects.AddCommand(newProjectsPlanCommand(options))
 	return projects
 }
 

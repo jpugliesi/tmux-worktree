@@ -77,6 +77,11 @@ type Project struct {
 	Tickets      int    `json:"tickets"`
 	HasIndex     bool   `json:"hasIndex"`
 	TemplateName string `json:"templateName,omitempty"`
+	// HasPlan reports a plan.md in the Project directory. PlanUpdatedAt is
+	// its RFC3339 mtime and PlanTitle its first H1 heading.
+	HasPlan       bool   `json:"hasPlan"`
+	PlanUpdatedAt string `json:"planUpdatedAt,omitempty"`
+	PlanTitle     string `json:"planTitle,omitempty"`
 }
 
 // Validate checks a Ticket before a write. Reads stay tolerant; this check
