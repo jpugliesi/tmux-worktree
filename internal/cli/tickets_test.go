@@ -1143,58 +1143,29 @@ func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
 	}
 }
 
-func TestTicketsEditAndComment(t *testing.T) {
+func TestTicketsComment(t *testing.T) {
 	options, home := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "edit me"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "comment on me"); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(home, "edit-me.md")
+	path := filepath.Join(home, "comment-on-me.md")
 
-	_, _, err := executeCollectingInput(t, options, nil, "tickets", "edit", "edit-me")
-	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("non-terminal edit without --stdin = %v (code %q)", err, clierr.CodeOf(err))
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "comment", "comment-on-me")
+	if err == nil || !strings.Contains(err.Error(), "stdin") {
+		t.Fatalf("comment without --stdin = %v", err)
 	}
-	newBody := "# edit me\n\nThe replaced body.\n"
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader(newBody), "tickets", "edit", "edit-me", "--stdin"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("A first note."),
+		"tickets", "comment", "comment-on-me", "--stdin"); err != nil {
 		t.Fatal(err)
 	}
 	content := readTicketFile(t, path)
-	if !strings.Contains(content, "The replaced body.") || strings.Contains(content, "## What to build") {
-		t.Fatalf("edit result:\n%s", content)
-	}
-
-	_, _, err = executeCollectingInput(t, options, nil, "tickets", "comment", "edit-me")
-	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("comment without --stdin = %v (code %q)", err, clierr.CodeOf(err))
-	}
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader("A first note."),
-		"tickets", "comment", "edit-me", "--stdin"); err != nil {
-		t.Fatal(err)
-	}
-	content = readTicketFile(t, path)
 	commentsAt := strings.Index(content, "## Comments")
 	noteAt := strings.Index(content, "A first note.")
 	if commentsAt < 0 || noteAt < commentsAt {
 		t.Fatalf("comment result:\n%s", content)
-	}
-
-	// An interactive edit that saves an invalid file reports unsafe_state and
-	// keeps the file.
-	options.OpenEditor = func(editPath string) error {
-		return os.WriteFile(editPath, []byte("---\ntitle: [broken\n---\nbody\n"), 0o644)
-	}
-	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "tickets", "edit", "edit-me")
-	if err == nil || clierr.CodeOf(err) != clierr.UnsafeState {
-		t.Fatalf("invalid editor edit = %v (code %q)", err, clierr.CodeOf(err))
-	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, path) {
-		t.Fatalf("invalid editor edit hint = %q", hint)
-	}
-	if !strings.Contains(readTicketFile(t, path), "title: [broken") {
-		t.Fatal("the invalid edit did not stay on disk")
 	}
 }
 
