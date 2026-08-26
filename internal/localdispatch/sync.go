@@ -35,12 +35,20 @@ type WorkspaceObserver interface {
 // Stable local sync diagnostic codes. These are states, not errors.
 const (
 	SyncFindingStuck             = "stuck"
+	SyncFindingWaitingOnInput    = "waiting_on_input"
 	SyncFindingObserveIncomplete = "observe_incomplete"
 	SyncFindingWorkspaceMissing  = "workspace_missing"
 	SyncFindingTicketMissing     = "ticket_missing"
 	SyncFindingClaimReleased     = "claim_released"
 	SyncFindingSyncFailed        = "sync_failed"
 )
+
+// informationalFinding names codes that describe a healthy-but-waiting
+// state. They never make capacity unknown: a waiting session still holds
+// its slot legitimately.
+func informationalFinding(code string) bool {
+	return code == SyncFindingWaitingOnInput
+}
 
 // Diagnostic is one per-session sync finding.
 type Diagnostic struct {
@@ -49,6 +57,9 @@ type Diagnostic struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
 	Hint      string `json:"hint,omitempty"`
+	// Informational marks a state report (such as waiting_on_input) that
+	// needs the human but does not block coordination.
+	Informational bool `json:"informational,omitempty"`
 }
 
 // Capacity is the local dispatch budget of one Project.
@@ -150,6 +161,25 @@ func (s *Service) reconcileActive(session *domain.LocalDispatchSession, dryRun b
 			return &finding{code: SyncFindingWorkspaceMissing,
 				message: fmt.Sprintf("the Workspace %q of Session %q is missing or archived while the Ticket stays claimed", session.WorkspaceID, session.ID),
 				hint:    "Release the Ticket with 'twt tickets abandon " + session.ID[:8] + " --force'."}
+		}
+		if ticket.Status == domain.TicketNeedsInfo {
+			// The agent asked the human and waits. Live or not, this is a
+			// state report for the board, never a stuck escalation.
+			if observation.Found && observation.Live {
+				if !dryRun {
+					session.Status = domain.LocalDispatchRunning
+					session.UpdatedAt = now
+					if err := s.sessions.Save(*session); err != nil {
+						return err
+					}
+				}
+				return &finding{code: SyncFindingWaitingOnInput,
+					message: fmt.Sprintf("the agent of Session %q is waiting on your input for ticket %q", session.ID, session.TicketSlug),
+					hint:    "Answer with 'printf ANSWER | twt tickets answer " + session.TicketSlug + " --stdin'."}
+			}
+			return &finding{code: SyncFindingWaitingOnInput,
+				message: fmt.Sprintf("Session %q asked a question and its agent exited; ticket %q waits on your input", session.ID, session.TicketSlug),
+				hint:    "Answer with 'twt tickets answer " + session.TicketSlug + " --stdin', then 'twt agents resume'."}
 		}
 		if observation.Found && observation.Live {
 			if dryRun {
@@ -256,7 +286,13 @@ func setLocalCapacity(result *SyncResult, maximum int) {
 	if available < 0 {
 		available = 0
 	}
-	known := len(result.Diagnostics) == 0
+	known := true
+	for _, diagnostic := range result.Diagnostics {
+		if !diagnostic.Informational {
+			known = false
+			break
+		}
+	}
 	if !known {
 		available = 0
 	}
@@ -267,7 +303,8 @@ func localDiagnostic(session domain.LocalDispatchSession, err error) Diagnostic 
 	var found *finding
 	if errors.As(err, &found) {
 		return Diagnostic{SessionID: session.ID, Ticket: session.TicketSlug,
-			Code: found.code, Message: found.message, Hint: found.hint}
+			Code: found.code, Message: found.message, Hint: found.hint,
+			Informational: informationalFinding(found.code)}
 	}
 	code := string(clierr.CodeOf(err))
 	if code == string(clierr.Internal) {

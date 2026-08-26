@@ -1,6 +1,7 @@
 package localdispatch
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -271,5 +272,58 @@ func TestAbandonPreservesANewerTicketClaim(t *testing.T) {
 	claimed, _ := fixture.tickets.Resolve(ticket.Slug)
 	if claimed.ClaimedBy != "human-user" {
 		t.Fatalf("abandon touched a newer claim: %q", claimed.ClaimedBy)
+	}
+}
+
+func TestSyncReportsWaitingOnInputWithoutBlockingCapacity(t *testing.T) {
+	fixture := withObserver(newLocalFixture(t), &fakeObserver{observation: AgentObservation{Complete: true, Found: true, Live: true}})
+	ticket := fixture.createTicket(t, "Fix auth")
+	session := dispatchRunning(t, fixture, ticket.Slug)
+	if _, err := fixture.tickets.Ask(ticket.Slug, session.Claimant, "Which provider?", false); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := fixture.service.Sync("core", false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	codes := diagnosticCodes(result)
+	if !codes[SyncFindingWaitingOnInput] || codes[SyncFindingStuck] {
+		t.Fatalf("diagnostics = %+v", result.Diagnostics)
+	}
+	if !result.Diagnostics[0].Informational {
+		t.Fatal("waiting_on_input is not marked informational")
+	}
+	// Waiting is healthy: capacity stays known and the session holds a slot.
+	if !result.Capacity.Known || result.Capacity.Active != 1 || result.Capacity.Available != 1 {
+		t.Fatalf("capacity = %+v", result.Capacity)
+	}
+	claimed, err := fixture.tickets.Resolve(ticket.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ClaimedBy != session.Claimant {
+		t.Fatal("sync released the claim of a waiting ticket")
+	}
+}
+
+func TestSyncWaitingWithDeadAgentIsNotStuck(t *testing.T) {
+	fixture := withObserver(newLocalFixture(t), &fakeObserver{observation: AgentObservation{Complete: true, Found: true, Live: false}})
+	ticket := fixture.createTicket(t, "Fix auth")
+	session := dispatchRunning(t, fixture, ticket.Slug)
+	if _, err := fixture.tickets.Ask(ticket.Slug, session.Claimant, "Which provider?", false); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := fixture.service.Sync("core", false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	codes := diagnosticCodes(result)
+	if !codes[SyncFindingWaitingOnInput] || codes[SyncFindingStuck] {
+		t.Fatalf("diagnostics = %+v", result.Diagnostics)
+	}
+	if !strings.Contains(result.Diagnostics[0].Hint, "twt agents resume") {
+		t.Fatalf("dead-agent waiting hint = %q", result.Diagnostics[0].Hint)
 	}
 }
