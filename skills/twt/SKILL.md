@@ -540,6 +540,28 @@ requests: `needs-input` (claimed, waiting on the human), `in-progress`
 `ready-for-human`, or every pull request is merged), `ready`, `blocked`,
 `done`, `wontfix`.
 
+### Stack pull requests on origin
+
+A Template with `local_dispatch.stacking: true` lets dispatch start a
+dependent Ticket before its blocker merges. The queue reports the second
+tier under `stackReady`: Tickets whose open blockers are each in review
+with a pull request. A coordinator dispatches `stackReady` only after the
+true-ready work, with the same dispatch command; twt then claims through
+the stack path, records the parent as `twt_base`
+("blocker-slug@branch") on the Ticket, and starts the Workspace from the
+blocker's branch instead of the default branch. The worker creates its
+pull request as a stack member (`origin pr create --stack-on PARENT_PR`).
+Stacking needs the blocker's Workspace on the same machine, exactly one
+open blocker, and (v1) an origin-host repository.
+
+Babysit stacks in the coordinator loop: for each claimed Ticket that
+carries `twt_base`, watch the parent pull request state on the board or
+tree. When the parent branch moves (a new push or a merge), nudge the
+dependent's live session with `twt agents send`: "parent branch moved:
+rebase onto the parent tip and push". When the parent merges and its
+Ticket closes, the dependent continues unchanged; origin retargets the
+stack member.
+
 ### Project plans and Ticket plans
 
 A Project can carry a plan document, `plan.md`, beside its Tickets. It is the
