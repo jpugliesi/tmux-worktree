@@ -106,6 +106,12 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	if err != nil {
 		return domain.LocalDispatchSession{}, err
 	}
+	// A planned Ticket needs an approved plan before implementation.
+	if options.Mode == domain.CursorCloudModeAgent {
+		if err := ticketservice.RequireApprovedPlan(shown); err != nil {
+			return domain.LocalDispatchSession{}, err
+		}
+	}
 	id, err := s.options.NewID()
 	if err != nil {
 		return domain.LocalDispatchSession{}, fmt.Errorf("create local dispatch Session ID: %w", err)

@@ -64,6 +64,12 @@ func (s *Service) Dispatch(ctx context.Context, options DispatchOptions) (domain
 	if err != nil {
 		return domain.CursorCloudSession{}, err
 	}
+	// A planned Ticket needs an approved plan before implementation.
+	if options.Mode == domain.CursorCloudModeAgent {
+		if err := ticketservice.RequireApprovedPlan(shown); err != nil {
+			return domain.CursorCloudSession{}, err
+		}
+	}
 	id, err := s.options.NewID()
 	if err != nil {
 		return domain.CursorCloudSession{}, fmt.Errorf("create Cursor Cloud Session ID: %w", err)

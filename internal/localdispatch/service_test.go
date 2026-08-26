@@ -354,6 +354,28 @@ func TestDispatchRefusesATicketThatIsNotReady(t *testing.T) {
 	}
 }
 
+func TestDispatchGatesAnUnapprovedPlan(t *testing.T) {
+	fixture := newLocalFixture(t)
+	ticket := fixture.createTicket(t, "Fix auth")
+	if _, err := fixture.tickets.SetPlanSection(ticket.Slug, "", "1. Do the thing.", false); err != nil {
+		t.Fatal(err)
+	}
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	if clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("unapproved-plan dispatch error = %v, want precondition_failed", err)
+	}
+	// Plan-mode dispatch stays free: that is how plans get written.
+	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModePlan, DryRun: true}); err != nil {
+		t.Fatalf("plan-mode dispatch gated: %v", err)
+	}
+	if _, err := fixture.tickets.Approve(ticket.Slug, "john", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent, DryRun: true}); err != nil {
+		t.Fatalf("approved-plan dispatch: %v", err)
+	}
+}
+
 func TestDispatchFailsFastWhenTheProviderIsNotInstalled(t *testing.T) {
 	fixture := newLocalFixture(t)
 	ticket := fixture.createTicket(t, "Fix auth")
