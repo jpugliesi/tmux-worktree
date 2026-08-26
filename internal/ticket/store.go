@@ -44,6 +44,8 @@ type Store interface {
 	SetPlanSection(ref, claimant, plan string, dryRun bool) (domain.Ticket, error)
 	Ask(ref, claimant, text string, dryRun bool) (domain.Ticket, error)
 	Answer(ref, text string, dryRun bool) (domain.Ticket, error)
+	AddPullRequests(ref, claimant string, urls []string, dryRun bool) (domain.Ticket, error)
+	RemovePullRequests(ref, claimant string, urls []string, dryRun bool) (domain.Ticket, error)
 	SetWorkspace(ref, workspaceID string, dryRun bool) (domain.Ticket, error)
 
 	// Claim lifecycle (compare-and-set).

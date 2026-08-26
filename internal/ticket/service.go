@@ -965,6 +965,95 @@ func (s *Service) CompleteWork(ref, claimant string, status domain.TicketStatus,
 	})
 }
 
+// AddPullRequests attaches URLs to a Ticket without touching its status or
+// claim, so a worker can link its PR the moment it exists and keep working.
+// A claimed Ticket requires the matching claimant; an unclaimed Ticket
+// accepts any.
+func (s *Service) AddPullRequests(ref, claimant string, urls []string, dryRun bool) (domain.Ticket, error) {
+	normalized, err := normalizePullRequestURLs(urls)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: pr add %s", ref)
+	}, func(m *mutation) error {
+		if err := guardPullRequestClaim(m, claimant); err != nil {
+			return err
+		}
+		merged, changed := mergePullRequests(m.ticket.PullRequests, normalized)
+		if !changed {
+			m.skipWrite = true
+			return nil
+		}
+		setMapStringList(m.mapping, "pull_requests", merged)
+		return nil
+	})
+}
+
+// RemovePullRequests detaches URLs. Removing an absent URL is a no-op, the
+// same retry contract as the merge.
+func (s *Service) RemovePullRequests(ref, claimant string, urls []string, dryRun bool) (domain.Ticket, error) {
+	normalized, err := normalizePullRequestURLs(urls)
+	if err != nil {
+		return domain.Ticket{}, err
+	}
+	return s.mutate(ref, dryRun, false, syncRequired, func() string {
+		return fmt.Sprintf("twt: pr rm %s", ref)
+	}, func(m *mutation) error {
+		if err := guardPullRequestClaim(m, claimant); err != nil {
+			return err
+		}
+		drop := make(map[string]bool, len(normalized))
+		for _, value := range normalized {
+			drop[value] = true
+		}
+		kept := make([]string, 0, len(m.ticket.PullRequests))
+		for _, value := range m.ticket.PullRequests {
+			if !drop[value] {
+				kept = append(kept, value)
+			}
+		}
+		if len(kept) == len(m.ticket.PullRequests) {
+			m.skipWrite = true
+			return nil
+		}
+		setMapStringList(m.mapping, "pull_requests", kept)
+		return nil
+	})
+}
+
+func guardPullRequestClaim(m *mutation, claimant string) error {
+	if m.ticket.ClaimedBy == "" {
+		return nil
+	}
+	if claimant == "" {
+		return clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "ticket %q is claimed by %q", m.ticket.Slug, m.ticket.ClaimedBy),
+			"Pass --as with the matching claimant.")
+	}
+	if m.ticket.ClaimedBy != claimant {
+		return claimedByOther(m.ticket.Slug, m.ticket.ClaimedBy)
+	}
+	return nil
+}
+
+func normalizePullRequestURLs(urls []string) ([]string, error) {
+	if len(urls) == 0 {
+		return nil, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "no pull request URL was given"),
+			"Pass at least one --pr URL.")
+	}
+	normalized := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		value := strings.TrimSpace(raw)
+		if err := validatePullRequestURL(value); err != nil {
+			return nil, clierr.Wrap(clierr.InvalidUsage, err)
+		}
+		normalized = append(normalized, value)
+	}
+	return normalized, nil
+}
+
 // validatePullRequestURL accepts only HTTPS URLs with a host.
 func validatePullRequestURL(value string) error {
 	parsed, err := url.Parse(value)
