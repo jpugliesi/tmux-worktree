@@ -105,6 +105,12 @@ func ValidTicketSlug(slug string) bool {
 	return len(slug) <= TicketSlugMaxLength && ticketSlugPattern.MatchString(slug)
 }
 
+// ReservedTicketSlug names slugs that would collide with the reserved
+// Project metadata files (index.md, plan.md).
+func ReservedTicketSlug(slug string) bool {
+	return slug == "index" || slug == "plan"
+}
+
 // Slugify derives a kebab slug from a title. It lowercases ASCII letters,
 // turns each run of other ASCII characters into one hyphen, strips non-ASCII
 // characters, trims hyphens, and caps the result at TicketSlugMaxLength. A

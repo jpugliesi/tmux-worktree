@@ -288,6 +288,9 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 			}
 			continue
 		}
+		if reservedProjectFile(entry.Name()) {
+			continue
+		}
 		project.Tickets++
 	}
 	closedPath := filepath.Join(home, closedDirectoryName, name)
@@ -303,7 +306,7 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 		return domain.Project{}, fmt.Errorf("read closed Tickets for Project %q: %w", name, closedErr)
 	}
 	for _, entry := range closedEntries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") && entry.Name() != "index.md" {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") && !reservedProjectFile(entry.Name()) {
 			project.Tickets++
 		}
 	}
@@ -432,6 +435,11 @@ func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, erro
 				clierr.New(clierr.InvalidUsage, "title %q produces an empty slug", title),
 				"Pass --slug.")
 		}
+	}
+	if domain.ReservedTicketSlug(slug) {
+		return CreateResult{}, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "the slug %q is reserved for Project metadata files", slug),
+			"Pass --slug to select a different slug.")
 	}
 	blockedBy, err := normalizeBlockedBy(req.BlockedBy)
 	if err != nil {

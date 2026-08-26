@@ -183,7 +183,7 @@ func auditTickets(home string) (TicketDoctorReport, error) {
 			})
 			return nil
 		}
-		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".md") || entry.Name() == "index.md" {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".md") || reservedProjectFile(entry.Name()) {
 			return nil
 		}
 		slug := strings.TrimSuffix(entry.Name(), ".md")
