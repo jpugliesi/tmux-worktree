@@ -36,7 +36,7 @@ type ticketsSyncOutput struct {
 func newTicketsSyncCommand(options Options) *cobra.Command {
 	var project string
 	command := &cobra.Command{
-		Use:   "sync [--project PROJECT]",
+		Use:   "sync",
 		Short: "Sync the Tickets home and dispatch Sessions with Ticket states",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
