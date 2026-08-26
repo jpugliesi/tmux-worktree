@@ -355,3 +355,36 @@ func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 		t.Fatalf("apply ask dry run = %s err %v", applyJSON, err)
 	}
 }
+
+func TestTicketsPRAddAndRemove(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	addJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "pr", "add", "fix-auth", "--pr", "https://origin.cursor.com/acme/api/pull/7", "--output", "json")
+	if err != nil {
+		t.Fatalf("pr add: %v\n%s", err, addJSON)
+	}
+	if !strings.Contains(addJSON, `"operation":"tickets.pr-add"`) || !strings.Contains(addJSON, `"status":"applied"`) {
+		t.Fatalf("pr add JSON = %s", addJSON)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, `"pullRequests":["https://origin.cursor.com/acme/api/pull/7"]`) ||
+		!strings.Contains(showJSON, `"status":"ready-for-agent"`) {
+		t.Fatalf("show after pr add = %s", showJSON)
+	}
+	rmJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.pr-rm","ticket":{"reference":"fix-auth","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
+		"apply", "--stdin", "--output", "json")
+	if err != nil || !strings.Contains(rmJSON, `"status":"applied"`) {
+		t.Fatalf("apply pr rm = %s err %v", rmJSON, err)
+	}
+}

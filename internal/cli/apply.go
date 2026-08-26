@@ -353,6 +353,16 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.text", Type: "string", Required: true},
 			{Path: "ticket.agent", Type: "string", Required: false, Condition: "relay target when several agent sessions are live"},
 		}}, applyTicketsAnswer},
+		{applyOperationSchema{Operation: "tickets.pr-add", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.pullRequests", Type: "array[string]", Required: true},
+			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
+		}}, applyTicketsPRAdd},
+		{applyOperationSchema{Operation: "tickets.pr-rm", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.pullRequests", Type: "array[string]", Required: true},
+			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
+		}}, applyTicketsPRRemove},
 		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
 			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
@@ -943,6 +953,41 @@ func applyTicketsAnswer(command *cobra.Command, options Options, request applyRe
 		return err
 	}
 	return answerTicket(command, options, service, payload.Reference, payload.Agent, payload.Text)
+}
+
+type ticketPRApplyRequest struct {
+	Reference    string   `json:"reference"`
+	PullRequests []string `json:"pullRequests"`
+	As           string   `json:"as,omitempty"`
+}
+
+func applyTicketsPRAdd(command *cobra.Command, options Options, request applyRequest) error {
+	return applyTicketPRs(command, options, request, "tickets.pr-add")
+}
+
+func applyTicketsPRRemove(command *cobra.Command, options Options, request applyRequest) error {
+	return applyTicketPRs(command, options, request, "tickets.pr-rm")
+}
+
+func applyTicketPRs(command *cobra.Command, options Options, request applyRequest, operation string) error {
+	var payload ticketPRApplyRequest
+	if err := decodeApplyPayload(operation, "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || len(payload.PullRequests) == 0 {
+		return fmt.Errorf("ticket.reference and ticket.pullRequests are required for %s", operation)
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	run := service.AddPullRequests
+	format := "Attached %d pull request(s) to ticket %q\n"
+	if operation == "tickets.pr-rm" {
+		run = service.RemovePullRequests
+		format = "Detached %d pull request(s) from ticket %q\n"
+	}
+	return mutateTicketPRs(command, service, operation, payload.Reference, payload.As, payload.PullRequests, run, format)
 }
 
 func applyTicketsComplete(command *cobra.Command, options Options, request applyRequest) error {

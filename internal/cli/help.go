@@ -237,6 +237,15 @@ var commandHelp = map[string]helpContent{
 	"twt tickets answer": {
 		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --agent AGENT_ID --output json",
 	},
+	"twt tickets pr": {
+		long: "Manage the pull request URLs linked to a Ticket. URLs are the canonical record in the ticket frontmatter; live PR state is fetched on demand by the board and tree views.", example: "  twt tickets pr add fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --as CLAIMANT --output json",
+	},
+	"twt tickets pr add": {
+		long: "Attach pull request URLs to a Ticket without changing its status or claim. Run it the moment the PR exists so the board tracks it; tickets complete later dedupes the same URLs. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets pr add fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --as twt-local-01234567 --output json",
+	},
+	"twt tickets pr rm": {
+		long: "Detach pull request URLs from a Ticket. Removing an absent URL is a no-op. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets pr rm fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --output json",
+	},
 	"twt tickets plan": {
 		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
 	},
