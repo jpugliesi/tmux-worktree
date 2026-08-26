@@ -72,7 +72,10 @@ repositories:
 	}
 
 	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
-	assertFileLines(t, initLog, []string{"initialized"})
+	// No immediate init-log assert here: the claim triggers the background
+	// refill, whose own init can land at any moment. The stable wait below
+	// carries the invariant (the claim itself never reruns init: the total
+	// stays at two).
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +198,10 @@ repositories:
 	}
 
 	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")
-	assertFileLines(t, initLog, []string{"initialized"})
+	// No immediate init-log assert here: the claim triggers the background
+	// refill, whose own init can land at any moment. The stable wait below
+	// carries the invariant (the claim itself never reruns init: the total
+	// stays at two).
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("first")
 	if err != nil {
 		t.Fatal(err)
