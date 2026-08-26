@@ -342,7 +342,7 @@ A coordinator runs one wave and then stops:
 ```sh
 twt tickets sync --project PROJECT --dry-run --output json
 twt tickets sync --project PROJECT --output json
-twt tickets queue --project PROJECT --limit AVAILABLE --output json
+twt projects show PROJECT --output json
 twt tickets dispatch TICKET --dry-run --output json
 twt tickets dispatch TICKET --output json
 ```
@@ -350,12 +350,22 @@ twt tickets dispatch TICKET --output json
 `tickets sync` reports each backend under `backends` with its own
 `capacity`, `sessions`, and `diagnostics`. Check `capacity.known` for each
 backend. If it is false, do not dispatch on that backend; read the
-diagnostics. If it is true, pass the combined `capacity.available` to queue
-as `--limit`. Dispatch only the Tickets in `ready`. Run dispatch once for
-each selected Ticket. Add `--plan` only when the user asks for a plan. A
-normal dispatch asks the agent to implement the Ticket, run tests, create a
-pull request for each changed repository, and then report through
-`twt tickets complete`.
+diagnostics. A `waiting_on_input` diagnostic is informational: the Ticket
+waits on the human, and it does not block capacity.
+
+`projects show` is the single coordinator read after sync. Act on its
+sections in this order:
+
+1. `waitingOnYou`: surface each question to the human. Do not dispatch these
+   Tickets.
+2. `inReview` with `prStates`: when every pull request of a Ticket is
+   `merged`, close the Ticket (`twt tickets close`). Merged means done, and
+   the close unblocks the dependents.
+3. `ready`: dispatch up to the combined `capacity.available`, one dispatch
+   command for each Ticket. Add `--plan` only when the user asks for a plan.
+   A normal dispatch asks the agent to implement the Ticket, run tests,
+   attach each pull request with `twt tickets pr add` as soon as it exists,
+   and then report through `twt tickets complete`.
 
 The worker contract: a local implementation agent finishes with
 `twt tickets complete TICKET --as CLAIMANT --pr URL`, which records the pull
@@ -483,6 +493,49 @@ into the asking agent's live tmux pane on the same machine (best-effort; the
 Ticket carries the durable copy, and a stopped agent reads it on
 `twt agents resume`). When the human replies in the agent's pane instead,
 the agent records it itself with the same answer command.
+
+### Pull requests, the tree, and the board
+
+A Ticket carries its pull request URLs in the `pull_requests` frontmatter.
+Attach or detach them at any time; the commands change no status and no
+claim. A claimed Ticket requires the matching `--as` claimant:
+
+```sh
+twt tickets pr add TICKET --pr URL --as CLAIMANT --output json
+twt tickets pr rm TICKET --pr URL --as CLAIMANT --output json
+```
+
+Live pull request state (open, merged, checks, review decision) comes from
+the forge CLIs (`gh` for github.com, `origin` for origin.cursor.com) with a
+short cache in the state directory. A read never fails on a fetch problem;
+it degrades to `unknown` with a hint. Pass `--no-fetch` to use only the
+cache.
+
+Two views render progress. The tree shows the dependency DAG with one line
+per Ticket (slug, priority, derived state, claimant, PR badge):
+
+```sh
+twt tickets tree --project PROJECT --output json
+twt tickets tree --project PROJECT --all --no-fetch
+```
+
+The board is `twt projects show PROJECT`. The text form prints the sections
+WAITING ON YOU, IN PROGRESS (with the newest dispatch Session per Ticket),
+IN REVIEW (with PR badges and an `all PRs merged; close it` marker), READY,
+BLOCKED, and DONE, plus a freshness footer. The JSON form adds
+`waitingOnYou`, `inProgress`, `inReview`, `blocked`, `done`, `sessions`,
+`prStates`, and `storeAsOf`. `storeAsOf` is the last successful exchange
+with the tickets remote on this machine; sessions come from the last sync,
+never from a live probe. Reads stay offline-fast by default. Pass `--fresh`
+on `tickets list`, `tickets tree`, or `projects show` to sync the store
+before the read (a sync failure degrades to a warning), or run
+`twt tickets sync` first when session liveness matters too.
+
+The state column of `twt tickets list` derives from status, claim, and pull
+requests: `needs-input` (claimed, waiting on the human), `in-progress`
+(claimed), `in-review` (pull requests exist and the Ticket is
+`ready-for-human`, or every pull request is merged), `ready`, `blocked`,
+`done`, `wontfix`.
 
 ### Project plans and Ticket plans
 
