@@ -58,6 +58,9 @@ type TicketPlanningRequest struct {
 	Effort       TicketPlanningEffort
 	Instructions string
 	Tickets      []string
+	// Claimant identifies the planning session in the ticket claim, so the
+	// prompt can name the twt commands the agent may run.
+	Claimant string
 }
 
 // TicketPlanningLaunch contains direct process arguments for first start and
@@ -91,6 +94,19 @@ func BuildTicketPlanningLaunch(request TicketPlanningRequest, lookPath func(stri
 	resume := planningBaseCommand(request.Provider, executable, level)
 	start := append(append([]string(nil), resume...), prompt)
 	return TicketPlanningLaunch{Provider: request.Provider, Start: start, Resume: resume}, nil
+}
+
+// askContract is the waiting protocol shared by planning and implementation
+// prompts.
+func askContract(ticket, claimant string) string {
+	return strings.Join([]string{
+		"If you need a decision or information from the human, ask through the Ticket and stop:",
+		fmt.Sprintf("printf '%%s' \"QUESTION\" | twt tickets ask %s --stdin --as %s", ticket, claimant),
+		"Then end your turn with the final line WAITING FOR ANSWER. Do not guess, do not",
+		"poll, and do not work around the question. The answer arrives as your next",
+		"message. If the human answers you directly instead, record it yourself:",
+		fmt.Sprintf("printf '%%s' \"THEIR_ANSWER\" | twt tickets answer %s --stdin", ticket),
+	}, "\n")
 }
 
 func isTicketPlanningProvider(provider string) bool {
@@ -137,6 +153,10 @@ func ticketPlanningPrompt(request TicketPlanningRequest) string {
 		sections = append(sections, cursorEffortInstruction(request.Effort))
 	}
 	sections = append(sections, ticketPlanningTask(request.Tickets))
+	if request.Claimant != "" && len(request.Tickets) > 0 {
+		// A plan-time question is cheaper than a wrong plan: ask early.
+		sections = append(sections, askContract(request.Tickets[0], request.Claimant))
+	}
 	return strings.Join(sections, "\n\n")
 }
 

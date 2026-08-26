@@ -121,18 +121,18 @@ func startFromTickets(command *cobra.Command, options Options, tickets []domain.
 	for _, ticket := range tickets {
 		request.Tickets = append(request.Tickets, ticket.Slug)
 	}
+	claimant, err := resolveClaimant(command, as)
+	if err != nil {
+		return err
+	}
 	if request.WithAgent {
-		launch, err := options.ticketPlanningLaunch(request.Tickets)
+		launch, err := options.ticketPlanningLaunch(request.Tickets, claimant)
 		if err != nil {
 			return err
 		}
 		request.PlanningAgent = &launch
 	}
 	service, err := options.ticketService()
-	if err != nil {
-		return err
-	}
-	claimant, err := resolveClaimant(command, as)
 	if err != nil {
 		return err
 	}

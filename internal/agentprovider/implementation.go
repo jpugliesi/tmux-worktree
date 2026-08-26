@@ -107,7 +107,9 @@ func ticketImplementationTask(ticket, claimant string) string {
 		fmt.Sprintf("twt tickets complete %s --as %s --pr URL", ticket, claimant),
 		"Repeat --pr for each pull request.",
 		"",
-		"If you cannot finish, write what blocks you as a comment, then release the claim:",
+		askContract(ticket, claimant),
+		"",
+		"Only when you cannot proceed at all, write what blocks you as a comment, then release the claim:",
 		fmt.Sprintf("printf '%%s' \"BLOCKED_REASON\" | twt tickets comment %s --stdin", ticket),
 		fmt.Sprintf("twt tickets unclaim %s --as %s", ticket, claimant),
 	}

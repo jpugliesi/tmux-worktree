@@ -188,6 +188,7 @@ func (s *Service) buildLaunch(mode domain.CursorCloudMode, provider, effort, ins
 			Effort:       agentprovider.TicketPlanningEffort(effort),
 			Instructions: instructions,
 			Tickets:      []string{slug},
+			Claimant:     claimant,
 		}, s.options.LookPath)
 	} else {
 		label = "ticket-impl"

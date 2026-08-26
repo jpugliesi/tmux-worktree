@@ -10,7 +10,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
-func (o Options) ticketPlanningLaunch(tickets []string) (agentprovider.TicketPlanningLaunch, error) {
+func (o Options) ticketPlanningLaunch(tickets []string, claimant string) (agentprovider.TicketPlanningLaunch, error) {
 	config, err := store.LoadConfig(o.ConfigDir)
 	if err != nil {
 		return agentprovider.TicketPlanningLaunch{}, err
@@ -24,6 +24,7 @@ func (o Options) ticketPlanningLaunch(tickets []string) (agentprovider.TicketPla
 		Effort:       agentprovider.TicketPlanningEffort(resolved.Effort),
 		Instructions: resolved.Instructions,
 		Tickets:      tickets,
+		Claimant:     claimant,
 	}, nil)
 	if err != nil {
 		return agentprovider.TicketPlanningLaunch{}, clierr.WithHint(

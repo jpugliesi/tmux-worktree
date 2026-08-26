@@ -458,6 +458,32 @@ printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work"
   | twt apply --stdin --dry-run --output json
 ```
 
+### Ask the human and answer
+
+A working agent that needs a decision asks through the Ticket and stops:
+
+```sh
+printf '%s' "QUESTION" | twt tickets ask TICKET --stdin --as CLAIMANT --output json
+```
+
+Ask parks the Ticket on `needs-info`, keeps the claim, and records the
+question under `## Questions`. The agent then ends its turn with the final
+line `WAITING FOR ANSWER` and does not guess, poll, or work around the
+question. The board surfaces these Tickets: `twt tickets list --needs-input`
+and the `waitingOnYou` list of `twt projects show`.
+
+The human answers with:
+
+```sh
+printf '%s' "ANSWER" | twt tickets answer TICKET --stdin --output json
+```
+
+Answer records the reply, restores the pre-ask status, and relays the text
+into the asking agent's live tmux pane on the same machine (best-effort; the
+Ticket carries the durable copy, and a stopped agent reads it on
+`twt agents resume`). When the human replies in the agent's pane instead,
+the agent records it itself with the same answer command.
+
 ### Project plans and Ticket plans
 
 A Project can carry a plan document, `plan.md`, beside its Tickets. It is the
