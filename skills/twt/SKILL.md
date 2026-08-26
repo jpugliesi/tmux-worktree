@@ -455,6 +455,33 @@ printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work"
   | twt apply --stdin --dry-run --output json
 ```
 
+### Project plans and Ticket plans
+
+A Project can carry a plan document, `plan.md`, beside its Tickets. It is the
+top-level design that the human and the PM agent iterate; the Ticket DAG
+mirrors it. Read and write it only through twt, so git sync fires:
+
+```sh
+twt projects plan show PROJECT --output json
+twt projects plan init PROJECT --output json
+printf '%s' "$PLAN" | twt projects plan edit PROJECT --stdin --output json
+twt projects plan path PROJECT
+```
+
+`plan edit` is an upsert: it creates plan.md when missing. `plan.md` and
+`index.md` are reserved names; they are never Tickets, and the slugs `plan`
+and `index` are rejected at create.
+
+A Ticket carries its own plan in a `## Plan` body section. A planning agent
+writes a decision-complete plan there before implementation; the write
+replaces the whole section and keeps every other section:
+
+```sh
+printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT --output json
+```
+
+A claimed Ticket requires the matching `--as` claimant.
+
 ### Claim and close
 
 `claimed_by` identifies who is doing the work. A person at an interactive
