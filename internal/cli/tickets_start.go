@@ -190,7 +190,7 @@ func validateStartTickets(tickets []domain.Ticket) (string, error) {
 	return project, nil
 }
 
-func claimStartTickets(command *cobra.Command, service *ticketservice.Service, tickets []domain.Ticket, claimant string) error {
+func claimStartTickets(command *cobra.Command, service ticketservice.Store, tickets []domain.Ticket, claimant string) error {
 	for _, ticket := range tickets {
 		if _, err := service.Claim(ticket.Slug, claimant, true); err != nil {
 			return err

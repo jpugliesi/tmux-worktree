@@ -192,7 +192,7 @@ func (o Options) resolveTicketsSync() (store.TicketsSyncConfig, error) {
 // ticketService builds the ticket service for these Options. It fails when no
 // Tickets home is set, so every tickets command reports the same
 // precondition error.
-func (o Options) ticketService() (*ticketservice.Service, error) {
+func (o Options) ticketService() (ticketservice.Store, error) {
 	home, err := o.resolveTicketsHome()
 	if err != nil {
 		return nil, err

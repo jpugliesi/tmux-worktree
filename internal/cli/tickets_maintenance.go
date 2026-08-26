@@ -69,7 +69,7 @@ func newTicketsRepairCommand(options Options) *cobra.Command {
 }
 
 // repairTickets runs the shared repair mutation for the command and apply.
-func repairTickets(command *cobra.Command, service *ticketservice.Service) error {
+func repairTickets(command *cobra.Command, service ticketservice.Store) error {
 	result, repairErr := service.Repair(isDryRun(command))
 	status := statusApplied
 	if isDryRun(command) {

@@ -58,7 +58,7 @@ type WorkspaceLauncher interface {
 type ServiceOptions struct {
 	StateDir  string
 	Templates store.TemplateStore
-	Tickets   *ticketservice.Service
+	Tickets   ticketservice.Store
 	// Launcher is required for a real dispatch. Read-only paths (sync,
 	// abandon) leave it nil.
 	Launcher WorkspaceLauncher

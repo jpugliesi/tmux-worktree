@@ -54,7 +54,7 @@ func newProjectsCreateCommand(options Options) *cobra.Command {
 }
 
 // createProject creates one Project. Both the command and apply use it.
-func createProject(command *cobra.Command, options Options, service *ticketservice.Service, name, templateName string) error {
+func createProject(command *cobra.Command, options Options, service ticketservice.Store, name, templateName string) error {
 	if templateName != "" {
 		if _, err := options.templateStore().Load(templateName); err != nil {
 			return err
@@ -102,7 +102,7 @@ func newProjectsSetCommand(options Options) *cobra.Command {
 	return command
 }
 
-func setProjectTemplate(command *cobra.Command, service *ticketservice.Service, name, templateName string) error {
+func setProjectTemplate(command *cobra.Command, service ticketservice.Store, name, templateName string) error {
 	return runMutation(command, "projects.set",
 		func() (string, string, error) {
 			project, err := service.SetProjectTemplate(name, templateName, true)
@@ -198,7 +198,7 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 
 // projectBoard is the coordinator read for one Project: pickable Tickets,
 // claimed Tickets, and the Workspaces that belong to the Project.
-func projectBoard(options Options, service *ticketservice.Service, project domain.Project) (projectShowOutput, error) {
+func projectBoard(options Options, service ticketservice.Store, project domain.Project) (projectShowOutput, error) {
 	ready, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, Ready: true})
 	if err != nil {
 		return projectShowOutput{}, err

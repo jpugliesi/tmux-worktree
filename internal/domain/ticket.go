@@ -64,7 +64,10 @@ type Ticket struct {
 	PullRequests []string `yaml:"pull_requests" json:"pullRequests,omitempty"`
 	Created     string       `yaml:"created" json:"created"`
 	Updated     string       `yaml:"updated" json:"updated"`
-	Path        string       `yaml:"-" json:"path"`
+	// Path is the backend locator of this Ticket (a file path for the
+	// markdown store). It is not part of the Store contract: other backends
+	// may leave it empty or use another locator form.
+	Path string `yaml:"-" json:"path"`
 }
 
 // Project is one directory of Tickets under the Tickets home.

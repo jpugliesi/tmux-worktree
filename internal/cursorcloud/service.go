@@ -25,7 +25,7 @@ type Harness interface {
 type ServiceOptions struct {
 	StateDir  string
 	Templates store.TemplateStore
-	Tickets   *ticketservice.Service
+	Tickets   ticketservice.Store
 	Harness   Harness
 	Now       func() time.Time
 	NewID     func() (string, error)

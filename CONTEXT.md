@@ -123,6 +123,13 @@ many Workspaces and Cursor Cloud Sessions over time. Its Ticket count includes
 active and closed Tickets.
 _Avoid_: Board, workspace, epic folder
 
+**Ticket Store**:
+The backend contract for tickets (`ticket.Store`): semantic operations with
+atomic compare-and-set claims, idempotent retries, and dry runs, plus declared
+capabilities. The markdown-plus-git Service is the reference implementation;
+the conformance suite is the executable contract every backend must pass.
+_Avoid_: database, ticket file API
+
 **Ticket**:
 One Markdown file with YAML frontmatter. A Ticket belongs to one Project. A
 claim gives one worker exclusive work authority. A Ticket can link to one

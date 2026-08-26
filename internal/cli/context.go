@@ -100,7 +100,7 @@ func contextTickets(options Options, workspace domain.Workspace) ([]domain.Ticke
 	return linked, ready
 }
 
-func resolveWorkspaceTickets(service *ticketservice.Service, slugs []string) []domain.Ticket {
+func resolveWorkspaceTickets(service ticketservice.Store, slugs []string) []domain.Ticket {
 	tickets := make([]domain.Ticket, 0, len(slugs))
 	for _, slug := range slugs {
 		ticket, err := service.Resolve(slug)

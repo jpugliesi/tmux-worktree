@@ -22,7 +22,7 @@ const ungroupedProjectSentinel = "(none)"
 // createTicketWizard collects title, Project, and description for a person at a
 // terminal. DESCRIPTION and --stdin never enter this path. --title skips the
 // title prompt. --project skips the picker and never creates a missing Project.
-func createTicketWizard(command *cobra.Command, options Options, service *ticketservice.Service, request ticketservice.CreateRequest) (ticketservice.CreateRequest, error) {
+func createTicketWizard(command *cobra.Command, options Options, service ticketservice.Store, request ticketservice.CreateRequest) (ticketservice.CreateRequest, error) {
 	if command.Flags().Changed("project") && strings.TrimSpace(request.Project) != "" {
 		if _, err := service.Project(request.Project); err != nil {
 			return request, err
@@ -62,7 +62,7 @@ func createTicketWizard(command *cobra.Command, options Options, service *ticket
 // resolveWizardProject maps one picker result to a Project name. "(none)" leaves
 // the Ticket ungrouped. An existing Project is used as-is. A new name must
 // pass resource-name rules, then the person confirms create.
-func resolveWizardProject(command *cobra.Command, service *ticketservice.Service, choice string) (string, bool, error) {
+func resolveWizardProject(command *cobra.Command, service ticketservice.Store, choice string) (string, bool, error) {
 	if choice == "" || choice == ungroupedProjectSentinel {
 		return "", false, nil
 	}
@@ -89,7 +89,7 @@ func resolveWizardProject(command *cobra.Command, service *ticketservice.Service
 }
 
 // pickTicketProject shows the Project picker: (none), then every Project name.
-func pickTicketProject(command *cobra.Command, options Options, service *ticketservice.Service) (string, error) {
+func pickTicketProject(command *cobra.Command, options Options, service ticketservice.Store) (string, error) {
 	projects, err := service.Projects()
 	if err != nil {
 		return "", err

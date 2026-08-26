@@ -130,7 +130,7 @@ func newTicketsInitCommand(options Options) *cobra.Command {
 
 // initializeTicketsHome writes the Tickets home scaffold. Both the tickets
 // init command and apply use it.
-func initializeTicketsHome(command *cobra.Command, service *ticketservice.Service) error {
+func initializeTicketsHome(command *cobra.Command, service ticketservice.Store) error {
 	var result ticketservice.InitResult
 	return runMutation(command, "tickets.init",
 		func() (string, string, error) {
@@ -277,7 +277,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 
 // createTicket writes one Ticket. Both the tickets create command and apply
 // use it. A text dry run prints the file that twt would write.
-func createTicket(command *cobra.Command, service *ticketservice.Service, request ticketservice.CreateRequest) error {
+func createTicket(command *cobra.Command, service ticketservice.Store, request ticketservice.CreateRequest) error {
 	if isDryRun(command) {
 		result, err := service.Create(request, true)
 		if err != nil {
@@ -543,7 +543,7 @@ func newTicketsEditCommand(options Options) *cobra.Command {
 }
 
 // editTicket replaces the body of one Ticket from stdin text.
-func editTicket(command *cobra.Command, service *ticketservice.Service, ref, body string) error {
+func editTicket(command *cobra.Command, service ticketservice.Store, ref, body string) error {
 	return runMutation(command, "tickets.edit",
 		func() (string, string, error) {
 			ticket, err := service.Edit(ref, body, true)
@@ -602,7 +602,7 @@ func newTicketsSetCommand(options Options) *cobra.Command {
 
 // setTicket changes the fields of one Ticket. Both the tickets set command
 // and apply use it.
-func setTicket(command *cobra.Command, service *ticketservice.Service, ref string, request ticketservice.SetRequest) error {
+func setTicket(command *cobra.Command, service ticketservice.Store, ref string, request ticketservice.SetRequest) error {
 	return runMutation(command, "tickets.set",
 		func() (string, string, error) {
 			ticket, err := service.Set(ref, request, true)
@@ -649,7 +649,7 @@ func newTicketsClaimCommand(options Options) *cobra.Command {
 	return command
 }
 
-func stampClaimedWorkspace(command *cobra.Command, options Options, service *ticketservice.Service, ticketRef, workspaceRef string) error {
+func stampClaimedWorkspace(command *cobra.Command, options Options, service ticketservice.Store, ticketRef, workspaceRef string) error {
 	workspace, err := resolveWorkspace(options.workspaceService(), workspaceRef)
 	if err != nil {
 		return err
@@ -722,7 +722,7 @@ func newTicketsCompleteCommand(options Options) *cobra.Command {
 
 // completeTicketWork runs the shared complete mutation for the command and
 // apply.
-func completeTicketWork(command *cobra.Command, service *ticketservice.Service, ref, claimant string, status domain.TicketStatus, pullRequests []string) error {
+func completeTicketWork(command *cobra.Command, service ticketservice.Store, ref, claimant string, status domain.TicketStatus, pullRequests []string) error {
 	return runMutation(command, "tickets.complete",
 		func() (string, string, error) {
 			ticket, err := service.CompleteWork(ref, claimant, status, pullRequests, true)
@@ -790,7 +790,7 @@ func resolveClaimant(command *cobra.Command, as string) (string, error) {
 
 // claimTicket claims one Ticket. Both the tickets claim command and apply use
 // it.
-func claimTicket(command *cobra.Command, service *ticketservice.Service, ref, claimant string) error {
+func claimTicket(command *cobra.Command, service ticketservice.Store, ref, claimant string) error {
 	return runMutation(command, "tickets.claim",
 		func() (string, string, error) {
 			ticket, err := service.Claim(ref, claimant, true)
@@ -808,7 +808,7 @@ func claimTicket(command *cobra.Command, service *ticketservice.Service, ref, cl
 
 // unclaimTicket removes the claim on one Ticket. Both the tickets unclaim
 // command and apply use it.
-func unclaimTicket(command *cobra.Command, service *ticketservice.Service, ref, claimant string) error {
+func unclaimTicket(command *cobra.Command, service ticketservice.Store, ref, claimant string) error {
 	return runMutation(command, "tickets.unclaim",
 		func() (string, string, error) {
 			ticket, err := service.Unclaim(ref, claimant, true)
@@ -826,7 +826,7 @@ func unclaimTicket(command *cobra.Command, service *ticketservice.Service, ref, 
 
 // closeTicket resolves one Ticket. Both the tickets close command and apply
 // use it.
-func closeTicket(command *cobra.Command, service *ticketservice.Service, ref, claimant string) error {
+func closeTicket(command *cobra.Command, service ticketservice.Store, ref, claimant string) error {
 	return runMutation(command, "tickets.close",
 		func() (string, string, error) {
 			ticket, err := service.Close(ref, claimant, true)
@@ -872,7 +872,7 @@ func newTicketsCommentCommand(options Options) *cobra.Command {
 
 // commentTicket appends one comment. Both the tickets comment command and
 // apply use it.
-func commentTicket(command *cobra.Command, service *ticketservice.Service, ref, text string) error {
+func commentTicket(command *cobra.Command, service ticketservice.Store, ref, text string) error {
 	return runMutation(command, "tickets.comment",
 		func() (string, string, error) {
 			ticket, err := service.Comment(ref, text, true)
