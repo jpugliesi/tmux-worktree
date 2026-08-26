@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -43,9 +44,15 @@ func runInitializationProcess(directory string, argv, environment []string, acti
 	if activityFile != nil {
 		command.ExtraFiles = []*os.File{activityFile}
 	}
+	// Tee the initialization output to stderr so a long init is observable:
+	// the background preparation worker's stderr lands in its log file, and
+	// an inline preparation shows the output on the caller's terminal
+	// without touching the JSON on stdout. The buffer keeps the copy for
+	// error messages.
 	var output bytes.Buffer
-	command.Stdout = &output
-	command.Stderr = &output
+	teed := io.MultiWriter(&output, os.Stderr)
+	command.Stdout = teed
+	command.Stderr = teed
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start initialization in %q: %w", directory, err)
 	}
