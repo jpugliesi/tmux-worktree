@@ -314,8 +314,43 @@ twt tickets start TICKET --with-agent --detached --as UNIQUE_CLAIMANT \
 One planning Agent covers all Ticket arguments. `ticketAgent` in
 `config.yaml` selects `codex`, `claude`, `cursor`, or `grok`; the effort is
 `small`, `medium`, `large`, or `xlarge`. The defaults are Codex and `large`.
-Configured instructions come before the generated Ticket request. Codex uses
-the planning prompt in normal mode. The other providers use their plan mode.
+Configured instructions come before the generated Ticket request. Every
+provider runs the planning prompt in normal autonomous mode; the plan-only
+rule is the prompt contract.
+
+### The lifecycle of one Ticket
+
+Drive every Ticket through this arc. Each step names its verb; the sections
+below carry the details.
+
+1. **Orient.** Read the Ticket and its Project plan before any work:
+   `twt tickets show TICKET --output json`, then
+   `twt projects plan show PROJECT --output json` when the Ticket names a
+   Project. The plan is the design context the Ticket implements.
+2. **Claim.** Hold the Ticket before you change anything:
+   `twt tickets claim TICKET --as UNIQUE_NAME`. A dispatch claims for you.
+   One claimant per Ticket; a lost claim race means pick other work.
+3. **Plan the Ticket.** When the Ticket needs a plan - the human asked for
+   one, dispatch ran with `--plan`, or the work is large - write a
+   decision-complete plan into the `## Plan` section:
+   `printf '%s' "$PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT`.
+   Iterate with the human through `tickets ask` and `tickets answer`. A
+   Ticket with a `## Plan` section is gated: implementation starts only
+   after the human runs `twt tickets approve TICKET`, and a plan rewrite
+   clears the approval.
+4. **Implement.** Do the work in the Workspace. When a decision blocks you,
+   ask and stop (`tickets ask`, final line WAITING FOR ANSWER). Never guess.
+5. **Attach pull requests immediately.** The moment a pull request exists:
+   `twt tickets pr add TICKET --as CLAIMANT --pr URL`. The board and tree
+   show its live state from then on.
+6. **Hand off.** Finish with one write that records the pull requests,
+   releases the claim, and sets the status:
+   `twt tickets complete TICKET --as CLAIMANT --pr URL` (ready-for-human).
+   Unable to finish: comment the blocker, then `tickets unclaim`.
+7. **Close.** When every pull request merges, the Ticket is done:
+   `twt tickets close TICKET`. Merged means done, and the close unblocks
+   every dependent. Use `tickets set --status` only for corrections such as
+   `wontfix`.
 
 ### Dispatch Tickets to implementation Sessions
 
