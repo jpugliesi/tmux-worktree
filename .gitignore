@@ -1,3 +1,5 @@
 .DS_Store
 *.swp
 bin/twt
+cursor-harness/node_modules/
+cursor-harness/dist/

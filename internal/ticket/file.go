@@ -7,6 +7,7 @@ package ticket
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -263,4 +264,79 @@ func stripWikiLink(s string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
+}
+
+// sectionHeadingPattern matches any H2 heading line; it terminates a section.
+var sectionHeadingPattern = regexp.MustCompile(`(?m)^## .*$`)
+
+// sectionBounds finds the "## <heading>" section of a body: start is the
+// offset of the heading line, end is the offset of the next H2 heading or
+// the end of the body. Deeper headings (###) stay inside their section.
+func sectionBounds(body, heading string) (start, end int, ok bool) {
+	pattern := regexp.MustCompile(`(?m)^## ` + regexp.QuoteMeta(heading) + `[ \t]*$`)
+	location := pattern.FindStringIndex(body)
+	if location == nil {
+		return 0, 0, false
+	}
+	rest := body[location[1]:]
+	next := sectionHeadingPattern.FindStringIndex(rest)
+	if next == nil {
+		return location[0], len(body), true
+	}
+	return location[0], location[1] + next[0], true
+}
+
+// replaceBodySection replaces the content under "## <heading>", keeping the
+// heading. A missing section is inserted before "## Comments" when that
+// heading exists, else appended at the end of the body. The result keeps
+// single blank lines between sections and a trailing newline.
+func replaceBodySection(body, heading, content string) string {
+	section := "## " + heading
+	if trimmed := strings.Trim(content, "\n"); trimmed != "" {
+		section += "\n\n" + trimmed
+	}
+	if start, end, ok := sectionBounds(body, heading); ok {
+		before := strings.TrimRight(body[:start], "\n")
+		after := strings.Trim(body[end:], "\n")
+		out := before
+		if before != "" {
+			out += "\n\n"
+		}
+		out += section
+		if after != "" {
+			out += "\n\n" + after
+		}
+		return out + "\n"
+	}
+	if start, _, ok := sectionBounds(body, "Comments"); ok && heading != "Comments" {
+		before := strings.TrimRight(body[:start], "\n")
+		after := strings.Trim(body[start:], "\n")
+		out := before
+		if before != "" {
+			out += "\n\n"
+		}
+		return out + section + "\n\n" + after + "\n"
+	}
+	out := strings.TrimRight(body, "\n")
+	if out != "" {
+		out += "\n\n"
+	}
+	return out + section + "\n"
+}
+
+// appendBodySection appends text at the end of the section under heading,
+// creating the section when it is missing.
+func appendBodySection(body, heading, text string) string {
+	entry := strings.Trim(text, "\n")
+	start, end, ok := sectionBounds(body, heading)
+	if !ok {
+		return replaceBodySection(body, heading, entry)
+	}
+	section := strings.TrimRight(body[start:end], "\n")
+	after := strings.Trim(body[end:], "\n")
+	out := body[:start] + section + "\n\n" + entry + "\n"
+	if after != "" {
+		out += "\n" + after + "\n"
+	}
+	return out
 }

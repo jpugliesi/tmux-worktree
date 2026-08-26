@@ -11,6 +11,7 @@ import (
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/cursorcloud"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
@@ -92,6 +93,11 @@ type Options struct {
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
+	// CursorCloudHarness replaces the Cursor SDK process boundary. Tests use a
+	// fake. Normal commands find the installed twt-cursor-cloud executable.
+	CursorCloudHarness cursorcloud.Harness
+	// CursorCloudExecutable selects one installed SDK harness executable.
+	CursorCloudExecutable string
 }
 
 // workspaceService builds the Workspace service for these Options.
@@ -162,10 +168,31 @@ func (o Options) resolveBranchPrefix() (string, error) {
 	return config.BranchPrefix, nil
 }
 
+// resolveTicketsSync resolves the tickets git sync configuration:
+// TWT_TICKETS_SYNC and TWT_TICKETS_SYNC_REMOTE, then the ticketsSync block of
+// config.yaml.
+func (o Options) resolveTicketsSync() (store.TicketsSyncConfig, error) {
+	config, err := store.LoadConfig(o.ConfigDir)
+	if err != nil {
+		return store.TicketsSyncConfig{}, err
+	}
+	resolved := config.TicketsSync
+	if value := os.Getenv("TWT_TICKETS_SYNC"); value != "" {
+		resolved.Mode = value
+	}
+	if value := os.Getenv("TWT_TICKETS_SYNC_REMOTE"); value != "" {
+		resolved.Remote = value
+	}
+	if err := validateTicketsSyncConfig(resolved); err != nil {
+		return store.TicketsSyncConfig{}, err
+	}
+	return resolved, nil
+}
+
 // ticketService builds the ticket service for these Options. It fails when no
 // Tickets home is set, so every tickets command reports the same
 // precondition error.
-func (o Options) ticketService() (*ticketservice.Service, error) {
+func (o Options) ticketService() (ticketservice.Store, error) {
 	home, err := o.resolveTicketsHome()
 	if err != nil {
 		return nil, err
@@ -175,7 +202,62 @@ func (o Options) ticketService() (*ticketservice.Service, error) {
 			clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
 			"Set ticketsHome in ~/.config/twt/config.yaml or TWT_TICKETS_HOME.")
 	}
-	return ticketservice.NewService(ticketservice.Options{Home: home, StateDir: o.StateDir}), nil
+	sync, err := o.resolveTicketsSync()
+	if err != nil {
+		return nil, err
+	}
+	return ticketservice.NewService(ticketservice.Options{
+		Home:     home,
+		StateDir: o.StateDir,
+		Sync:     ticketservice.SyncOptions{Mode: sync.Mode, Remote: sync.Remote},
+		Logf: func(format string, a ...any) {
+			fmt.Fprintf(os.Stderr, format+"\n", a...)
+		},
+	}), nil
+}
+
+func (o Options) cursorCloudService(requireHarness bool) (*cursorcloud.Service, error) {
+	tickets, err := o.ticketService()
+	if err != nil {
+		return nil, err
+	}
+	harness := o.CursorCloudHarness
+	if harness == nil && requireHarness {
+		executable, err := o.cursorCloudHarnessExecutable()
+		if err != nil {
+			return nil, err
+		}
+		harness = cursorcloud.NewClient(cursorcloud.ProcessRunner{Executable: executable})
+	}
+	return cursorcloud.NewService(cursorcloud.ServiceOptions{
+		StateDir: o.StateDir, Templates: o.templateStore(), Tickets: tickets, Harness: harness,
+	}), nil
+}
+
+func (o Options) cursorCloudHarnessExecutable() (string, error) {
+	configured := o.CursorCloudExecutable
+	if configured == "" {
+		configured = os.Getenv("TWT_CURSOR_CLOUD_HARNESS")
+	}
+	if configured != "" {
+		path, err := exec.LookPath(configured)
+		if err != nil {
+			return "", clierr.New(clierr.PreconditionFailed, "Cursor Cloud harness %q is not executable", configured)
+		}
+		return path, nil
+	}
+	if current, err := os.Executable(); err == nil {
+		sibling := filepath.Join(filepath.Dir(current), "twt-cursor-cloud")
+		if info, statErr := os.Stat(sibling); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return sibling, nil
+		}
+	}
+	if path, err := exec.LookPath("twt-cursor-cloud"); err == nil {
+		return path, nil
+	}
+	return "", clierr.WithHint(
+		clierr.New(clierr.PreconditionFailed, "the twt-cursor-cloud harness is not installed"),
+		"Build and install the Cursor Cloud harness with 'make install'.")
 }
 
 func DefaultOptions() Options {

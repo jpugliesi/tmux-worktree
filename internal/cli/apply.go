@@ -130,8 +130,37 @@ type ticketCommentApplyRequest struct {
 	Text      string `json:"text"`
 }
 
+type ticketCompleteApplyRequest struct {
+	Reference    string   `json:"reference"`
+	As           string   `json:"as"`
+	Status       string   `json:"status,omitempty"`
+	PullRequests []string `json:"pullRequests,omitempty"`
+}
+
+type ticketDispatchApplyRequest struct {
+	Reference      string `json:"reference"`
+	Plan           bool   `json:"plan,omitempty"`
+	MaxConcurrency int    `json:"maxConcurrency,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+}
+
+type ticketCloudSyncApplyRequest struct {
+	Project string `json:"project"`
+}
+
+type ticketCloudAbandonApplyRequest struct {
+	Session string `json:"session"`
+	Force   bool   `json:"force"`
+}
+
 type projectCreateApplyRequest struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Template string `json:"template,omitempty"`
+}
+
+type projectSetApplyRequest struct {
+	Name     string `json:"name"`
+	Template string `json:"template"`
 }
 
 type agentRegisterRequest struct {
@@ -283,6 +312,12 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
 		}}, applyTicketsUnclaim},
+		{applyOperationSchema{Operation: "tickets.complete", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: []string{"ready-for-human", "ready-for-agent"}, Condition: "absent selects ready-for-human"},
+			{Path: "ticket.pullRequests", Type: "array[string]", Required: false, Condition: "HTTPS pull request URLs to record"},
+		}}, applyTicketsComplete},
 		{applyOperationSchema{Operation: "tickets.close", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
@@ -291,10 +326,44 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
 		}}, applyTicketsComment},
+		{applyOperationSchema{Operation: "tickets.plan", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.plan", Type: "string", Required: true, Condition: "replaces the whole ## Plan section"},
+			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
+		}}, applyTicketsPlan},
+		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
+			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
+			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Session limit"},
+			{Path: "ticket.backend", Type: "string", Required: false, Enum: []string{"local", "cursor-cloud"}, Condition: "absent follows the Template: cursor-cloud when cursor_cloud is set, else local"},
+		}}, applyTicketsDispatch},
+		{applyOperationSchema{Operation: "tickets.sync", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.project", Type: "string", Required: true},
+		}}, applyTicketsSync},
+		{applyOperationSchema{Operation: "tickets.abandon", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.session", Type: "string", Required: true},
+			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the Workspace and its agent keep running"},
+		}}, applyTicketsAbandon},
+		{applyOperationSchema{Operation: "tickets.cloud-sync", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.project", Type: "string", Required: true},
+		}}, applyTicketsCloudSync},
+		{applyOperationSchema{Operation: "tickets.cloud-abandon", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.session", Type: "string", Required: true},
+			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the remote Cursor Agent can continue"},
+		}}, applyTicketsCloudAbandon},
 		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
+		{applyOperationSchema{Operation: "projects.plan.edit", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.plan", Type: "string", Required: true, Condition: "replaces the whole plan.md; creates it when missing"},
+		}}, applyProjectsPlanEdit},
 		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.template", Type: "string", Required: false},
 		}}, applyTicketsProjectsCreate},
+		{applyOperationSchema{Operation: "projects.set", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.template", Type: "string", Required: true},
+		}}, applyTicketsProjectsSet},
 	}
 }
 
@@ -783,6 +852,65 @@ func applyTicketsUnclaim(command *cobra.Command, options Options, request applyR
 	return unclaimTicket(command, service, payload.Reference, payload.As)
 }
 
+type ticketPlanApplyRequest struct {
+	Reference string `json:"reference"`
+	Plan      string `json:"plan"`
+	As        string `json:"as,omitempty"`
+}
+
+type projectPlanApplyRequest struct {
+	Name string `json:"name"`
+	Plan string `json:"plan"`
+}
+
+func applyProjectsPlanEdit(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectPlanApplyRequest
+	if err := decodeApplyPayload("projects.plan.edit", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Plan == "" {
+		return fmt.Errorf("project.name and project.plan are required for projects.plan.edit")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return editProjectPlan(command, service, payload.Name, payload.Plan)
+}
+
+func applyTicketsPlan(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketPlanApplyRequest
+	if err := decodeApplyPayload("tickets.plan", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Plan == "" {
+		return fmt.Errorf("ticket.reference and ticket.plan are required for tickets.plan")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return planTicket(command, service, payload.Reference, payload.As, payload.Plan)
+}
+
+func applyTicketsComplete(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCompleteApplyRequest
+	if err := decodeApplyPayload("tickets.complete", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.As == "" {
+		return fmt.Errorf("ticket.reference and ticket.as are required for tickets.complete")
+	}
+	if payload.Status == "" {
+		payload.Status = string(domain.TicketReadyForHuman)
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return completeTicketWork(command, service, payload.Reference, payload.As, domain.TicketStatus(payload.Status), payload.PullRequests)
+}
+
 func applyTicketsClose(command *cobra.Command, options Options, request applyRequest) error {
 	payload, err := decodeTicketClaimPayload("tickets.close", request.Ticket)
 	if err != nil {
@@ -810,6 +938,61 @@ func applyTicketsComment(command *cobra.Command, options Options, request applyR
 	return commentTicket(command, service, payload.Reference, payload.Text)
 }
 
+func applyTicketsDispatch(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketDispatchApplyRequest
+	if err := decodeApplyPayload("tickets.dispatch", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" {
+		return fmt.Errorf("ticket.reference is required for tickets.dispatch")
+	}
+	return runTicketsDispatch(command, options, payload.Reference, payload.Backend, payload.Plan, payload.MaxConcurrency)
+}
+
+func applyTicketsSync(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudSyncApplyRequest
+	if err := decodeApplyPayload("tickets.sync", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Project == "" {
+		return fmt.Errorf("ticket.project is required for tickets.sync")
+	}
+	return runTicketsSync(command, options, payload.Project)
+}
+
+func applyTicketsAbandon(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudAbandonApplyRequest
+	if err := decodeApplyPayload("tickets.abandon", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Session == "" || !payload.Force {
+		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.abandon")
+	}
+	return runLocalDispatchAbandon(command, options, payload.Session)
+}
+
+func applyTicketsCloudSync(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudSyncApplyRequest
+	if err := decodeApplyPayload("tickets.cloud-sync", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Project == "" {
+		return fmt.Errorf("ticket.project is required for tickets.cloud-sync")
+	}
+	return runCursorCloudSync(command, options, payload.Project)
+}
+
+func applyTicketsCloudAbandon(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketCloudAbandonApplyRequest
+	if err := decodeApplyPayload("tickets.cloud-abandon", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Session == "" || !payload.Force {
+		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.cloud-abandon")
+	}
+	return runCursorCloudAbandon(command, options, payload.Session)
+}
+
 func applyTicketsRepair(command *cobra.Command, options Options, request applyRequest) error {
 	if len(request.Template) > 0 || len(request.Workspace) > 0 || len(request.Agent) > 0 ||
 		len(request.Storage) > 0 || len(request.Ticket) > 0 || len(request.Project) > 0 {
@@ -834,5 +1017,23 @@ func applyTicketsProjectsCreate(command *cobra.Command, options Options, request
 	if err != nil {
 		return err
 	}
-	return createProject(command, service, payload.Name)
+	return createProject(command, options, service, payload.Name, payload.Template)
+}
+
+func applyTicketsProjectsSet(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectSetApplyRequest
+	if err := decodeApplyPayload("projects.set", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Template == "" {
+		return fmt.Errorf("project.name and project.template are required for projects.set")
+	}
+	if _, err := options.templateStore().Load(payload.Template); err != nil {
+		return err
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return setProjectTemplate(command, service, payload.Name, payload.Template)
 }

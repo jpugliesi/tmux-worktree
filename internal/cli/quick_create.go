@@ -278,7 +278,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		return err
 	}
 	if request.PlanningAgent != nil {
-		template = addTicketPlanningAgent(template, *request.PlanningAgent)
+		template = addTicketPlanningAgent(template, *request.PlanningAgent, ticketAgentEnv(options))
 	}
 	name := request.Name
 	if name == "" {

@@ -4,7 +4,6 @@ package agentprovider
 
 import (
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -89,12 +88,6 @@ func IdentifyCommand(argv []string) string {
 			return descriptor.name
 		}
 	}
-	if name == "agent" {
-		executable := resolvedExecutable(argv[0])
-		if matchesCursorProcess(Process{Command: name, Executable: executable, Args: argv}) {
-			return "cursor"
-		}
-	}
 	if isShell(name) {
 		return ""
 	}
@@ -151,54 +144,7 @@ func matchesCursorProcess(process Process) bool {
 	if len(process.Args) == 0 {
 		return false
 	}
-	if commandBase(process.Args[0]) == "cursor-agent" {
-		return true
-	}
-	if commandBase(process.Args[0]) != "agent" || !isCursorVersionExecutable(process.Executable) {
-		return false
-	}
-	wantScript := canonicalPath(filepath.Join(filepath.Dir(filepath.Clean(process.Executable)), "index.js"))
-	for _, argument := range process.Args[1:] {
-		if filepath.IsAbs(argument) && canonicalPath(argument) == wantScript {
-			return true
-		}
-	}
-	return false
-}
-
-func canonicalPath(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return filepath.Clean(resolved)
-	}
-	return filepath.Clean(path)
-}
-
-func isCursorVersionExecutable(path string) bool {
-	path = filepath.Clean(path)
-	if !filepath.IsAbs(path) || filepath.Base(path) != "cursor-agent" {
-		return false
-	}
-	versionDirectory := filepath.Dir(path)
-	versionsDirectory := filepath.Dir(versionDirectory)
-	return filepath.Base(versionDirectory) != "" && filepath.Base(versionsDirectory) == "versions" &&
-		filepath.Base(filepath.Dir(versionsDirectory)) == "cursor-agent"
-}
-
-func resolvedExecutable(command string) string {
-	path := command
-	if !filepath.IsAbs(path) {
-		found, err := exec.LookPath(command)
-		if err != nil {
-			return ""
-		}
-		path = found
-	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return ""
-	}
-	return resolved
+	return commandBase(process.Args[0]) == "cursor-agent"
 }
 
 func commandBase(command string) string {

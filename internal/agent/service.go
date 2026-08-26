@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -178,8 +179,8 @@ func (s *Service) attachPane(workspace domain.Workspace, session *domain.AgentSe
 // verifies and claims the new pane, and saves the record. Like BuildSession,
 // it takes no mutation lock: Workspace setup calls it while the caller already
 // holds the global mutation lock, so a lock here would deadlock.
-func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start []string) (domain.AgentSession, error) {
-	pane, err := s.tmux.StartAgent(workspace, session.Label, start)
+func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start, env []string) (domain.AgentSession, error) {
+	pane, err := s.tmux.StartAgent(workspace, session.Label, start, env)
 	if err != nil {
 		return session, err
 	}
@@ -195,20 +196,43 @@ func (s *Service) StartDeclared(workspace domain.Workspace, session domain.Agent
 
 // attachStartedPane attaches a direct provider process. Cursor's agent command
 // is a wrapper, so its verified provider can be a foreground child process.
+// cursorStartTimeout bounds the wait for the cursor-agent wrapper script to
+// exec the real provider process. A first run in a fresh Workspace can take
+// several seconds before the pane shows the provider.
+var cursorStartTimeout = 20 * time.Second
+
+// debugAgentStart appends one line to the file that TWT_DEBUG_AGENT_START
+// names. It is a temporary diagnostic and off by default.
+func debugAgentStart(format string, a ...any) {
+	path := os.Getenv("TWT_DEBUG_AGENT_START")
+	if path == "" {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	fmt.Fprintf(file, format+"\n", a...)
+}
+
 func (s *Service) attachStartedPane(workspace domain.Workspace, session *domain.AgentSession, pane string) error {
 	directErr := s.attachPane(workspace, session, pane)
 	if directErr == nil || session.Provider != "cursor" {
 		return directErr
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(cursorStartTimeout)
 	for time.Now().Before(deadline) {
 		panes, err := s.tmux.ObserveWorkspace(workspace)
+		debugAgentStart("observe err=%v panes=%d want=%s", err, len(panes), pane)
 		if err == nil {
 			for _, observedPane := range panes {
 				if observedPane.ID != pane {
 					continue
 				}
 				process, ok := observedProviderProcess(observedPane, session.Provider)
+				debugAgentStart("pane=%s current=%q dead=%v foreground=%d ok=%v process=%+v",
+					observedPane.ID, observedPane.CurrentCommand, observedPane.Dead, len(observedPane.Foreground), ok, process)
 				if !ok {
 					break
 				}
@@ -476,7 +500,7 @@ func (s *Service) Resume(agent domain.AgentSession, workspace domain.Workspace) 
 	if s.IsLive(agent) {
 		return agent, s.Focus(agent)
 	}
-	return s.StartDeclared(workspace, agent, EffectiveResumeCommand(agent))
+	return s.StartDeclared(workspace, agent, EffectiveResumeCommand(agent), agent.Env)
 }
 
 // Live returns the Agent Sessions of the Workspace that run live in their

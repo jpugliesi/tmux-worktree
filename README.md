@@ -48,6 +48,30 @@ The `ready` list is deterministic. It contains only ready-for-agent,
 unclaimed Tickets whose blockers are done or wontfix. The queue also reports
 missing dependencies and dependency cycles.
 
+To send ready Tickets to Cursor Cloud Agents, bind the Project to a Workspace
+Template that has `cursor_cloud` settings. Then sync the remote runs and read
+one dispatch wave:
+
+```sh
+twt tickets cloud-sync --project core --dry-run --output json
+twt tickets cloud-sync --project core --output json
+twt tickets queue --project core --limit AVAILABLE --output json
+twt tickets dispatch fix-auth-tokens --dry-run --output json
+twt tickets dispatch fix-auth-tokens --output json
+```
+
+Cloud sync reports the Project capacity. Do not dispatch when `capacity.known`
+is false. A normal dispatch implements the Ticket and creates pull requests.
+Add `--plan` to request a plan only. A completed run moves the Ticket to
+`ready-for-human`. It never moves the Ticket to `done`.
+
+If one local Session update fails, sync keeps the other updates and returns
+`status: "partial"` with a `diagnostics` item for that Session.
+
+If sync cannot recover a stuck Session, `cloud-abandon SESSION --force` stops
+local recovery. It does not cancel the remote Cursor Agent. Run its dry run
+first.
+
 ### 2. Create a Workspace or move to the next Workspace
 
 Create a Workspace and keep all other Workspaces active:
@@ -190,8 +214,8 @@ twt tickets repair                    # move tickets to the correct paths
 
 | Command | Job |
 | --- | --- |
-| `twt tickets` | Create, list, queue, claim, start, close, check, and repair Markdown Tickets |
-| `twt projects` | Create, list, and show durable Ticket Projects |
+| `twt tickets` | Create, list, queue, dispatch, start, close, check, and repair Markdown Tickets |
+| `twt projects` | Create, configure, list, and show durable Ticket Projects |
 | `twt create` | Create a Workspace and keep other Workspaces active |
 | `twt next` | Pick Tickets or a name, create a Workspace, switch, and archive the current Workspace |
 | `twt tickets start` | Claim Tickets and start a Workspace, with an optional planning agent or detached caller |
@@ -242,14 +266,24 @@ These commands are interactive. They have no apply operation. They refuse
 
 ### Install
 
-The install needs Go 1.23+, git, and tmux. `fzf` is optional and improves
-the pickers:
+The local Workspace commands need Go 1.23+, git, and tmux. `fzf` is optional
+and improves the pickers:
 
 ```sh
 git clone https://github.com/jpugliesi/tmux-worktree
 cd tmux-worktree
 go install ./cmd/twt
 ```
+
+Cursor Cloud commands also need the compiled TypeScript SDK harness. Install
+Bun, and build both executables:
+
+```sh
+make install
+```
+
+The installed `twt-cursor-cloud` executable contains Bun and the Cursor SDK.
+Cursor Cloud commands do not download a runtime when they start.
 
 `go install` writes `twt` to `$(go env GOPATH)/bin`, or to `$GOBIN` when that
 is set. Put that directory on `PATH`:

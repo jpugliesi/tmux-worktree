@@ -78,3 +78,21 @@ func TestParseProcessesKeepsStableIdentityAndArguments(t *testing.T) {
 		t.Fatalf("process arguments = %q", got)
 	}
 }
+
+func TestParsePanesSurvivesMultiLineStartCommands(t *testing.T) {
+	rows := "%1\x1f100\x1f/dev/ttys001\x1f0\x1fcursor-agent\x1fcursor-agent --force Line one.\nLine two.\nLine three.\x1f/work/app\x1f\x1f\n" +
+		"%2\x1f400\x1f/dev/ttys002\x1f0\x1fzsh\x1fzsh\x1f/work/app\x1fagent-existing\x1f"
+	panes := parsePanes(rows)
+	if len(panes) != 2 {
+		t.Fatalf("parsePanes() = %+v, want 2 panes", panes)
+	}
+	if panes[0].ID != "%1" || panes[0].CurrentCommand != "cursor-agent" {
+		t.Fatalf("first pane = %+v", panes[0])
+	}
+	if !strings.Contains(panes[0].StartCommand, "Line two.") {
+		t.Fatalf("multi-line start command lost: %q", panes[0].StartCommand)
+	}
+	if panes[1].ID != "%2" || panes[1].AgentID != "agent-existing" {
+		t.Fatalf("second pane = %+v", panes[1])
+	}
+}

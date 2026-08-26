@@ -51,7 +51,7 @@ func validateTicketAgentConfig(config store.TicketAgentConfig) error {
 	return nil
 }
 
-func addTicketPlanningAgent(template domain.Template, launch agentprovider.TicketPlanningLaunch) domain.Template {
+func addTicketPlanningAgent(template domain.Template, launch agentprovider.TicketPlanningLaunch, env []string) domain.Template {
 	template.Agents = append([]domain.TemplateAgent(nil), template.Agents...)
 	used := make(map[string]bool, len(template.Agents))
 	for _, declared := range template.Agents {
@@ -64,6 +64,18 @@ func addTicketPlanningAgent(template domain.Template, launch agentprovider.Ticke
 	template.Agents = append(template.Agents, domain.TemplateAgent{
 		Label: label, Provider: launch.Provider,
 		Start: append([]string(nil), launch.Start...), Resume: append([]string(nil), launch.Resume...), PreferProviderResume: true,
+		Env: append([]string(nil), env...),
 	})
 	return template
+}
+
+// ticketAgentEnv builds the environment pairs for an injected ticket agent,
+// so its twt commands resolve the same Tickets home as the command that
+// started it.
+func ticketAgentEnv(options Options) []string {
+	home, err := options.resolveTicketsHome()
+	if err != nil || home == "" {
+		return nil
+	}
+	return []string{"TWT_TICKETS_HOME=" + home}
 }

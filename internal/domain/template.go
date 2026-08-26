@@ -11,6 +11,16 @@ import (
 
 const TemplateVersion = 1
 
+const (
+	CursorCloudEffortSmall  = "small"
+	CursorCloudEffortMedium = "medium"
+	CursorCloudEffortLarge  = "large"
+	CursorCloudEffortXLarge = "xlarge"
+
+	DefaultCursorCloudMaxConcurrency = 4
+	CursorCloudRepositoryLimit       = 20
+)
+
 var templateResourceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type Template struct {
@@ -32,6 +42,91 @@ type Template struct {
 	BranchPattern string `yaml:"branch_pattern,omitempty" json:"branchPattern,omitempty"`
 	// Agents are the Agent Sessions that each new Workspace gets.
 	Agents []TemplateAgent `yaml:"agents,omitempty" json:"agents,omitempty"`
+	// CursorCloud configures remote Cursor Cloud Sessions for Tickets that use
+	// this Workspace Template. It does not change local Workspace preparation.
+	CursorCloud *CursorCloudSpec `yaml:"cursor_cloud,omitempty" json:"cursorCloud,omitempty"`
+	// LocalDispatch configures local implementation dispatch for Tickets that
+	// use this Workspace Template. It does not change Workspace preparation
+	// or the Prepared Environment digest.
+	LocalDispatch *LocalDispatchSpec `yaml:"local_dispatch,omitempty" json:"localDispatch,omitempty"`
+}
+
+// LocalDispatchSpec declares the defaults for local implementation dispatch.
+// Empty fields fall back to the machine ticketAgent config, so a shared
+// Template normally leaves provider unset and each machine selects an
+// installed provider.
+type LocalDispatchSpec struct {
+	Provider       string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Effort         string `yaml:"effort,omitempty" json:"effort,omitempty"`
+	Instructions   string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	MaxConcurrency int    `yaml:"max_concurrency,omitempty" json:"maxConcurrency,omitempty"`
+}
+
+// EffectiveProvider returns the Template provider or the fallback. The
+// receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveProvider(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Provider) == "" {
+		return fallback
+	}
+	return c.Provider
+}
+
+// EffectiveEffort returns the Template effort or the fallback. The receiver
+// may be nil.
+func (c *LocalDispatchSpec) EffectiveEffort(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Effort) == "" {
+		return fallback
+	}
+	return c.Effort
+}
+
+// EffectiveInstructions returns the Template instructions or the fallback.
+// The receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveInstructions(fallback string) string {
+	if c == nil || strings.TrimSpace(c.Instructions) == "" {
+		return fallback
+	}
+	return c.Instructions
+}
+
+// EffectiveMaxConcurrency returns the Project budget for concurrent local
+// dispatch Sessions. The receiver may be nil.
+func (c *LocalDispatchSpec) EffectiveMaxConcurrency() int {
+	if c == nil || c.MaxConcurrency == 0 {
+		return DefaultLocalDispatchMaxConcurrency
+	}
+	return c.MaxConcurrency
+}
+
+// CursorCloudSpec declares the defaults for remote Cursor Cloud Sessions.
+type CursorCloudSpec struct {
+	Model          string                      `yaml:"model,omitempty" json:"model,omitempty"`
+	Effort         string                      `yaml:"effort,omitempty" json:"effort,omitempty"`
+	Instructions   string                      `yaml:"instructions,omitempty" json:"instructions,omitempty"`
+	MaxConcurrency int                         `yaml:"max_concurrency,omitempty" json:"maxConcurrency,omitempty"`
+	Repositories   []CursorCloudRepositorySpec `yaml:"repositories,omitempty" json:"repositories,omitempty"`
+}
+
+// CursorCloudRepositorySpec selects one Template repository for a Cloud
+// Session. URL and StartingRef override the Repository Specification.
+type CursorCloudRepositorySpec struct {
+	Name        string `yaml:"name" json:"name"`
+	URL         string `yaml:"url,omitempty" json:"url,omitempty"`
+	StartingRef string `yaml:"starting_ref,omitempty" json:"startingRef,omitempty"`
+}
+
+func (c CursorCloudSpec) EffectiveEffort() string {
+	if c.Effort == "" {
+		return CursorCloudEffortLarge
+	}
+	return c.Effort
+}
+
+func (c CursorCloudSpec) EffectiveMaxConcurrency() int {
+	if c.MaxConcurrency == 0 {
+		return DefaultCursorCloudMaxConcurrency
+	}
+	return c.MaxConcurrency
 }
 
 // TemplateAgent declares one Agent Session that twt registers and starts
@@ -47,6 +142,9 @@ type TemplateAgent struct {
 	// PreferProviderResume makes a verified linked provider session take
 	// precedence over Resume.
 	PreferProviderResume bool `yaml:"prefer_provider_resume,omitempty" json:"preferProviderResume,omitempty"`
+	// Env sets KEY=VALUE pairs in the Agent Session window, so the agent's
+	// commands see them regardless of the tmux server environment.
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // AgentProviders are the supported Agent Session provider names.
@@ -172,6 +270,79 @@ func (t Template) Validate() error {
 	if err := validateTemplateAgents(t.Agents); err != nil {
 		return err
 	}
+	if err := validateCursorCloud(t.CursorCloud, seen); err != nil {
+		return err
+	}
+	if err := validateLocalDispatch(t.LocalDispatch); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLocalDispatch(config *LocalDispatchSpec) error {
+	if config == nil {
+		return nil
+	}
+	switch config.Provider {
+	case "", "codex", "claude", "cursor", "grok":
+	default:
+		return fmt.Errorf("local_dispatch provider %q is invalid: use codex, claude, cursor, or grok", config.Provider)
+	}
+	switch config.Effort {
+	case "", CursorCloudEffortSmall, CursorCloudEffortMedium, CursorCloudEffortLarge, CursorCloudEffortXLarge:
+	default:
+		return fmt.Errorf("local_dispatch effort %q is invalid: use small, medium, large, or xlarge", config.Effort)
+	}
+	if config.MaxConcurrency < 0 {
+		return fmt.Errorf("local_dispatch max_concurrency %d is negative", config.MaxConcurrency)
+	}
+	return nil
+}
+
+func validateCursorCloud(config *CursorCloudSpec, repositories map[string]struct{}) error {
+	if config == nil {
+		return nil
+	}
+	switch config.EffectiveEffort() {
+	case CursorCloudEffortSmall, CursorCloudEffortMedium, CursorCloudEffortLarge, CursorCloudEffortXLarge:
+	default:
+		return fmt.Errorf("cursor_cloud effort %q is invalid: use small, medium, large, or xlarge", config.Effort)
+	}
+	if config.MaxConcurrency < 0 {
+		return fmt.Errorf("cursor_cloud max_concurrency %d is negative", config.MaxConcurrency)
+	}
+	if config.Model != "" && strings.TrimSpace(config.Model) == "" {
+		return fmt.Errorf("cursor_cloud model must not be blank")
+	}
+	selectedCount := len(config.Repositories)
+	if selectedCount == 0 {
+		selectedCount = len(repositories)
+	}
+	if selectedCount == 0 {
+		return fmt.Errorf("cursor_cloud requires at least one repository")
+	}
+	if selectedCount > CursorCloudRepositoryLimit {
+		return fmt.Errorf("cursor_cloud selects %d repositories; Cursor supports at most %d", selectedCount, CursorCloudRepositoryLimit)
+	}
+	selected := make(map[string]struct{}, len(config.Repositories))
+	for _, repository := range config.Repositories {
+		if !templateResourceName.MatchString(repository.Name) || repository.Name == "." || repository.Name == ".." {
+			return fmt.Errorf("cursor_cloud repository name %q is invalid", repository.Name)
+		}
+		if _, exists := repositories[repository.Name]; !exists {
+			return fmt.Errorf("cursor_cloud repository %q is not declared by the Workspace Template", repository.Name)
+		}
+		if _, exists := selected[repository.Name]; exists {
+			return fmt.Errorf("cursor_cloud repository %q is selected more than once", repository.Name)
+		}
+		selected[repository.Name] = struct{}{}
+		if repository.URL != "" && strings.TrimSpace(repository.URL) == "" {
+			return fmt.Errorf("cursor_cloud repository %q has a blank URL override", repository.Name)
+		}
+		if repository.StartingRef != "" && strings.TrimSpace(repository.StartingRef) == "" {
+			return fmt.Errorf("cursor_cloud repository %q has a blank starting_ref override", repository.Name)
+		}
+	}
 	return nil
 }
 
@@ -200,6 +371,12 @@ func validateTemplateAgents(agents []TemplateAgent) error {
 		}
 		if len(agent.Resume) > 0 && strings.TrimSpace(agent.Resume[0]) == "" {
 			return fmt.Errorf("Agent Session %q has an invalid resume command", label)
+		}
+		for _, entry := range agent.Env {
+			key, _, found := strings.Cut(entry, "=")
+			if !found || strings.TrimSpace(key) == "" {
+				return fmt.Errorf("Agent Session %q env entry %q is not KEY=VALUE", label, entry)
+			}
 		}
 	}
 	return nil

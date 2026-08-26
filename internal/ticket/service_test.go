@@ -708,6 +708,54 @@ func TestClaimValidatesClaimant(t *testing.T) {
 	}
 }
 
+func TestClaimReadyRequiresAReadyTicket(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "ready.md"), fixture{title: "Ready", status: "ready-for-agent"}.content())
+	writeFixture(t, filepath.Join(home, "open-dep.md"), fixture{title: "Open dep", status: "needs-triage"}.content())
+	writeFixture(t, filepath.Join(home, "blocked.md"), fixture{title: "Blocked", status: "ready-for-agent", blocked: []string{"open-dep"}}.content())
+
+	reserved, err := service.ClaimReady("ready", "cursor-cloud-1234", false)
+	if err != nil {
+		t.Fatalf("ClaimReady: %v", err)
+	}
+	if reserved.ClaimedBy != "cursor-cloud-1234" {
+		t.Fatalf("reserved Ticket = %+v", reserved)
+	}
+	if _, err := service.ClaimReady("blocked", "cursor-cloud-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("blocked ClaimReady = %v, want precondition_failed", err)
+	}
+	if _, err := service.ClaimReady("ready", "cursor-cloud-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("claimed ClaimReady = %v, want precondition_failed", err)
+	}
+}
+
+func TestCompleteClaimChangesStatusAndOnlyClearsTheExpectedClaim(t *testing.T) {
+	service, home := newTestService(t)
+	writeFixture(t, filepath.Join(home, "work.md"), fixture{title: "Work", status: "ready-for-agent"}.content())
+	if _, err := service.ClaimReady("work", "cursor-cloud-1234", false); err != nil {
+		t.Fatalf("ClaimReady: %v", err)
+	}
+	if _, err := service.SetWorkspace("work", "514a26ed287e429b888000aaa288333a", false); err != nil {
+		t.Fatalf("SetWorkspace: %v", err)
+	}
+
+	completed, err := service.CompleteClaim("work", "cursor-cloud-1234", domain.TicketReadyForHuman, false)
+	if err != nil {
+		t.Fatalf("CompleteClaim: %v", err)
+	}
+	if completed.Status != domain.TicketReadyForHuman || completed.ClaimedBy != "" {
+		t.Fatalf("completed Ticket = %+v", completed)
+	}
+	if completed.WorkspaceID != "514a26ed287e429b888000aaa288333a" {
+		t.Fatalf("CompleteClaim cleared Workspace ID: %+v", completed)
+	}
+
+	again, err := service.CompleteClaim("work", "cursor-cloud-1234", domain.TicketReadyForHuman, false)
+	if err != nil || again.Status != domain.TicketReadyForHuman {
+		t.Fatalf("repeated CompleteClaim = %+v, %v", again, err)
+	}
+}
+
 func TestUnclaimBranches(t *testing.T) {
 	service, home := newTestService(t)
 	path := filepath.Join(home, "work.md")
@@ -1055,6 +1103,7 @@ project: change-monitor
 blocked_by: []
 claimed_by:
 claimed_at:
+pull_requests: []
 created: 2026-08-20
 updated: 2026-08-20
 ---
@@ -1366,6 +1415,47 @@ func TestProjects(t *testing.T) {
 	}
 	if _, err := service.CreateProject("Closed", false); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("closed Project name = %v, want invalid_usage", err)
+	}
+}
+
+func TestProjectTemplateRoundTripPreservesIndexBody(t *testing.T) {
+	service, home := newTestService(t)
+	if _, err := service.Init(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateProject("change-monitor", false); err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(home, "change-monitor", "index.md")
+	before := readFile(t, indexPath)
+
+	dryRun, err := service.SetProjectTemplate("change-monitor", "everysphere", true)
+	if err != nil {
+		t.Fatalf("SetProjectTemplate(dry run) error = %v", err)
+	}
+	if dryRun.TemplateName != "everysphere" {
+		t.Fatalf("dry-run TemplateName = %q", dryRun.TemplateName)
+	}
+	if got := readFile(t, indexPath); got != before {
+		t.Fatal("dry-run changed index.md")
+	}
+
+	project, err := service.SetProjectTemplate("change-monitor", "everysphere", false)
+	if err != nil {
+		t.Fatalf("SetProjectTemplate() error = %v", err)
+	}
+	if project.TemplateName != "everysphere" {
+		t.Fatalf("TemplateName = %q", project.TemplateName)
+	}
+	if got := readFile(t, indexPath); !strings.Contains(got, "twt_template: everysphere") || !strings.Contains(got, "# change-monitor") {
+		t.Fatalf("index.md did not preserve its body and add the Template:\n%s", got)
+	}
+	shown, err := service.Project("change-monitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.TemplateName != "everysphere" {
+		t.Fatalf("Project().TemplateName = %q", shown.TemplateName)
 	}
 }
 

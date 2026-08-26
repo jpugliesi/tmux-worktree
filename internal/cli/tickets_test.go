@@ -1,7 +1,9 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,8 +13,40 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/cursorcloud"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/spf13/cobra"
 )
+
+type cliCloudHarness struct {
+	dispatches []cursorcloud.DispatchRequest
+	syncStatus string
+}
+
+func (h *cliCloudHarness) Dispatch(_ context.Context, request cursorcloud.DispatchRequest) (cursorcloud.DispatchResult, error) {
+	h.dispatches = append(h.dispatches, request)
+	return cursorcloud.DispatchResult{
+		AgentID: "bc-agent", RunID: "run-one",
+		Effort: cursorcloud.EffectiveEffort{Kind: "prompt", Value: "large"},
+	}, nil
+}
+
+func (h *cliCloudHarness) Sync(_ context.Context, request cursorcloud.SyncRequest) (cursorcloud.SyncResult, error) {
+	status := h.syncStatus
+	if status == "" {
+		status = "finished"
+	}
+	observations := make([]cursorcloud.SyncObservation, 0, len(request.Sessions))
+	for _, session := range request.Sessions {
+		observations = append(observations, cursorcloud.SyncObservation{
+			SessionID: session.SessionID, Status: status, Result: "Implemented.",
+			Repositories: []cursorcloud.RepositoryResult{{
+				URL: "https://github.com/acme/api.git", Branch: "cursor/fix-auth", PRURL: "https://github.com/acme/api/pull/42",
+			}},
+		})
+	}
+	return cursorcloud.SyncResult{Sessions: observations}, nil
+}
 
 // ticketTestOptions builds Options with a temporary Tickets home. Tests never
 // touch a personal vault.
@@ -1401,6 +1435,85 @@ func TestTicketsProjectsCommands(t *testing.T) {
 	}
 }
 
+func TestProjectCommandsSaveWorkspaceTemplateReference(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"product", "product-v2"} {
+		if _, _, err := executeCollectingInput(t, options, nil, "templates", "create", name); err != nil {
+			t.Fatalf("create Template %s: %v", name, err)
+		}
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"projects", "create", "change-monitor", "--template", "product", "--output", "json"); err != nil {
+		t.Fatalf("projects create --template: %v", err)
+	}
+	show, _, err := executeCollectingInput(t, options, nil,
+		"projects", "show", "change-monitor", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(show, `"templateName":"product"`) {
+		t.Fatalf("projects show = %s", show)
+	}
+
+	dry, _, err := executeCollectingInput(t, options, nil,
+		"projects", "set", "change-monitor", "--template", "product-v2", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("projects set --dry-run: %v", err)
+	}
+	if mutation := decodeTicketMutation(t, dry); mutation.Status != "valid" || mutation.Operation != "projects.set" {
+		t.Fatalf("projects set dry-run = %s", dry)
+	}
+	if content := readTicketFile(t, filepath.Join(home, "change-monitor", "index.md")); strings.Contains(content, "product-v2") {
+		t.Fatal("projects set --dry-run changed index.md")
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"projects", "set", "change-monitor", "--template", "product-v2", "--output", "json"); err != nil {
+		t.Fatalf("projects set: %v", err)
+	}
+	show, _, err = executeCollectingInput(t, options, nil,
+		"projects", "show", "change-monitor", "--output", "json")
+	if err != nil || !strings.Contains(show, `"templateName":"product-v2"`) {
+		t.Fatalf("projects show after set = %s, %v", show, err)
+	}
+}
+
+func TestProjectsCreateValidatesTemplateBeforeWriting(t *testing.T) {
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeCollectingInput(t, options, nil,
+		"projects", "create", "change-monitor", "--template", "missing", "--output", "json")
+	if clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("projects create missing Template error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, "change-monitor")); !os.IsNotExist(statErr) {
+		t.Fatalf("projects create wrote the Project before Template validation: %v", statErr)
+	}
+}
+
+func TestTemplateRemovalRejectsAProjectReference(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "templates", "create", "product"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"projects", "create", "change-monitor", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeCollectingInput(t, options, nil,
+		"templates", "remove", "product", "--output", "json")
+	if clierr.CodeOf(err) != clierr.PreconditionFailed || !strings.Contains(err.Error(), "Project") {
+		t.Fatalf("templates remove error = %v", err)
+	}
+}
+
 func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	output, err := execute(t, t.TempDir(), "schema")
 	if err != nil {
@@ -1409,7 +1522,8 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	for _, command := range []string{
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets edit"`, `"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
-		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets doctor"`, `"twt tickets repair"`,
+		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
+		`"twt tickets cloud-sync"`, `"twt tickets cloud-abandon"`, `"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`,
 		`"twt projects list"`, `"twt projects show"`,
 	} {
@@ -1419,7 +1533,8 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	}
 	for _, operation := range []string{
 		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`,
-		`"tickets.close"`, `"tickets.comment"`, `"tickets.repair"`, `"projects.create"`,
+		`"tickets.close"`, `"tickets.comment"`, `"tickets.dispatch"`, `"tickets.cloud-sync"`, `"tickets.cloud-abandon"`,
+		`"tickets.repair"`, `"projects.create"`,
 	} {
 		if !strings.Contains(output, operation) {
 			t.Fatalf("schema misses the apply operation %s", operation)
@@ -1595,5 +1710,137 @@ func TestDoctorReportsTheTicketsHome(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "tickets-home") || !strings.Contains(stdout, "does not exist") {
 		t.Fatalf("doctor output = %s", stdout)
+	}
+}
+
+func TestCursorCloudQueueDispatchAndSyncContract(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	harness := &cliCloudHarness{}
+	options.CursorCloudHarness = harness
+	writeTemplateFile(t, options.ConfigDir, domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "product",
+		Repositories: []domain.RepositorySpec{{
+			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
+		}},
+		CursorCloud: &domain.CursorCloudSpec{Effort: domain.CursorCloudEffortLarge, MaxConcurrency: 2},
+	})
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--project", "core", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+
+	queueJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "queue", "--project", "core", "--output", "json")
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	var queue struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Queue         struct {
+			Ready []struct {
+				Slug string `json:"slug"`
+			} `json:"ready"`
+		} `json:"queue"`
+	}
+	if err := json.Unmarshal([]byte(queueJSON), &queue); err != nil {
+		t.Fatal(err)
+	}
+	if queue.SchemaVersion != 2 || len(queue.Queue.Ready) != 1 || queue.Queue.Ready[0].Slug != "fix-auth" {
+		t.Fatalf("queue = %+v\n%s", queue, queueJSON)
+	}
+
+	dryOptions := options
+	dryOptions.CursorCloudHarness = nil
+	dryOptions.CursorCloudExecutable = "missing-cursor-cloud-harness"
+	dryJSON, _, err := executeCollectingInput(t, dryOptions, nil,
+		"tickets", "dispatch", "fix-auth", "--dry-run", "--output", "json")
+	if err != nil || len(harness.dispatches) != 0 || !strings.Contains(dryJSON, `"status":"valid"`) {
+		t.Fatalf("dispatch dry run = %s, calls = %d, error = %v", dryJSON, len(harness.dispatches), err)
+	}
+	dispatchJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "dispatch", "fix-auth", "--output", "json")
+	if err != nil || len(harness.dispatches) != 1 || !strings.Contains(dispatchJSON, `"operation":"tickets.dispatch"`) {
+		t.Fatalf("dispatch = %s, calls = %d, error = %v", dispatchJSON, len(harness.dispatches), err)
+	}
+	for _, privateField := range []string{"templateSnapshot", "promptSnapshot", "createIdempotencyKey", "sendIdempotencyKey"} {
+		if strings.Contains(dispatchJSON, privateField) {
+			t.Fatalf("dispatch JSON exposes private field %q: %s", privateField, dispatchJSON)
+		}
+	}
+
+	syncJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "cloud-sync", "--project", "core", "--output", "json")
+	if err != nil || !strings.Contains(syncJSON, `"capacity":{"maximum":2,"active":0,"available":2,"known":true}`) ||
+		!strings.Contains(syncJSON, `"ticketTransitioned":true`) ||
+		!strings.Contains(syncJSON, `"prUrl":"https://github.com/acme/api/pull/42"`) {
+		t.Fatalf("cloud-sync = %s, error = %v", syncJSON, err)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, `"status":"ready-for-human"`) || !strings.Contains(showJSON, `"claimedBy":""`) {
+		t.Fatalf("Ticket after sync = %s, error = %v", showJSON, err)
+	}
+
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Apply cloud", "--project", "core", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.dispatch","ticket":{"reference":"apply-cloud","plan":true}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil || !strings.Contains(applyJSON, `"operation":"tickets.dispatch"`) || !strings.Contains(applyJSON, `"mode":"plan"`) {
+		t.Fatalf("apply dispatch dry run = %s, error = %v", applyJSON, err)
+	}
+
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Partial sync", "--project", "core", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	partialDispatch, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "dispatch", "partial-sync", "--output", "json")
+	if err != nil {
+		t.Fatalf("dispatch partial sync Ticket: %v", err)
+	}
+	var partial struct {
+		Session struct {
+			ID string `json:"id"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal([]byte(partialDispatch), &partial); err != nil || partial.Session.ID == "" {
+		t.Fatalf("decode partial dispatch = %+v, %v\n%s", partial, err, partialDispatch)
+	}
+	harness.syncStatus = "invalid-status"
+	partialSync, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "cloud-sync", "--project", "core", "--output", "json")
+	if err != nil || !strings.Contains(partialSync, `"status":"partial"`) ||
+		!strings.Contains(partialSync, `"sessionId":"`+partial.Session.ID+`"`) {
+		t.Fatalf("partial cloud-sync = %s, error = %v", partialSync, err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "cloud-abandon", partial.Session.ID, "--output", "json"); clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("cloud-abandon without force = %v", err)
+	}
+	abandonRequest := strings.NewReader(fmt.Sprintf(
+		`{"operation":"tickets.cloud-abandon","ticket":{"session":%q,"force":true}}`, partial.Session.ID,
+	))
+	abandonJSON, _, err := executeCollectingInput(t, options, abandonRequest,
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil || !strings.Contains(abandonJSON, `"status":"valid"`) {
+		t.Fatalf("apply cloud-abandon dry run = %s, error = %v", abandonJSON, err)
+	}
+	abandonRequest = strings.NewReader(fmt.Sprintf(
+		`{"operation":"tickets.cloud-abandon","ticket":{"session":%q,"force":true}}`, partial.Session.ID,
+	))
+	abandonJSON, _, err = executeCollectingInput(t, options, abandonRequest,
+		"apply", "--stdin", "--output", "json")
+	if err != nil || !strings.Contains(abandonJSON, `"status":"applied"`) ||
+		!strings.Contains(abandonJSON, `"ticketTransitioned":true`) {
+		t.Fatalf("apply cloud-abandon = %s, error = %v", abandonJSON, err)
 	}
 }

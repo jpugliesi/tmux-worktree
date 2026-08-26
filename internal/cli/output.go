@@ -33,11 +33,12 @@ const ndjsonAnnotation = "twt.ndjson"
 // --fields flag.
 const fieldsAnnotation = "twt.fields"
 
-// statusValid and statusApplied are the two mutation result states. A dry
-// run reports valid; a real mutation reports applied.
+// Mutation status values distinguish validation, full application, and an
+// operation that applied only to some selected resources.
 const (
 	statusValid   = "valid"
 	statusApplied = "applied"
+	statusPartial = "partial"
 )
 
 type mutationOutput struct {

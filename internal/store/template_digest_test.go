@@ -51,6 +51,9 @@ func TestEnvironmentDigestIgnoresChangesThatKeepTheWorktreeSet(t *testing.T) {
 		{"Agent Session", func(template *domain.Template) {
 			template.Agents = []domain.TemplateAgent{{Label: "ticket-plan", Provider: "codex", Start: []string{"codex", "prompt"}, Resume: []string{"codex"}}}
 		}},
+		{"local dispatch", func(template *domain.Template) {
+			template.LocalDispatch = &domain.LocalDispatchSpec{Provider: "grok", Effort: "large", MaxConcurrency: 3}
+		}},
 	}
 	base, err := EnvironmentDigest(digestTemplate())
 	if err != nil {

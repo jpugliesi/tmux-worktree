@@ -180,6 +180,15 @@ var commandHelp = map[string]helpContent{
 	"twt tickets queue": {
 		long: "Show the complete open Ticket dependency graph for one Project. The Project comes from --project, then TWT_PROJECT, then the current Workspace Project. ready contains only ready-for-agent, unclaimed Tickets whose blockers are done or wontfix. The command sorts graph and ready by priority and then by Ticket slug. --limit cuts ready but does not cut graph.\n\ncycles reports dependency cycles that stop affected Tickets from becoming ready.", example: "  twt tickets queue --project change-monitor --output json\n  twt tickets queue --project change-monitor --limit 4 --fields ready,readyTotalCount --output json",
 	},
+	"twt tickets dispatch": {
+		long: "Start one implementation Session for a ready Ticket on the local or the cursor-cloud backend. An omitted --backend follows the Template: cursor-cloud when cursor_cloud is set, else local. Agent mode implements the Ticket and creates pull requests; --plan starts a planning run. twt saves the Session and claims the Ticket before the launch. A local dispatch creates a Workspace, so it can take minutes when no Prepared Environment is ready, and dispatches serialize per wave. An unclear cloud network result keeps the claim so that a retry cannot create a duplicate Agent; a local launch failure returns the Ticket to the queue and names the partial Workspace.", example: "  twt tickets dispatch canonical-pr-comment --dry-run --output json\n  twt tickets dispatch canonical-pr-comment --output json\n  twt tickets dispatch canonical-pr-comment --backend local --output json",
+	},
+	"twt tickets cloud-sync": {
+		long: "Read active Cursor Cloud runs for one Project and update their saved Sessions. A finished Agent run moves its Ticket to ready-for-human. A failed or cancelled run returns its Ticket to ready-for-agent. A network result that is not clear keeps the Ticket claim. One Session error does not stop updates for other Sessions; JSON reports partial status and a diagnostic for that Session.", example: "  twt tickets cloud-sync --project change-monitor --dry-run --output json\n  twt tickets cloud-sync --project change-monitor --output json",
+	},
+	"twt tickets cloud-abandon": {
+		long: "Stop local recovery for one stuck Cursor Cloud Session. If the saved Cloud claimant still owns the Ticket, twt releases it and returns it to ready-for-agent. twt does not cancel the remote Agent. It preserves a Ticket that another worker claims. Use this command only after sync cannot recover the Session and you accept that the remote Agent can continue.", example: "  twt tickets cloud-abandon SESSION --force --dry-run --output json\n  twt tickets cloud-abandon SESSION --force --output json",
+	},
 	"twt tickets show": {
 		long: "Show one Ticket with its metadata, its open blockers, and its body. TICKET accepts a slug, a unique slug prefix, a title, an alias, a wiki-link, or a path under the Tickets home.", example: "  twt tickets show fix-the-vfs-tools\n  twt tickets show '[[fix-the-vfs-tools]]' --output json",
 	},
@@ -207,6 +216,36 @@ var commandHelp = map[string]helpContent{
 	"twt tickets doctor": {
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
+	"twt projects plan": {
+		long: "Manage the plan document of a Project: plan.md beside the Project's tickets, Obsidian-visible and git-synced. The plan is the top-level design the human and the PM agent iterate; the ticket DAG mirrors it.", example: "  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
+	},
+	"twt projects plan show": {
+		long: "Print the plan document of a Project. JSON includes the content, path, and updated time. A missing plan is not_found with the init hint.", example: "  twt projects plan show change-monitor\n  twt projects plan show change-monitor --output json",
+	},
+	"twt projects plan edit": {
+		long: "Replace the whole plan document of a Project from standard input. The edit is an upsert: it creates plan.md when missing. Edits through twt trigger the tickets git sync; do not edit plan.md on disk from an agent.", example: "  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor --stdin --output json",
+	},
+	"twt projects plan init": {
+		long: "Create the plan document scaffold (Goals, Non-goals, Design, Milestones, Ticket DAG, Decision log). It refuses an existing plan.md.", example: "  twt projects plan init change-monitor --output json",
+	},
+	"twt projects plan path": {
+		long: "Print the plan document path for editor use. The file itself may not exist yet.", example: "  nvim \"$(twt projects plan path change-monitor)\"",
+	},
+	"twt tickets plan": {
+		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
+	},
+	"twt tickets complete": {
+		long: "Record pull request URLs and release the claim in one write, so the URL write can never race a new claimant. This is the worker's terminal command: run it when the Ticket's work ships. The default status ready-for-human hands the Ticket to review; ready-for-agent returns it to the queue. A retry after success is a no-op.", example: "  twt tickets complete fix-auth --as twt-local-01234567 --pr https://origin.cursor.com/acme/api/pull/7 --output json\n  twt tickets complete fix-auth --as twt-local-01234567 --status ready-for-agent --output json",
+	},
+	"twt tickets sync": {
+		long: "Sync the Sessions of one Project across both backends and reconcile Ticket states. The local half joins session records, agent liveness, and ticket claims: a stopped agent with a held claim becomes a stuck diagnostic and is never auto-released. The cloud half runs only when pending Cloud Sessions exist, so the Cursor harness is not required for local-only Projects. Any diagnostic sets that backend's capacity.known to false; dispatch only on a backend with known capacity.", example: "  twt tickets sync --project core --dry-run --output json\n  twt tickets sync --project core --output json",
+	},
+	"twt tickets abandon": {
+		long: "Stop recovery for one local dispatch Session. Abandon makes the Session terminal and returns the Ticket to ready-for-agent only when the Session's own claimant still holds it. It never stops tmux: the Workspace and its agent keep running until 'twt done'. Use it with user authority after 'twt tickets sync' reports a stuck Session that resume cannot fix.", example: "  twt tickets abandon 0123abcd --force --dry-run --output json\n  twt tickets abandon 0123abcd --force --output json",
+	},
+	"twt tickets git-sync": {
+		long: "Reconcile the Tickets home with its git remote in one round: commit manual edits, pull, rebase local commits, and push everything the remote lacks. Run it to recover after offline work or to refresh the local view. It needs ticketsSync.mode git.", example: "  twt tickets git-sync --dry-run --output json\n  twt tickets git-sync --output json",
+	},
 	"twt tickets repair": {
 		long: "Move Tickets to the correct active or closed location from the current status and Project directory. Repair applies no move while the doctor report has a blocker. Run --dry-run first.", example: "  twt tickets repair --dry-run --output json\n  twt tickets repair --output json",
 	},
@@ -221,6 +260,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt projects show": {
 		long: "Show one Project and its coordinator board: ready Tickets, in-flight (claimed) Tickets, and Workspaces linked to the Project.", example: "  twt projects show change-monitor --output json",
+	},
+	"twt projects set": {
+		long: "Set the Workspace Template that a Project uses for future local Workspaces and Cursor Cloud Sessions. Existing Workspaces and Cloud Sessions keep their saved Template snapshots.", example: "  twt projects set change-monitor --template product\n  twt projects set change-monitor --template product --dry-run --output json",
 	},
 	"twt context": {
 		long: "Show the Workspace, tmux session, and repository context for a directory or the current tmux pane. When Tickets home is set, JSON also lists the linked Tickets and the ready queue for the Workspace Project.", example: "  twt context --output json\n  twt context --directory /path/to/worktree --output json",

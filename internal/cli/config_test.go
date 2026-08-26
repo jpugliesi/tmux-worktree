@@ -44,6 +44,8 @@ func clearConfigEnv(t *testing.T) {
 	t.Setenv("TWT_TMUX_SOCKET", "")
 	t.Setenv("TWT_TICKETS_HOME", "")
 	t.Setenv("TWT_BRANCH_PREFIX", "")
+	t.Setenv("TWT_TICKETS_SYNC", "")
+	t.Setenv("TWT_TICKETS_SYNC_REMOTE", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
@@ -97,6 +99,8 @@ func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 		{"ticketAgent.provider", "codex", "default", ""},
 		{"ticketAgent.effort", "large", "default", ""},
 		{"ticketAgent.instructions", "", "default", ""},
+		{"ticketsSync.mode", "off", "default", ""},
+		{"ticketsSync.remote", "origin", "default", ""},
 	}
 	if len(envelope.Config) != len(want) {
 		t.Fatalf("config setting count = %d, want %d\n%+v", len(envelope.Config), len(want), envelope.Config)
@@ -169,6 +173,53 @@ func TestConfigCommandReportsXDGDirectorySources(t *testing.T) {
 	}
 	if got := settingByKey(t, envelope, "dataDir"); got.Source != "env" || got.Origin != "XDG_DATA_HOME" {
 		t.Errorf("dataDir source = %s %s, want env XDG_DATA_HOME", got.Source, got.Origin)
+	}
+}
+
+func TestConfigCommandReportsTicketsSyncDefaults(t *testing.T) {
+	options := configTestOptions(t)
+	envelope := decodeConfig(t, mustConfigJSON(t, options))
+	if got := settingByKey(t, envelope, "ticketsSync.mode"); got.Value != "off" || got.Source != "default" {
+		t.Errorf("ticketsSync.mode = %+v, want default off", got)
+	}
+	if got := settingByKey(t, envelope, "ticketsSync.remote"); got.Value != "origin" || got.Source != "default" {
+		t.Errorf("ticketsSync.remote = %+v, want default origin", got)
+	}
+}
+
+func TestConfigCommandReportsTicketsSyncSources(t *testing.T) {
+	options := configTestOptions(t)
+	writeTwtConfigFile(t, options.ConfigDir, "ticketsSync:\n  mode: git\n  remote: vault\n")
+	configFile := filepath.Join(options.ConfigDir, "config.yaml")
+
+	envelope := decodeConfig(t, mustConfigJSON(t, options))
+	if got := settingByKey(t, envelope, "ticketsSync.mode"); got.Value != "git" || got.Source != "file" || got.Origin != configFile {
+		t.Errorf("ticketsSync.mode = %+v, want file %s", got, configFile)
+	}
+	if got := settingByKey(t, envelope, "ticketsSync.remote"); got.Value != "vault" || got.Source != "file" || got.Origin != configFile {
+		t.Errorf("ticketsSync.remote = %+v, want file %s", got, configFile)
+	}
+
+	t.Setenv("TWT_TICKETS_SYNC", "off")
+	t.Setenv("TWT_TICKETS_SYNC_REMOTE", "github")
+	envelope = decodeConfig(t, mustConfigJSON(t, options))
+	if got := settingByKey(t, envelope, "ticketsSync.mode"); got.Value != "off" || got.Source != "env" || got.Origin != "TWT_TICKETS_SYNC" {
+		t.Errorf("ticketsSync.mode = %+v, want env TWT_TICKETS_SYNC", got)
+	}
+	if got := settingByKey(t, envelope, "ticketsSync.remote"); got.Value != "github" || got.Source != "env" || got.Origin != "TWT_TICKETS_SYNC_REMOTE" {
+		t.Errorf("ticketsSync.remote = %+v, want env TWT_TICKETS_SYNC_REMOTE", got)
+	}
+}
+
+func TestConfigCommandRejectsAnUnsupportedTicketsSyncMode(t *testing.T) {
+	options := configTestOptions(t)
+	writeTwtConfigFile(t, options.ConfigDir, "ticketsSync:\n  mode: svn\n")
+	_, _, err := executeRaw(t, options, "config")
+	if err == nil {
+		t.Fatal("config accepted ticketsSync.mode svn")
+	}
+	if clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("invalid mode code = %q, want %q", clierr.CodeOf(err), clierr.InvalidUsage)
 	}
 }
 
@@ -306,6 +357,12 @@ func TestConfigCommandIncludesEveryConfigFileKey(t *testing.T) {
 		}
 		if tag == "ticketAgent" {
 			if !reported["ticketAgent.provider"] || !reported["ticketAgent.effort"] || !reported["ticketAgent.instructions"] {
+				t.Errorf("config command does not report every %q setting", tag)
+			}
+			continue
+		}
+		if tag == "ticketsSync" {
+			if !reported["ticketsSync.mode"] || !reported["ticketsSync.remote"] {
 				t.Errorf("config command does not report every %q setting", tag)
 			}
 			continue

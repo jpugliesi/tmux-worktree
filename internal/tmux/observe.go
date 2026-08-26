@@ -184,19 +184,31 @@ func (c Client) ObserveWorkspace(workspace domain.Workspace) ([]PaneObservation,
 }
 
 func parsePanes(rows string) []PaneObservation {
+	// A pane row is 8 fields plus one trailing separator. Rows cannot split
+	// on newlines: pane_start_command carries a full agent start command,
+	// which can contain a multi-line prompt. Parse the whole output as one
+	// separator-delimited token stream instead; tmux joins rows with "\n",
+	// which lands at the front of the next row's first token.
+	//
+	// Some tmux builds (3.4 on Linux) escape the separator byte in format
+	// output as the literal text "\037" and escape value newlines too;
+	// others (3.7 on macOS) emit raw bytes. Normalize the escaped form when
+	// no raw separator is present.
+	if !strings.Contains(rows, paneFieldSeparator) {
+		rows = strings.ReplaceAll(rows, `\037`, paneFieldSeparator)
+	}
+	tokens := strings.Split(rows, paneFieldSeparator)
 	panes := []PaneObservation{}
-	for _, row := range strings.Split(rows, "\n") {
-		fields := strings.Split(row, paneFieldSeparator)
-		if len(fields) != 9 || fields[8] != "" {
-			continue
-		}
+	for start := 0; start+8 < len(tokens); start += 8 {
+		fields := tokens[start : start+8]
+		id := strings.TrimPrefix(fields[0], "\n")
 		pid, pidErr := strconv.Atoi(fields[1])
 		dead, deadErr := strconv.Atoi(fields[3])
-		if pidErr != nil || deadErr != nil || fields[0] == "" {
+		if pidErr != nil || deadErr != nil || id == "" {
 			continue
 		}
 		panes = append(panes, PaneObservation{
-			ID: fields[0], RootProcessID: pid, TTY: normalizeTTY(fields[2]), Dead: dead != 0,
+			ID: id, RootProcessID: pid, TTY: normalizeTTY(fields[2]), Dead: dead != 0,
 			CurrentCommand: fields[4], StartCommand: fields[5], CurrentPath: fields[6], AgentID: fields[7],
 		})
 	}

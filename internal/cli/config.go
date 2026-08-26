@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -72,6 +73,18 @@ func (o Options) resolvedConfig() ([]configSettingOutput, error) {
 	if err := validateTicketAgentConfig(ticketAgent); err != nil {
 		return nil, err
 	}
+	ticketsSync, err := o.resolveTicketsSync()
+	if err != nil {
+		return nil, err
+	}
+	syncMode := ticketsSync.Mode
+	if strings.TrimSpace(syncMode) == "" {
+		syncMode = "off"
+	}
+	syncRemote := ticketsSync.Remote
+	if syncRemote == "" {
+		syncRemote = "origin"
+	}
 	return []configSettingOutput{
 		configDir,
 		envSetting("stateDir", o.StateDir, "TWT_STATE_DIR", "XDG_STATE_HOME"),
@@ -83,7 +96,23 @@ func (o Options) resolvedConfig() ([]configSettingOutput, error) {
 		fileOrDefaultSetting("ticketAgent.provider", ticketAgent.Provider, file.TicketAgent.Provider, o.ConfigDir),
 		fileOrDefaultSetting("ticketAgent.effort", ticketAgent.Effort, file.TicketAgent.Effort, o.ConfigDir),
 		fileOrDefaultSetting("ticketAgent.instructions", ticketAgent.Instructions, file.TicketAgent.Instructions, o.ConfigDir),
+		fileOrEnvSetting("ticketsSync.mode", syncMode, "TWT_TICKETS_SYNC", file.TicketsSync.Mode, o.ConfigDir),
+		fileOrEnvSetting("ticketsSync.remote", syncRemote, "TWT_TICKETS_SYNC_REMOTE", file.TicketsSync.Remote, o.ConfigDir),
 	}, nil
+}
+
+// validateTicketsSyncConfig checks the resolved ticketsSync configuration.
+func validateTicketsSyncConfig(config store.TicketsSyncConfig) error {
+	switch strings.TrimSpace(config.Mode) {
+	case "", "off", "git":
+	default:
+		return clierr.New(clierr.InvalidUsage,
+			"unsupported ticketsSync.mode %q; use off or git", config.Mode)
+	}
+	if config.Remote != "" && strings.TrimSpace(config.Remote) == "" {
+		return clierr.New(clierr.InvalidUsage, "ticketsSync.remote must not be blank")
+	}
+	return nil
 }
 
 func resolvedTicketAgentConfig(config store.TicketAgentConfig) store.TicketAgentConfig {

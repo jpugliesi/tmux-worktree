@@ -34,6 +34,14 @@ type index struct {
 // buildIndex walks home once. It indexes the four supported active and closed
 // Ticket locations. index.md at any level, the templates directory, and dot
 // directories are not Tickets.
+// reservedProjectFile names the visible .md files in the Tickets home that
+// are never Tickets: the index and the Project plan. Every walker must
+// consult this set. Dot-prefixed files stay the escape hatch for invisible
+// machine files; this set is for Obsidian-visible metadata.
+func reservedProjectFile(name string) bool {
+	return name == "index.md" || name == "plan.md"
+}
+
 func buildIndex(home string) (*index, error) {
 	root := filepath.Clean(home)
 	if _, err := closedRootExists(root); err != nil {
@@ -72,7 +80,7 @@ func buildIndex(home string) (*index, error) {
 		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".md") {
 			return nil
 		}
-		if entry.Name() == "index.md" {
+		if reservedProjectFile(entry.Name()) {
 			return nil
 		}
 		if _, locationErr := classifyTicketPath(root, path); locationErr != nil {

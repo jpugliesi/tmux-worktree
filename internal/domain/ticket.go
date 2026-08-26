@@ -59,17 +59,29 @@ type Ticket struct {
 	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
 	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
 	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
+	// PullRequests are the pull request URLs that shipped this Ticket's
+	// work. Workers record them through 'twt tickets complete'.
+	PullRequests []string `yaml:"pull_requests" json:"pullRequests,omitempty"`
 	Created     string       `yaml:"created" json:"created"`
 	Updated     string       `yaml:"updated" json:"updated"`
-	Path        string       `yaml:"-" json:"path"`
+	// Path is the backend locator of this Ticket (a file path for the
+	// markdown store). It is not part of the Store contract: other backends
+	// may leave it empty or use another locator form.
+	Path string `yaml:"-" json:"path"`
 }
 
 // Project is one directory of Tickets under the Tickets home.
 type Project struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Tickets  int    `json:"tickets"`
-	HasIndex bool   `json:"hasIndex"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Tickets      int    `json:"tickets"`
+	HasIndex     bool   `json:"hasIndex"`
+	TemplateName string `json:"templateName,omitempty"`
+	// HasPlan reports a plan.md in the Project directory. PlanUpdatedAt is
+	// its RFC3339 mtime and PlanTitle its first H1 heading.
+	HasPlan       bool   `json:"hasPlan"`
+	PlanUpdatedAt string `json:"planUpdatedAt,omitempty"`
+	PlanTitle     string `json:"planTitle,omitempty"`
 }
 
 // Validate checks a Ticket before a write. Reads stay tolerant; this check
@@ -96,6 +108,12 @@ func (t Ticket) Validate() error {
 // ValidTicketSlug reports whether slug follows the Ticket slug rule.
 func ValidTicketSlug(slug string) bool {
 	return len(slug) <= TicketSlugMaxLength && ticketSlugPattern.MatchString(slug)
+}
+
+// ReservedTicketSlug names slugs that would collide with the reserved
+// Project metadata files (index.md, plan.md).
+func ReservedTicketSlug(slug string) bool {
+	return slug == "index" || slug == "plan"
 }
 
 // Slugify derives a kebab slug from a title. It lowercases ASCII letters,

@@ -19,7 +19,10 @@ type AgentSession struct {
 	// PreferProviderResume makes a linked provider session take precedence
 	// over the saved fallback command. Old records keep the saved-command-first
 	// behavior through the false zero value.
-	PreferProviderResume bool      `json:"preferProviderResume,omitempty"`
+	PreferProviderResume bool `json:"preferProviderResume,omitempty"`
+	// Env sets KEY=VALUE pairs in the Agent Session window on start and on
+	// resume.
+	Env []string `json:"env,omitempty"`
 	TmuxPane             string    `json:"tmuxPane,omitempty"`
 	PaneCommand          string    `json:"paneCommand,omitempty"`
 	PaneStart            string    `json:"paneStart,omitempty"`

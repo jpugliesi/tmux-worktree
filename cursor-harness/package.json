@@ -1,0 +1,17 @@
+{
+  "name": "@twt/cursor-cloud-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile src/index.ts --outfile dist/twt-cursor-cloud",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "1.0.28"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "5.9.2"
+  }
+}

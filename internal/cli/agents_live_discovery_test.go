@@ -80,12 +80,6 @@ func main() {
 	}
 	cursorExecutable := filepath.Join(cursorVersion, "cursor-agent")
 	copyExecutable(t, helper, cursorExecutable)
-	cursorScript := filepath.Join(cursorVersion, "index.js")
-	writeTestLines(t, cursorScript, "// Cursor Agent fixture\n")
-	cursorAlias := filepath.Join(bin, "agent")
-	if err := os.Symlink(cursorExecutable, cursorAlias); err != nil {
-		t.Fatal(err)
-	}
 
 	now := time.Now().UTC()
 	workspace := domain.Workspace{
@@ -115,13 +109,13 @@ func main() {
 	startPane(true, "codex", filepath.Join(bin, "codex"))
 	startPane(false, "claude", filepath.Join(bin, "claude"))
 	startPane(false, "grok", filepath.Join(bin, "grok"))
-	startPane(false, "cursor", helper, "host", cursorAlias, "--use-system-ca", cursorScript)
+	startPane(false, "cursor", cursorExecutable)
 	runCommand(t, "", "tmux", "-L", socket, "set-option", "-t", workspace.TmuxSession, "@twt_workspace_id", workspace.ID)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		capture := exec.Command("tmux", "-L", socket, "capture-pane", "-p", "-t", workspace.TmuxSession+":cursor")
 		output, _ := capture.Output()
-		if strings.Contains(string(output), "preview from agent") {
+		if strings.Contains(string(output), "preview from cursor-agent") {
 			break
 		}
 		if time.Now().After(deadline) {

@@ -268,3 +268,23 @@ func environmentIDCompletion(service environmentReportService) completionFunc {
 		return matching(ids, toComplete), noFileCompletion
 	}
 }
+
+// cursorCloudSessionCompletion completes recoverable Cursor Cloud Session IDs.
+func cursorCloudSessionCompletion(stateDir string) completionFunc {
+	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, noFileCompletion
+		}
+		sessions, err := store.NewCursorCloudSessionStore(stateDir).List()
+		if err != nil {
+			return nil, noFileCompletion
+		}
+		ids := make([]string, 0, len(sessions))
+		for _, session := range sessions {
+			if session.Active() || !session.TicketTransitioned {
+				ids = append(ids, session.ID)
+			}
+		}
+		return matching(ids, toComplete), noFileCompletion
+	}
+}
