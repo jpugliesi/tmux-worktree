@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -1057,7 +1056,6 @@ func (s *Service) SetWorkspace(ref, workspaceID string, dryRun bool) (domain.Tic
 	})
 }
 
-var commentsHeading = regexp.MustCompile(`(?m)^## Comments\s*$`)
 
 // Comment appends text under the "## Comments" heading and creates that
 // heading when it is missing.
@@ -1070,11 +1068,29 @@ func (s *Service) Comment(ref, text string, dryRun bool) (domain.Ticket, error) 
 	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
 		return fmt.Sprintf("twt: comment on %s", ref)
 	}, func(m *mutation) error {
-		body := m.file.Body
-		if !commentsHeading.MatchString(body) {
-			body = strings.TrimRight(body, "\n") + "\n\n## Comments\n"
+		// Append inside the Comments section, so comments land correctly
+		// even when other sections (Plan, Questions) follow it.
+		m.file.Body = appendBodySection(m.file.Body, "Comments", text)
+		return nil
+	})
+}
+
+// SetPlanSection replaces the "## Plan" body section of one Ticket, keeping
+// every other section. A claimed Ticket requires the matching claimant; an
+// unclaimed Ticket accepts any.
+func (s *Service) SetPlanSection(ref, claimant, plan string, dryRun bool) (domain.Ticket, error) {
+	if strings.TrimSpace(plan) == "" {
+		return domain.Ticket{}, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "the plan text is empty"),
+			"Pass the plan text on stdin.")
+	}
+	return s.mutate(ref, dryRun, false, syncBestEffort, func() string {
+		return fmt.Sprintf("twt: plan %s", ref)
+	}, func(m *mutation) error {
+		if m.ticket.ClaimedBy != "" && m.ticket.ClaimedBy != claimant {
+			return claimedByOther(m.ticket.Slug, m.ticket.ClaimedBy)
 		}
-		m.file.Body = strings.TrimRight(body, "\n") + "\n\n" + strings.TrimRight(text, "\n") + "\n"
+		m.file.Body = replaceBodySection(m.file.Body, "Plan", plan)
 		return nil
 	})
 }

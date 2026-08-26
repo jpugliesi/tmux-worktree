@@ -217,3 +217,39 @@ func TestTicketsSyncReportsCloudCapacityWithoutPendingSessions(t *testing.T) {
 		t.Fatalf("sync JSON lacks the cloud capacity block:\n%s", syncJSON)
 	}
 }
+
+func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	planJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader("1. Do the thing.\n2. Test it.\n"),
+		"tickets", "plan", "fix-auth", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatalf("tickets plan: %v\n%s", err, planJSON)
+	}
+	if !strings.Contains(planJSON, `"operation":"tickets.plan"`) || !strings.Contains(planJSON, `"status":"applied"`) {
+		t.Fatalf("plan JSON = %s", planJSON)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, `## Plan`) || !strings.Contains(showJSON, "Do the thing.") {
+		t.Fatalf("show after plan = %s", showJSON)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.plan","ticket":{"reference":"fix-auth","plan":"Revised."}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatalf("apply plan dry run: %v\n%s", err, applyJSON)
+	}
+	if !strings.Contains(applyJSON, `"status":"valid"`) {
+		t.Fatalf("apply plan JSON = %s", applyJSON)
+	}
+}

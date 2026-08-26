@@ -216,6 +216,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets doctor": {
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
+	"twt tickets plan": {
+		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
+	},
 	"twt tickets complete": {
 		long: "Record pull request URLs and release the claim in one write, so the URL write can never race a new claimant. This is the worker's terminal command: run it when the Ticket's work ships. The default status ready-for-human hands the Ticket to review; ready-for-agent returns it to the queue. A retry after success is a no-op.", example: "  twt tickets complete fix-auth --as twt-local-01234567 --pr https://origin.cursor.com/acme/api/pull/7 --output json\n  twt tickets complete fix-auth --as twt-local-01234567 --status ready-for-agent --output json",
 	},

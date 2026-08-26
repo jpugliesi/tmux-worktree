@@ -326,6 +326,11 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.text", Type: "string", Required: true},
 		}}, applyTicketsComment},
+		{applyOperationSchema{Operation: "tickets.plan", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.plan", Type: "string", Required: true, Condition: "replaces the whole ## Plan section"},
+			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
+		}}, applyTicketsPlan},
 		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
 			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
@@ -841,6 +846,27 @@ func applyTicketsUnclaim(command *cobra.Command, options Options, request applyR
 		return err
 	}
 	return unclaimTicket(command, service, payload.Reference, payload.As)
+}
+
+type ticketPlanApplyRequest struct {
+	Reference string `json:"reference"`
+	Plan      string `json:"plan"`
+	As        string `json:"as,omitempty"`
+}
+
+func applyTicketsPlan(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketPlanApplyRequest
+	if err := decodeApplyPayload("tickets.plan", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Plan == "" {
+		return fmt.Errorf("ticket.reference and ticket.plan are required for tickets.plan")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return planTicket(command, service, payload.Reference, payload.As, payload.Plan)
 }
 
 func applyTicketsComplete(command *cobra.Command, options Options, request applyRequest) error {
