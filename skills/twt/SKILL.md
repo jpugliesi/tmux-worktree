@@ -365,7 +365,10 @@ sections in this order:
    command for each Ticket. Add `--plan` only when the user asks for a plan.
    A normal dispatch asks the agent to implement the Ticket, run tests,
    attach each pull request with `twt tickets pr add` as soon as it exists,
-   and then report through `twt tickets complete`.
+   and then report through `twt tickets complete`. A Ticket with a `## Plan`
+   section dispatches only after `twt tickets approve`
+   (`precondition_failed` otherwise); surface it to the human instead of
+   retrying.
 
 The worker contract: a local implementation agent finishes with
 `twt tickets complete TICKET --as CLAIMANT --pr URL`, which records the pull
@@ -563,6 +566,56 @@ printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT --out
 ```
 
 A claimed Ticket requires the matching `--as` claimant.
+
+A Ticket plan carries a hard approval gate. The human approves with:
+
+```sh
+twt tickets approve TICKET --output json
+printf '%s' "Ship it; keep the scope small." | twt tickets approve TICKET --stdin --output json
+```
+
+The approval stamps `plan_approved_by` and `plan_approved_at`.
+Implementation dispatch refuses a Ticket that has a `## Plan` section
+without the stamp (`precondition_failed`); Tickets without a plan section
+dispatch freely, and plan-mode dispatch is never gated. A plan rewrite
+through `tickets plan` clears the stamp: a changed plan needs a new
+approval. When the Ticket waits on the planning agent's "Plan ready for
+your approval" ask, approve also acts as the answer: it restores the
+pre-ask status and relays into the live session, and the agent then
+promotes the Ticket to `ready-for-agent` and unclaims it.
+
+### Run a Project
+
+This is the PM contract: divide a large design into a Ticket DAG and drive
+it across agents. The Tickets are the DAG source of truth; plan.md mirrors
+them. Make every change through twt verbs first, then one `plan edit`.
+
+1. Bootstrap: `twt projects create NAME --template TEMPLATE`, then
+   `twt projects plan init NAME`.
+2. Iterate plan.md with the human until the decisions close. Every edit
+   goes through `plan edit --stdin`, never on disk.
+3. Emit the DAG leaves-first: `tickets create --stdin` with
+   `--status needs-triage` and `--blocked-by` edges. Promote a Ticket to
+   `ready-for-agent` when its spec is firm. Plain `--stdin` bodies land
+   under `## What to build` in the skeleton, so every generated Ticket
+   keeps its section anchors.
+4. Verify the graph with `twt tickets queue --project NAME --output json`:
+   it reports cycles and the ready set from one snapshot.
+5. Dispatch in waves. `twt tickets dispatch TICKET --plan` for a Ticket
+   that has no decision-complete `## Plan`; plain dispatch for the rest.
+   The planning agent writes the plan into the Ticket, asks for approval,
+   and waits; the implementation dispatch of a planned Ticket is gated on
+   `twt tickets approve`.
+6. Monitor with the board (`twt projects show NAME`). Answer WAITING ON
+   YOU items with `tickets answer` or `tickets approve`. Close each
+   in-review Ticket the board marks all-merged; the close unblocks its
+   dependents.
+7. Replan by splitting, with verbs, not a special command: (a) create the
+   child Tickets with the parent's blockers; (b) re-point each dependent
+   with `tickets set --blocked-by` - the flag REPLACES the whole list, so
+   pass every remaining blocker; (c) `tickets set PARENT --status wontfix`;
+   (d) verify with `queue` (no cycles, expected ready set); (e) mirror the
+   change into plan.md with one `plan edit`.
 
 ### Claim and close
 
