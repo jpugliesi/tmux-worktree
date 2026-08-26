@@ -9,7 +9,7 @@ import (
 )
 
 type projectPlanOutput struct {
-	SchemaVersion int                            `json:"schemaVersion"`
+	SchemaVersion int                             `json:"schemaVersion"`
 	Plan          ticketservice.ProjectPlanResult `json:"plan"`
 }
 

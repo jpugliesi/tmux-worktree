@@ -240,6 +240,7 @@ func (g *gitSync) commit(message string) error {
 func (g *gitSync) push() error {
 	_, err := runTicketGit(syncRemoteTimeout, g.toplevel, "push", "--quiet", "--no-verify", "-u", g.remote, g.branch)
 	if err == nil {
+		markReconciled(g.stateDir)
 		return nil
 	}
 	message := err.Error()
@@ -296,6 +297,7 @@ func (g *gitSync) fetch(required bool, timeout time.Duration) (bool, error) {
 		g.logf("Warning: twt could not fetch the tickets remote %q. The change stays local until the next successful sync.", g.remote)
 		return false, nil
 	}
+	markReconciled(g.stateDir)
 	if _, err := runTicketGit(syncLocalTimeout, g.toplevel, "rev-parse", "--verify", "--quiet", g.remoteRef()); err != nil {
 		return false, nil
 	}
@@ -610,4 +612,30 @@ func syncWrite[T any](s *Service, class syncClass, dryRun bool, message func() s
 	return zero, clierr.WithHint(
 		clierr.New(clierr.Locked, "the tickets remote kept changing during this operation"),
 		"Run the command again.")
+}
+
+// reconcileStampName is the state file that records the last successful
+// exchange with the tickets remote. Reads report it as their freshness.
+const reconcileStampName = "tickets-sync-reconciled"
+
+func markReconciled(stateDir string) {
+	if stateDir == "" {
+		return
+	}
+	path := filepath.Join(stateDir, reconcileStampName)
+	_ = os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+// LastReconciledAt reports when this machine last exchanged state with the
+// tickets remote. The zero time means never (or sync is off).
+func LastReconciledAt(stateDir string) time.Time {
+	data, err := os.ReadFile(filepath.Join(stateDir, reconcileStampName))
+	if err != nil {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }

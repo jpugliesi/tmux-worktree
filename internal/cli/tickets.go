@@ -318,7 +318,7 @@ func createTicket(command *cobra.Command, service ticketservice.Store, request t
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var project, status string
-	var ready, claimed, needsInput, all, allProjects bool
+	var ready, claimed, needsInput, all, allProjects, fresh bool
 	var limit, offset int
 	command := &cobra.Command{
 		Use:     "list",
@@ -334,6 +334,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			freshenTicketStore(command, service, fresh)
 			tickets, err := service.List(ticketservice.ListFilter{
 				Project:    scope.Project,
 				ProjectSet: scope.Set,
@@ -370,6 +371,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
 	command.Flags().BoolVar(&needsInput, "needs-input", false, "List only Tickets whose agent waits on the human")
 	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
+	addFreshFlag(command, &fresh)
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)

@@ -55,5 +55,3 @@ func planTicket(command *cobra.Command, service ticketservice.Store, ref, claima
 			return err
 		})
 }
-
-

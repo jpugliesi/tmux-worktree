@@ -4,9 +4,29 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/prstate"
+	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 )
+
+// addFreshFlag registers --fresh on a read command.
+func addFreshFlag(command *cobra.Command, fresh *bool) {
+	command.Flags().BoolVar(fresh, "fresh", false,
+		"Sync the Tickets home with its remote before the read")
+}
+
+// freshenTicketStore syncs the store before a read when --fresh is set. A
+// failure never blocks the read; it degrades to a warning on stderr.
+func freshenTicketStore(command *cobra.Command, service ticketservice.Store, fresh bool) {
+	if !fresh {
+		return
+	}
+	if _, err := service.Sync(false); err != nil {
+		fmt.Fprintf(command.ErrOrStderr(), "Warning: --fresh sync failed; the read uses local state: %v\n", err)
+	}
+}
 
 // deriveTicketState folds status, claim, PRs, and (when available) live PR
 // state into one display state. prStates may be nil: offline callers derive

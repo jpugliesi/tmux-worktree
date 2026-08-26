@@ -277,7 +277,7 @@ var commandHelp = map[string]helpContent{
 		long: "List every Project with its Ticket count.", example: "  twt projects list\n  twt projects list --output json",
 	},
 	"twt projects show": {
-		long: "Show one Project and its coordinator board: ready Tickets, in-flight (claimed) Tickets, and Workspaces linked to the Project.", example: "  twt projects show change-monitor --output json",
+		long: "Show one Project as the coordinator board: Tickets waiting on the human, in progress (with the newest dispatch Session each), in review (with live pull request state and an all-merged close marker), ready, blocked, done, and the linked Workspaces. Sessions come from the last sync, never from a live probe; storeAsOf reports the store freshness. --no-fetch uses only cached pull request state.", example: "  twt projects show change-monitor\n  twt projects show change-monitor --output json\n  twt projects show change-monitor --no-fetch --output json",
 	},
 	"twt projects set": {
 		long: "Set the Workspace Template that a Project uses for future local Workspaces and Cursor Cloud Sessions. Existing Workspaces and Cloud Sessions keep their saved Template snapshots.", example: "  twt projects set change-monitor --template product\n  twt projects set change-monitor --template product --dry-run --output json",

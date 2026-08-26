@@ -14,7 +14,7 @@ type ticketTreeOutput struct {
 
 func newTicketsTreeCommand(options Options) *cobra.Command {
 	var project string
-	var all, noFetch bool
+	var all, noFetch, fresh bool
 	command := &cobra.Command{
 		Use:   "tree --project PROJECT [--all] [--no-fetch]",
 		Short: "Render the Ticket dependency tree with PR state",
@@ -24,6 +24,7 @@ func newTicketsTreeCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			freshenTicketStore(command, service, fresh)
 			result, err := service.Tree(project, all)
 			if err != nil {
 				return err
@@ -48,6 +49,7 @@ func newTicketsTreeCommand(options Options) *cobra.Command {
 	_ = command.MarkFlagRequired("project")
 	command.Flags().BoolVar(&all, "all", false, "Include done and wontfix Tickets")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Use only cached PR state; never call the forge")
+	addFreshFlag(command, &fresh)
 	registerProjectFlagCompletion(command, options)
 	addFieldsFlag(command, ticketTreeOutput{})
 	return command

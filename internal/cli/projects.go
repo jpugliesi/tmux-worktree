@@ -1,10 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"sort"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	"github.com/jpugliesi/tmux-worktree/internal/prstate"
+	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
@@ -23,8 +28,29 @@ type projectShowOutput struct {
 	InFlight      []domain.Ticket `json:"inFlight"`
 	// WaitingOnYou are the claimed needs-info Tickets: an agent asked and
 	// waits on the human.
-	WaitingOnYou []domain.Ticket   `json:"waitingOnYou"`
-	Workspaces   []workspaceOutput `json:"workspaces"`
+	WaitingOnYou []domain.Ticket `json:"waitingOnYou"`
+	// Board sections derived from status, claim, and PR state.
+	InProgress []domain.Ticket            `json:"inProgress"`
+	InReview   []domain.Ticket            `json:"inReview"`
+	Blocked    []domain.Ticket            `json:"blocked"`
+	Done       []domain.Ticket            `json:"done"`
+	Sessions   []boardSessionOutput       `json:"sessions"`
+	PRStates   map[string]prstate.PRState `json:"prStates,omitempty"`
+	// StoreAsOf is the last successful exchange with the tickets remote on
+	// this machine (empty when sync is off).
+	StoreAsOf  string            `json:"storeAsOf,omitempty"`
+	Workspaces []workspaceOutput `json:"workspaces"`
+}
+
+// boardSessionOutput is the newest dispatch session per Ticket, read from
+// the local and cloud stores without any probing.
+type boardSessionOutput struct {
+	Backend     string `json:"backend"`
+	ID          string `json:"id"`
+	Ticket      string `json:"ticket"`
+	Status      string `json:"status"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	UpdatedAt   string `json:"updatedAt"`
 }
 
 func newProjectsCommand(options Options) *cobra.Command {
@@ -164,6 +190,7 @@ func newProjectsListCommand(options Options) *cobra.Command {
 }
 
 func newProjectsShowCommand(options Options) *cobra.Command {
+	var noFetch, fresh bool
 	command := &cobra.Command{
 		Use:   "show NAME",
 		Short: "Show a Project",
@@ -173,28 +200,23 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			freshenTicketStore(command, service, fresh)
 			project, err := service.Project(args[0])
 			if err != nil {
 				return err
 			}
-			board, err := projectBoard(options, service, project)
+			board, err := projectBoard(command.Context(), options, service, project, noFetch)
 			if err != nil {
 				return err
 			}
 			if WantsJSON(command) {
 				return writeReadJSON(command, board, "project")
 			}
-			return writeFields(command.OutOrStdout(), [][2]string{
-				{"Project", project.Name},
-				{"Path", project.Path},
-				{"Tickets", fmt.Sprintf("%d", project.Tickets)},
-				{"Ready", fmt.Sprintf("%d", len(board.Ready))},
-				{"In flight", fmt.Sprintf("%d", len(board.InFlight))},
-				{"Waiting on you", fmt.Sprintf("%d", len(board.WaitingOnYou))},
-				{"Workspaces", fmt.Sprintf("%d", len(board.Workspaces))},
-			})
+			return writeProjectBoard(command.OutOrStdout(), board, time.Now())
 		},
 	}
+	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Use only cached PR state; never call the forge")
+	addFreshFlag(command, &fresh)
 	setArguments(command, requiredArgument("name"))
 	addFieldsFlag(command, projectShowOutput{})
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
@@ -202,8 +224,10 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 }
 
 // projectBoard is the coordinator read for one Project: pickable Tickets,
-// claimed Tickets, and the Workspaces that belong to the Project.
-func projectBoard(options Options, service ticketservice.Store, project domain.Project) (projectShowOutput, error) {
+// claimed Tickets, board sections with PR state, sessions, and the
+// Workspaces that belong to the Project. It never probes tmux or calls a
+// backend; sessions come from the last sync's records.
+func projectBoard(ctx context.Context, options Options, service ticketservice.Store, project domain.Project, offline bool) (projectShowOutput, error) {
 	ready, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, Ready: true})
 	if err != nil {
 		return projectShowOutput{}, err
@@ -234,12 +258,197 @@ func projectBoard(options Options, service ticketservice.Store, project domain.P
 	for _, workspace := range linked {
 		outputs = append(outputs, toWorkspaceOutput(workspace))
 	}
-	return projectShowOutput{
+	all, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, All: true})
+	if err != nil {
+		return projectShowOutput{}, err
+	}
+	readySlugs := map[string]bool{}
+	for _, ticket := range ready {
+		readySlugs[ticket.Slug] = true
+	}
+	urls := []string{}
+	for _, ticket := range all {
+		if ticket.Status != domain.TicketDone && ticket.Status != domain.TicketWontfix {
+			urls = append(urls, ticket.PullRequests...)
+		}
+	}
+	var prStates map[string]prstate.PRState
+	if len(urls) > 0 {
+		prStates = options.prStateService().GetAll(ctx, urls, offline)
+	}
+	board := projectShowOutput{
 		SchemaVersion: jsonSchemaVersion,
 		Project:       project,
 		Ready:         ready,
 		InFlight:      claimed,
 		WaitingOnYou:  waiting,
+		InProgress:    []domain.Ticket{},
+		InReview:      []domain.Ticket{},
+		Blocked:       []domain.Ticket{},
+		Done:          []domain.Ticket{},
+		Sessions:      boardSessions(options, project.Name),
+		PRStates:      prStates,
 		Workspaces:    outputs,
-	}, nil
+	}
+	for _, ticket := range all {
+		state := deriveTicketState(ticket.Status, ticket.ClaimedBy, ticket.PullRequests, prStates, readySlugs[ticket.Slug])
+		switch state {
+		case "done", "wontfix":
+			board.Done = append(board.Done, ticket)
+		case "in-review":
+			board.InReview = append(board.InReview, ticket)
+		case "in-progress":
+			board.InProgress = append(board.InProgress, ticket)
+		case "blocked":
+			board.Blocked = append(board.Blocked, ticket)
+		}
+	}
+	sort.Slice(board.Done, func(i, j int) bool { return board.Done[i].Updated > board.Done[j].Updated })
+	if len(board.Done) > 5 {
+		board.Done = board.Done[:5]
+	}
+	if reconciled := ticketservice.LastReconciledAt(options.StateDir); !reconciled.IsZero() {
+		board.StoreAsOf = reconciled.Format(time.RFC3339)
+	}
+	return board, nil
+}
+
+// boardSessions reads the newest dispatch session per Ticket from both
+// backend stores.
+func boardSessions(options Options, project string) []boardSessionOutput {
+	newest := map[string]boardSessionOutput{}
+	newestAt := map[string]time.Time{}
+	if sessions, err := store.NewLocalDispatchSessionStore(options.StateDir).List(); err == nil {
+		for _, session := range sessions {
+			if session.Project != project {
+				continue
+			}
+			if session.UpdatedAt.After(newestAt[session.TicketSlug]) {
+				newestAt[session.TicketSlug] = session.UpdatedAt
+				newest[session.TicketSlug] = boardSessionOutput{
+					Backend: "local", ID: session.ID, Ticket: session.TicketSlug,
+					Status: string(session.Status), WorkspaceID: session.WorkspaceID,
+					UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
+				}
+			}
+		}
+	}
+	if sessions, err := store.NewCursorCloudSessionStore(options.StateDir).List(); err == nil {
+		for _, session := range sessions {
+			if session.Project != project {
+				continue
+			}
+			if session.UpdatedAt.After(newestAt[session.TicketSlug]) {
+				newestAt[session.TicketSlug] = session.UpdatedAt
+				newest[session.TicketSlug] = boardSessionOutput{
+					Backend: "cursor-cloud", ID: session.ID, Ticket: session.TicketSlug,
+					Status:    string(session.Status),
+					UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
+				}
+			}
+		}
+	}
+	outputs := make([]boardSessionOutput, 0, len(newest))
+	for _, session := range newest {
+		outputs = append(outputs, session)
+	}
+	sort.Slice(outputs, func(i, j int) bool { return outputs[i].Ticket < outputs[j].Ticket })
+	return outputs
+}
+
+// writeProjectBoard renders the sectioned text board. Empty sections are
+// omitted. now is injected so tests stay deterministic.
+func writeProjectBoard(out io.Writer, board projectShowOutput, now time.Time) error {
+	header := fmt.Sprintf("Project: %s", board.Project.Name)
+	if board.Project.HasPlan {
+		header += fmt.Sprintf("    Plan: plan.md (updated %s)", board.Project.PlanUpdatedAt)
+	}
+	if _, err := fmt.Fprintln(out, header); err != nil {
+		return err
+	}
+	sessionsByTicket := map[string]boardSessionOutput{}
+	for _, session := range board.Sessions {
+		sessionsByTicket[session.Ticket] = session
+	}
+	section := func(title string, tickets []domain.Ticket, line func(domain.Ticket) string) error {
+		if len(tickets) == 0 {
+			return nil
+		}
+		if _, err := fmt.Fprintf(out, "\n%s (%d)\n", title, len(tickets)); err != nil {
+			return err
+		}
+		for _, ticket := range tickets {
+			if _, err := fmt.Fprintf(out, "  %s\n", line(ticket)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	plain := func(ticket domain.Ticket) string {
+		return fmt.Sprintf("%s  p%d  %s", ticket.Slug, ticket.Priority, ticket.Title)
+	}
+	withSession := func(ticket domain.Ticket) string {
+		line := fmt.Sprintf("%s  @%s", ticket.Slug, ticket.ClaimedBy)
+		if session, found := sessionsByTicket[ticket.Slug]; found {
+			line += fmt.Sprintf("  session %s (%s)", session.Status, session.Backend)
+		}
+		if badge := prBadge(ticket.PullRequests, board.PRStates); badge != "" {
+			line += "  " + badge
+		}
+		return line
+	}
+	waiting := func(ticket domain.Ticket) string {
+		return withSession(ticket) + fmt.Sprintf("  <- answer: twt tickets answer %s --stdin", ticket.Slug)
+	}
+	review := func(ticket domain.Ticket) string {
+		line := fmt.Sprintf("%s  %s", ticket.Slug, string(ticket.Status))
+		if badge := prBadge(ticket.PullRequests, board.PRStates); badge != "" {
+			line += "  " + badge
+		}
+		if allMerged(ticket.PullRequests, board.PRStates) {
+			line += "  <- all PRs merged; close it"
+		}
+		return line
+	}
+	if err := section("WAITING ON YOU", board.WaitingOnYou, waiting); err != nil {
+		return err
+	}
+	if err := section("IN PROGRESS", board.InProgress, withSession); err != nil {
+		return err
+	}
+	if err := section("IN REVIEW", board.InReview, review); err != nil {
+		return err
+	}
+	if err := section("READY", board.Ready, plain); err != nil {
+		return err
+	}
+	if err := section("BLOCKED", board.Blocked, plain); err != nil {
+		return err
+	}
+	if err := section("DONE (last 5)", board.Done, plain); err != nil {
+		return err
+	}
+	footer := "\nSessions as of the last sync; run 'twt tickets sync --project " + board.Project.Name + "' to refresh."
+	if board.StoreAsOf != "" {
+		if reconciled, err := time.Parse(time.RFC3339, board.StoreAsOf); err == nil {
+			footer = fmt.Sprintf("\nStore as of %s. ", relativeAge(reconciled, now)) + footer[1:]
+		}
+	}
+	_, err := fmt.Fprintln(out, footer)
+	return err
+}
+
+// relativeAge renders how long ago t was, at minute resolution.
+func relativeAge(t, now time.Time) string {
+	age := now.Sub(t)
+	switch {
+	case age < time.Minute:
+		return "less than 1m ago"
+	case age < time.Hour:
+		return fmt.Sprintf("%dm ago", int(age.Minutes()))
+	case age < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(age.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(age.Hours()/24))
+	}
 }
