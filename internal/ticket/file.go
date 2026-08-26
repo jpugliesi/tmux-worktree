@@ -187,6 +187,16 @@ func setMapInt(mapping *yaml.Node, key string, value int) {
 	node.Content = nil
 }
 
+// setMapBool sets key to a plain Boolean scalar.
+func setMapBool(mapping *yaml.Node, key string, value bool) {
+	node := mapValueForUpdate(mapping, key)
+	node.Kind = yaml.ScalarNode
+	node.Tag = "!!bool"
+	node.Value = fmt.Sprintf("%t", value)
+	node.Style = 0
+	node.Content = nil
+}
+
 // setMapDate sets key to a vault date scalar. The timestamp tag keeps the
 // date plain and unquoted, exactly as Obsidian writes it.
 func setMapDate(mapping *yaml.Node, key, value string) {

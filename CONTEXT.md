@@ -114,8 +114,9 @@ _Avoid_: Closed Project, archive Project
 **Project**:
 One durable directory under Tickets home, with `index.md`. It groups Tickets
 and selects one Workspace Template. A Project can have many Workspaces over
-time. Its Ticket count includes
-active and closed Tickets.
+time. Its Ticket count includes active and closed Tickets. `twt_closed: true`
+in `index.md` closes the Project. A closed Project keeps its directory and plan.
+Default Project lists and completion omit it. New work cannot use it.
 _Avoid_: Board, workspace, epic folder
 
 **Ticket Store**:

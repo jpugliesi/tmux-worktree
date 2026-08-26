@@ -264,8 +264,11 @@ var commandHelp = map[string]helpContent{
 	"twt projects create": {
 		long: "Create one Project directory and write its index.md only when that file is missing.", example: "  twt projects create change-monitor",
 	},
+	"twt projects close": {
+		long: "Close one Project. With no open Tickets, the command closes it immediately. At a text terminal, twt asks before it sets open Tickets to wontfix. A script must pass --force when open Tickets remain. Close clears each affected Ticket claim and Workspace link. It does not stop Workspaces or agents. It keeps the Project directory, index.md, and plan.md. Closed Projects do not appear in Project lists or completion.", example: "  twt projects close change-monitor\n  twt projects close change-monitor --force --output json",
+	},
 	"twt projects list": {
-		long: "List every Project with its Ticket count.", example: "  twt projects list\n  twt projects list --output json",
+		long: "List every active Project with its Ticket count.", example: "  twt projects list\n  twt projects list --output json",
 	},
 	"twt projects show": {
 		long: "Show one Project as the coordinator board: Tickets waiting on the human, in progress (with the newest dispatch Session each), in review (with live pull request state and an all-merged close marker), ready, blocked, done, and the linked Workspaces. Sessions come from the last sync, never from a live probe; storeAsOf reports the store freshness. --no-fetch uses only cached pull request state.", example: "  twt projects show change-monitor\n  twt projects show change-monitor --output json\n  twt projects show change-monitor --no-fetch --output json",

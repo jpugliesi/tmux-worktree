@@ -292,6 +292,10 @@ Do not create Linear, GitHub, or Origin issues for this user's tickets unless
 the user asks for one.
 
 A Project is a durable group of Tickets. Create it with `twt projects create`.
+A person closes it with `twt projects close PROJECT`. A close with open Tickets
+needs confirmation or `--force`. Close sets those Tickets to `wontfix` and
+clears their claims and Workspace links. It does not stop Workspaces or agents.
+Agents must use `--force`.
 A Workspace is the temporary environment that works on one or more open
 Tickets from one Project. `twt tickets start TICKET...` claims the Tickets and
 starts one Workspace. It keeps the current Workspace active. Use `twt next`
@@ -666,6 +670,8 @@ them. Make every change through twt verbs first, then one `plan edit`.
    pass every remaining blocker; (c) `tickets set PARENT --status wontfix`;
    (d) verify with `queue` (no cycles, expected ready set); (e) mirror the
    change into plan.md with one `plan edit`.
+8. Close the Project when no more work is valid. Run
+   `twt projects close NAME --force --output json` if open Tickets remain.
 
 ### Claim and close
 

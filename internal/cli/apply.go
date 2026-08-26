@@ -175,6 +175,11 @@ type projectSetApplyRequest struct {
 	Template string `json:"template"`
 }
 
+type projectCloseApplyRequest struct {
+	Name  string `json:"name"`
+	Force bool   `json:"force,omitempty"`
+}
+
 type agentRegisterRequest struct {
 	Workspace         string   `json:"workspace"`
 	Provider          string   `json:"provider"`
@@ -385,6 +390,10 @@ func applyOperations() []applyOperation {
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.template", Type: "string", Required: false},
 		}}, applyTicketsProjectsCreate},
+		{applyOperationSchema{Operation: "projects.close", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.force", Type: "boolean", Required: false, Condition: "required when the Project has open Tickets"},
+		}}, applyTicketsProjectsClose},
 		{applyOperationSchema{Operation: "projects.set", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.template", Type: "string", Required: true},
@@ -1083,6 +1092,21 @@ func applyTicketsProjectsCreate(command *cobra.Command, options Options, request
 		return err
 	}
 	return createProject(command, options, service, payload.Name, payload.Template)
+}
+
+func applyTicketsProjectsClose(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectCloseApplyRequest
+	if err := decodeApplyPayload("projects.close", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("project.name is required for projects.close")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return closeProject(command, service, payload.Name, payload.Force, false)
 }
 
 func applyTicketsProjectsSet(command *cobra.Command, options Options, request applyRequest) error {

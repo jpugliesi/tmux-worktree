@@ -169,14 +169,17 @@ func (s *Service) createProjectWithTemplateOnce(name, templateName string, dryRu
 		return domain.Project{}, err
 	}
 	indexPath := filepath.Join(path, "index.md")
-	if dryRun {
-		project := domain.Project{Name: name, Path: path}
-		if exists {
-			project, err = s.projectInfo(home, name)
-			if err != nil {
-				return domain.Project{}, err
-			}
+	project := domain.Project{Name: name, Path: path}
+	if exists {
+		project, err = s.projectInfo(home, name)
+		if err != nil {
+			return domain.Project{}, err
 		}
+		if project.Closed {
+			return domain.Project{}, closedProject(name)
+		}
+	}
+	if dryRun {
 		project.HasIndex = true
 		if templateName != "" {
 			project.TemplateName = templateName
@@ -225,6 +228,9 @@ func (s *Service) Projects() ([]domain.Project, error) {
 		project, err := s.projectInfo(home, name)
 		if err != nil {
 			return nil, err
+		}
+		if project.Closed {
+			continue
 		}
 		projects = append(projects, project)
 	}
@@ -285,6 +291,14 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 				}
 				project.TemplateName = strings.TrimSpace(value.Value)
 			}
+			if value := findMapValue(file.Mapping(), "twt_closed"); value != nil && value.Tag != "!!null" {
+				if value.Kind != yaml.ScalarNode || value.Tag != "!!bool" {
+					return domain.Project{}, clierr.New(clierr.UnsafeState, "Project %q has an invalid twt_closed value", name)
+				}
+				if decodeErr := value.Decode(&project.Closed); decodeErr != nil {
+					return domain.Project{}, clierr.Wrap(clierr.UnsafeState, decodeErr)
+				}
+			}
 			continue
 		}
 		if entry.Name() == "plan.md" {
@@ -340,7 +354,7 @@ func (s *Service) setProjectTemplateOnce(name, templateName string, dryRun bool)
 	if err != nil {
 		return domain.Project{}, err
 	}
-	project, err := s.Project(name)
+	project, err := s.activeProject(name)
 	if err != nil {
 		return domain.Project{}, err
 	}
@@ -470,6 +484,13 @@ func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, erro
 	if err := ticket.Validate(); err != nil {
 		return CreateResult{}, clierr.Wrap(clierr.InvalidUsage, err)
 	}
+	if req.Project != "" {
+		projectLock, lockErr := store.AcquireNamedLock(s.options.StateDir, "project", req.Project)
+		if lockErr != nil {
+			return CreateResult{}, lockErr
+		}
+		defer projectLock.Release()
+	}
 	idx, err := buildIndex(home)
 	if err != nil {
 		return CreateResult{}, err
@@ -492,6 +513,11 @@ func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, erro
 		}
 		if !projectExists && !(dryRun && req.EnsureProject) {
 			return CreateResult{}, projectMissing(req.Project)
+		}
+		if projectExists {
+			if _, projectErr := s.activeProject(req.Project); projectErr != nil {
+				return CreateResult{}, projectErr
+			}
 		}
 	}
 	path := canonicalTicketPath(home, status, req.Project, slug)
@@ -835,22 +861,11 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 	if req.PrioritySet && (req.Priority < 0 || req.Priority > 4) {
 		return domain.Ticket{}, clierr.New(clierr.InvalidUsage, "priority %d is not in the range 0 to 4", req.Priority)
 	}
-	home, err := s.home()
-	if err != nil {
-		return domain.Ticket{}, err
-	}
 	if req.ProjectSet {
 		if req.Project == "" {
 			return domain.Ticket{}, clierr.WithHint(
 				clierr.New(clierr.InvalidUsage, "the Project name is empty"),
 				"Pass a Project name.")
-		}
-		exists, directoryErr := projectDirectoryExists(home, req.Project)
-		if directoryErr != nil {
-			return domain.Ticket{}, directoryErr
-		}
-		if !exists {
-			return domain.Ticket{}, projectMissing(req.Project)
 		}
 	}
 	var blockedBy []string
@@ -861,27 +876,39 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 			return domain.Ticket{}, normalizeErr
 		}
 	}
-	return s.mutate(ref, dryRun, req.StatusSet, syncBestEffort, func() string {
+	return syncWrite(s, syncBestEffort, dryRun, func() string {
 		return fmt.Sprintf("twt: set %s", ref)
-	}, func(m *mutation) error {
-		if req.StatusSet {
-			setMapString(m.mapping, "status", req.Status)
-			m.relocate = true
-		}
-		if req.PrioritySet {
-			setMapInt(m.mapping, "priority", req.Priority)
-		}
+	}, func() (domain.Ticket, error) {
 		if req.ProjectSet {
-			m.project = req.Project
-			m.relocate = true
-		}
-		if req.BlockedBySet {
-			if err := rejectSelfBlock(m.ticket.Slug, blockedBy); err != nil {
-				return err
+			projectLock, lockErr := store.AcquireNamedLock(s.options.StateDir, "project", req.Project)
+			if lockErr != nil {
+				return domain.Ticket{}, lockErr
 			}
-			setMapBlockedBy(m.mapping, blockedBy)
+			defer projectLock.Release()
+			if _, projectErr := s.activeProject(req.Project); projectErr != nil {
+				return domain.Ticket{}, projectErr
+			}
 		}
-		return nil
+		return s.mutateOnce(ref, dryRun, req.StatusSet, func(m *mutation) error {
+			if req.StatusSet {
+				setMapString(m.mapping, "status", req.Status)
+				m.relocate = true
+			}
+			if req.PrioritySet {
+				setMapInt(m.mapping, "priority", req.Priority)
+			}
+			if req.ProjectSet {
+				m.project = req.Project
+				m.relocate = true
+			}
+			if req.BlockedBySet {
+				if err := rejectSelfBlock(m.ticket.Slug, blockedBy); err != nil {
+					return err
+				}
+				setMapBlockedBy(m.mapping, blockedBy)
+			}
+			return nil
+		})
 	})
 }
 
@@ -1325,6 +1352,11 @@ func (s *Service) mutateOnce(ref string, dryRun, allowUnknownStatus bool, apply 
 	}
 	result.Path = m.destPath
 	result.Project = m.project
+	if result.Project != "" && !closedStatus(result.Status) {
+		if _, err := s.activeProject(result.Project); err != nil {
+			return domain.Ticket{}, err
+		}
+	}
 	if m.destPath != path {
 		if err := ensureTicketDirectory(home, result.Status, m.project, dryRun); err != nil {
 			return domain.Ticket{}, err

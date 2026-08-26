@@ -27,6 +27,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CompleteWorkIsAtomicAndIdempotent", testCompleteWorkIsAtomicAndIdempotent},
 		{"UnclaimGuardsTheClaimant", testUnclaimGuardsTheClaimant},
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
+		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
 		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
@@ -36,6 +37,31 @@ func Run(t *testing.T, backend string, factory Factory) {
 		t.Run(backend+"/"+testCase.name, func(t *testing.T) {
 			testCase.test(t, factory(t))
 		})
+	}
+}
+
+func testCloseProjectResolvesOpenTickets(t *testing.T, store ticketservice.Store) {
+	if _, err := store.CreateProject("core", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "open", Slug: "open", Project: "core", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CloseProject("core", false, false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("close Project without force = %v, want precondition_failed", err)
+	}
+	result, err := store.CloseProject("core", true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Project.Closed || len(result.WontfixTickets) != 1 || result.WontfixTickets[0] != "open" {
+		t.Fatalf("close Project result = %+v", result)
+	}
+	ticket, err := store.Resolve("open")
+	if err != nil || ticket.Status != domain.TicketWontfix {
+		t.Fatalf("closed Project Ticket = %+v, %v", ticket, err)
 	}
 }
 

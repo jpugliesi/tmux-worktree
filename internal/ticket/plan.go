@@ -99,6 +99,9 @@ func (s *Service) InitProjectPlan(name string, dryRun bool) (ProjectPlanResult, 
 }
 
 func (s *Service) writeProjectPlanOnce(name string, content []byte, initOnly, dryRun bool) (ProjectPlanResult, error) {
+	if _, err := s.activeProject(name); err != nil {
+		return ProjectPlanResult{}, err
+	}
 	path, err := s.projectPlanPath(name)
 	if err != nil {
 		return ProjectPlanResult{}, err

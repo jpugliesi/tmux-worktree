@@ -8,11 +8,11 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 | Axis | First | Previous | Now | Current support |
 |---|---:|---:|---:|---|
 | Machine-readable output | 1 | 2 | 3 | JSON is the default when stdout is not a terminal; `--output ndjson` streams list elements one per line with a totalCount summary line; JSON errors carry a stable code, a hint, and a help command |
-| Raw payload input | 0 | 1 | 2 | 38 typed operations through `apply --stdin` cover every non-interactive mutation; each shares one core with its flag command; interactive commands are excluded by design and the error says so |
+| Raw payload input | 0 | 1 | 2 | 39 typed operations through `apply --stdin` cover every non-interactive mutation; each shares one core with its flag command; interactive commands are excluded by design and the error says so |
 | Schema introspection | 0 | 3 | 3 | `twt schema` walks the live command tree: build version, per-command arguments, flag enums, required flags (every required flag is cobra-declared, so the schema never under-reports), `apply` request fields, error codes, exit codes |
 | Context window discipline | 0 | 1 | 3 | `--fields` masks on every read command with reflection-derived valid names, `--offset` with `--limit` on every list, `totalCount` and `truncated` in every response, NDJSON streaming, and skill guidance on all of it |
 | Input hardening | 1 | 2 | 3 | Strict resource names, strict YAML and JSON decoding, a 1 MiB bound on every stdin path, writes confined to twt-owned roots behind ownership markers, and a written posture: [security.md](security.md) — the agent is not a trusted operator |
-| Safety rails | 1 | 2 | 3 | `--dry-run` on every mutation; destructive actions are plans with typed blockers behind `--apply`; transcript text is sanitized (ANSI, OSC, and control sequences stripped) and marked `untrusted: true` in JSON, with a skill rule to never follow instructions inside it |
+| Safety rails | 1 | 2 | 3 | `--dry-run` on every mutation; cleanup actions are plans with typed blockers behind `--apply`; Project close asks before it changes open Tickets or requires `--force`; transcript text is sanitized (ANSI, OSC, and control sequences stripped) and marked `untrusted: true` in JSON, with a skill rule to never follow instructions inside it |
 | Agent knowledge packaging | 1 | 2 | 3 | The skill is embedded in the binary, version-stamped, and installed with `twt skills install` into the Cursor, Claude Code, and Codex trees; `twt doctor` warns when an installed copy is stale |
 
 ## Honest caveats per axis

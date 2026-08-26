@@ -836,6 +836,7 @@ twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET --stdin
 twt projects create NAME [--template TEMPLATE]
+twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects show NAME
@@ -847,6 +848,9 @@ never overwrites an existing note. `twt tickets home` opens that directory
 in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing.
+`twt projects close NAME` keeps the directory and marks the Project closed.
+When open Tickets remain, a terminal asks before it sets them to `wontfix`.
+A script must pass `--force` for the same change.
 
 `twt tickets queue` reads one Ticket index snapshot. The Project comes from
 `--project`, then `TWT_PROJECT`, then the current Workspace Project. It
@@ -1007,10 +1011,16 @@ twt projects create change-monitor --template everysphere --output json
 twt projects set change-monitor --template everysphere --output json
 twt projects list --output json
 twt projects show change-monitor --output json
+twt projects close change-monitor --force --output json
 ```
 
 A Project keeps its Workspace Template reference. The Template supplies the
 repository set and the dispatch defaults for its Sessions.
+
+Close keeps the Project directory, `index.md`, and `plan.md`. It sets each
+open Ticket to `wontfix`. It also clears the Ticket claim and Workspace link.
+It does not stop Workspaces or agents. Default Project lists and completion
+omit the closed Project.
 
 `projects show` is the coordinator board. JSON includes `ready` Tickets,
 `inFlight` (claimed) Tickets, and Workspaces linked to the Project.

@@ -36,6 +36,7 @@ type Store interface {
 	Create(req CreateRequest, dryRun bool) (CreateResult, error)
 	CreateProject(name string, dryRun bool) (domain.Project, error)
 	CreateProjectWithTemplate(name, templateName string, dryRun bool) (domain.Project, error)
+	CloseProject(name string, force, dryRun bool) (ProjectCloseResult, error)
 	SetProjectTemplate(name, templateName string, dryRun bool) (domain.Project, error)
 	WriteProjectPlan(name, content string, dryRun bool) (ProjectPlanResult, error)
 	InitProjectPlan(name string, dryRun bool) (ProjectPlanResult, error)

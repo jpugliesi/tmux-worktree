@@ -78,6 +78,16 @@ unmarked `closed` directory or overwrite notes.
 `index.md` only when that file is missing. Project ticket counts include
 active and closed Tickets.
 
+`twt projects close NAME` sets `twt_closed: true` in the Project `index.md`.
+The Project keeps its directory, `index.md`, `plan.md`, and Ticket history.
+Default Project lists and completion omit a closed Project. New work cannot
+use a closed Project.
+
+When no open Tickets remain, close needs no confirmation. At a text terminal,
+twt asks before it changes open Tickets to `wontfix`. A script must pass
+`--force`. Close also clears each affected claim and Workspace link.
+Close does not stop Workspaces or agents.
+
 Do not rewrite Bases queries on each ticket write. Obsidian Bases owns the
 view. The CLI scaffolds the hub once.
 
@@ -207,6 +217,7 @@ twt tickets comment TICKET --stdin
 twt tickets doctor
 twt tickets repair
 twt projects create NAME
+twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects show NAME

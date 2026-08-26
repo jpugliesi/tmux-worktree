@@ -84,7 +84,8 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    ```sh
    twt tickets dispatch add-the-api        # claims the ticket, starts an agent in tmux
    twt tickets tree --project myfeature    # the dependency DAG with PR badges
-   twt projects show myfeature             # the board
+twt projects show myfeature             # the board
+twt projects close myfeature            # close the Project when work ends
    ```
 
 ## The workflow
