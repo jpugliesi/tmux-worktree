@@ -259,8 +259,10 @@ func TestTicketsCreateWizardWritesDescriptionOnly(t *testing.T) {
 			t.Fatalf("wizard ticket misses %q:\n%s", want, content)
 		}
 	}
-	if strings.Contains(content, "## What to build") {
-		t.Fatalf("wizard dumped the create template:\n%s", content)
+	whatAt := strings.Index(content, "## What to build")
+	bodyAt := strings.Index(content, "Reconnect the vfs tools.")
+	if whatAt < 0 || bodyAt < whatAt {
+		t.Fatalf("wizard description is not under '## What to build':\n%s", content)
 	}
 	if strings.Contains(content, "title: \"<title>\"") {
 		t.Fatalf("wizard left the template title:\n%s", content)
