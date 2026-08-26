@@ -669,6 +669,18 @@ twt workspaces open --all-active --dry-run --output json
 twt workspaces open --all-active
 ```
 
+Rename a Workspace when its purpose changes:
+
+```sh
+twt workspaces rename fix-auth auth-fix
+```
+
+Rename changes only the display name. The Workspace ID, paths, branches,
+tmux session, Ticket links, and Agent Sessions stay unchanged.
+
+Without arguments, a terminal shows the Workspace picker and asks for the new
+name. A script and JSON output require both arguments.
+
 From inside the Workspace tmux session, `archive` behaves like `done --keep`:
 it moves your tmux client to the most recent other active Workspace, or
 detaches the client, and a worker window completes the archive. This flow

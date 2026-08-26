@@ -50,7 +50,10 @@ func (s *Service) SessionGaps() ([]SessionGap, error) {
 	}
 	gaps := make([]SessionGap, 0)
 	for _, workspace := range workspaces {
-		name := sessionName(workspace.TemplateName, workspace.Name)
+		name := workspace.TmuxSession
+		if name == "" {
+			name = sessionName(workspace.TemplateName, workspace.Name)
+		}
 		_, owned := ownedBy[workspace.ID]
 		named, hasName := byName[name]
 		switch workspace.Status {

@@ -19,6 +19,7 @@ func newWorkspacesCommand(options Options) *cobra.Command {
 	workspaces.AddCommand(newWorkspacesAdoptCommand(service))
 	workspaces.AddCommand(newWorkspacesListCommand(service))
 	workspaces.AddCommand(newWorkspacesShowCommand(service))
+	workspaces.AddCommand(newWorkspacesRenameCommand(options, service))
 	workspaces.AddCommand(newWorkspacesCurrentCommand(service))
 	workspaces.AddCommand(newWorkspacesPathCommand(service))
 	workspaces.AddCommand(newWorkspacesOpenCommand(options, service))

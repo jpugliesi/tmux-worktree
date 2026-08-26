@@ -46,10 +46,14 @@ func sessionName(templateName, workspaceName string) string {
 }
 
 func (s *Service) ensureTmux(p *domain.Workspace, unownedPolicy unownedSessionPolicy) error {
+	name := p.TmuxSession
+	if name == "" {
+		name = sessionName(p.TemplateName, p.Name)
+	}
 	if len(p.Repositories) == 0 {
 		// An adopted Workspace can have no repositories. Its session is fine
 		// while it runs, but twt cannot make it again.
-		_, ownerID, exists, err := s.findSession(p.ID, sessionName(p.TemplateName, p.Name))
+		_, ownerID, exists, err := s.findSession(p.ID, name)
 		if err != nil {
 			return err
 		}
@@ -58,7 +62,6 @@ func (s *Service) ensureTmux(p *domain.Workspace, unownedPolicy unownedSessionPo
 		}
 		return fmt.Errorf("Workspace %q has no repositories and no owned tmux session; twt cannot make the session again", p.Name)
 	}
-	name := sessionName(p.TemplateName, p.Name)
 	sessionID, ownerID, exists, err := s.findSession(p.ID, name)
 	if err != nil {
 		return err

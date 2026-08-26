@@ -14,6 +14,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/spf13/cobra"
 )
 
 func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
@@ -73,6 +74,25 @@ func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
 	}
 	if strings.Contains(jsonOutput, `"bytes"`) {
 		t.Fatalf("workspaces list JSON still has a bytes field: %s", jsonOutput)
+	}
+}
+
+func TestWorkspacesRenamePromptsForMissingArguments(t *testing.T) {
+	root := t.TempDir()
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
+	workspace := domain.Workspace{Version: domain.WorkspaceVersion, ID: "rename-id", Name: "old-name", Status: domain.WorkspaceActive}
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	options.SwitchPick = func(_ *cobra.Command, _ []string) (int, error) { return 0, nil }
+
+	output := executeWithOptions(t, options, strings.NewReader("new-name\n"), "workspaces", "rename")
+	if output != "Renamed Workspace \"old-name\" to \"new-name\"\n" {
+		t.Fatalf("workspaces rename output = %q", output)
+	}
+	got, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || got.Name != "new-name" {
+		t.Fatalf("renamed Workspace = %+v, %v", got, err)
 	}
 }
 

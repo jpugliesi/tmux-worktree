@@ -73,6 +73,11 @@ type workspaceReferenceRequest struct {
 	Reference string `json:"reference"`
 }
 
+type workspaceRenameRequest struct {
+	Reference string `json:"reference"`
+	Name      string `json:"name"`
+}
+
 // workspaceOpenRequest opens or repairs one Workspace tmux session. Apply never
 // attaches a tmux client, so noAttach must be true or absent.
 type workspaceOpenRequest struct {
@@ -260,6 +265,10 @@ func applyOperations() []applyOperation {
 			{Path: "workspace.allActive", Type: "boolean", Required: false, Condition: "repairs every active Workspace and attaches no tmux client"},
 			{Path: "workspace.noAttach", Type: "boolean", Required: false, Condition: "must be true or absent; apply repairs the tmux session but attaches no tmux client"},
 		}}, applyWorkspacesOpen},
+		{applyOperationSchema{Operation: "workspaces.rename", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.name", Type: "string", Required: true},
+		}}, applyWorkspacesRename},
 		{applyOperationSchema{Operation: "workspaces.setup.retry", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
 		}}, applyWorkspacesSetupRetry},
@@ -655,6 +664,22 @@ func applyWorkspacesSetupRetry(command *cobra.Command, options Options, request 
 		return err
 	}
 	return retryWorkspaceSetup(command, service, reference)
+}
+
+func applyWorkspacesRename(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceRenameRequest
+	if err := decodeApplyPayload("workspaces.rename", "workspace", request.Workspace, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Name == "" {
+		return fmt.Errorf("workspace.reference and workspace.name are required for workspaces.rename")
+	}
+	service := options.workspaceService()
+	workspace, err := resolveWorkspace(service, payload.Reference)
+	if err != nil {
+		return err
+	}
+	return renameWorkspace(command, service, workspace.ID, workspace.Name, payload.Name)
 }
 
 func applyWorkspacesArchive(command *cobra.Command, options Options, request applyRequest) error {
