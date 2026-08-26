@@ -59,6 +59,12 @@ so a person can inspect or stop it at any time. `tickets sync` never
 releases a claim by itself, and `tickets abandon --force` is an explicit
 operator override that leaves the Workspace running until `twt done`.
 
+For the codex provider, dispatch pre-trusts the twt-owned Workspace
+checkout in `~/.codex/config.toml` (the same entry that answering codex's
+directory-trust prompt persists). An unattended agent cannot answer the
+prompt, and the operator accepted full autonomy when they configured
+dispatch; the entry names only the twt-created worktree.
+
 ## Untrusted transcript text
 
 A provider transcript holds the words of any person or tool that talked to a

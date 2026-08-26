@@ -180,6 +180,15 @@ func (s *Service) attachPane(workspace domain.Workspace, session *domain.AgentSe
 // it takes no mutation lock: Workspace setup calls it while the caller already
 // holds the global mutation lock, so a lock here would deadlock.
 func (s *Service) StartDeclared(workspace domain.Workspace, session domain.AgentSession, start, env []string) (domain.AgentSession, error) {
+	if session.Provider == "codex" && len(workspace.Repositories) > 0 {
+		configPath, err := codexConfigPath()
+		if err != nil {
+			return session, err
+		}
+		if err := ensureCodexTrust(configPath, workspace.Repositories[0].Path); err != nil {
+			return session, err
+		}
+	}
 	pane, err := s.tmux.StartAgent(workspace, session.Label, start, env)
 	if err != nil {
 		return session, err
