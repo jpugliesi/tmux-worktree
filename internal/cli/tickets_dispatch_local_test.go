@@ -300,3 +300,58 @@ func TestProjectsPlanCommands(t *testing.T) {
 		t.Fatalf("apply plan edit = %s err %v", applyJSON, err)
 	}
 }
+
+func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "claim", "fix-auth", "--as", "twt-local-01234567"); err != nil {
+		t.Fatal(err)
+	}
+	askJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader("Which OAuth provider should the login use?"),
+		"tickets", "ask", "fix-auth", "--stdin", "--as", "twt-local-01234567", "--output", "json")
+	if err != nil {
+		t.Fatalf("ask: %v\n%s", err, askJSON)
+	}
+	if !strings.Contains(askJSON, `"operation":"tickets.ask"`) || !strings.Contains(askJSON, `"status":"applied"`) {
+		t.Fatalf("ask JSON = %s", askJSON)
+	}
+	waitingJSON, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "list", "--needs-input", "--all-projects", "--output", "json")
+	if err != nil {
+		t.Fatalf("needs-input list: %v\n%s", err, waitingJSON)
+	}
+	if !strings.Contains(waitingJSON, "fix-auth") {
+		t.Fatalf("waiting list lacks the ticket:\n%s", waitingJSON)
+	}
+	answerJSON, answerStderr, err := executeCollectingInput(t, options,
+		strings.NewReader("Use OAuth with the corporate IdP."),
+		"tickets", "answer", "fix-auth", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatalf("answer: %v\n%s", err, answerJSON)
+	}
+	if !strings.Contains(answerJSON, `"operation":"tickets.answer"`) || !strings.Contains(answerJSON, `"delivered":false`) {
+		t.Fatalf("answer JSON = %s (stderr %s)", answerJSON, answerStderr)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, `"status":"ready-for-agent"`) || !strings.Contains(showJSON, "### A ") ||
+		!strings.Contains(showJSON, `"claimedBy":"twt-local-01234567"`) {
+		t.Fatalf("show after answer = %s", showJSON)
+	}
+	applyJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.ask","ticket":{"reference":"fix-auth","as":"twt-local-01234567","text":"Another question?"}}`),
+		"apply", "--stdin", "--dry-run", "--output", "json")
+	if err != nil || !strings.Contains(applyJSON, `"status":"valid"`) {
+		t.Fatalf("apply ask dry run = %s err %v", applyJSON, err)
+	}
+}

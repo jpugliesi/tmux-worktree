@@ -60,6 +60,8 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsCloseCommand(options))
 	tickets.AddCommand(newTicketsCommentCommand(options))
 	tickets.AddCommand(newTicketsPlanCommand(options))
+	tickets.AddCommand(newTicketsAskCommand(options))
+	tickets.AddCommand(newTicketsAnswerCommand(options))
 	tickets.AddCommand(newTicketsDoctorCommand(options))
 	tickets.AddCommand(newTicketsGitSyncCommand(options))
 	tickets.AddCommand(newTicketsRepairCommand(options))
@@ -314,7 +316,7 @@ func createTicket(command *cobra.Command, service ticketservice.Store, request t
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var project, status string
-	var ready, claimed, all, allProjects bool
+	var ready, claimed, needsInput, all, allProjects bool
 	var limit, offset int
 	command := &cobra.Command{
 		Use:     "list",
@@ -336,6 +338,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				Status:     status,
 				Ready:      ready,
 				Claimed:    claimed,
+				NeedsInput: needsInput,
 				All:        all,
 			})
 			if err != nil {
@@ -363,6 +366,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
+	command.Flags().BoolVar(&needsInput, "needs-input", false, "List only Tickets whose agent waits on the human")
 	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
@@ -395,6 +399,9 @@ func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool
 // ticketDisplayState folds the claim into the human table state: a claimed
 // open Ticket is in progress. JSON output keeps the raw status and claimant.
 func ticketDisplayState(ticket domain.Ticket) string {
+	if ticket.ClaimedBy != "" && ticket.Status == domain.TicketNeedsInfo {
+		return "needs-input"
+	}
 	if ticket.ClaimedBy != "" && ticket.Status != domain.TicketDone && ticket.Status != domain.TicketWontfix {
 		return "in-progress"
 	}

@@ -130,6 +130,18 @@ type ticketCommentApplyRequest struct {
 	Text      string `json:"text"`
 }
 
+type ticketAskApplyRequest struct {
+	Reference string `json:"reference"`
+	As        string `json:"as"`
+	Text      string `json:"text"`
+}
+
+type ticketAnswerApplyRequest struct {
+	Reference string `json:"reference"`
+	Text      string `json:"text"`
+	Agent     string `json:"agent,omitempty"`
+}
+
 type ticketCompleteApplyRequest struct {
 	Reference    string   `json:"reference"`
 	As           string   `json:"as"`
@@ -331,6 +343,16 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.plan", Type: "string", Required: true, Condition: "replaces the whole ## Plan section"},
 			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
 		}}, applyTicketsPlan},
+		{applyOperationSchema{Operation: "tickets.ask", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "must match the Ticket's claimant"},
+			{Path: "ticket.text", Type: "string", Required: true},
+		}}, applyTicketsAsk},
+		{applyOperationSchema{Operation: "tickets.answer", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true},
+			{Path: "ticket.text", Type: "string", Required: true},
+			{Path: "ticket.agent", Type: "string", Required: false, Condition: "relay target when several agent sessions are live"},
+		}}, applyTicketsAnswer},
 		{applyOperationSchema{Operation: "tickets.dispatch", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
 			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
@@ -891,6 +913,36 @@ func applyTicketsPlan(command *cobra.Command, options Options, request applyRequ
 		return err
 	}
 	return planTicket(command, service, payload.Reference, payload.As, payload.Plan)
+}
+
+func applyTicketsAsk(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketAskApplyRequest
+	if err := decodeApplyPayload("tickets.ask", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.As == "" || payload.Text == "" {
+		return fmt.Errorf("ticket.reference, ticket.as, and ticket.text are required for tickets.ask")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return askTicket(command, service, payload.Reference, payload.As, payload.Text)
+}
+
+func applyTicketsAnswer(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketAnswerApplyRequest
+	if err := decodeApplyPayload("tickets.answer", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Text == "" {
+		return fmt.Errorf("ticket.reference and ticket.text are required for tickets.answer")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return answerTicket(command, options, service, payload.Reference, payload.Agent, payload.Text)
 }
 
 func applyTicketsComplete(command *cobra.Command, options Options, request applyRequest) error {

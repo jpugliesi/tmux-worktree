@@ -231,6 +231,12 @@ var commandHelp = map[string]helpContent{
 	"twt projects plan path": {
 		long: "Print the plan document path for editor use. The file itself may not exist yet.", example: "  nvim \"$(twt projects plan path change-monitor)\"",
 	},
+	"twt tickets ask": {
+		long: "Ask the human a question from a working agent: the question lands under the Ticket's ## Questions section, the status parks on needs-info, and the claim stays. The prior status is remembered and restored by answer. Requires the matching --as claimant. After asking, end the turn and wait; the answer arrives as the next message.", example: "  printf '%s' \"Which OAuth provider?\" | twt tickets ask fix-auth --stdin --as twt-local-01234567 --output json",
+	},
+	"twt tickets answer": {
+		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --agent AGENT_ID --output json",
+	},
 	"twt tickets plan": {
 		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
 	},

@@ -17,11 +17,14 @@ type projectsListOutput struct {
 }
 
 type projectShowOutput struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	Project       domain.Project    `json:"project"`
-	Ready         []domain.Ticket   `json:"ready"`
-	InFlight      []domain.Ticket   `json:"inFlight"`
-	Workspaces    []workspaceOutput `json:"workspaces"`
+	SchemaVersion int             `json:"schemaVersion"`
+	Project       domain.Project  `json:"project"`
+	Ready         []domain.Ticket `json:"ready"`
+	InFlight      []domain.Ticket `json:"inFlight"`
+	// WaitingOnYou are the claimed needs-info Tickets: an agent asked and
+	// waits on the human.
+	WaitingOnYou []domain.Ticket   `json:"waitingOnYou"`
+	Workspaces   []workspaceOutput `json:"workspaces"`
 }
 
 func newProjectsCommand(options Options) *cobra.Command {
@@ -187,6 +190,7 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 				{"Tickets", fmt.Sprintf("%d", project.Tickets)},
 				{"Ready", fmt.Sprintf("%d", len(board.Ready))},
 				{"In flight", fmt.Sprintf("%d", len(board.InFlight))},
+				{"Waiting on you", fmt.Sprintf("%d", len(board.WaitingOnYou))},
 				{"Workspaces", fmt.Sprintf("%d", len(board.Workspaces))},
 			})
 		},
@@ -214,6 +218,13 @@ func projectBoard(options Options, service ticketservice.Store, project domain.P
 	if claimed == nil {
 		claimed = []domain.Ticket{}
 	}
+	waiting, err := service.List(ticketservice.ListFilter{Project: project.Name, ProjectSet: true, NeedsInput: true})
+	if err != nil {
+		return projectShowOutput{}, err
+	}
+	if waiting == nil {
+		waiting = []domain.Ticket{}
+	}
 	workspaces, err := options.workspaceService().List()
 	if err != nil {
 		return projectShowOutput{}, err
@@ -228,6 +239,7 @@ func projectBoard(options Options, service ticketservice.Store, project domain.P
 		Project:       project,
 		Ready:         ready,
 		InFlight:      claimed,
+		WaitingOnYou:  waiting,
 		Workspaces:    outputs,
 	}, nil
 }
