@@ -151,7 +151,9 @@ func auditTickets(home string) (TicketDoctorReport, error) {
 	}
 	records := map[string]*auditedTicket{}
 	slugPaths := map[string][]string{}
-	err := filepath.WalkDir(filepath.Clean(home), func(path string, entry fs.DirEntry, walkErr error) error {
+	root := filepath.Clean(home)
+	walkFrom := walkableRoot(root)
+	err := filepath.WalkDir(walkFrom, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path == filepath.Clean(home) && errors.Is(walkErr, os.ErrNotExist) {
 				return homeMissing(home)

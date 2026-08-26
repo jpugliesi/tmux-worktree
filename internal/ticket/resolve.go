@@ -47,6 +47,7 @@ func buildIndex(home string) (*index, error) {
 	if _, err := closedRootExists(root); err != nil {
 		return nil, err
 	}
+	walkFrom := walkableRoot(root)
 	idx := &index{
 		root:    root,
 		bySlug:  map[string][]string{},
@@ -56,17 +57,20 @@ func buildIndex(home string) (*index, error) {
 		tickets: map[string]domain.Ticket{},
 		bodies:  map[string]string{},
 	}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(walkFrom, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			if path == root && os.IsNotExist(walkErr) {
+			if path == walkFrom && os.IsNotExist(walkErr) {
 				return homeMissing(root)
 			}
 			return walkErr
 		}
-		relative, relErr := filepath.Rel(root, path)
+		relative, relErr := filepath.Rel(walkFrom, path)
 		if relErr != nil {
 			return relErr
 		}
+		// Observable paths always use the configured root, so a symlinked
+		// home changes nothing downstream.
+		path = filepath.Join(root, relative)
 		if entry.IsDir() {
 			if relative == "." {
 				return nil
@@ -318,4 +322,20 @@ func insideDirectory(root, path string) bool {
 		return true
 	}
 	return strings.HasPrefix(path, root+string(filepath.Separator))
+}
+
+// walkableRoot follows a Tickets home that is itself a symlink, so the
+// walker descends into it. filepath.WalkDir never follows symlinks, and a
+// home behind a symlink (a vault alias, or a migration compatibility link)
+// must still read. Paths map back onto the configured root.
+func walkableRoot(root string) string {
+	info, err := os.Lstat(root)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return root
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return root
+	}
+	return resolved
 }
