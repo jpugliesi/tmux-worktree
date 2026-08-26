@@ -111,18 +111,22 @@ note asks which note to open or delete. `<leader>arx` asks `Are you sure you wan
 clear all review notes?` before it clears the session batch.
 
 `<leader>arr` uses no `twt` command. In tmux, it lists the live panes in the
-current tmux session, except the current pane. It also adds Clipboard as a
-destination. Each pane label shows the session and window, pane ID, current
-command, and current path. It does not list panes from other tmux sessions.
+current tmux session, except the current pane. Panes in the current tmux
+window come first, in tmux order, so the nearest targets are on top. It also
+adds Clipboard as a destination. Each pane label shows the session and
+window, pane ID, current command, and current path. It does not list panes
+from other tmux sessions.
 Outside tmux, it copies the batch immediately. `<leader>art` always asks for a
 tmux pane. `<leader>ary` always yanks to the clipboard. A canceled picker keeps
 the batch and shows no success message.
 
 Direct pane delivery loads the Review Batch through standard input, requests
-a bracketed paste, and submits it with Enter. A confirmed pane or Agent send
-clears only the unchanged notes that it sent. Notes added or edited during the
-send stay in the batch. A clipboard copy always keeps the notes. A failed or
-uncertain send also keeps them. The plug-in does not retry a send.
+a bracketed paste, and submits it with Enter. A send keeps the notes: clear
+them yourself with `<leader>arx` when you are done with the batch. Set
+`clear_after_send = true` in `setup` to restore automatic clearing, which
+then removes only the unchanged notes that the send delivered. A clipboard
+copy always keeps the notes. A failed or uncertain send also keeps them. The
+plug-in does not retry a send.
 
 Select pane targets carefully. If the selected program does not support
 bracketed paste, pasted line breaks can become input. A shell pane can run that

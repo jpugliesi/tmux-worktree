@@ -68,8 +68,9 @@ assert(delivery_error == nil, delivery_error)
 local capture = tmux({ "capture-pane", "-p", "-t", target })
 assert(capture:find("fix this response", 1, true), capture)
 assert(capture:find("agent transcript.md#L2", 1, true), capture)
-assert(#review.list() == 0, "a successful tmux delivery must clear the Review Batch")
+assert(#review.list() == 1, "a successful tmux delivery must keep the Review Batch")
 
+review.clear()
 review.add("copy this response", 1, 1, function(err) assert(err == nil, err) end)
 vim.env.TMUX, vim.env.TMUX_PANE = nil, nil
 finished, delivery_error = false, nil

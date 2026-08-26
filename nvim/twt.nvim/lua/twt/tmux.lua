@@ -68,21 +68,41 @@ function M.list(done)
       return
     end
     local panes = {}
+    local current_window
     for _, row in ipairs(vim.split(output, "\n", { plain = true, trimempty = true })) do
       local fields = vim.split(row, separator, { plain = true })
       local id = fields[1]
-      if #fields == 5 and id and id:match("^%%%d+$") and id ~= vim.env.TMUX_PANE and fields[5] == "0" then
+      if #fields == 5 and id and id:match("^%%%d+$") then
         local target = clean_label(fields[2])
-        local command = clean_label(fields[3])
-        local path = clean_label(fields[4])
-        panes[#panes + 1] = {
-          id = id,
-          target = target,
-          command = command,
-          path = path,
-          label = string.format("%s · %s · %s · %s", target, id, command, path),
-        }
+        if id == vim.env.TMUX_PANE then
+          current_window = target:match(":(%d+)%.%d+$")
+        elseif fields[5] == "0" then
+          local command = clean_label(fields[3])
+          local path = clean_label(fields[4])
+          panes[#panes + 1] = {
+            id = id,
+            target = target,
+            window = target:match(":(%d+)%.%d+$"),
+            command = command,
+            path = path,
+            label = string.format("%s · %s · %s · %s", target, id, command, path),
+          }
+        end
       end
+    end
+    -- Panes in the current tmux window come first, in their tmux order; the
+    -- rest keep their session order.
+    if current_window then
+      local mine, others = {}, {}
+      for _, pane in ipairs(panes) do
+        if pane.window == current_window then
+          mine[#mine + 1] = pane
+        else
+          others[#others + 1] = pane
+        end
+      end
+      panes = mine
+      vim.list_extend(panes, others)
     end
     done(nil, panes)
   end)

@@ -604,6 +604,7 @@ test("lists safe tmux pane targets and sends with a private bracketed buffer", f
           table.concat({ "%1", "dev:0.0", "zsh", "/work/current", "0" }, separator),
           table.concat({ "%2", "dev:1.0", "codex", "/work/with spaces", "0" }, separator),
           table.concat({ "%3", "other:0.1", "bash", "/work/dead", "1" }, separator),
+          table.concat({ "%4", "dev:0.1", "claude", "/work/next-door", "0" }, separator),
         }, "\n"), stderr = "" })
       else
         done({ code = 0, stdout = "", stderr = "" })
@@ -615,9 +616,11 @@ test("lists safe tmux pane targets and sends with a private bracketed buffer", f
       assert(err == nil, err)
       panes = value
     end)
-    assert(#panes == 1, vim.inspect(panes))
-    assert(panes[1].id == "%2", vim.inspect(panes[1]))
-    assert(panes[1].label == "dev:1.0 · %2 · codex · /work/with spaces", panes[1].label)
+    assert(#panes == 2, vim.inspect(panes))
+    -- The pane in the current tmux window (dev:0) lists first.
+    assert(panes[1].id == "%4", vim.inspect(panes[1]))
+    assert(panes[2].id == "%2", vim.inspect(panes[2]))
+    assert(panes[2].label == "dev:1.0 · %2 · codex · /work/with spaces", panes[2].label)
 
     local call_count = #tmux_calls
     local current_error
@@ -810,8 +813,8 @@ test("routes Review Batch delivery without requiring twt", function()
     assert(result and result:find("review notes sent to dev:1.0", 1, true), result)
   end)
   assert(#selected_items == 2 and selected_items[1].kind == "pane" and selected_items[2].kind == "clipboard", vim.inspect(selected_items))
-  assert(#review.list() == 0, "a confirmed pane send must clear the delivered notes")
-  assert(review_sign_count(buffer) == 0, "a confirmed pane send left its Review Note sign")
+  assert(#review.list() == 1, "a pane send must keep the notes until the user clears them")
+  assert(review_sign_count(buffer) == 1, "a pane send must keep the Review Note sign")
   local load
   for _, call in ipairs(tmux_calls) do if call.argv[2] == "load-buffer" then load = call end end
   assert(load and load.stdin:find("route note", 1, true), vim.inspect(tmux_calls))
