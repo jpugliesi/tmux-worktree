@@ -30,6 +30,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
 		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
+		{"StackClaimNeedsInReviewBlockers", testStackClaimNeedsInReviewBlockers},
 	}
 	for _, testCase := range cases {
 		t.Run(backend+"/"+testCase.name, func(t *testing.T) {
@@ -215,6 +216,37 @@ func testApprovePlanLifecycle(t *testing.T, store ticketservice.Store) {
 	}
 	if replanned.PlanApprovedBy != "" || replanned.PlanApprovedAt != "" {
 		t.Fatalf("plan rewrite kept the approval: %+v", replanned)
+	}
+}
+
+func testStackClaimNeedsInReviewBlockers(t *testing.T, store ticketservice.Store) {
+	mustCreate(t, store, "blocker")
+	mustCreate(t, store, "dependent", "blocker")
+	// An open blocker without review blocks the stack claim too.
+	if _, err := store.ClaimStackReady("dependent", "worker-b", "", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("stack claim behind an open blocker = %v, want precondition_failed", err)
+	}
+	if _, err := store.Claim("blocker", "worker-a", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteWork("blocker", "worker-a", domain.TicketReadyForHuman,
+		[]string{"https://example.com/pr/1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Now the blocker is in review with a PR: stack claim wins, ready claim
+	// still refuses, and the base lands on the ticket.
+	if _, err := store.ClaimReady("dependent", "worker-b", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("ClaimReady on a stacked dependent = %v, want precondition_failed", err)
+	}
+	claimed, err := store.ClaimStackReady("dependent", "worker-b", "blocker@branch", false)
+	if err != nil {
+		t.Fatalf("stack claim: %v", err)
+	}
+	if claimed.ClaimedBy != "worker-b" || claimed.StackBase != "blocker@branch" {
+		t.Fatalf("stack claim result = %+v", claimed)
+	}
+	if _, err := store.ClaimStackReady("dependent", "worker-c", "", false); clierr.CodeOf(err) != clierr.Locked {
+		t.Fatalf("rival stack claim = %v, want locked", err)
 	}
 }
 

@@ -33,7 +33,10 @@ type QueueTicket struct {
 	Dependencies []QueueDependency   `json:"dependencies"`
 	ClaimedBy    string              `json:"claimedBy,omitempty"`
 	Ready        bool                `json:"ready"`
-	PullRequests []string            `json:"pullRequests,omitempty"`
+	// StackReady: not ready, but every open blocker is in review with a pull
+	// request, so a stacking dispatch may start it from the blocker's branch.
+	StackReady   bool     `json:"stackReady,omitempty"`
+	PullRequests []string `json:"pullRequests,omitempty"`
 }
 
 // QueueResult is one consistent view of a Project Ticket graph and its ready
@@ -45,7 +48,10 @@ type QueueResult struct {
 	Ready           []QueueTicket `json:"ready"`
 	ReadyTotalCount int           `json:"readyTotalCount"`
 	ReadyTruncated  bool          `json:"readyTruncated,omitempty"`
-	Cycles          [][]string    `json:"cycles"`
+	// StackReady is the second dispatch tier: a coordinator with stacking on
+	// dispatches it only after the true-ready work.
+	StackReady []QueueTicket `json:"stackReady,omitempty"`
+	Cycles     [][]string    `json:"cycles"`
 }
 
 // Queue builds one Project queue from one Ticket index snapshot.
@@ -90,6 +96,7 @@ func (s *Service) queueGraph(projectName string, limit int, includeClosed bool) 
 		graph = append(graph, QueueTicket{
 			Slug: ticket.Slug, Title: ticket.Title, Status: ticket.Status, Priority: ticket.Priority,
 			Dependencies: dependencies, ClaimedBy: ticket.ClaimedBy, Ready: idx.ready(ticket),
+			StackReady:   idx.stackReady(ticket),
 			PullRequests: ticket.PullRequests,
 		})
 	}
@@ -101,9 +108,13 @@ func (s *Service) queueGraph(projectName string, limit int, includeClosed bool) 
 	})
 
 	ready := make([]QueueTicket, 0)
+	stackReady := make([]QueueTicket, 0)
 	for _, ticket := range graph {
 		if ticket.Ready {
 			ready = append(ready, ticket)
+		}
+		if ticket.StackReady {
+			stackReady = append(stackReady, ticket)
 		}
 	}
 	total := len(ready)
@@ -113,7 +124,8 @@ func (s *Service) queueGraph(projectName string, limit int, includeClosed bool) 
 	}
 	return QueueResult{
 		Project: projectName, Graph: graph, Ready: ready,
-		ReadyTotalCount: total, ReadyTruncated: truncated, Cycles: queueCycles(graph),
+		ReadyTotalCount: total, ReadyTruncated: truncated,
+		StackReady: stackReady, Cycles: queueCycles(graph),
 	}, nil
 }
 

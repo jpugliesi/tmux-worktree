@@ -53,6 +53,7 @@ type Store interface {
 	// Claim lifecycle (compare-and-set).
 	Claim(ref, claimant string, dryRun bool) (domain.Ticket, error)
 	ClaimReady(ref, claimant string, dryRun bool) (domain.Ticket, error)
+	ClaimStackReady(ref, claimant, stackBase string, dryRun bool) (domain.Ticket, error)
 	CompleteClaim(ref, claimant string, status domain.TicketStatus, dryRun bool) (domain.Ticket, error)
 	CompleteWork(ref, claimant string, status domain.TicketStatus, pullRequests []string, dryRun bool) (domain.Ticket, error)
 	Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, error)
