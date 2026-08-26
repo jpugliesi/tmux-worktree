@@ -120,7 +120,7 @@ updated: 2026-08-20
 ```
 
 `pull_requests` holds the HTTPS pull request URLs that shipped the Ticket's
-work. `twt tickets complete` and the Cursor Cloud sync write it; do not edit
+work. `twt tickets complete` and `twt tickets pr add` write it; do not edit
 it by hand.
 
 Ungrouped tickets omit `project` or leave it empty.
@@ -194,11 +194,9 @@ twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
-twt tickets dispatch TICKET [--backend local|cursor-cloud] [--plan] [--max-concurrency N]
+twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
-twt tickets cloud-sync --project PROJECT   (deprecated: use tickets sync)
-twt tickets cloud-abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets git-sync
 twt tickets show TICKET
@@ -253,25 +251,20 @@ the graph.
 ### Dispatch coordinator
 
 A Project can select one Workspace Template. The Template can include a
-`cursor_cloud` block (model, generic effort, prompt instructions, maximum
-Project concurrency default 4, repository selection) for remote Cursor
-Agents, a `local_dispatch` block (provider, effort, instructions, maximum
-Project concurrency default 2) for local implementation Workspaces, or both.
+`local_dispatch` block (provider, effort, instructions, maximum Project
+concurrency default 2, optional `stacking`) for implementation Workspaces.
 The generic effort is `small`, `medium`, `large`, or `xlarge`; its default is
 `large`. Empty `local_dispatch` fields fall back to the machine `ticketAgent`
 config, so a shared Template normally leaves the provider unset and each
-machine uses an installed provider. Each Cloud Session saves a Template
-snapshot, so a later Template edit does not change a run that already exists;
-a Local Dispatch Session defers to its Workspace's snapshot.
+machine uses an installed provider. A dispatch Session defers to its
+Workspace's Template snapshot.
 
-`twt tickets dispatch TICKET` selects the backend from the Template:
-`cursor-cloud` when `cursor_cloud` is set, else `local`. Pass `--backend` to
-select one explicitly. A local dispatch creates a Workspace and starts one
-autonomous implementation agent in tmux; a person can attach and steer at
-any time.
+`twt tickets dispatch TICKET` claims the Ticket, creates a Workspace, and
+starts one autonomous implementation agent in tmux; a person can attach and
+steer at any time.
 
 One coordinator wave first syncs existing Sessions, reads the available
-capacity per backend, and then reads that number of ready Tickets:
+capacity, and then dispatches that many ready Tickets:
 
 ```sh
 twt tickets sync --project change-monitor --dry-run --output json
@@ -282,43 +275,24 @@ twt tickets dispatch canonical-pr-comment --output json
 ```
 
 The sync result groups `capacity`, `sessions`, and `diagnostics` under
-`backends.local` and `backends."cursor-cloud"`. The cloud half runs only
-when pending Cloud Sessions exist, so a local-only Project needs no Cursor
-harness. If a backend's `capacity.known` is false, do not dispatch on that
-backend. Read the sync diagnostics. If it is true, pass `capacity.available`
-to queue as `--limit`. `tickets cloud-sync` stays as a deprecated delegate
-for the cloud half.
+`backends.local`. If `capacity.known` is false, do not dispatch. Read the
+sync diagnostics. If it is true, dispatch ready Tickets up to
+`capacity.available`.
 
 The Project dispatch lock makes the capacity reservation atomic. Agent mode
-asks Cursor to implement, test, and create pull requests for changed
+asks the agent to implement, test, and create pull requests for changed
 repositories. `--plan` asks for a plan only.
 
-Dispatch saves a private, versioned Cloud Session and claims the Ticket before
-it calls Cursor. A definite create failure returns the Ticket to
-`ready-for-agent`. An uncertain result keeps the claim. Sync can recover a
-remote Agent by the local Session ID in Cursor metadata. Do not dispatch that
-Ticket again while its Session is active.
-
-A finished cloud run moves the Ticket to `ready-for-human` and records its
-pull request URLs in the `pull_requests` frontmatter. A failed or cancelled
-run returns it to `ready-for-agent`. No Session result sets `done`. A changed
-repository without a pull request sets `handoffIncomplete`. One failed
-Session update does not stop the other updates. The sync result then has
-`status: "partial"` and a `diagnostics` item for that Session.
-
-A local implementation agent reports its own completion:
+An implementation agent reports its own completion:
 `twt tickets complete TICKET --as CLAIMANT --pr URL` records the pull
-requests and sets `ready-for-human` in one write. The local sync half then
-marks the Session finished. A stopped agent whose Ticket stays claimed
-becomes a `stuck` diagnostic; sync never releases a claim by itself.
+requests and sets `ready-for-human` in one write. The sync then marks the
+Session finished. A stopped agent whose Ticket stays claimed becomes a
+`stuck` diagnostic; sync never releases a claim by itself.
 
-If repeated syncs cannot recover one Session, abandon stops its local
-recovery: `tickets abandon SESSION --force` for a local Session,
-`tickets cloud-abandon SESSION --force` for a cloud Session. Both release
-the Ticket only when the saved claimant still owns it. Neither stops the
-agent: the local Workspace keeps running until `twt done WORKSPACE`, and the
-remote Cursor Agent can continue and can create a pull request. Run
-`--dry-run` before you apply either recovery command.
+If repeated syncs cannot recover one Session, `tickets abandon SESSION
+--force` stops its recovery. It releases the Ticket only when the saved
+claimant still owns it. It never stops the agent: the Workspace keeps
+running until `twt done WORKSPACE`. Run `--dry-run` before you apply it.
 
 ### Syncing the Tickets home between machines
 

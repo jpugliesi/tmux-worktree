@@ -159,7 +159,6 @@ type ticketDispatchApplyRequest struct {
 	Reference      string `json:"reference"`
 	Plan           bool   `json:"plan,omitempty"`
 	MaxConcurrency int    `json:"maxConcurrency,omitempty"`
-	Backend        string `json:"backend,omitempty"`
 }
 
 type ticketCloudSyncApplyRequest struct {
@@ -378,7 +377,6 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must be ready in its Project queue"},
 			{Path: "ticket.plan", Type: "boolean", Required: false, Condition: "true requests a plan; absent or false requests implementation and pull requests"},
 			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Session limit"},
-			{Path: "ticket.backend", Type: "string", Required: false, Enum: []string{"local", "cursor-cloud"}, Condition: "absent follows the Template: cursor-cloud when cursor_cloud is set, else local"},
 		}}, applyTicketsDispatch},
 		{applyOperationSchema{Operation: "tickets.sync", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.project", Type: "string", Required: true},
@@ -387,13 +385,6 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.session", Type: "string", Required: true},
 			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the Workspace and its agent keep running"},
 		}}, applyTicketsAbandon},
-		{applyOperationSchema{Operation: "tickets.cloud-sync", Payload: "ticket", Fields: []requestFieldSchema{
-			{Path: "ticket.project", Type: "string", Required: true},
-		}}, applyTicketsCloudSync},
-		{applyOperationSchema{Operation: "tickets.cloud-abandon", Payload: "ticket", Fields: []requestFieldSchema{
-			{Path: "ticket.session", Type: "string", Required: true},
-			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the remote Cursor Agent can continue"},
-		}}, applyTicketsCloudAbandon},
 		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
 		{applyOperationSchema{Operation: "projects.plan.edit", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
@@ -1069,7 +1060,7 @@ func applyTicketsDispatch(command *cobra.Command, options Options, request apply
 	if payload.Reference == "" {
 		return fmt.Errorf("ticket.reference is required for tickets.dispatch")
 	}
-	return runTicketsDispatch(command, options, payload.Reference, payload.Backend, payload.Plan, payload.MaxConcurrency)
+	return runLocalDispatch(command, options, payload.Reference, payload.Plan, payload.MaxConcurrency)
 }
 
 func applyTicketsSync(command *cobra.Command, options Options, request applyRequest) error {
@@ -1092,28 +1083,6 @@ func applyTicketsAbandon(command *cobra.Command, options Options, request applyR
 		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.abandon")
 	}
 	return runLocalDispatchAbandon(command, options, payload.Session)
-}
-
-func applyTicketsCloudSync(command *cobra.Command, options Options, request applyRequest) error {
-	var payload ticketCloudSyncApplyRequest
-	if err := decodeApplyPayload("tickets.cloud-sync", "ticket", request.Ticket, &payload); err != nil {
-		return err
-	}
-	if payload.Project == "" {
-		return fmt.Errorf("ticket.project is required for tickets.cloud-sync")
-	}
-	return runCursorCloudSync(command, options, payload.Project)
-}
-
-func applyTicketsCloudAbandon(command *cobra.Command, options Options, request applyRequest) error {
-	var payload ticketCloudAbandonApplyRequest
-	if err := decodeApplyPayload("tickets.cloud-abandon", "ticket", request.Ticket, &payload); err != nil {
-		return err
-	}
-	if payload.Session == "" || !payload.Force {
-		return fmt.Errorf("ticket.session and ticket.force=true are required for tickets.cloud-abandon")
-	}
-	return runCursorCloudAbandon(command, options, payload.Session)
 }
 
 func applyTicketsRepair(command *cobra.Command, options Options, request applyRequest) error {

@@ -9,25 +9,11 @@ state, and data directories.
 
 ## Build
 
-Build only the Go CLI for local Workspace work:
+Build and install the CLI:
 
 ```sh
 go install ./cmd/twt
 ```
-
-To use Cursor Cloud Sessions, install Bun and build the CLI and the compiled
-SDK harness:
-
-```sh
-make install
-```
-
-The `twt-cursor-cloud` executable contains its Bun runtime. Dispatch and sync
-do not download a runtime.
-
-For a custom harness build, set `TWT_CURSOR_CLOUD_HARNESS` to its executable
-name or path. Without that setting, `twt` first checks for
-`twt-cursor-cloud` next to the `twt` executable, and then checks `PATH`.
 
 To stamp the build with a version, set the version variable with `-ldflags`.
 The `twt --version` and `twt schema` commands show this value:
@@ -833,13 +819,11 @@ twt tickets home
 twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
-twt tickets dispatch TICKET [--backend local|cursor-cloud] [--plan] [--max-concurrency N]
+twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets git-sync
-twt tickets cloud-sync --project PROJECT
-twt tickets cloud-abandon SESSION --force
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -1023,7 +1007,7 @@ twt projects show change-monitor --output json
 ```
 
 A Project keeps its Workspace Template reference. The Template supplies the
-repository set and the Cursor Cloud defaults for each new Cloud Session.
+repository set and the dispatch defaults for its Sessions.
 
 `projects show` is the coordinator board. JSON includes `ready` Tickets,
 `inFlight` (claimed) Tickets, and Workspaces linked to the Project.
@@ -1031,91 +1015,57 @@ repository set and the Cursor Cloud defaults for each new Cloud Session.
 `tickets list --claimed` lists in-flight Tickets. `context` includes the
 linked Tickets and the ready queue for the current Workspace Project.
 
-### Dispatch Tickets to Cursor Cloud
+### Dispatch Tickets to implementation agents
 
-Add `cursor_cloud` to the Workspace Template that the Project selects:
+Add `local_dispatch` to the Workspace Template that the Project selects:
 
 ```yaml
-cursor_cloud:
-  model: claude-4-sonnet
+local_dispatch:
+  provider: codex
   effort: large
-  max_concurrency: 4
+  max_concurrency: 2
   instructions: |
     Read the repository design notes first.
-  repositories:
-    - name: api
-    - name: web
-      url: https://github.com/acme/web.git
-      starting_ref: main
 ```
 
-`effort` accepts `small`, `medium`, `large`, or `xlarge`. The default is
-`large`. The harness maps the value to a reasoning-effort parameter when the
-selected model supports one. Otherwise, the harness adds an effort instruction
-to the start of the prompt.
-
-Each repository selects a repository in the Workspace Template. An optional
-HTTPS `url` replaces the clone URL for Cursor. An optional `starting_ref`
-replaces the Template default branch. Cursor accepts at most 20 repositories
-for one Cloud Agent.
-
-`twt tickets sync` is the current coordinator entry point: it reconciles
-both the local and the cursor-cloud backend of one Project and reports each
-backend's capacity, sessions, and diagnostics under `backends`.
-`tickets cloud-sync` stays as a deprecated delegate for the cloud half; the
-wave below still works with it. See docs/tickets.md for the full coordinator
-and the local dispatch backend.
+`provider` accepts `codex`, `claude`, `cursor`, or `grok`; an empty value
+falls back to the machine `ticketAgent` config. `effort` accepts `small`,
+`medium`, `large`, or `xlarge`. `stacking: true` additionally lets dispatch
+start a stack-ready Ticket from its blocker's pull request branch.
 
 Run one coordinator wave in this order:
 
 ```sh
 twt tickets sync --project change-monitor --dry-run --output json
 twt tickets sync --project change-monitor --output json
-twt tickets queue --project change-monitor --limit AVAILABLE --output json
+twt projects show change-monitor --output json
 twt tickets dispatch factory-api --dry-run --output json
 twt tickets dispatch factory-api --output json
 ```
 
-`cloud-sync` reports the active Session count and the available capacity. If
+`sync` reports the active Session count and the available capacity. If
 `capacity.known` is false, do not dispatch. Read the diagnostics and stop the
-wave. If it is true, pass `capacity.available` to queue as `--limit`, then
-dispatch each Ticket in `ready`.
+wave. If it is true, dispatch ready Tickets up to `capacity.available`.
 
 `dispatch` accepts only a Ticket that is ready and within the Project limit.
-The default mode tells the Cursor Agent to implement the Ticket, run tests,
-and create a pull request for each changed repository. `--plan` requests a
-plan without code changes. The first prompt contains a snapshot of the full
-Ticket body and the optional Template instructions.
+The default mode tells the agent to implement the Ticket, run tests, attach
+each pull request, and report through `tickets complete`. `--plan` requests a
+plan without code changes.
 
-`cloud-sync` reads each remote run and applies its Ticket transition. A
-finished run moves the Ticket to `ready-for-human` and clears the Cloud claim.
-A failed or cancelled run returns the Ticket to `ready-for-agent`. A changed
-repository without a pull request sets `handoffIncomplete` and still moves
-the Ticket to `ready-for-human`. No Cloud transition sets `done`.
-
-One local Session failure does not stop other Session updates. JSON then uses
-`status: "partial"` and includes one `diagnostics` item for each failed
-Session.
-
-If dispatch or sync has an uncertain network result, twt keeps the claim.
-Run `cloud-sync` again. The sync can recover a remote Agent and run from the
-Cloud Session metadata when a local save did not record the remote IDs. Do not
-dispatch the same Ticket while its Cloud Session is active.
-
-If repeated syncs cannot recover a stuck Session, use `cloud-abandon` as the
-explicit escape hatch. It stops local recovery and releases the Ticket only
-when the saved Cloud claimant still owns it. It does not cancel the remote
-Cursor Agent. That Agent can continue and can create a pull request. Run the
-dry run first and use `--force` only when you accept this result:
+If repeated syncs cannot recover a stuck Session, use `abandon` as the
+explicit escape hatch. It stops recovery and releases the Ticket only when
+the saved claimant still owns it. It never stops tmux: the Workspace and its
+agent keep running until `twt done`. Run the dry run first and use `--force`
+only when you accept this result:
 
 ```sh
-twt tickets cloud-abandon SESSION --force --dry-run --output json
-twt tickets cloud-abandon SESSION --force --output json
+twt tickets abandon SESSION --force --dry-run --output json
+twt tickets abandon SESSION --force --output json
 ```
 
-Use the typed operations `tickets.dispatch`, `tickets.cloud-sync`, and
-`tickets.cloud-abandon` when a coordinator calls `twt apply --stdin`. Read
-their payloads from `twt schema`.
+Use the typed operations `tickets.dispatch`, `tickets.sync`, and
+`tickets.abandon` when a coordinator calls `twt apply --stdin`. Read their
+payloads from `twt schema`.
 
 ### Resolve a TICKET argument
 

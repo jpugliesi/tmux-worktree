@@ -28,7 +28,7 @@ func (f *fakeObserver) Observe(workspaceID, agentSessionID, agentLabel string) (
 // dispatchRunning starts one running session through the real dispatch path.
 func dispatchRunning(t *testing.T, fixture localFixture, slug string) domain.LocalDispatchSession {
 	t.Helper()
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: slug, Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: slug, Mode: domain.DispatchModeAgent})
 	if err != nil {
 		t.Fatalf("dispatch %s: %v", slug, err)
 	}

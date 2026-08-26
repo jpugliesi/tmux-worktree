@@ -72,7 +72,7 @@ func newLocalFixture(t *testing.T) localFixture {
 		},
 		LocalDispatch: &domain.LocalDispatchSpec{
 			Provider:       "grok",
-			Effort:         domain.CursorCloudEffortLarge,
+			Effort:         domain.DispatchEffortLarge,
 			Instructions:   "Use the repo skills.",
 			MaxConcurrency: 2,
 		},
@@ -115,7 +115,7 @@ func TestDispatchStartsAnImplementationAgentAndClaimsTheTicket(t *testing.T) {
 	fixture := newLocalFixture(t)
 	ticket := fixture.createTicket(t, "Fix auth")
 
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestDispatchPlanModeRoutesToThePlanningLaunch(t *testing.T) {
 	fixture := newLocalFixture(t)
 	ticket := fixture.createTicket(t, "Fix auth")
 
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModePlan})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModePlan})
 	if err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestDispatchValidatesBeforeTheClaim(t *testing.T) {
 	ticket := fixture.createTicket(t, "Fix auth")
 	fixture.launcher.validateErr = clierr.New(clierr.Locked, "ticket is linked to active Workspace")
 
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.Locked {
 		t.Fatalf("Dispatch error = %v, want locked", err)
 	}
@@ -222,7 +222,7 @@ func TestDispatchLaunchFailureReturnsTheTicketAndNamesTheWorkspace(t *testing.T)
 	fixture.launcher.launchResult = LaunchResult{WorkspaceID: "ws-partial"}
 	fixture.launcher.launchErr = errors.New("workspace setup failed")
 
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if err == nil {
 		t.Fatal("Dispatch succeeded despite a launch failure")
 	}
@@ -255,7 +255,7 @@ func TestDispatchTreatsAPanelessAgentAsAFailure(t *testing.T) {
 	result.AgentStarted = false
 	fixture.launcher.launchResult = result
 
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.UnsafeState {
 		t.Fatalf("Dispatch error = %v, want unsafe_state", err)
 	}
@@ -288,11 +288,11 @@ func TestDispatchEnforcesTheLocalCapacity(t *testing.T) {
 		return id, nil
 	}
 	for _, slug := range []string{first.Slug, second.Slug} {
-		if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: slug, Mode: domain.CursorCloudModeAgent}); err != nil {
+		if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: slug, Mode: domain.DispatchModeAgent}); err != nil {
 			t.Fatalf("dispatch %s: %v", slug, err)
 		}
 	}
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: third.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: third.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("third dispatch error = %v, want precondition_failed (capacity 2)", err)
 	}
@@ -304,11 +304,11 @@ func TestDispatchEnforcesTheLocalCapacity(t *testing.T) {
 func TestDispatchRejectsASecondActiveSessionForTheTicket(t *testing.T) {
 	fixture := newLocalFixture(t)
 	ticket := fixture.createTicket(t, "Fix auth")
-	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent}); err != nil {
+	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent}); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
 	fixture.service.options.NewID = func() (string, error) { return "bbbb0000000000000000000000000001", nil }
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.Locked {
 		t.Fatalf("second dispatch error = %v, want locked", err)
 	}
@@ -318,7 +318,7 @@ func TestDispatchDryRunWritesNothing(t *testing.T) {
 	fixture := newLocalFixture(t)
 	ticket := fixture.createTicket(t, "Fix auth")
 
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent, DryRun: true})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent, DryRun: true})
 	if err != nil {
 		t.Fatalf("dry-run dispatch: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestDispatchRefusesATicketThatIsNotReady(t *testing.T) {
 	blocker := fixture.createTicket(t, "Blocker")
 	blocked := fixture.createTicket(t, "Blocked", blocker.Slug)
 
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: blocked.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: blocked.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("blocked dispatch error = %v, want precondition_failed", err)
 	}
@@ -363,18 +363,18 @@ func TestDispatchGatesAnUnapprovedPlan(t *testing.T) {
 	if _, err := fixture.tickets.SetPlanSection(ticket.Slug, "", "1. Do the thing.", false); err != nil {
 		t.Fatal(err)
 	}
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("unapproved-plan dispatch error = %v, want precondition_failed", err)
 	}
 	// Plan-mode dispatch stays free: that is how plans get written.
-	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModePlan, DryRun: true}); err != nil {
+	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModePlan, DryRun: true}); err != nil {
 		t.Fatalf("plan-mode dispatch gated: %v", err)
 	}
 	if _, err := fixture.tickets.Approve(ticket.Slug, "john", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent, DryRun: true}); err != nil {
+	if _, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent, DryRun: true}); err != nil {
 		t.Fatalf("approved-plan dispatch: %v", err)
 	}
 }
@@ -386,7 +386,7 @@ func TestDispatchFailsFastWhenTheProviderIsNotInstalled(t *testing.T) {
 		return "", errors.New("not found")
 	}
 
-	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.CursorCloudModeAgent})
+	_, err := fixture.service.Dispatch(DispatchOptions{TicketRef: ticket.Slug, Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("missing provider error = %v, want precondition_failed", err)
 	}

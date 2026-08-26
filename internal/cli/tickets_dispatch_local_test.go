@@ -42,13 +42,12 @@ func TestTicketsDispatchRoutesToTheLocalBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No cursor_cloud block: the default backend is local.
 	dryJSON, _, err := executeCollectingInput(t, options, nil,
 		"tickets", "dispatch", "fix-auth", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("local dry-run dispatch: %v\n%s", err, dryJSON)
 	}
-	for _, want := range []string{`"backend":"local"`, `"status":"valid"`, `"provider":"grok"`, `"agentLabel":"ticket-impl"`} {
+	for _, want := range []string{`"status":"valid"`, `"provider":"grok"`, `"agentLabel":"ticket-impl"`} {
 		if !strings.Contains(dryJSON, want) {
 			t.Fatalf("dry-run JSON lacks %s:\n%s", want, dryJSON)
 		}
@@ -62,22 +61,15 @@ func TestTicketsDispatchRoutesToTheLocalBackend(t *testing.T) {
 		t.Fatalf("dry-run dispatch claimed the ticket:\n%s", claimedJSON)
 	}
 
-	// An explicit cloud backend without cursor_cloud settings fails.
+	// An unknown flag is an error: the backend flag is gone.
 	_, _, err = executeCollectingInput(t, options, nil,
-		"tickets", "dispatch", "fix-auth", "--backend", "cursor-cloud", "--dry-run", "--output", "json")
-	if err == nil || !strings.Contains(err.Error(), "cursor_cloud") {
-		t.Fatalf("cloud backend on a local-only Template error = %v", err)
-	}
-
-	// An unknown backend is invalid usage.
-	_, _, err = executeCollectingInput(t, options, nil,
-		"tickets", "dispatch", "fix-auth", "--backend", "codespaces", "--dry-run", "--output", "json")
-	if err == nil || !strings.Contains(err.Error(), "unsupported dispatch backend") {
-		t.Fatalf("unknown backend error = %v", err)
+		"tickets", "dispatch", "fix-auth", "--backend", "local", "--dry-run", "--output", "json")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("removed --backend flag error = %v", err)
 	}
 }
 
-func TestApplyTicketsDispatchAcceptsTheBackendField(t *testing.T) {
+func TestApplyTicketsDispatchRunsLocally(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	fakeProviderOnPath(t, "grok")
 	writeTwtConfigFile(t, options.ConfigDir, "ticketAgent:\n  provider: grok\n")
@@ -99,12 +91,12 @@ func TestApplyTicketsDispatchAcceptsTheBackendField(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
-		strings.NewReader(`{"operation":"tickets.dispatch","ticket":{"reference":"fix-auth","backend":"local"}}`),
+		strings.NewReader(`{"operation":"tickets.dispatch","ticket":{"reference":"fix-auth"}}`),
 		"apply", "--stdin", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply local dispatch dry run: %v\n%s", err, applyJSON)
 	}
-	if !strings.Contains(applyJSON, `"backend":"local"`) || !strings.Contains(applyJSON, `"status":"valid"`) {
+	if !strings.Contains(applyJSON, `"status":"valid"`) {
 		t.Fatalf("apply JSON = %s", applyJSON)
 	}
 }
@@ -176,9 +168,6 @@ func TestTicketsSyncWorksWithoutTheCursorHarnessOnALocalOnlyProject(t *testing.T
 			t.Fatalf("sync JSON lacks %s:\n%s", want, syncJSON)
 		}
 	}
-	if strings.Contains(syncJSON, `"cursor-cloud"`) {
-		t.Fatalf("local-only sync reports a cloud backend:\n%s", syncJSON)
-	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.sync","ticket":{"project":"core"}}`),
 		"apply", "--stdin", "--dry-run", "--output", "json")
@@ -187,34 +176,6 @@ func TestTicketsSyncWorksWithoutTheCursorHarnessOnALocalOnlyProject(t *testing.T
 	}
 	if !strings.Contains(applyJSON, `"status":"valid"`) {
 		t.Fatalf("apply sync JSON = %s", applyJSON)
-	}
-}
-
-func TestTicketsSyncReportsCloudCapacityWithoutPendingSessions(t *testing.T) {
-	options, _ := ticketTestOptions(t)
-	writeTemplateFile(t, options.ConfigDir, domain.Template{
-		Version: domain.TemplateVersion,
-		Name:    "product",
-		Repositories: []domain.RepositorySpec{{
-			Name: "api", Clone: domain.CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main",
-		}},
-		CursorCloud: &domain.CursorCloudSpec{MaxConcurrency: 3},
-	})
-	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core", "--template", "product"); err != nil {
-		t.Fatal(err)
-	}
-	// No pending cloud sessions and no harness installed: sync still
-	// reports the configured cloud capacity.
-	syncJSON, _, err := executeCollectingInput(t, options, nil,
-		"tickets", "sync", "--project", "core", "--output", "json")
-	if err != nil {
-		t.Fatalf("sync with cloud config: %v\n%s", err, syncJSON)
-	}
-	if !strings.Contains(syncJSON, `"cursor-cloud":{"capacity":{"maximum":3,"active":0,"available":3,"known":true}`) {
-		t.Fatalf("sync JSON lacks the cloud capacity block:\n%s", syncJSON)
 	}
 }
 

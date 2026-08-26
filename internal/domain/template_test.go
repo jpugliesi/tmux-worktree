@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -176,35 +175,6 @@ func TestTemplatePoolDepth(t *testing.T) {
 	}
 }
 
-func TestTemplateValidatesCursorCloudDefaults(t *testing.T) {
-	template := Template{
-		Version: TemplateVersion,
-		Name:    "product",
-		Repositories: []RepositorySpec{
-			{Name: "api", Clone: CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main"},
-			{Name: "web", Clone: CloneSpec{URL: "https://github.com/acme/web.git"}, DefaultBranch: "trunk"},
-		},
-		CursorCloud: &CursorCloudSpec{
-			Model:          "composer-2.5",
-			Effort:         CursorCloudEffortLarge,
-			MaxConcurrency: 4,
-			Repositories: []CursorCloudRepositorySpec{
-				{Name: "api"},
-				{Name: "web", URL: "https://github.com/acme/web-cloud.git", StartingRef: "release"},
-			},
-		},
-	}
-	if err := template.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-	if got := template.CursorCloud.EffectiveEffort(); got != CursorCloudEffortLarge {
-		t.Fatalf("EffectiveEffort() = %q, want %q", got, CursorCloudEffortLarge)
-	}
-	if got := template.CursorCloud.EffectiveMaxConcurrency(); got != 4 {
-		t.Fatalf("EffectiveMaxConcurrency() = %d, want 4", got)
-	}
-}
-
 func TestTemplateValidatesLocalDispatchDefaults(t *testing.T) {
 	template := Template{
 		Version: TemplateVersion,
@@ -212,7 +182,7 @@ func TestTemplateValidatesLocalDispatchDefaults(t *testing.T) {
 		Repositories: []RepositorySpec{
 			{Name: "api", Clone: CloneSpec{URL: "https://github.com/acme/api.git"}, DefaultBranch: "main"},
 		},
-		LocalDispatch: &LocalDispatchSpec{Provider: "grok", Effort: CursorCloudEffortLarge, MaxConcurrency: 3},
+		LocalDispatch: &LocalDispatchSpec{Provider: "grok", Effort: DispatchEffortLarge, MaxConcurrency: 3},
 	}
 	if err := template.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -241,51 +211,5 @@ func TestTemplateValidatesLocalDispatchDefaults(t *testing.T) {
 	template.LocalDispatch = &LocalDispatchSpec{MaxConcurrency: -1}
 	if err := template.Validate(); err == nil {
 		t.Fatal("Validate() accepted a negative local_dispatch max_concurrency")
-	}
-}
-
-func TestTemplateRejectsInvalidCursorCloudConfiguration(t *testing.T) {
-	base := Template{
-		Version: TemplateVersion,
-		Name:    "product",
-		Repositories: []RepositorySpec{
-			{Name: "api", Clone: CloneSpec{URL: "https://github.com/acme/api.git"}},
-		},
-	}
-	tests := []struct {
-		name   string
-		config CursorCloudSpec
-	}{
-		{name: "effort", config: CursorCloudSpec{Effort: "huge"}},
-		{name: "negative concurrency", config: CursorCloudSpec{MaxConcurrency: -1}},
-		{name: "missing repository", config: CursorCloudSpec{Repositories: []CursorCloudRepositorySpec{{Name: "web"}}}},
-		{name: "duplicate repository", config: CursorCloudSpec{Repositories: []CursorCloudRepositorySpec{{Name: "api"}, {Name: "api"}}}},
-		{name: "empty repository name", config: CursorCloudSpec{Repositories: []CursorCloudRepositorySpec{{Name: ""}}}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			template := base
-			template.CursorCloud = &test.config
-			if err := template.Validate(); err == nil {
-				t.Fatal("Validate() succeeded")
-			}
-		})
-	}
-}
-
-func TestTemplateRejectsAnInvalidDefaultCursorCloudRepositorySelection(t *testing.T) {
-	empty := Template{Version: TemplateVersion, Name: "empty", CursorCloud: &CursorCloudSpec{}}
-	if err := empty.Validate(); err == nil || !strings.Contains(err.Error(), "at least one repository") {
-		t.Fatalf("empty Cursor Cloud repository selection error = %v", err)
-	}
-
-	many := Template{Version: TemplateVersion, Name: "many", CursorCloud: &CursorCloudSpec{}}
-	for index := 0; index < CursorCloudRepositoryLimit+1; index++ {
-		many.Repositories = append(many.Repositories, RepositorySpec{
-			Name: fmt.Sprintf("repo-%d", index), Clone: CloneSpec{URL: fmt.Sprintf("https://example.com/repo-%d.git", index)},
-		})
-	}
-	if err := many.Validate(); err == nil || !strings.Contains(err.Error(), "at most") {
-		t.Fatalf("large Cursor Cloud repository selection error = %v", err)
 	}
 }

@@ -36,7 +36,7 @@ func stackedFixture(t *testing.T) localFixture {
 	create("dependent", "blocker")
 	// The blocker's dispatch ran here: its session points at a Workspace
 	// whose branch is the stack base.
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: "blocker", Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: "blocker", Mode: domain.DispatchModeAgent})
 	if err != nil {
 		t.Fatalf("dispatch blocker: %v", err)
 	}
@@ -57,7 +57,7 @@ func stackedFixture(t *testing.T) localFixture {
 
 func TestDispatchStacksOnTheBlockersBranch(t *testing.T) {
 	fixture := stackedFixture(t)
-	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: "dependent", Mode: domain.CursorCloudModeAgent})
+	session, err := fixture.service.Dispatch(DispatchOptions{TicketRef: "dependent", Mode: domain.DispatchModeAgent})
 	if err != nil {
 		t.Fatalf("stacked dispatch: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestDispatchWithoutStackingStaysGated(t *testing.T) {
 	if err := fixture.service.options.Templates.Save(template); err != nil {
 		t.Fatal(err)
 	}
-	_, err = fixture.service.Dispatch(DispatchOptions{TicketRef: "dependent", Mode: domain.CursorCloudModeAgent})
+	_, err = fixture.service.Dispatch(DispatchOptions{TicketRef: "dependent", Mode: domain.DispatchModeAgent})
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("unstacked dispatch of a blocked ticket = %v, want precondition_failed", err)
 	}

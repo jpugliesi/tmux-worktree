@@ -5,7 +5,6 @@ import (
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
-	"github.com/jpugliesi/tmux-worktree/internal/cursorcloud"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/localdispatch"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
@@ -18,15 +17,8 @@ type ticketsSyncLocalOutput struct {
 	Diagnostics []localdispatch.Diagnostic   `json:"diagnostics,omitempty"`
 }
 
-type ticketsSyncCloudOutput struct {
-	Capacity    cursorcloud.CloudCapacity    `json:"capacity"`
-	Sessions    []cursorCloudSessionOutput   `json:"sessions"`
-	Diagnostics []cursorcloud.SyncDiagnostic `json:"diagnostics,omitempty"`
-}
-
 type ticketsSyncBackendsOutput struct {
-	Local       *ticketsSyncLocalOutput `json:"local,omitempty"`
-	CursorCloud *ticketsSyncCloudOutput `json:"cursor-cloud,omitempty"`
+	Local *ticketsSyncLocalOutput `json:"local,omitempty"`
 }
 
 type ticketsSyncOutput struct {
@@ -41,7 +33,7 @@ func newTicketsSyncCommand(options Options) *cobra.Command {
 	var project string
 	command := &cobra.Command{
 		Use:   "sync",
-		Short: "Sync local and Cursor Cloud Sessions with Ticket states",
+		Short: "Sync the Tickets home and dispatch Sessions with Ticket states",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return runTicketsSync(command, options, project)
@@ -79,13 +71,6 @@ func runTicketsSync(command *cobra.Command, options Options, project string) err
 	}
 	diagnostics := len(localResult.Diagnostics)
 
-	cloudOutput, cloudDiagnostics, err := runTicketsSyncCloudHalf(command, options, project, dryRun)
-	if err != nil {
-		return err
-	}
-	output.Backends.CursorCloud = cloudOutput
-	diagnostics += cloudDiagnostics
-
 	output.Status = statusApplied
 	if dryRun {
 		output.Status = statusValid
@@ -99,93 +84,13 @@ func runTicketsSync(command *cobra.Command, options Options, project string) err
 		output.Backends.Local.Capacity.Available, output.Backends.Local.Capacity.Maximum, project); err != nil {
 		return err
 	}
-	if cloudOutput != nil {
-		if err := writeTicketsSyncCapacityLine(command, "cursor-cloud", cloudOutput.Capacity.Active,
-			cloudOutput.Capacity.Available, cloudOutput.Capacity.Maximum, project); err != nil {
-			return err
-		}
-	}
 	for _, diagnostic := range localResult.Diagnostics {
 		if _, err := fmt.Fprintf(command.ErrOrStderr(), "local Session %q for Ticket %q: %s: %s\n",
 			diagnostic.SessionID, diagnostic.Ticket, diagnostic.Code, diagnostic.Message); err != nil {
 			return err
 		}
 	}
-	if cloudOutput != nil {
-		for _, diagnostic := range cloudOutput.Diagnostics {
-			if _, err := fmt.Fprintf(command.ErrOrStderr(), "cursor-cloud Session %q for Ticket %q: %s\n",
-				diagnostic.SessionID, diagnostic.Ticket, diagnostic.Message); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
-}
-
-// runTicketsSyncCloudHalf syncs the cloud backend. The harness is required
-// only when pending cloud Sessions exist; a Template without cursor_cloud
-// and without pending Sessions omits the backend entirely.
-func runTicketsSyncCloudHalf(command *cobra.Command, options Options, project string, dryRun bool) (*ticketsSyncCloudOutput, int, error) {
-	sessions, err := store.NewCursorCloudSessionStore(options.StateDir).List()
-	if err != nil {
-		return nil, 0, err
-	}
-	pending := 0
-	for _, session := range sessions {
-		if session.Project == project && (session.Active() || !session.TicketTransitioned) {
-			pending++
-		}
-	}
-	cloudSpec, err := projectCursorCloudSpec(options, project)
-	if err != nil {
-		return nil, 0, err
-	}
-	if pending == 0 {
-		if cloudSpec == nil {
-			return nil, 0, nil
-		}
-		maximum := cloudSpec.EffectiveMaxConcurrency()
-		return &ticketsSyncCloudOutput{
-			Capacity: cursorcloud.CloudCapacity{Maximum: maximum, Active: 0, Available: maximum, Known: true},
-			Sessions: []cursorCloudSessionOutput{},
-		}, 0, nil
-	}
-	service, err := options.cursorCloudService(true)
-	if err != nil {
-		return nil, 0, err
-	}
-	result, err := service.Sync(command.Context(), project, dryRun)
-	if err != nil {
-		return nil, 0, err
-	}
-	outputs := make([]cursorCloudSessionOutput, 0, len(result.Sessions))
-	for _, session := range result.Sessions {
-		outputs = append(outputs, toCursorCloudSessionOutput(session))
-	}
-	return &ticketsSyncCloudOutput{
-		Capacity: result.Capacity, Sessions: outputs, Diagnostics: result.Diagnostics,
-	}, len(result.Diagnostics), nil
-}
-
-// projectCursorCloudSpec loads the cursor_cloud block of a Project Template,
-// or nil when the Project or Template does not configure it.
-func projectCursorCloudSpec(options Options, project string) (*domain.CursorCloudSpec, error) {
-	tickets, err := options.ticketService()
-	if err != nil {
-		return nil, err
-	}
-	resolved, err := tickets.Project(project)
-	if err != nil {
-		return nil, err
-	}
-	if resolved.TemplateName == "" {
-		return nil, nil
-	}
-	template, err := options.templateStore().Load(resolved.TemplateName)
-	if err != nil {
-		return nil, err
-	}
-	return template.CursorCloud, nil
 }
 
 func writeTicketsSyncCapacityLine(command *cobra.Command, backend string, active, available, maximum int, project string) error {
@@ -235,7 +140,7 @@ func runLocalDispatchAbandon(command *cobra.Command, options Options, reference 
 		output := toLocalDispatchSessionOutput(session)
 		return writeJSONOutput(command, localDispatchMutationOutput{
 			SchemaVersion: jsonSchemaVersion, Operation: "tickets.abandon", Status: status,
-			Backend: dispatchBackendLocal, Session: &output,
+			Session: &output,
 		})
 	}
 	if _, err := fmt.Fprintf(command.OutOrStdout(), "%s local Session %q for Ticket %q\n", verb, session.ID, session.TicketSlug); err != nil {

@@ -333,21 +333,6 @@ func boardSessions(options Options, project string) []boardSessionOutput {
 			}
 		}
 	}
-	if sessions, err := store.NewCursorCloudSessionStore(options.StateDir).List(); err == nil {
-		for _, session := range sessions {
-			if session.Project != project {
-				continue
-			}
-			if session.UpdatedAt.After(newestAt[session.TicketSlug]) {
-				newestAt[session.TicketSlug] = session.UpdatedAt
-				newest[session.TicketSlug] = boardSessionOutput{
-					Backend: "cursor-cloud", ID: session.ID, Ticket: session.TicketSlug,
-					Status:    string(session.Status),
-					UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
-				}
-			}
-		}
-	}
 	outputs := make([]boardSessionOutput, 0, len(newest))
 	for _, session := range newest {
 		outputs = append(outputs, session)

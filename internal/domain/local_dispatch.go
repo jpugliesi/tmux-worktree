@@ -35,7 +35,7 @@ type LocalDispatchSession struct {
 	TicketSlug         string              `json:"ticketSlug"`
 	Project            string              `json:"project"`
 	TemplateName       string              `json:"templateName"`
-	Mode               CursorCloudMode     `json:"mode"`
+	Mode               DispatchMode        `json:"mode"`
 	Provider           string              `json:"provider"`
 	Status             LocalDispatchStatus `json:"status"`
 	Claimant           string              `json:"claimant"`
@@ -45,7 +45,7 @@ type LocalDispatchSession struct {
 	TmuxSession        string              `json:"tmuxSession,omitempty"`
 	AgentSessionID     string              `json:"agentSessionId,omitempty"`
 	AgentLabel         string              `json:"agentLabel,omitempty"`
-	Error              *CursorCloudError   `json:"error,omitempty"`
+	Error              *DispatchError      `json:"error,omitempty"`
 	TicketTransitioned bool                `json:"ticketTransitioned,omitempty"`
 	// StackBase records the stack parent ("blocker-slug@branch") when this
 	// session was dispatched stacked.
@@ -77,7 +77,7 @@ func (s LocalDispatchSession) Validate() error {
 		}
 	}
 	switch s.Mode {
-	case CursorCloudModeAgent, CursorCloudModePlan:
+	case DispatchModeAgent, DispatchModePlan:
 	default:
 		return fmt.Errorf("local dispatch Session mode %q is invalid", s.Mode)
 	}

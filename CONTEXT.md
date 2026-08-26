@@ -43,11 +43,6 @@ checkout lease. It can have a verified live process, a resume command, a
 linked Agent Transcript, or a combination of these.
 _Avoid_: Agent process, tmux pane
 
-**Cursor Cloud Session**:
-A remote Cursor Agent conversation for one Ticket. It can contain multiple
-runs and the pull-request handoff for each repository.
-_Avoid_: Agent Session, cloud Workspace, local Cursor process
-
 **Local Dispatch Session**:
 One local implementation run for one Ticket: a Workspace plus one autonomous
 implementation Agent Session, tracked as a durable session record so a
@@ -118,8 +113,8 @@ _Avoid_: Closed Project, archive Project
 
 **Project**:
 One durable directory under Tickets home, with `index.md`. It groups Tickets
-and selects one Workspace Template for local or cloud work. A Project can have
-many Workspaces and Cursor Cloud Sessions over time. Its Ticket count includes
+and selects one Workspace Template. A Project can have many Workspaces over
+time. Its Ticket count includes
 active and closed Tickets.
 _Avoid_: Board, workspace, epic folder
 

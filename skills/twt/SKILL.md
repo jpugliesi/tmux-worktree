@@ -320,22 +320,14 @@ the planning prompt in normal mode. The other providers use their plan mode.
 ### Dispatch Tickets to implementation Sessions
 
 `twt tickets dispatch` starts one implementation Session for one ready
-Ticket on one of two backends:
-
-- `local` creates a Workspace on this machine and starts one autonomous
-  implementation agent in tmux. The Template `local_dispatch` settings select
-  the provider, effort, instructions, and the Project concurrency (default
-  2). Empty settings fall back to the machine `ticketAgent` config, so a
-  shared Template normally leaves the provider unset and each machine uses an
-  installed provider. A person can attach to the Workspace tmux session at
-  any time and steer.
-- `cursor-cloud` starts a remote Cursor Agent. It needs `cursor_cloud`
-  settings on the Template (model, effort, concurrency default 4,
-  instructions, repositories).
-
-An omitted `--backend` follows the Template: `cursor-cloud` when
-`cursor_cloud` is set, else `local`. A local dispatch can take minutes when
-no Prepared Environment is ready.
+Ticket: it claims the Ticket, creates a Workspace on this machine, and
+starts one autonomous implementation agent in tmux. The Template
+`local_dispatch` settings select the provider, effort, instructions, and
+the Project concurrency (default 2). Empty settings fall back to the
+machine `ticketAgent` config, so a shared Template normally leaves the
+provider unset and each machine uses an installed provider. A person can
+attach to the Workspace tmux session at any time and steer. A dispatch can
+take minutes when no Prepared Environment is ready.
 
 A coordinator runs one wave and then stops:
 
@@ -347,11 +339,10 @@ twt tickets dispatch TICKET --dry-run --output json
 twt tickets dispatch TICKET --output json
 ```
 
-`tickets sync` reports each backend under `backends` with its own
-`capacity`, `sessions`, and `diagnostics`. Check `capacity.known` for each
-backend. If it is false, do not dispatch on that backend; read the
-diagnostics. A `waiting_on_input` diagnostic is informational: the Ticket
-waits on the human, and it does not block capacity.
+`tickets sync` reports `capacity`, `sessions`, and `diagnostics`. Check
+`capacity.known`. If it is false, do not dispatch; read the diagnostics. A
+`waiting_on_input` diagnostic is informational: the Ticket waits on the
+human, and it does not block capacity.
 
 `projects show` is the single coordinator read after sync. Act on its
 sections in this order:
@@ -361,7 +352,7 @@ sections in this order:
 2. `inReview` with `prStates`: when every pull request of a Ticket is
    `merged`, close the Ticket (`twt tickets close`). Merged means done, and
    the close unblocks the dependents.
-3. `ready`: dispatch up to the combined `capacity.available`, one dispatch
+3. `ready`: dispatch up to `capacity.available`, one dispatch
    command for each Ticket. Add `--plan` only when the user asks for a plan.
    A normal dispatch asks the agent to implement the Ticket, run tests,
    attach each pull request with `twt tickets pr add` as soon as it exists,
@@ -370,7 +361,7 @@ sections in this order:
    (`precondition_failed` otherwise); surface it to the human instead of
    retrying.
 
-The worker contract: a local implementation agent finishes with
+The worker contract: an implementation agent finishes with
 `twt tickets complete TICKET --as CLAIMANT --pr URL`, which records the pull
 requests and sets the Ticket to `ready-for-human` in one write. A worker
 that cannot finish comments the blocker and runs `twt tickets unclaim`.
@@ -379,25 +370,18 @@ Completion detection is a state read: never infer it from pane output.
 After the wave, stop. Do not poll in a tight loop. Run a new wave when the
 user or coordinator schedule asks for one. A sync can have
 `status: "partial"`. Read `diagnostics`, correct each named Session when
-possible, and keep the successful Session updates. If a cloud dispatch or
-sync reports an uncertain remote result, keep the Ticket claim and run
-`tickets sync` later. Do not dispatch a Ticket again while any of its
-Sessions is active.
+possible, and keep the successful Session updates. Do not dispatch a Ticket
+again while any of its Sessions is active.
 
-A local `stuck` diagnostic means the agent stopped while the Ticket stays
+A `stuck` diagnostic means the agent stopped while the Ticket stays
 claimed. Resume it with `twt agents resume`, or, with user authority, run
 `twt tickets abandon SESSION --force` (dry-run first). Abandon returns the
 Ticket to the queue but never stops tmux: inspect the Workspace, then run
-`twt done WORKSPACE`. For a stuck Cursor Cloud Session the command is
-`twt tickets cloud-abandon SESSION --force`; the remote Agent can continue
-and can still create a pull request. Do not use either command without clear
-user authority.
+`twt done WORKSPACE`. Do not use abandon without clear user authority.
 
-Three different verbs start ticket agents. `twt tickets start --with-agent`
-opens a planning Workspace for a person. `twt tickets dispatch` (local)
-starts an autonomous implementation Workspace. `twt tickets dispatch
---backend cursor-cloud` starts a remote Cursor Agent with no local
-Workspace.
+Two different verbs start ticket agents. `twt tickets start --with-agent`
+opens a planning Workspace for a person. `twt tickets dispatch` starts an
+autonomous implementation Workspace.
 
 ### Sync the Tickets home between machines
 

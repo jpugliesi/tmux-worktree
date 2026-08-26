@@ -11,7 +11,6 @@ import (
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
-	"github.com/jpugliesi/tmux-worktree/internal/cursorcloud"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
 	"github.com/jpugliesi/tmux-worktree/internal/prstate"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
@@ -94,11 +93,6 @@ type Options struct {
 	QuickCreateExecutable  string
 	QuickCreateWaitTimeout time.Duration
 	PreparationExecutable  string
-	// CursorCloudHarness replaces the Cursor SDK process boundary. Tests use a
-	// fake. Normal commands find the installed twt-cursor-cloud executable.
-	CursorCloudHarness cursorcloud.Harness
-	// CursorCloudExecutable selects one installed SDK harness executable.
-	CursorCloudExecutable string
 	// PRResolvers replaces the live gh/origin PR-state resolvers. Tests use
 	// fakes; nil installs the real ones.
 	PRResolvers []prstate.Resolver
@@ -218,50 +212,6 @@ func (o Options) ticketService() (ticketservice.Store, error) {
 			fmt.Fprintf(os.Stderr, format+"\n", a...)
 		},
 	}), nil
-}
-
-func (o Options) cursorCloudService(requireHarness bool) (*cursorcloud.Service, error) {
-	tickets, err := o.ticketService()
-	if err != nil {
-		return nil, err
-	}
-	harness := o.CursorCloudHarness
-	if harness == nil && requireHarness {
-		executable, err := o.cursorCloudHarnessExecutable()
-		if err != nil {
-			return nil, err
-		}
-		harness = cursorcloud.NewClient(cursorcloud.ProcessRunner{Executable: executable})
-	}
-	return cursorcloud.NewService(cursorcloud.ServiceOptions{
-		StateDir: o.StateDir, Templates: o.templateStore(), Tickets: tickets, Harness: harness,
-	}), nil
-}
-
-func (o Options) cursorCloudHarnessExecutable() (string, error) {
-	configured := o.CursorCloudExecutable
-	if configured == "" {
-		configured = os.Getenv("TWT_CURSOR_CLOUD_HARNESS")
-	}
-	if configured != "" {
-		path, err := exec.LookPath(configured)
-		if err != nil {
-			return "", clierr.New(clierr.PreconditionFailed, "Cursor Cloud harness %q is not executable", configured)
-		}
-		return path, nil
-	}
-	if current, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(current), "twt-cursor-cloud")
-		if info, statErr := os.Stat(sibling); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-			return sibling, nil
-		}
-	}
-	if path, err := exec.LookPath("twt-cursor-cloud"); err == nil {
-		return path, nil
-	}
-	return "", clierr.WithHint(
-		clierr.New(clierr.PreconditionFailed, "the twt-cursor-cloud harness is not installed"),
-		"Build and install the Cursor Cloud harness with 'make install'.")
 }
 
 func DefaultOptions() Options {

@@ -213,7 +213,7 @@ func (s *Service) reconcileActive(session *domain.LocalDispatchSession, dryRun b
 			return nil
 		}
 		session.Status = domain.LocalDispatchCancelled
-		session.Error = &domain.CursorCloudError{Kind: "superseded",
+		session.Error = &domain.DispatchError{Kind: "superseded",
 			Message: fmt.Sprintf("Ticket %q was re-claimed by %q.", session.TicketSlug, ticket.ClaimedBy)}
 		session.CompletedAt = &now
 		session.TicketTransitioned = true

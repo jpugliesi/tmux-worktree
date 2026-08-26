@@ -714,17 +714,17 @@ func TestClaimReadyRequiresAReadyTicket(t *testing.T) {
 	writeFixture(t, filepath.Join(home, "open-dep.md"), fixture{title: "Open dep", status: "needs-triage"}.content())
 	writeFixture(t, filepath.Join(home, "blocked.md"), fixture{title: "Blocked", status: "ready-for-agent", blocked: []string{"open-dep"}}.content())
 
-	reserved, err := service.ClaimReady("ready", "cursor-cloud-1234", false)
+	reserved, err := service.ClaimReady("ready", "worker-abcd-1234", false)
 	if err != nil {
 		t.Fatalf("ClaimReady: %v", err)
 	}
-	if reserved.ClaimedBy != "cursor-cloud-1234" {
+	if reserved.ClaimedBy != "worker-abcd-1234" {
 		t.Fatalf("reserved Ticket = %+v", reserved)
 	}
-	if _, err := service.ClaimReady("blocked", "cursor-cloud-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+	if _, err := service.ClaimReady("blocked", "worker-abcd-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("blocked ClaimReady = %v, want precondition_failed", err)
 	}
-	if _, err := service.ClaimReady("ready", "cursor-cloud-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+	if _, err := service.ClaimReady("ready", "worker-abcd-5678", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("claimed ClaimReady = %v, want precondition_failed", err)
 	}
 }
@@ -732,14 +732,14 @@ func TestClaimReadyRequiresAReadyTicket(t *testing.T) {
 func TestCompleteClaimChangesStatusAndOnlyClearsTheExpectedClaim(t *testing.T) {
 	service, home := newTestService(t)
 	writeFixture(t, filepath.Join(home, "work.md"), fixture{title: "Work", status: "ready-for-agent"}.content())
-	if _, err := service.ClaimReady("work", "cursor-cloud-1234", false); err != nil {
+	if _, err := service.ClaimReady("work", "worker-abcd-1234", false); err != nil {
 		t.Fatalf("ClaimReady: %v", err)
 	}
 	if _, err := service.SetWorkspace("work", "514a26ed287e429b888000aaa288333a", false); err != nil {
 		t.Fatalf("SetWorkspace: %v", err)
 	}
 
-	completed, err := service.CompleteClaim("work", "cursor-cloud-1234", domain.TicketReadyForHuman, false)
+	completed, err := service.CompleteClaim("work", "worker-abcd-1234", domain.TicketReadyForHuman, false)
 	if err != nil {
 		t.Fatalf("CompleteClaim: %v", err)
 	}
@@ -750,7 +750,7 @@ func TestCompleteClaimChangesStatusAndOnlyClearsTheExpectedClaim(t *testing.T) {
 		t.Fatalf("CompleteClaim cleared Workspace ID: %+v", completed)
 	}
 
-	again, err := service.CompleteClaim("work", "cursor-cloud-1234", domain.TicketReadyForHuman, false)
+	again, err := service.CompleteClaim("work", "worker-abcd-1234", domain.TicketReadyForHuman, false)
 	if err != nil || again.Status != domain.TicketReadyForHuman {
 		t.Fatalf("repeated CompleteClaim = %+v, %v", again, err)
 	}

@@ -11,17 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	dispatchBackendLocal       = "local"
-	dispatchBackendCursorCloud = "cursor-cloud"
-)
-
 type localDispatchSessionOutput struct {
 	ID                 string                     `json:"id"`
 	Ticket             string                     `json:"ticket"`
 	Project            string                     `json:"project"`
 	Template           string                     `json:"template"`
-	Mode               domain.CursorCloudMode     `json:"mode"`
+	Mode               domain.DispatchMode        `json:"mode"`
 	Provider           string                     `json:"provider"`
 	Status             domain.LocalDispatchStatus `json:"status"`
 	Claimant           string                     `json:"claimant"`
@@ -30,7 +25,7 @@ type localDispatchSessionOutput struct {
 	TmuxSession        string                     `json:"tmuxSession,omitempty"`
 	AgentSessionID     string                     `json:"agentSessionId,omitempty"`
 	AgentLabel         string                     `json:"agentLabel,omitempty"`
-	Error              *domain.CursorCloudError   `json:"error,omitempty"`
+	Error              *domain.DispatchError      `json:"error,omitempty"`
 	TicketTransitioned bool                       `json:"ticketTransitioned,omitempty"`
 	CreatedAt          string                     `json:"createdAt"`
 	UpdatedAt          string                     `json:"updatedAt"`
@@ -40,7 +35,6 @@ type localDispatchMutationOutput struct {
 	SchemaVersion int                         `json:"schemaVersion"`
 	Operation     string                      `json:"operation"`
 	Status        string                      `json:"status"`
-	Backend       string                      `json:"backend"`
 	Session       *localDispatchSessionOutput `json:"session,omitempty"`
 }
 
@@ -114,35 +108,22 @@ func (l *cliWorkspaceLauncher) Launch(request localdispatch.LaunchRequest) (loca
 	return result, nil
 }
 
-// resolveDispatchBackend selects the backend when --backend is omitted:
-// cursor-cloud when the Project Template configures it, otherwise local.
-func resolveDispatchBackend(options Options, ticketRef string) (string, error) {
-	tickets, err := options.ticketService()
-	if err != nil {
-		return "", err
+func newTicketsDispatchCommand(options Options) *cobra.Command {
+	var plan bool
+	var maxConcurrency int
+	command := &cobra.Command{
+		Use:   "dispatch TICKET",
+		Short: "Start one implementation Session for a ready Ticket",
+		Args:  exactArgs("TICKET"),
+		RunE: func(command *cobra.Command, args []string) error {
+			return runLocalDispatch(command, options, args[0], plan, maxConcurrency)
+		},
 	}
-	shown, err := tickets.Show(ticketRef)
-	if err != nil {
-		return "", err
-	}
-	if shown.Ticket.Project == "" {
-		return dispatchBackendLocal, nil
-	}
-	project, err := tickets.Project(shown.Ticket.Project)
-	if err != nil {
-		return "", err
-	}
-	if project.TemplateName == "" {
-		return dispatchBackendLocal, nil
-	}
-	template, err := options.templateStore().Load(project.TemplateName)
-	if err != nil {
-		return "", err
-	}
-	if template.CursorCloud != nil {
-		return dispatchBackendCursorCloud, nil
-	}
-	return dispatchBackendLocal, nil
+	command.Flags().BoolVar(&plan, "plan", false, "Ask the agent to create a plan without changing code")
+	command.Flags().IntVar(&maxConcurrency, "max-concurrency", 0, "Override the Project-wide active Session limit")
+	setArguments(command, requiredArgument("ticket"))
+	command.ValidArgsFunction = ticketFlagCompletion(options)
+	return command
 }
 
 func runLocalDispatch(command *cobra.Command, options Options, ticket string, plan bool, maxConcurrency int) error {
@@ -150,9 +131,9 @@ func runLocalDispatch(command *cobra.Command, options Options, ticket string, pl
 	if err != nil {
 		return err
 	}
-	mode := domain.CursorCloudModeAgent
+	mode := domain.DispatchModeAgent
 	if plan {
-		mode = domain.CursorCloudModePlan
+		mode = domain.DispatchModePlan
 	}
 	session, err := service.Dispatch(localdispatch.DispatchOptions{
 		TicketRef: ticket, Mode: mode, MaxConcurrency: maxConcurrency, DryRun: isDryRun(command),
@@ -168,7 +149,7 @@ func runLocalDispatch(command *cobra.Command, options Options, ticket string, pl
 		output := toLocalDispatchSessionOutput(session)
 		return writeJSONOutput(command, localDispatchMutationOutput{
 			SchemaVersion: jsonSchemaVersion, Operation: "tickets.dispatch", Status: status,
-			Backend: dispatchBackendLocal, Session: &output,
+			Session: &output,
 		})
 	}
 	verb := "Started"

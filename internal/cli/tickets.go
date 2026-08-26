@@ -49,8 +49,6 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsDispatchCommand(options))
 	tickets.AddCommand(newTicketsSyncCommand(options))
 	tickets.AddCommand(newTicketsAbandonCommand(options))
-	tickets.AddCommand(newTicketsCloudSyncCommand(options))
-	tickets.AddCommand(newTicketsCloudAbandonCommand(options))
 	tickets.AddCommand(newTicketsShowCommand(options))
 	tickets.AddCommand(newTicketsEditCommand(options))
 	tickets.AddCommand(newTicketsSetCommand(options))

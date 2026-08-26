@@ -51,7 +51,7 @@ func TestProjectsShowRendersTheBoard(t *testing.T) {
 	if err := (store.NewLocalDispatchSessionStore(options.StateDir)).Save(domain.LocalDispatchSession{
 		Version: domain.LocalDispatchSessionVersion, ID: "ld-board-test-01",
 		TicketSlug: "progress-task", Project: "core", TemplateName: "demo",
-		Mode: domain.CursorCloudModeAgent, Provider: "cursor",
+		Mode: domain.DispatchModeAgent, Provider: "cursor",
 		Status: domain.LocalDispatchRunning, Claimant: "agent-b",
 		PromptSnapshot: "work", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {

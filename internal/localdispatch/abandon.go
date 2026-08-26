@@ -28,7 +28,7 @@ func (s *Service) Abandon(reference string, dryRun bool) (domain.LocalDispatchSe
 			session.Status = domain.LocalDispatchCancelled
 			session.CompletedAt = &now
 		}
-		session.Error = &domain.CursorCloudError{
+		session.Error = &domain.DispatchError{
 			Kind: "abandoned", Message: "The operator abandoned local dispatch Session recovery.",
 		}
 		session.UpdatedAt = now

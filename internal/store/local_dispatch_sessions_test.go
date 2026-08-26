@@ -16,7 +16,7 @@ func localDispatchTestSession(id string) domain.LocalDispatchSession {
 		TicketSlug:     "fix-auth",
 		Project:        "core",
 		TemplateName:   "product",
-		Mode:           domain.CursorCloudModeAgent,
+		Mode:           domain.DispatchModeAgent,
 		Provider:       "grok",
 		Status:         domain.LocalDispatchCreating,
 		Claimant:       "twt-local-" + id[:8],

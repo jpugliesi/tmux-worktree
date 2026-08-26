@@ -1,7 +1,7 @@
 // Package localdispatch starts and tracks local implementation runs for
 // Tickets: one Workspace plus one autonomous implementation Agent Session
 // per Ticket, recorded as a durable session so a coordinator can dispatch,
-// observe, and recover them like Cursor Cloud Sessions.
+// observe, and recover them.
 package localdispatch
 
 import (
@@ -94,7 +94,7 @@ func NewService(options ServiceOptions) *Service {
 
 type DispatchOptions struct {
 	TicketRef      string
-	Mode           domain.CursorCloudMode
+	Mode           domain.DispatchMode
 	MaxConcurrency int
 	DryRun         bool
 }
@@ -103,7 +103,7 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	if s.options.Tickets == nil {
 		return domain.LocalDispatchSession{}, clierr.New(clierr.PreconditionFailed, "local dispatch is not configured")
 	}
-	if options.Mode != domain.CursorCloudModeAgent && options.Mode != domain.CursorCloudModePlan {
+	if options.Mode != domain.DispatchModeAgent && options.Mode != domain.DispatchModePlan {
 		return domain.LocalDispatchSession{}, clierr.New(clierr.InvalidUsage, "local dispatch mode %q is invalid", options.Mode)
 	}
 	shown, project, template, err := s.dispatchInputs(options.TicketRef)
@@ -111,7 +111,7 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 		return domain.LocalDispatchSession{}, err
 	}
 	// A planned Ticket needs an approved plan before implementation.
-	if options.Mode == domain.CursorCloudModeAgent {
+	if options.Mode == domain.DispatchModeAgent {
 		if err := ticketservice.RequireApprovedPlan(shown); err != nil {
 			return domain.LocalDispatchSession{}, err
 		}
@@ -119,7 +119,7 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	// A stacking Template may start a stack-ready Ticket from its blocker's
 	// branch. A true-ready Ticket dispatches normally.
 	var stack *stackInfo
-	if options.Mode == domain.CursorCloudModeAgent && !shown.Ready &&
+	if options.Mode == domain.DispatchModeAgent && !shown.Ready &&
 		template.LocalDispatch != nil && template.LocalDispatch.Stacking {
 		resolved, err := s.resolveStack(shown)
 		if err != nil {
@@ -206,11 +206,11 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	return s.dispatchWithSessionLock(session, request, template.LocalDispatch, options.MaxConcurrency)
 }
 
-func (s *Service) buildLaunch(mode domain.CursorCloudMode, provider, effort, instructions, slug, claimant string, stack *stackInfo) (agentprovider.TicketPlanningLaunch, string, error) {
+func (s *Service) buildLaunch(mode domain.DispatchMode, provider, effort, instructions, slug, claimant string, stack *stackInfo) (agentprovider.TicketPlanningLaunch, string, error) {
 	var launch agentprovider.TicketPlanningLaunch
 	var label string
 	var err error
-	if mode == domain.CursorCloudModePlan {
+	if mode == domain.DispatchModePlan {
 		label = "ticket-plan"
 		launch, err = agentprovider.BuildTicketPlanningLaunch(agentprovider.TicketPlanningRequest{
 			Provider:     provider,
@@ -394,7 +394,7 @@ func (s *Service) recordDispatchFailure(session domain.LocalDispatchSession, cau
 	session.UpdatedAt = now
 	session.Status = domain.LocalDispatchFailed
 	session.CompletedAt = &now
-	session.Error = &domain.CursorCloudError{Kind: "launch", Message: cause.Error()}
+	session.Error = &domain.DispatchError{Kind: "launch", Message: cause.Error()}
 	if err := s.finishTicketTransition(&session, domain.TicketReadyForAgent, false); err != nil {
 		return session, errors.Join(cause, err)
 	}
