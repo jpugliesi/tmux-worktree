@@ -87,6 +87,9 @@ type Service struct {
 	// ticketsHome is the resolved Tickets home, or empty when no source sets
 	// one. Doctor reports its state.
 	ticketsHome string
+	// templates is the resolved Workspace Template store; nil falls back to
+	// the config-dir store.
+	templates *store.TemplateStore
 	// skillVersion is the build version that twt stamps into an installed
 	// agent skill. It is empty when the caller does not ask for the check.
 	skillVersion string
@@ -116,6 +119,14 @@ func (s *Service) WithTmuxSocket(socket string) *Service {
 func (s *Service) WithSkillCheck(version string, paths []string) *Service {
 	s.skillVersion = version
 	s.skillPaths = paths
+	return s
+}
+
+// WithTemplateStore injects the resolved Workspace Template store, so doctor
+// sees the shared twt home root and reports shadowed names. Without it,
+// doctor checks only the config-dir templates.
+func (s *Service) WithTemplateStore(templates store.TemplateStore) *Service {
+	s.templates = &templates
 	return s
 }
 
@@ -294,6 +305,9 @@ func (s *Service) Doctor() DoctorReport {
 	report.addCommand("git")
 	report.addCommand("tmux")
 	templates := store.NewTemplateStore(s.configDir)
+	if s.templates != nil {
+		templates = *s.templates
+	}
 	names, err := templates.List()
 	if err != nil {
 		report.addFailure("templates", err.Error())
@@ -307,6 +321,10 @@ func (s *Service) Doctor() DoctorReport {
 		}
 		if valid {
 			report.addPass("templates", fmt.Sprintf("%d Workspace Templates are valid", len(names)))
+		}
+		for _, name := range templates.Shadowed() {
+			report.addWarning("template-shadow:"+name,
+				"the config-dir copy overrides the shared twt home copy of this Workspace Template")
 		}
 	}
 	workspaces, err := store.NewWorkspaceStore(s.stateDir).List()

@@ -48,6 +48,10 @@ type Options struct {
 	StateDir   string
 	DataDir    string
 	TmuxSocket string
+	// Home is the shared twt home. When it is empty, twt resolves TWT_HOME
+	// and then the home value of config.yaml. Tickets live at <home>/tickets
+	// and shared Workspace Templates at <home>/templates.
+	Home string
 	// TicketsHome is the root directory of the Markdown ticket files. When it
 	// is empty, twt resolves TWT_TICKETS_HOME and then the ticketsHome value
 	// of config.yaml at command time.
@@ -113,9 +117,32 @@ func (o Options) agentService() *agentservice.Service {
 	return agentservice.NewService(o.StateDir, o.TmuxSocket)
 }
 
-// templateStore builds the Workspace Template store for these Options.
+// templateStore builds the Workspace Template store for these Options. A
+// configured twt home layers <home>/templates as the shared root: config-dir
+// templates win name collisions, and new templates land in the shared root.
 func (o Options) templateStore() store.TemplateStore {
-	return store.NewTemplateStore(o.ConfigDir)
+	templates := store.NewTemplateStore(o.ConfigDir)
+	if home := o.resolveTwtHome(); home != "" {
+		templates = templates.WithSharedDir(filepath.Join(home, "templates"))
+	}
+	return templates
+}
+
+// resolveTwtHome resolves the shared twt home: the injected Options value,
+// then TWT_HOME, then the home value of config.yaml. Empty means no shared
+// home is configured.
+func (o Options) resolveTwtHome() string {
+	if o.Home != "" {
+		return o.Home
+	}
+	if value := os.Getenv("TWT_HOME"); value != "" {
+		return value
+	}
+	config, err := store.LoadConfig(o.ConfigDir)
+	if err != nil {
+		return ""
+	}
+	return config.Home
 }
 
 // maintenanceService builds the maintenance service for these Options. A
@@ -129,7 +156,8 @@ func (o Options) maintenanceService() *maintenance.Service {
 	userHome, _ := os.UserHomeDir()
 	return maintenance.NewService(o.ConfigDir, o.StateDir, o.DataDir, home).
 		WithTmuxSocket(o.TmuxSocket).
-		WithSkillCheck(version.Version, skillasset.UserPaths(userHome))
+		WithSkillCheck(version.Version, skillasset.UserPaths(userHome)).
+		WithTemplateStore(o.templateStore())
 }
 
 // resolveTicketsHome resolves the Tickets home: the injected Options value,
@@ -146,7 +174,14 @@ func (o Options) resolveTicketsHome() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return config.TicketsHome, nil
+	if config.TicketsHome != "" {
+		return config.TicketsHome, nil
+	}
+	// A shared twt home carries the tickets at <home>/tickets.
+	if home := o.resolveTwtHome(); home != "" {
+		return filepath.Join(home, "tickets"), nil
+	}
+	return "", nil
 }
 
 // resolveBranchPrefix resolves the user branch prefix: the injected Options
@@ -198,7 +233,7 @@ func (o Options) ticketService() (ticketservice.Store, error) {
 	if home == "" {
 		return nil, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "no Tickets home is set"),
-			"Set ticketsHome in ~/.config/twt/config.yaml or TWT_TICKETS_HOME.")
+			"Set home or ticketsHome in ~/.config/twt/config.yaml, or TWT_HOME or TWT_TICKETS_HOME.")
 	}
 	sync, err := o.resolveTicketsSync()
 	if err != nil {
@@ -207,7 +242,7 @@ func (o Options) ticketService() (ticketservice.Store, error) {
 	return ticketservice.NewService(ticketservice.Options{
 		Home:     home,
 		StateDir: o.StateDir,
-		Sync:     ticketservice.SyncOptions{Mode: sync.Mode, Remote: sync.Remote},
+		Sync:     ticketservice.SyncOptions{Mode: sync.Mode, Remote: sync.Remote, Root: o.resolveTwtHome()},
 		Logf: func(format string, a ...any) {
 			fmt.Fprintf(os.Stderr, format+"\n", a...)
 		},

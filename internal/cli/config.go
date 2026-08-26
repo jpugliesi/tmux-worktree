@@ -91,6 +91,7 @@ func (o Options) resolvedConfig() ([]configSettingOutput, error) {
 		envSetting("dataDir", o.DataDir, "TWT_DATA_DIR", "XDG_DATA_HOME"),
 		{Key: "configFile", Value: filepath.Join(o.ConfigDir, "config.yaml"), Source: configDir.Source, Origin: configDir.Origin},
 		envSetting("tmuxSocket", o.TmuxSocket, "TWT_TMUX_SOCKET", ""),
+		fileOrEnvSetting("home", o.resolveTwtHome(), "TWT_HOME", file.Home, o.ConfigDir),
 		fileOrEnvSetting("ticketsHome", ticketsHome, "TWT_TICKETS_HOME", file.TicketsHome, o.ConfigDir),
 		fileOrEnvSetting("branchPrefix", branchPrefix, "TWT_BRANCH_PREFIX", file.BranchPrefix, o.ConfigDir),
 		fileOrDefaultSetting("ticketAgent.provider", ticketAgent.Provider, file.TicketAgent.Provider, o.ConfigDir),

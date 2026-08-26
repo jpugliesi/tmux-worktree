@@ -12,8 +12,14 @@ import (
 
 // Config is the twt config.yaml document.
 type Config struct {
-	// TicketsHome is the root directory of the Markdown ticket files.
-	TicketsHome string `yaml:"ticketsHome"`
+	// Home is the shared twt home: one git-synced root that carries the
+	// workflow content. Tickets live at <home>/tickets and shared Workspace
+	// Templates at <home>/templates. TWT_HOME overrides it. TicketsHome
+	// still wins for the tickets root when both are set.
+	Home string `yaml:"home,omitempty"`
+	// TicketsHome is the root directory of the Markdown ticket files. Empty
+	// with Home set means <home>/tickets.
+	TicketsHome string `yaml:"ticketsHome,omitempty"`
 	// BranchPrefix is the user branch prefix for the {prefix} token of
 	// Workspace branch patterns. twt concatenates it literally, so include the
 	// separator, for example "jpugliesi/". TWT_BRANCH_PREFIX overrides it.

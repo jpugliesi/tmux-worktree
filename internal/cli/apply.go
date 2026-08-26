@@ -533,7 +533,7 @@ func applyTemplatesInitSet(command *cobra.Command, options Options, request appl
 	if repository == "" && workingDirectory == "" {
 		return fmt.Errorf("template.cwd is required for Workspace initialization; set template.repo for repository initialization")
 	}
-	return setTemplateInitialization(command, options.templateStore(), options.StateDir, payload.Name, repository, workingDirectory, payload.Command)
+	return setTemplateInitialization(command, options, options.templateStore(), options.StateDir, payload.Name, repository, workingDirectory, payload.Command)
 }
 
 func applyTemplatesReposRemove(command *cobra.Command, options Options, request applyRequest) error {
@@ -544,7 +544,7 @@ func applyTemplatesReposRemove(command *cobra.Command, options Options, request 
 	if payload.Name == "" || payload.Repository == "" {
 		return fmt.Errorf("template.name and template.repo are required for templates.repos.remove")
 	}
-	return removeRepositoryFromTemplate(command, options.templateStore(), options.StateDir, payload.Name, payload.Repository)
+	return removeRepositoryFromTemplate(command, options, options.templateStore(), options.StateDir, payload.Name, payload.Repository)
 }
 
 func applyTemplatesReposAdd(command *cobra.Command, options Options, request applyRequest) error {

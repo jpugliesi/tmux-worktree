@@ -38,6 +38,11 @@ type SyncOptions struct {
 	Mode string
 	// Remote is the git remote name. The default is "origin".
 	Remote string
+	// Root widens the synced pathspec beyond the Tickets home. The twt home
+	// passes its root here so shared files beside the tickets (for example
+	// <home>/templates) ride the same commits and pushes. Empty keeps the
+	// Tickets home as the pathspec.
+	Root string
 }
 
 // enabled reports whether git synchronization is on.
@@ -159,7 +164,14 @@ func (s *Service) syncer() (*gitSync, error) {
 			clierr.New(clierr.PreconditionFailed, "the tickets repository %q has no remote %q", toplevel, remote),
 			"Add the remote, or set ticketsSync.remote to the correct name.")
 	}
-	pathspec, err := ticketsPathspec(toplevel, base, home)
+	// A configured twt home widens the pathspec so shared files beside the
+	// tickets sync in the same rounds. The home must contain the tickets.
+	specRoot, specBase := home, base
+	if root := s.options.Sync.Root; root != "" && insideDirectory(filepath.Clean(root), home) {
+		specRoot = filepath.Clean(root)
+		specBase = existingAncestor(specRoot)
+	}
+	pathspec, err := ticketsPathspec(toplevel, specBase, specRoot)
 	if err != nil {
 		return nil, err
 	}

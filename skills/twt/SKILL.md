@@ -425,7 +425,11 @@ autonomous implementation Workspace.
 ### Sync the Tickets home between machines
 
 With `ticketsSync.mode: git` in config.yaml (or `TWT_TICKETS_SYNC=git`), twt
-syncs every ticket write through the git remote of the Tickets home. Claim,
+syncs every ticket write through the git remote of the Tickets home. With
+`home` (or `TWT_HOME`) set, the synced root is the whole twt home: tickets
+at `<home>/tickets` plus shared Workspace Templates at `<home>/templates`,
+so template changes reach every executor machine through the same rounds.
+Config-dir templates stay machine-local and override shared ones by name. Claim,
 claim-ready, complete, unclaim, and close need a reachable remote: the push
 is the cross-machine compare-and-swap, and a lost race returns the normal
 `locked` error - pick another Ticket from the ready queue. Other writes

@@ -52,7 +52,7 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	templates.AddCommand(newTemplatesRemoveCommand(templateStore, options))
 	templates.AddCommand(newTemplatePrepareCommand(options, templateStore))
 	templates.AddCommand(newTemplateRepositoriesCommand(options, templateStore))
-	templates.AddCommand(newTemplateInitializeCommand(templateStore, options.StateDir))
+	templates.AddCommand(newTemplateInitializeCommand(options, templateStore, options.StateDir))
 	return templates
 }
 
@@ -158,6 +158,7 @@ func newTemplatesCreateCommand(options Options) *cobra.Command {
 // createTemplate validates and saves one Workspace Template under the mutation
 // lock. Both the templates create command and apply use it.
 func createTemplate(command *cobra.Command, options Options, template domain.Template) error {
+	defer syncSharedTemplates(command, options)
 	templateStore := options.templateStore()
 	lock, err := store.AcquireMutationLock(options.StateDir)
 	if err != nil {
@@ -335,6 +336,7 @@ func newTemplatesEditCommand(templateStore store.TemplateStore, options Options)
 			if err != nil {
 				return err
 			}
+			defer syncSharedTemplates(command, options)
 			return runMutation(command, "templates.edit",
 				func() (string, string, error) {
 					return "", args[0], nil
@@ -384,6 +386,7 @@ func newTemplatesRemoveCommand(templateStore store.TemplateStore, options Option
 // can name the Workspace Template. Both the templates remove command and apply
 // use it.
 func removeTemplate(command *cobra.Command, options Options, templateStore store.TemplateStore, name string) error {
+	defer syncSharedTemplates(command, options)
 	if _, err := templateStore.Path(name); err != nil {
 		return err
 	}
@@ -459,7 +462,7 @@ func newTemplateRepositoriesCommand(options Options, templateStore store.Templat
 		Short:   "Manage repository specifications",
 	})
 	repositories.AddCommand(newTemplateRepositoriesAddCommand(options, templateStore))
-	repositories.AddCommand(newTemplateRepositoriesRemoveCommand(templateStore, options.StateDir))
+	repositories.AddCommand(newTemplateRepositoriesRemoveCommand(options, templateStore, options.StateDir))
 	return repositories
 }
 
@@ -512,6 +515,7 @@ func newTemplateRepositoriesAddCommand(options Options, templateStore store.Temp
 // mutation lock and validates the result. Both the templates repos add
 // command and apply use it.
 func addRepositoryToTemplate(command *cobra.Command, options Options, templateName string, repository domain.RepositorySpec) error {
+	defer syncSharedTemplates(command, options)
 	if err := store.ValidateResourceName(repository.Name); err != nil {
 		return fmt.Errorf("invalid repository name: %w", err)
 	}
@@ -557,14 +561,14 @@ func addTemplateRepository(template domain.Template, repository domain.Repositor
 	return template, nil
 }
 
-func newTemplateRepositoriesRemoveCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
+func newTemplateRepositoriesRemoveCommand(options Options, templateStore store.TemplateStore, stateDir string) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "remove TEMPLATE REPO",
 		Aliases: []string{"rm"},
 		Short:   "Remove a repository specification",
 		Args:    exactArgs("TEMPLATE", "REPO"),
 		RunE: func(command *cobra.Command, args []string) error {
-			return removeRepositoryFromTemplate(command, templateStore, stateDir, args[0], args[1])
+			return removeRepositoryFromTemplate(command, options, templateStore, stateDir, args[0], args[1])
 		},
 	}
 	setArguments(command, requiredArgument("template"), requiredArgument("repo"))
@@ -575,7 +579,8 @@ func newTemplateRepositoriesRemoveCommand(templateStore store.TemplateStore, sta
 // removeRepositoryFromTemplate removes one repository specification under the
 // mutation lock and validates the result. Both the templates repos remove
 // command and apply use it.
-func removeRepositoryFromTemplate(command *cobra.Command, templateStore store.TemplateStore, stateDir, templateName, repositoryName string) error {
+func removeRepositoryFromTemplate(command *cobra.Command, options Options, templateStore store.TemplateStore, stateDir, templateName, repositoryName string) error {
+	defer syncSharedTemplates(command, options)
 	lock, err := store.AcquireMutationLock(stateDir)
 	if err != nil {
 		return err
@@ -611,7 +616,7 @@ func removeRepositoryFromTemplate(command *cobra.Command, templateStore store.Te
 		})
 }
 
-func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir string) *cobra.Command {
+func newTemplateInitializeCommand(options Options, templateStore store.TemplateStore, stateDir string) *cobra.Command {
 	initialize := groupCommand(&cobra.Command{
 		Use:   "init",
 		Short: "Manage Workspace Template initialization",
@@ -634,7 +639,7 @@ func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir st
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			return setTemplateInitialization(command, templateStore, stateDir, args[0], repository, workingDirectory, args[1:])
+			return setTemplateInitialization(command, options, templateStore, stateDir, args[0], repository, workingDirectory, args[1:])
 		},
 	}
 	set.Flags().StringVar(&workingDirectory, "cwd", "", "Set the Workspace initialization working directory, relative to the Workspace root")
@@ -656,7 +661,8 @@ func newTemplateInitializeCommand(templateStore store.TemplateStore, stateDir st
 // initialization, which runs in the repository worktree; an empty repository
 // name sets Workspace initialization, which runs in workingDirectory. Both the
 // templates init set command and apply use it.
-func setTemplateInitialization(command *cobra.Command, templateStore store.TemplateStore, stateDir, templateName, repository, workingDirectory string, initializeCommand []string) error {
+func setTemplateInitialization(command *cobra.Command, options Options, templateStore store.TemplateStore, stateDir, templateName, repository, workingDirectory string, initializeCommand []string) error {
+	defer syncSharedTemplates(command, options)
 	lock, err := store.AcquireMutationLock(stateDir)
 	if err != nil {
 		return err
@@ -709,4 +715,22 @@ func setTemplateInitialization(command *cobra.Command, templateStore store.Templ
 			_, err := fmt.Fprintf(out, "Set initialization for Workspace Template %q\n", templateName)
 			return err
 		})
+}
+
+// syncSharedTemplates pushes a shared-template write through the tickets
+// git sync, best-effort, so other executor machines receive it on their
+// next pull. Without a configured twt home it is a no-op; a failure leaves
+// the change local for the next successful sync round.
+func syncSharedTemplates(command *cobra.Command, options Options) {
+	if isDryRun(command) || options.resolveTwtHome() == "" {
+		return
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return
+	}
+	if _, err := service.Sync(false); err != nil {
+		fmt.Fprintf(command.ErrOrStderr(),
+			"Warning: the Workspace Template change is saved but not synced yet: %v\n", err)
+	}
 }

@@ -63,7 +63,8 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
 
    ```sh
    # ~/.config/twt/config.yaml
-   # ticketsHome: /path/to/your/tickets   (an Obsidian vault folder works)
+   # home: /path/to/your/twt-home   (tickets/ and templates/ live inside;
+   #                                 an Obsidian vault folder works)
    twt tickets init
    twt projects create myfeature --template myproject
    twt projects plan init myfeature
@@ -188,15 +189,22 @@ to:
 1. **Create a remote.** Any git host works: a private GitHub repository, a
    repo on your own forge, or a bare repository on a server you can SSH to
    (`git init --bare tickets.git`).
-2. **Clone it on each machine** and point twt at the clone:
+2. **Clone it on each machine** and point twt at the clone. The full layout
+   is a twt home with `tickets/` and shared `templates/` inside, all synced
+   over the one remote:
 
    ```yaml
    # ~/.config/twt/config.yaml
-   ticketsHome: /home/you/tickets
+   home: /home/you/twt-home   # or TWT_HOME; tickets/ and templates/ inside
    ticketsSync:
      mode: git        # or TWT_TICKETS_SYNC=git
      remote: origin   # default
    ```
+
+   With `home` set, workspace templates you create sync to every executor
+   machine, while templates in `~/.config/twt/templates/` stay machine-local
+   and override shared ones by name. A tickets-only client can instead set
+   just `ticketsHome: /path/to/tickets`.
 
 3. **Use non-interactive credentials** (an SSH key or a git credential
    helper). Claims happen inside twt commands, so the push must not prompt.

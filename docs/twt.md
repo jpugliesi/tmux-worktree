@@ -808,7 +808,12 @@ ticketAgent:
 
 `TWT_TICKETS_HOME` overrides the file. YAML decoding rejects unknown fields
 and more than one document, the same as Workspace Template loading.
-`twt config` shows the resolved Tickets home and its source. `twt doctor`
+`twt config` shows the resolved Tickets home and its source. The `home`
+key (or `TWT_HOME`) selects the shared twt home instead: tickets live at
+`<home>/tickets` and shared Workspace Templates at `<home>/templates`, and
+the tickets git sync carries the whole home. Config-dir templates override
+shared templates by name; `twt doctor` reports the shadowing. An explicit
+`ticketsHome` still wins for the tickets root. `twt doctor`
 reports whether Tickets home is set, exists, and is writable.
 
 ### Commands
