@@ -237,6 +237,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets answer": {
 		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --agent AGENT_ID --output json",
 	},
+	"twt tickets tree": {
+		long: "Render the Project's dependency graph as a tree, children being the Tickets a node unblocks. Each node shows its derived state (ready, blocked, in-progress, needs-input, in-review, done), claimant, and a PR badge from live forge state (cached ~120s; --no-fetch uses only the cache). --all includes closed Tickets. Cycles print flat below the tree.", example: "  twt tickets tree --project change-monitor --output json\n  twt tickets tree --project change-monitor --all\n  twt tickets tree --project change-monitor --no-fetch",
+	},
 	"twt tickets pr": {
 		long: "Manage the pull request URLs linked to a Ticket. URLs are the canonical record in the ticket frontmatter; live PR state is fetched on demand by the board and tree views.", example: "  twt tickets pr add fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --as CLAIMANT --output json",
 	},

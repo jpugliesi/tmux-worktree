@@ -45,6 +45,7 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsCreateCommand(options))
 	tickets.AddCommand(newTicketsListCommand(options))
 	tickets.AddCommand(newTicketsQueueCommand(options))
+	tickets.AddCommand(newTicketsTreeCommand(options))
 	tickets.AddCommand(newTicketsDispatchCommand(options))
 	tickets.AddCommand(newTicketsSyncCommand(options))
 	tickets.AddCommand(newTicketsAbandonCommand(options))
@@ -397,16 +398,16 @@ func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool
 	return writeTable(out, headers, rows)
 }
 
-// ticketDisplayState folds the claim into the human table state: a claimed
-// open Ticket is in progress. JSON output keeps the raw status and claimant.
+// ticketDisplayState folds the claim and PR presence into the human table
+// state. It stays offline: in-review derives from URL presence and status
+// only; tree and board pass fetched states to deriveTicketState directly.
 func ticketDisplayState(ticket domain.Ticket) string {
-	if ticket.ClaimedBy != "" && ticket.Status == domain.TicketNeedsInfo {
-		return "needs-input"
+	state := deriveTicketState(ticket.Status, ticket.ClaimedBy, ticket.PullRequests, nil, false)
+	if state == "blocked" {
+		// The flat list has no dependency snapshot; keep the raw status.
+		return string(ticket.Status)
 	}
-	if ticket.ClaimedBy != "" && ticket.Status != domain.TicketDone && ticket.Status != domain.TicketWontfix {
-		return "in-progress"
-	}
-	return string(ticket.Status)
+	return state
 }
 
 func newTicketsShowCommand(options Options) *cobra.Command {

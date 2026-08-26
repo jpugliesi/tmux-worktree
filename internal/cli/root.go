@@ -13,6 +13,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/cursorcloud"
 	"github.com/jpugliesi/tmux-worktree/internal/maintenance"
+	"github.com/jpugliesi/tmux-worktree/internal/prstate"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/jpugliesi/tmux-worktree/internal/version"
@@ -98,6 +99,9 @@ type Options struct {
 	CursorCloudHarness cursorcloud.Harness
 	// CursorCloudExecutable selects one installed SDK harness executable.
 	CursorCloudExecutable string
+	// PRResolvers replaces the live gh/origin PR-state resolvers. Tests use
+	// fakes; nil installs the real ones.
+	PRResolvers []prstate.Resolver
 }
 
 // workspaceService builds the Workspace service for these Options.
@@ -465,4 +469,10 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// prStateService builds the PR-state reader. Tests inject fake resolvers
+// through Options.PRResolvers.
+func (o Options) prStateService() *prstate.Service {
+	return prstate.NewService(o.StateDir, o.PRResolvers)
 }
