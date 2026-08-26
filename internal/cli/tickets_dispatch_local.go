@@ -80,7 +80,7 @@ type cliWorkspaceLauncher struct {
 }
 
 func (l *cliWorkspaceLauncher) createOptions(request localdispatch.LaunchRequest) workspaceservice.CreateOptions {
-	return workspaceservice.CreateOptions{Tickets: request.Tickets, Project: request.Project}
+	return workspaceservice.CreateOptions{Tickets: request.Tickets, Project: request.Project, BaseRef: request.BaseRef}
 }
 
 func (l *cliWorkspaceLauncher) Validate(request localdispatch.LaunchRequest) error {

@@ -16,6 +16,12 @@ type TicketImplementationRequest struct {
 	// Claimant identifies the worker in the ticket claim. The prompt tells
 	// the agent to report through twt as this claimant.
 	Claimant string
+	// StackParentPR and StackBaseBranch describe the stack parent of a
+	// stacked dispatch: the workspace branch starts from StackBaseBranch and
+	// the worker's pull request must stack on StackParentPR. Empty means an
+	// unstacked run.
+	StackParentPR   string
+	StackBaseBranch string
 }
 
 // BuildTicketImplementationLaunch validates a request and returns direct
@@ -77,7 +83,23 @@ func ticketImplementationPrompt(request TicketImplementationRequest) string {
 		sections = append(sections, cursorImplementationEffortInstruction(request.Effort))
 	}
 	sections = append(sections, ticketImplementationTask(request.Ticket, request.Claimant))
+	if request.StackParentPR != "" {
+		sections = append(sections, stackedImplementationContract(request.StackParentPR, request.StackBaseBranch))
+	}
 	return strings.Join(sections, "\n\n")
+}
+
+// stackedImplementationContract tells a stacked worker how its branch and
+// pull request relate to the stack parent.
+func stackedImplementationContract(parentPR, baseBranch string) string {
+	return strings.Join([]string{
+		"This Ticket is STACKED on an unmerged parent:",
+		"parent pull request: " + parentPR,
+		"parent branch: " + baseBranch,
+		"Your workspace branch already starts from the parent branch. Do not rebase onto the default branch.",
+		fmt.Sprintf("Create your pull request as a stack member with the parent as its base, for example: origin pr create --stack-on %s --base %s --push --status open", parentPR, baseBranch),
+		"When you are told the parent branch moved, rebase your branch onto the new parent tip and push.",
+	}, "\n")
 }
 
 func cursorImplementationEffortInstruction(effort TicketPlanningEffort) string {

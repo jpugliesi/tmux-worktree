@@ -29,6 +29,10 @@ type LaunchRequest struct {
 	AgentLabel   string
 	Tickets      []string
 	Project      string
+	// BaseRef is the origin branch the Workspace checkouts start from. A
+	// stacked dispatch passes the blocker's pull request branch; empty means
+	// the default branch.
+	BaseRef string
 }
 
 // LaunchResult reports what the launcher created. WorkspaceID is set even on
@@ -112,6 +116,17 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 			return domain.LocalDispatchSession{}, err
 		}
 	}
+	// A stacking Template may start a stack-ready Ticket from its blocker's
+	// branch. A true-ready Ticket dispatches normally.
+	var stack *stackInfo
+	if options.Mode == domain.CursorCloudModeAgent && !shown.Ready &&
+		template.LocalDispatch != nil && template.LocalDispatch.Stacking {
+		resolved, err := s.resolveStack(shown)
+		if err != nil {
+			return domain.LocalDispatchSession{}, err
+		}
+		stack = &resolved
+	}
 	id, err := s.options.NewID()
 	if err != nil {
 		return domain.LocalDispatchSession{}, fmt.Errorf("create local dispatch Session ID: %w", err)
@@ -129,7 +144,7 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 		effort = string(agentprovider.DefaultTicketPlanningEffort)
 	}
 	instructions := template.LocalDispatch.EffectiveInstructions(s.options.Config.Instructions)
-	launch, label, err := s.buildLaunch(options.Mode, provider, effort, instructions, shown.Ticket.Slug, claimant)
+	launch, label, err := s.buildLaunch(options.Mode, provider, effort, instructions, shown.Ticket.Slug, claimant, stack)
 	if err != nil {
 		return domain.LocalDispatchSession{}, err
 	}
@@ -162,6 +177,10 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 		Tickets:      []string{shown.Ticket.Slug},
 		Project:      project.Name,
 	}
+	if stack != nil {
+		session.StackBase = stack.Base()
+		request.BaseRef = stack.Branch
+	}
 	if s.options.Launcher == nil {
 		return domain.LocalDispatchSession{}, clierr.New(clierr.PreconditionFailed, "local dispatch is not configured with a Workspace launcher")
 	}
@@ -175,7 +194,11 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 		if err := s.options.Launcher.Validate(request); err != nil {
 			return domain.LocalDispatchSession{}, err
 		}
-		if _, err := s.options.Tickets.ClaimReady(shown.Ticket.Slug, claimant, true); err != nil {
+		if stack != nil {
+			if _, err := s.options.Tickets.ClaimStackReady(shown.Ticket.Slug, claimant, session.StackBase, true); err != nil {
+				return domain.LocalDispatchSession{}, err
+			}
+		} else if _, err := s.options.Tickets.ClaimReady(shown.Ticket.Slug, claimant, true); err != nil {
 			return domain.LocalDispatchSession{}, err
 		}
 		return session, nil
@@ -183,7 +206,7 @@ func (s *Service) Dispatch(options DispatchOptions) (domain.LocalDispatchSession
 	return s.dispatchWithSessionLock(session, request, template.LocalDispatch, options.MaxConcurrency)
 }
 
-func (s *Service) buildLaunch(mode domain.CursorCloudMode, provider, effort, instructions, slug, claimant string) (agentprovider.TicketPlanningLaunch, string, error) {
+func (s *Service) buildLaunch(mode domain.CursorCloudMode, provider, effort, instructions, slug, claimant string, stack *stackInfo) (agentprovider.TicketPlanningLaunch, string, error) {
 	var launch agentprovider.TicketPlanningLaunch
 	var label string
 	var err error
@@ -198,13 +221,18 @@ func (s *Service) buildLaunch(mode domain.CursorCloudMode, provider, effort, ins
 		}, s.options.LookPath)
 	} else {
 		label = "ticket-impl"
-		launch, err = agentprovider.BuildTicketImplementationLaunch(agentprovider.TicketImplementationRequest{
+		implementation := agentprovider.TicketImplementationRequest{
 			Provider:     provider,
 			Effort:       agentprovider.TicketPlanningEffort(effort),
 			Instructions: instructions,
 			Ticket:       slug,
 			Claimant:     claimant,
-		}, s.options.LookPath)
+		}
+		if stack != nil {
+			implementation.StackParentPR = stack.ParentPR
+			implementation.StackBaseBranch = stack.Branch
+		}
+		launch, err = agentprovider.BuildTicketImplementationLaunch(implementation, s.options.LookPath)
 	}
 	if err != nil {
 		return agentprovider.TicketPlanningLaunch{}, "", clierr.WithHint(
@@ -277,7 +305,12 @@ func (s *Service) reserveDispatch(session domain.LocalDispatchSession, request L
 	if err := s.sessions.Save(session); err != nil {
 		return errors.Join(err, lock.Release())
 	}
-	if _, err := s.options.Tickets.ClaimReady(session.TicketSlug, session.Claimant, false); err != nil {
+	if session.StackBase != "" {
+		if _, err := s.options.Tickets.ClaimStackReady(session.TicketSlug, session.Claimant, session.StackBase, false); err != nil {
+			_ = s.sessions.Delete(session.ID)
+			return errors.Join(err, lock.Release())
+		}
+	} else if _, err := s.options.Tickets.ClaimReady(session.TicketSlug, session.Claimant, false); err != nil {
 		_ = s.sessions.Delete(session.ID)
 		return errors.Join(err, lock.Release())
 	}

@@ -60,6 +60,11 @@ type LocalDispatchSpec struct {
 	Effort         string `yaml:"effort,omitempty" json:"effort,omitempty"`
 	Instructions   string `yaml:"instructions,omitempty" json:"instructions,omitempty"`
 	MaxConcurrency int    `yaml:"max_concurrency,omitempty" json:"maxConcurrency,omitempty"`
+	// Stacking lets dispatch start a stack-ready Ticket (every open blocker
+	// in review with a pull request) from the blocker's branch. v1 targets
+	// origin-host repositories, where 'origin pr create --stack-on' makes
+	// the dependent pull request a first-class stack member.
+	Stacking bool `yaml:"stacking,omitempty" json:"stacking,omitempty"`
 }
 
 // EffectiveProvider returns the Template provider or the fallback. The

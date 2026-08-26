@@ -47,9 +47,12 @@ type LocalDispatchSession struct {
 	AgentLabel         string              `json:"agentLabel,omitempty"`
 	Error              *CursorCloudError   `json:"error,omitempty"`
 	TicketTransitioned bool                `json:"ticketTransitioned,omitempty"`
-	CreatedAt          time.Time           `json:"createdAt"`
-	UpdatedAt          time.Time           `json:"updatedAt"`
-	CompletedAt        *time.Time          `json:"completedAt,omitempty"`
+	// StackBase records the stack parent ("blocker-slug@branch") when this
+	// session was dispatched stacked.
+	StackBase   string     `json:"stackBase,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
 func (s LocalDispatchSession) Active() bool {
