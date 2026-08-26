@@ -560,15 +560,25 @@ func renderNewTicket(ticket domain.Ticket, body string) ([]byte, error) {
 	return file.Render()
 }
 
-// newTicketBody builds the initial body: the H1, then the given body or the
-// spec skeleton.
+// newTicketBody builds the initial body. A plain body (one without its own
+// "## " headings) merges INTO the skeleton under "## What to build", so
+// DAG-generated tickets keep the Blocked-by and Comments anchors that the
+// section verbs address. A body with its own headings passes through
+// unchanged.
 func newTicketBody(title, body string, blockedBy []string) string {
-	if strings.TrimSpace(body) == "" {
-		return fmt.Sprintf(`
+	trimmed := strings.Trim(body, "\n")
+	if strings.TrimSpace(body) != "" && hasSectionHeading(trimmed) {
+		return "\n# " + title + "\n\n" + trimmed + "\n"
+	}
+	whatToBuild := ""
+	if strings.TrimSpace(trimmed) != "" {
+		whatToBuild = "\n" + trimmed + "\n"
+	}
+	return fmt.Sprintf(`
 # %s
 
 ## What to build
-
+%s
 ## Acceptance criteria
 
 - [ ]
@@ -578,9 +588,17 @@ func newTicketBody(title, body string, blockedBy []string) string {
 %s
 
 ## Comments
-`, title, blockedBySection(blockedBy))
+`, title, whatToBuild, blockedBySection(blockedBy))
+}
+
+// hasSectionHeading reports whether the body carries its own H2 headings.
+func hasSectionHeading(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			return true
+		}
 	}
-	return "\n# " + title + "\n\n" + strings.Trim(body, "\n") + "\n"
+	return false
 }
 
 // blockedBySection is the default body list under ## Blocked by.

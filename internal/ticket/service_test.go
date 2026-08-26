@@ -1193,11 +1193,26 @@ func TestCreateUngroupedWithBody(t *testing.T) {
 	if !strings.Contains(content, "status: ready-for-agent\n") || !strings.Contains(content, "priority: 1\n") {
 		t.Fatalf("status or priority wrong:\n%s", content)
 	}
-	if !strings.HasSuffix(content, "---\n\n# Quick fix\n\nDo the thing.\n") {
+	// A plain body merges into the skeleton under ## What to build, so the
+	// section anchors (Blocked by, Comments) exist on every generated ticket.
+	if !strings.Contains(content, "# Quick fix\n\n## What to build\n\nDo the thing.\n") ||
+		!strings.Contains(content, "## Comments") {
 		t.Fatalf("body wrong:\n%s", content)
 	}
 	if result.Ticket.Path != filepath.Join(home, "quick-fix.md") {
 		t.Fatalf("path = %q", result.Ticket.Path)
+	}
+}
+
+func TestCreateWithSectionedBodyPassesThrough(t *testing.T) {
+	service, _ := newTestService(t)
+	body := "## What to build\n\nA custom spec.\n\n## Comments\n"
+	result, err := service.Create(CreateRequest{Title: "Custom", Body: body, Priority: 1, Status: domain.TicketReadyForAgent}, false)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.HasSuffix(string(result.Content), "---\n\n# Custom\n\n"+body) {
+		t.Fatalf("sectioned body changed:\n%s", result.Content)
 	}
 }
 
