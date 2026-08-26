@@ -142,6 +142,12 @@ type ticketAnswerApplyRequest struct {
 	Agent     string `json:"agent,omitempty"`
 }
 
+type ticketApproveApplyRequest struct {
+	Reference string `json:"reference"`
+	As        string `json:"as"`
+	Note      string `json:"note,omitempty"`
+}
+
 type ticketCompleteApplyRequest struct {
 	Reference    string   `json:"reference"`
 	As           string   `json:"as"`
@@ -353,6 +359,11 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.text", Type: "string", Required: true},
 			{Path: "ticket.agent", Type: "string", Required: false, Condition: "relay target when several agent sessions are live"},
 		}}, applyTicketsAnswer},
+		{applyOperationSchema{Operation: "tickets.approve", Payload: "ticket", Fields: []requestFieldSchema{
+			{Path: "ticket.reference", Type: "string", Required: true, Condition: "the Ticket must carry a ## Plan section"},
+			{Path: "ticket.as", Type: "string", Required: true, Condition: "the approver name"},
+			{Path: "ticket.note", Type: "string", Required: false, Condition: "an approval note recorded with the reply"},
+		}}, applyTicketsApprove},
 		{applyOperationSchema{Operation: "tickets.pr-add", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.pullRequests", Type: "array[string]", Required: true},
@@ -959,6 +970,21 @@ type ticketPRApplyRequest struct {
 	Reference    string   `json:"reference"`
 	PullRequests []string `json:"pullRequests"`
 	As           string   `json:"as,omitempty"`
+}
+
+func applyTicketsApprove(command *cobra.Command, options Options, request applyRequest) error {
+	var payload ticketApproveApplyRequest
+	if err := decodeApplyPayload("tickets.approve", "ticket", request.Ticket, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.As == "" {
+		return fmt.Errorf("ticket.reference and ticket.as are required for tickets.approve")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return approveTicket(command, options, service, payload.Reference, payload.As, payload.Note, "")
 }
 
 func applyTicketsPRAdd(command *cobra.Command, options Options, request applyRequest) error {

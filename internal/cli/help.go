@@ -237,6 +237,9 @@ var commandHelp = map[string]helpContent{
 	"twt tickets answer": {
 		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --agent AGENT_ID --output json",
 	},
+	"twt tickets approve": {
+		long: "Approve a Ticket's ## Plan section for implementation. The approval stamps plan_approved_by and plan_approved_at; implementation dispatch refuses a planned Ticket without the stamp. When the Ticket waits on the planning agent's approval ask, approve also acts as the answer: it restores the pre-ask status and relays into the live session. A plan rewrite clears the approval.", example: "  twt tickets approve fix-auth --output json\n  printf '%s' \"Ship it; keep the scope small.\" | twt tickets approve fix-auth --stdin --output json",
+	},
 	"twt tickets tree": {
 		long: "Render the Project's dependency graph as a tree, children being the Tickets a node unblocks. Each node shows its derived state (ready, blocked, in-progress, needs-input, in-review, done), claimant, and a PR badge from live forge state (cached ~120s; --no-fetch uses only the cache). --all includes closed Tickets. Cycles print flat below the tree.", example: "  twt tickets tree --project change-monitor --output json\n  twt tickets tree --project change-monitor --all\n  twt tickets tree --project change-monitor --no-fetch",
 	},
