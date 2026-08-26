@@ -65,6 +65,10 @@ type CreateOptions struct {
 	Tickets []string
 	// Project is the durable Ticket Project of Tickets.
 	Project string
+	// BaseRef is an optional origin branch that every repository checkout
+	// starts from instead of the default branch. A stacked dispatch passes
+	// the blocker's pull request branch here.
+	BaseRef string
 }
 
 func (s *Service) CreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) (domain.Workspace, error) {
@@ -289,7 +293,8 @@ func (s *Service) workspaceForEnvironment(name, templateName string, template do
 		Version: domain.WorkspaceVersion, ID: id, Name: name, TemplateName: templateName,
 		TemplateSnapshot: template, EnvironmentID: environment.ID, Status: domain.WorkspaceInitializing,
 		Project: opts.Project, Tickets: append([]string(nil), opts.Tickets...),
-		Root: environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
+		BaseRef: opts.BaseRef,
+		Root:    environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
 	}
 	workspace.Steps = append(workspace.Steps, newStep("workspace_root", domain.StepWorkspaceRoot, ""))
 	for _, repository := range environment.Repositories {
@@ -424,6 +429,19 @@ func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, wo
 // update and save that a moved base commit needs.
 func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index int, spec domain.RepositorySpec, opts CreateOptions) (string, error) {
 	repository := environment.Repositories[index]
+	if opts.BaseRef != "" {
+		// A stacked Workspace starts from the blocker's pull request branch,
+		// not the default branch the environment was prepared on.
+		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, opts.BaseRef); err != nil {
+			return "", fmt.Errorf("fetch stack base %q: %w", opts.BaseRef, err)
+		}
+		base, err := output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+opts.BaseRef)
+		if err != nil {
+			return "", fmt.Errorf("resolve stack base %q: %w", opts.BaseRef, err)
+		}
+		s.report("Base: origin/%s @ %s (stacked)", opts.BaseRef, shortCommit(base))
+		return base, nil
+	}
 	base := repository.BaseCommit
 	branch, err := defaultBranch(repository.CachePath, spec)
 	if err != nil {

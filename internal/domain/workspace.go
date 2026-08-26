@@ -56,7 +56,11 @@ type Workspace struct {
 	// when the Workspace has no linked Tickets or comes from version-one state.
 	Project string `json:"project,omitempty"`
 	// Tickets are the unique Ticket slugs that this Workspace works on.
-	Tickets      []string              `json:"tickets,omitempty"`
+	Tickets []string `json:"tickets,omitempty"`
+	// BaseRef is the origin branch the checkouts started from when the
+	// Workspace was created for a stacked dispatch. Empty means the default
+	// branch.
+	BaseRef      string                `json:"baseRef,omitempty"`
 	Root         string                `json:"root"`
 	TmuxSession  string                `json:"tmuxSession"`
 	Repositories []WorkspaceRepository `json:"repositories"`

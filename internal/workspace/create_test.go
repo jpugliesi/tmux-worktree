@@ -177,6 +177,76 @@ func TestCreateReplacesAFailedInFlightPreparation(t *testing.T) {
 	}
 }
 
+func TestCreateWithBaseRefStartsFromTheStackParentBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	// The stack parent branch carries a file main does not have.
+	for _, argv := range [][]string{
+		{"git", "-C", source, "checkout", "-q", "-b", "twt/parent-branch"},
+		{"git", "-C", source, "commit", "-q", "--allow-empty", "-m", "parent work"},
+		{"git", "-C", source, "checkout", "-q", "main"},
+	} {
+		command := exec.Command(argv[0], argv[1:]...)
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", argv, err, data)
+		}
+	}
+	parentFile := filepath.Join(source, "PARENT.md")
+	for _, argv := range [][]string{
+		{"git", "-C", source, "checkout", "-q", "twt/parent-branch"},
+	} {
+		command := exec.Command(argv[0], argv[1:]...)
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", argv, err, data)
+		}
+	}
+	if err := os.WriteFile(parentFile, []byte("parent work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{
+		{"git", "-C", source, "add", "PARENT.md"},
+		{"git", "-C", source, "commit", "-q", "-m", "parent file"},
+		{"git", "-C", source, "checkout", "-q", "main"},
+	} {
+		command := exec.Command(argv[0], argv[1:]...)
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", argv, err, data)
+		}
+	}
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: source},
+		}},
+	}
+	socket := fmt.Sprintf("twt-workspace-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	workspace, err := service.CreateWithOptions("stacked", template.Name, template, CreateOptions{
+		BaseRef: "twt/parent-branch",
+	})
+	if err != nil {
+		t.Fatalf("CreateWithOptions with BaseRef: %v", err)
+	}
+	if workspace.BaseRef != "twt/parent-branch" {
+		t.Fatalf("Workspace.BaseRef = %q", workspace.BaseRef)
+	}
+	if _, err := os.Stat(filepath.Join(workspace.Root, "app", "PARENT.md")); err != nil {
+		t.Fatalf("checkout does not start from the stack parent: %v", err)
+	}
+}
+
 func initCreateTestRepository(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {

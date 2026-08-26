@@ -154,6 +154,15 @@ func (s *Service) ensureCheckoutLocked(p domain.Workspace, repositoryName string
 		return err
 	}
 	startPoint := "refs/remotes/origin/" + branch
+	if p.BaseRef != "" {
+		// A stacked Workspace starts from the blocker's pull request branch.
+		// The prepared cache refreshed only the default branch, so fetch the
+		// base ref now, inside the same cache lock.
+		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, p.BaseRef); err != nil {
+			return fmt.Errorf("fetch stack base %q: %w", p.BaseRef, err)
+		}
+		startPoint = "refs/remotes/origin/" + p.BaseRef
+	}
 	if err := run(repository.CachePath, "git", "worktree", "add", "-b", repository.Branch, repository.Path, startPoint); err != nil {
 		return fmt.Errorf("create checkout for repository %q: %w", repositoryName, err)
 	}
