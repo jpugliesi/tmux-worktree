@@ -13,25 +13,27 @@ func TestBuildTicketPlanningLaunches(t *testing.T) {
 		wantStart  []string
 		wantResume []string
 	}{
+		// Planning agents launch in normal autonomous mode: plan-only is a
+		// prompt contract, so the twt plan/ask writes stay possible.
 		{
 			provider:   "codex",
-			wantStart:  []string{"codex", "-c", `model_reasoning_effort="xhigh"`, "PROMPT"},
-			wantResume: []string{"codex", "-c", `model_reasoning_effort="xhigh"`},
+			wantStart:  []string{"codex", "--dangerously-bypass-approvals-and-sandbox", "-c", `model_reasoning_effort="xhigh"`, "PROMPT"},
+			wantResume: []string{"codex", "--dangerously-bypass-approvals-and-sandbox", "-c", `model_reasoning_effort="xhigh"`},
 		},
 		{
 			provider:   "claude",
-			wantStart:  []string{"claude", "--permission-mode", "plan", "--effort", "xhigh", "PROMPT"},
-			wantResume: []string{"claude", "--permission-mode", "plan", "--effort", "xhigh"},
+			wantStart:  []string{"claude", "--permission-mode", "bypassPermissions", "--effort", "xhigh", "PROMPT"},
+			wantResume: []string{"claude", "--permission-mode", "bypassPermissions", "--effort", "xhigh"},
 		},
 		{
 			provider:   "cursor",
-			wantStart:  []string{"cursor-agent", "--plan", "PROMPT"},
-			wantResume: []string{"cursor-agent", "--plan"},
+			wantStart:  []string{"cursor-agent", "--force", "--trust", "PROMPT"},
+			wantResume: []string{"cursor-agent", "--force", "--trust"},
 		},
 		{
 			provider:   "grok",
-			wantStart:  []string{"grok", "--permission-mode", "plan", "--reasoning-effort", "xhigh", "PROMPT"},
-			wantResume: []string{"grok", "--permission-mode", "plan", "--reasoning-effort", "xhigh"},
+			wantStart:  []string{"grok", "--permission-mode", "bypassPermissions", "--reasoning-effort", "xhigh", "PROMPT"},
+			wantResume: []string{"grok", "--permission-mode", "bypassPermissions", "--reasoning-effort", "xhigh"},
 		},
 	}
 	for _, test := range tests {

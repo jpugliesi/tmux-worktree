@@ -129,19 +129,12 @@ func providerExecutable(provider string, lookPath func(string) (string, error)) 
 	return "", fmt.Errorf("cannot find the %q Ticket planning provider on PATH", provider)
 }
 
+// planningBaseCommand launches planning agents in the same autonomous mode
+// as implementation agents. Provider plan modes would block the twt writes
+// the workflow needs (tickets plan, ask, set, unclaim); the plan-only rule
+// is a prompt contract instead.
 func planningBaseCommand(provider, executable, level string) []string {
-	switch provider {
-	case "codex":
-		return []string{executable, "-c", `model_reasoning_effort="` + level + `"`}
-	case "claude":
-		return []string{executable, "--permission-mode", "plan", "--effort", level}
-	case "cursor":
-		return []string{executable, "--plan"}
-	case "grok":
-		return []string{executable, "--permission-mode", "plan", "--reasoning-effort", level}
-	default:
-		panic("validated Ticket planning provider is missing a command")
-	}
+	return implementationBaseCommand(provider, executable, level)
 }
 
 func ticketPlanningPrompt(request TicketPlanningRequest) string {
@@ -152,10 +145,11 @@ func ticketPlanningPrompt(request TicketPlanningRequest) string {
 	if request.Provider == "cursor" {
 		sections = append(sections, cursorEffortInstruction(request.Effort))
 	}
-	sections = append(sections, ticketPlanningTask(request.Tickets))
+	sections = append(sections, ticketPlanningTask(request.Tickets, request.Claimant))
 	if request.Claimant != "" && len(request.Tickets) > 0 {
 		// A plan-time question is cheaper than a wrong plan: ask early.
 		sections = append(sections, askContract(request.Tickets[0], request.Claimant))
+		sections = append(sections, planningApprovalContract(request.Tickets, request.Claimant))
 	}
 	return strings.Join(sections, "\n\n")
 }
@@ -175,7 +169,7 @@ func cursorEffortInstruction(effort TicketPlanningEffort) string {
 	}
 }
 
-func ticketPlanningTask(tickets []string) string {
+func ticketPlanningTask(tickets []string, claimant string) string {
 	var first string
 	if len(tickets) == 1 {
 		first = fmt.Sprintf("Create a plan to implement twt Ticket `%s`.", tickets[0])
@@ -191,8 +185,39 @@ func ticketPlanningTask(tickets []string) string {
 		lines = append(lines, "twt tickets show "+ticket+" --output json")
 	}
 	lines = append(lines,
-		"Work in plan mode. Make no implementation changes.",
-		"Return a decision-complete plan that is ready for implementation.",
-	)
+		"When the Ticket names a Project, also read the Project plan:",
+		"twt projects plan show PROJECT --output json",
+		"",
+		"Explore the repository read-only to ground the plan.",
+		"HARD RULE: plan only. Make no file edits, no commits, and no branches.",
+		"Your only writes are the twt commands in this prompt.",
+		"",
+		"Write a decision-complete plan into each Ticket. The write replaces the",
+		"whole ## Plan section and keeps every other section:")
+	for _, ticket := range tickets {
+		write := fmt.Sprintf("printf '%%s' \"PLAN\" | twt tickets plan %s --stdin", ticket)
+		if claimant != "" {
+			write += " --as " + claimant
+		}
+		lines = append(lines, write)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// planningApprovalContract ends the planning contract: request the human's
+// approval, wait, then promote and release.
+func planningApprovalContract(tickets []string, claimant string) string {
+	lines := []string{
+		"When every plan is written, request approval and stop:",
+		fmt.Sprintf("printf '%%s' \"Plan ready for your approval.\" | twt tickets ask %s --stdin --as %s", tickets[0], claimant),
+		"End your turn with the final line WAITING FOR ANSWER.",
+		"The human approves with 'twt tickets approve', which arrives as your next",
+		"message. Only then promote each Ticket for implementation and release it:",
+	}
+	for _, ticket := range tickets {
+		lines = append(lines,
+			fmt.Sprintf("twt tickets set %s --status ready-for-agent", ticket),
+			fmt.Sprintf("twt tickets unclaim %s --as %s", ticket, claimant))
+	}
 	return strings.Join(lines, "\n")
 }
