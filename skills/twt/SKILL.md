@@ -343,14 +343,18 @@ below carry the details.
 5. **Attach pull requests immediately.** The moment a pull request exists:
    `twt tickets pr add TICKET --as CLAIMANT --pr URL`. The board and tree
    show its live state from then on.
-6. **Hand off.** Finish with one write that records the pull requests,
-   releases the claim, and sets the status:
+6. **Hand off.** Done is a verification, not a feeling. Before `complete`,
+   check: every acceptance criterion in the Ticket holds, the repository's
+   own test gate passes, and every pull request is attached. Then finish
+   with one write that records the pull requests, releases the claim, and
+   sets the status:
    `twt tickets complete TICKET --as CLAIMANT --pr URL` (ready-for-human).
    Unable to finish: comment the blocker, then `tickets unclaim`.
 7. **Close.** When every pull request merges, the Ticket is done:
    `twt tickets close TICKET`. Merged means done, and the close unblocks
-   every dependent. Use `tickets set --status` only for corrections such as
-   `wontfix`.
+   every dependent. Review feedback on the pull requests continues the same
+   Ticket: re-claim it, address the feedback, and complete again. Use
+   `tickets set --status` only for corrections such as `wontfix`.
 
 ### Dispatch Tickets to implementation Sessions
 
