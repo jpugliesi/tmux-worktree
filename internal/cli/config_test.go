@@ -94,6 +94,7 @@ func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 		{"dataDir", options.DataDir, "default", ""},
 		{"configFile", filepath.Join(options.ConfigDir, "config.yaml"), "default", ""},
 		{"tmuxSocket", "", "default", ""},
+		{"home", "", "default", ""},
 		{"ticketsHome", "", "default", ""},
 		{"branchPrefix", "", "default", ""},
 		{"ticketAgent.provider", "codex", "default", ""},
