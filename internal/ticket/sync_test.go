@@ -563,11 +563,14 @@ func TestServiceSyncPushesOfflineCommitsAndReportsCounts(t *testing.T) {
 	}
 }
 
-func TestServiceSyncFailsWhenSyncIsOff(t *testing.T) {
+func TestServiceSyncIsANoOpWhenSyncIsOff(t *testing.T) {
 	service, _ := newTestService(t)
-	_, err := service.Sync(false)
-	if clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("sync-off error = %v, want precondition_failed", err)
+	status, err := service.Sync(false)
+	if err != nil {
+		t.Fatalf("sync-off error = %v, want a no-op", err)
+	}
+	if status.Enabled {
+		t.Fatalf("sync-off status = %+v, want Enabled false", status)
 	}
 }
 

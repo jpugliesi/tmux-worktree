@@ -24,8 +24,16 @@ func newTicketsTreeCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			scope, err := resolveTicketProject(command, options, project, command.Flags().Changed("project"), false)
+			if err != nil {
+				return err
+			}
+			if scope.Project == "" {
+				return invalidUsageWithHint(command, ticketProjectScopeHint(command),
+					"tree needs a Project name")
+			}
 			freshenTicketStore(command, service, fresh)
-			result, err := service.Tree(project, all)
+			result, err := service.Tree(scope.Project, all)
 			if err != nil {
 				return err
 			}
@@ -46,7 +54,6 @@ func newTicketsTreeCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&project, "project", "", "Render this Project's tree")
-	_ = command.MarkFlagRequired("project")
 	command.Flags().BoolVar(&all, "all", false, "Include done and wontfix Tickets")
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Use only cached PR state; never call the forge")
 	addFreshFlag(command, &fresh)

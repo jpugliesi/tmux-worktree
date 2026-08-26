@@ -31,7 +31,7 @@ func newTicketsPRAddCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return mutateTicketPRs(command, service, "tickets.pr-add", args[0], as, urls, service.AddPullRequests,
+			return mutateTicketPRs(command, service, "tickets.pr.add", args[0], as, urls, service.AddPullRequests,
 				"Attached %d pull request(s) to ticket %q\n")
 		},
 	}
@@ -54,7 +54,7 @@ func newTicketsPRRemoveCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return mutateTicketPRs(command, service, "tickets.pr-rm", args[0], as, urls, service.RemovePullRequests,
+			return mutateTicketPRs(command, service, "tickets.pr.rm", args[0], as, urls, service.RemovePullRequests,
 				"Detached %d pull request(s) from ticket %q\n")
 		},
 	}

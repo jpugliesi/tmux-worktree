@@ -354,12 +354,12 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "the approver name"},
 			{Path: "ticket.note", Type: "string", Required: false, Condition: "an approval note recorded with the reply"},
 		}}, applyTicketsApprove},
-		{applyOperationSchema{Operation: "tickets.pr-add", Payload: "ticket", Fields: []requestFieldSchema{
+		{applyOperationSchema{Operation: "tickets.pr.add", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.pullRequests", Type: "array[string]", Required: true},
 			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
 		}}, applyTicketsPRAdd},
-		{applyOperationSchema{Operation: "tickets.pr-rm", Payload: "ticket", Fields: []requestFieldSchema{
+		{applyOperationSchema{Operation: "tickets.pr.rm", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.pullRequests", Type: "array[string]", Required: true},
 			{Path: "ticket.as", Type: "string", Required: false, Condition: "required when the Ticket is claimed"},
@@ -370,7 +370,7 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.maxConcurrency", Type: "integer", Required: false, Condition: "overrides the Project-wide active Session limit"},
 		}}, applyTicketsDispatch},
 		{applyOperationSchema{Operation: "tickets.sync", Payload: "ticket", Fields: []requestFieldSchema{
-			{Path: "ticket.project", Type: "string", Required: true},
+			{Path: "ticket.project", Type: "string", Required: false, Condition: "also reconcile this Project's dispatch Sessions"},
 		}}, applyTicketsSync},
 		{applyOperationSchema{Operation: "tickets.abandon", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.session", Type: "string", Required: true},
@@ -955,11 +955,11 @@ func applyTicketsApprove(command *cobra.Command, options Options, request applyR
 }
 
 func applyTicketsPRAdd(command *cobra.Command, options Options, request applyRequest) error {
-	return applyTicketPRs(command, options, request, "tickets.pr-add")
+	return applyTicketPRs(command, options, request, "tickets.pr.add")
 }
 
 func applyTicketsPRRemove(command *cobra.Command, options Options, request applyRequest) error {
-	return applyTicketPRs(command, options, request, "tickets.pr-rm")
+	return applyTicketPRs(command, options, request, "tickets.pr.rm")
 }
 
 func applyTicketPRs(command *cobra.Command, options Options, request applyRequest, operation string) error {
@@ -976,7 +976,7 @@ func applyTicketPRs(command *cobra.Command, options Options, request applyReques
 	}
 	run := service.AddPullRequests
 	format := "Attached %d pull request(s) to ticket %q\n"
-	if operation == "tickets.pr-rm" {
+	if operation == "tickets.pr.rm" {
 		run = service.RemovePullRequests
 		format = "Detached %d pull request(s) from ticket %q\n"
 	}
@@ -1043,9 +1043,6 @@ func applyTicketsSync(command *cobra.Command, options Options, request applyRequ
 	var payload ticketCloudSyncApplyRequest
 	if err := decodeApplyPayload("tickets.sync", "ticket", request.Ticket, &payload); err != nil {
 		return err
-	}
-	if payload.Project == "" {
-		return fmt.Errorf("ticket.project is required for tickets.sync")
 	}
 	return runTicketsSync(command, options, payload.Project)
 }

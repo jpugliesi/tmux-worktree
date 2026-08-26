@@ -39,6 +39,7 @@ func newTicketsAskCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the question text from standard input")
+	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
@@ -105,6 +106,7 @@ func newTicketsAnswerCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the answer text from standard input")
+	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&agentID, "agent", "", "Relay into this Agent Session when several are live")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)

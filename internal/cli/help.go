@@ -250,13 +250,10 @@ var commandHelp = map[string]helpContent{
 		long: "Record pull request URLs and release the claim in one write, so the URL write can never race a new claimant. This is the worker's terminal command: run it when the Ticket's work ships. The default status ready-for-human hands the Ticket to review; ready-for-agent returns it to the queue. A retry after success is a no-op.", example: "  twt tickets complete fix-auth --as twt-local-01234567 --pr https://origin.cursor.com/acme/api/pull/7 --output json\n  twt tickets complete fix-auth --as twt-local-01234567 --status ready-for-agent --output json",
 	},
 	"twt tickets sync": {
-		long: "Sync the dispatch Sessions of one Project and reconcile Ticket states. The reconciler joins session records, agent liveness, and ticket claims: a stopped agent with a held claim becomes a stuck diagnostic and is never auto-released. Any diagnostic sets capacity.known to false; dispatch only with known capacity.", example: "  twt tickets sync --project core --dry-run --output json\n  twt tickets sync --project core --output json",
+		long: "Reconcile the Tickets home with its git remote (commit manual edits, pull, rebase, push), and then, with --project, reconcile that Project's dispatch Sessions with Ticket states. The Session reconciler joins session records, agent liveness, and ticket claims: a stopped agent with a held claim becomes a stuck diagnostic and is never auto-released. Any diagnostic sets capacity.known to false; dispatch only with known capacity. Without ticketsSync the store phase is a reported no-op.", example: "  twt tickets sync --output json\n  twt tickets sync --project core --dry-run --output json\n  twt tickets sync --project core --output json",
 	},
 	"twt tickets abandon": {
 		long: "Stop recovery for one local dispatch Session. Abandon makes the Session terminal and returns the Ticket to ready-for-agent only when the Session's own claimant still holds it. It never stops tmux: the Workspace and its agent keep running until 'twt done'. Use it with user authority after 'twt tickets sync' reports a stuck Session that resume cannot fix.", example: "  twt tickets abandon 0123abcd --force --dry-run --output json\n  twt tickets abandon 0123abcd --force --output json",
-	},
-	"twt tickets git-sync": {
-		long: "Reconcile the Tickets home with its git remote in one round: commit manual edits, pull, rebase local commits, and push everything the remote lacks. Run it to recover after offline work or to refresh the local view. It needs ticketsSync.mode git.", example: "  twt tickets git-sync --dry-run --output json\n  twt tickets git-sync --output json",
 	},
 	"twt tickets repair": {
 		long: "Move Tickets to the correct active or closed location from the current status and Project directory. Repair applies no move while the doctor report has a blocker. Run --dry-run first.", example: "  twt tickets repair --dry-run --output json\n  twt tickets repair --output json",

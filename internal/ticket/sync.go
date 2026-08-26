@@ -340,7 +340,7 @@ func (g *gitSync) advance(ahead, behind int) error {
 		_, _ = runTicketGit(syncLocalTimeout, g.toplevel, "rebase", "--abort")
 		return clierr.WithHint(
 			clierr.New(clierr.UnsafeState, "the tickets repository %q diverged from %s and the rebase conflicts", g.toplevel, g.remoteRef()),
-			"Resolve the conflict in %q, then run 'twt tickets git-sync'.", g.toplevel)
+			"Resolve the conflict in %q, then run 'twt tickets sync'.", g.toplevel)
 	}
 	return nil
 }
@@ -423,14 +423,14 @@ func (s *Service) syncDoctor(home string) *SyncDoctorInfo {
 	}
 	if status, err := runTicketGit(syncLocalTimeout, toplevel, "status", "--porcelain", "--", pathspec); err == nil && status != "" {
 		info.Dirty = true
-		report(syncIssueDirty, "the Tickets home has uncommitted changes; the next mutation or 'twt tickets git-sync' commits them")
+		report(syncIssueDirty, "the Tickets home has uncommitted changes; the next mutation or 'twt tickets sync' commits them")
 	}
 	remoteRef := info.Remote + "/" + branch
 	if _, err := runTicketGit(syncLocalTimeout, toplevel, "rev-parse", "--verify", "--quiet", remoteRef); err != nil {
 		report(syncIssueNoUpstream, fmt.Sprintf("the branch %q has no remote-tracking ref yet; the first push creates it", branch))
 	} else if counts, err := runTicketGit(syncLocalTimeout, toplevel, "rev-list", "--count", remoteRef+"..HEAD"); err == nil {
 		if _, scanErr := fmt.Sscanf(counts, "%d", &info.UnpushedCommits); scanErr == nil && info.UnpushedCommits > 0 {
-			report(syncIssueUnpushed, fmt.Sprintf("%d local commit(s) are not on %q; run 'twt tickets git-sync'", info.UnpushedCommits, remoteRef))
+			report(syncIssueUnpushed, fmt.Sprintf("%d local commit(s) are not on %q; run 'twt tickets sync'", info.UnpushedCommits, remoteRef))
 		}
 	}
 	gitignore, err := os.ReadFile(filepath.Join(home, ".gitignore"))
@@ -442,8 +442,10 @@ func (s *Service) syncDoctor(home string) *SyncDoctorInfo {
 
 // SyncStatus reports one explicit reconcile-and-push round.
 type SyncStatus struct {
-	Remote               string `json:"remote"`
-	Branch               string `json:"branch"`
+	// Enabled is false when ticketsSync is off: the sync was a no-op.
+	Enabled              bool   `json:"enabled"`
+	Remote               string `json:"remote,omitempty"`
+	Branch               string `json:"branch,omitempty"`
 	PulledCommits        int    `json:"pulledCommits"`
 	PushedCommits        int    `json:"pushedCommits"`
 	CommittedManualEdits bool   `json:"committedManualEdits"`
@@ -459,16 +461,15 @@ func (s *Service) Sync(dryRun bool) (SyncStatus, error) {
 		return SyncStatus{}, err
 	}
 	if g == nil {
-		return SyncStatus{}, clierr.WithHint(
-			clierr.New(clierr.PreconditionFailed, "ticketsSync is off"),
-			"Set ticketsSync.mode to git in ~/.config/twt/config.yaml or TWT_TICKETS_SYNC.")
+		// Backends without a remote report a no-op sync.
+		return SyncStatus{}, nil
 	}
 	lock, err := g.lock()
 	if err != nil {
 		return SyncStatus{}, err
 	}
 	defer lock.Release()
-	status := SyncStatus{Remote: g.remote, Branch: g.branch}
+	status := SyncStatus{Enabled: true, Remote: g.remote, Branch: g.branch}
 	dirty, err := g.dirty()
 	if err != nil {
 		return SyncStatus{}, err
@@ -523,11 +524,11 @@ func (s *Service) Sync(dryRun bool) (SyncStatus, error) {
 			if errors.Is(err, errPushRejected) {
 				return SyncStatus{}, clierr.WithHint(
 					clierr.New(clierr.Locked, "the tickets remote changed during the sync"),
-					"Run 'twt tickets git-sync' again.")
+					"Run 'twt tickets sync' again.")
 			}
 			return SyncStatus{}, clierr.WithHint(
 				clierr.New(clierr.PreconditionFailed, "twt could not push to the tickets remote %q: %v", g.remote, err),
-				"Check the network, then run 'twt tickets git-sync' again.")
+				"Check the network, then run 'twt tickets sync' again.")
 		}
 	}
 	return status, nil

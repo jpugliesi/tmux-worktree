@@ -32,6 +32,7 @@ func newTicketsPlanCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan text from standard input")
+	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name of a claimed Ticket")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)

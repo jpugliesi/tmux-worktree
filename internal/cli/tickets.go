@@ -63,7 +63,6 @@ func newTicketsCommand(options Options) *cobra.Command {
 	tickets.AddCommand(newTicketsApproveCommand(options))
 	tickets.AddCommand(newTicketsPRCommand(options))
 	tickets.AddCommand(newTicketsDoctorCommand(options))
-	tickets.AddCommand(newTicketsGitSyncCommand(options))
 	tickets.AddCommand(newTicketsRepairCommand(options))
 	return tickets
 }
@@ -777,6 +776,7 @@ func newTicketsCommentCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the comment text from standard input")
+	_ = command.MarkFlagRequired("stdin")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command

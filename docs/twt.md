@@ -823,7 +823,6 @@ twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
-twt tickets git-sync
 twt tickets show TICKET
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]

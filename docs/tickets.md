@@ -198,7 +198,6 @@ twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
-twt tickets git-sync
 twt tickets show TICKET
 twt tickets edit TICKET [--stdin]
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
@@ -315,7 +314,7 @@ write against the fresh state, so a lost race returns the normal `locked`
 error, and an unreachable remote returns `precondition_failed`. Other writes
 commit locally and push best-effort with a warning. Reads never touch git.
 
-`twt tickets git-sync` runs one explicit round: it commits manual edits,
+`twt tickets sync` always runs one explicit store round first: it commits manual edits,
 pulls, rebases local commits, and pushes everything the remote lacks. Run it
 after offline work, or when `twt tickets doctor` reports `sync_unpushed`,
 `sync_dirty`, or a diverged tree. `twt tickets init` writes a `.gitignore`

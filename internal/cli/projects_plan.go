@@ -75,6 +75,7 @@ func newProjectsPlanEditCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
+	_ = command.MarkFlagRequired("stdin")
 	setArguments(command, requiredArgument("project"))
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command

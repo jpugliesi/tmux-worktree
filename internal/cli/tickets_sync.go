@@ -8,6 +8,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/localdispatch"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
 
@@ -22,54 +23,71 @@ type ticketsSyncBackendsOutput struct {
 }
 
 type ticketsSyncOutput struct {
-	SchemaVersion int                       `json:"schemaVersion"`
-	Operation     string                    `json:"operation"`
-	Status        string                    `json:"status"`
-	Project       string                    `json:"project"`
-	Backends      ticketsSyncBackendsOutput `json:"backends"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Operation     string `json:"operation"`
+	Status        string `json:"status"`
+	Project       string `json:"project,omitempty"`
+	// Store reports the git reconcile of the Tickets home that every sync
+	// runs first.
+	Store    ticketservice.SyncStatus   `json:"store"`
+	Backends *ticketsSyncBackendsOutput `json:"backends,omitempty"`
 }
 
 func newTicketsSyncCommand(options Options) *cobra.Command {
 	var project string
 	command := &cobra.Command{
-		Use:   "sync",
+		Use:   "sync [--project PROJECT]",
 		Short: "Sync the Tickets home and dispatch Sessions with Ticket states",
 		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return runTicketsSync(command, options, project)
 		},
 	}
-	command.Flags().StringVar(&project, "project", "", "Sync the Sessions of this Project")
-	_ = command.MarkFlagRequired("project")
+	command.Flags().StringVar(&project, "project", "", "Also reconcile the dispatch Sessions of this Project")
 	registerProjectFlagCompletion(command, options)
 	return command
 }
 
+// runTicketsSync reconciles the Tickets home with its git remote first, and
+// then, when a Project is given, the dispatch Sessions of that Project.
 func runTicketsSync(command *cobra.Command, options Options, project string) error {
 	dryRun := isDryRun(command)
-	localService, err := options.localDispatchService(command, false)
+	tickets, err := options.ticketService()
 	if err != nil {
 		return err
 	}
-	localResult, err := localService.Sync(project, dryRun)
+	storeResult, err := tickets.Sync(dryRun)
 	if err != nil {
 		return err
-	}
-	localSessions := make([]localDispatchSessionOutput, 0, len(localResult.Sessions))
-	for _, session := range localResult.Sessions {
-		localSessions = append(localSessions, toLocalDispatchSessionOutput(session))
 	}
 	output := ticketsSyncOutput{
 		SchemaVersion: jsonSchemaVersion,
 		Operation:     "tickets.sync",
 		Project:       project,
-		Backends: ticketsSyncBackendsOutput{
+		Store:         storeResult,
+	}
+	diagnostics := 0
+	var localResult localdispatch.SyncResult
+	if project != "" {
+		localService, err := options.localDispatchService(command, false)
+		if err != nil {
+			return err
+		}
+		localResult, err = localService.Sync(project, dryRun)
+		if err != nil {
+			return err
+		}
+		localSessions := make([]localDispatchSessionOutput, 0, len(localResult.Sessions))
+		for _, session := range localResult.Sessions {
+			localSessions = append(localSessions, toLocalDispatchSessionOutput(session))
+		}
+		output.Backends = &ticketsSyncBackendsOutput{
 			Local: &ticketsSyncLocalOutput{
 				Capacity: localResult.Capacity, Sessions: localSessions, Diagnostics: localResult.Diagnostics,
 			},
-		},
+		}
+		diagnostics = len(localResult.Diagnostics)
 	}
-	diagnostics := len(localResult.Diagnostics)
 
 	output.Status = statusApplied
 	if dryRun {
@@ -79,6 +97,21 @@ func runTicketsSync(command *cobra.Command, options Options, project string) err
 	}
 	if WantsJSON(command) {
 		return writeJSONOutput(command, output)
+	}
+	if storeResult.Enabled {
+		verb := "Synced"
+		if dryRun {
+			verb = "Would sync"
+		}
+		if _, err := fmt.Fprintf(command.OutOrStdout(), "%s the Tickets home with %s/%s: pulled %d, pushed %d.\n",
+			verb, storeResult.Remote, storeResult.Branch, storeResult.PulledCommits, storeResult.PushedCommits); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(command.OutOrStdout(), "Tickets sync is off; skipped the store reconcile."); err != nil {
+		return err
+	}
+	if output.Backends == nil {
+		return nil
 	}
 	if err := writeTicketsSyncCapacityLine(command, "local", output.Backends.Local.Capacity.Active,
 		output.Backends.Local.Capacity.Available, output.Backends.Local.Capacity.Maximum, project); err != nil {
@@ -116,6 +149,7 @@ func newTicketsAbandonCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&force, "force", false, "Permit the Workspace and its agent to keep running after recovery stops")
+	_ = command.MarkFlagRequired("force")
 	setArguments(command, requiredArgument("session"))
 	command.ValidArgsFunction = localDispatchSessionCompletion(options.StateDir)
 	return command

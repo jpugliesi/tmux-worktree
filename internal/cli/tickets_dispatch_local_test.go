@@ -331,7 +331,7 @@ func TestTicketsPRAddAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pr add: %v\n%s", err, addJSON)
 	}
-	if !strings.Contains(addJSON, `"operation":"tickets.pr-add"`) || !strings.Contains(addJSON, `"status":"applied"`) {
+	if !strings.Contains(addJSON, `"operation":"tickets.pr.add"`) || !strings.Contains(addJSON, `"status":"applied"`) {
 		t.Fatalf("pr add JSON = %s", addJSON)
 	}
 	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
@@ -343,7 +343,7 @@ func TestTicketsPRAddAndRemove(t *testing.T) {
 		t.Fatalf("show after pr add = %s", showJSON)
 	}
 	rmJSON, _, err := executeCollectingInput(t, options,
-		strings.NewReader(`{"operation":"tickets.pr-rm","ticket":{"reference":"fix-auth","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
+		strings.NewReader(`{"operation":"tickets.pr.rm","ticket":{"reference":"fix-auth","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
 		"apply", "--stdin", "--output", "json")
 	if err != nil || !strings.Contains(rmJSON, `"status":"applied"`) {
 		t.Fatalf("apply pr rm = %s err %v", rmJSON, err)

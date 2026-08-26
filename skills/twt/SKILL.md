@@ -392,12 +392,13 @@ is the cross-machine compare-and-swap, and a lost race returns the normal
 `locked` error - pick another Ticket from the ready queue. Other writes
 commit locally and push best-effort; a warning means the change stays local
 until the next successful sync. `precondition_failed` on a claim means the
-remote was unreachable. Reads never touch git. Recover after offline work
-with:
+remote was unreachable. Reads never touch git. `twt tickets sync` always
+reconciles the store with the remote first (its `store` JSON section);
+recover after offline work with:
 
 ```sh
-twt tickets git-sync --dry-run --output json
-twt tickets git-sync --output json
+twt tickets sync --dry-run --output json
+twt tickets sync --output json
 ```
 
 `twt tickets doctor` includes a `sync` block with local-only findings such
