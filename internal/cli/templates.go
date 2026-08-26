@@ -502,7 +502,8 @@ func newTemplateRepositoriesAddCommand(options Options, templateStore store.Temp
 			})
 		},
 	}
-	command.Flags().IntVar(&depth, "depth", 0, "Set the clone depth; zero gets all history")
+	command.Flags().IntVar(&depth, "depth", 0, "Deprecated; Repository Caches always keep full history")
+	_ = command.Flags().MarkDeprecated("depth", "Repository Caches always keep full history")
 	command.Flags().StringArrayVar(&remotes, "remote", nil, "Add an extra remote as name=url")
 	command.Flags().StringVar(&defaultBranch, "default-branch", "", "Set the default branch")
 	command.Flags().StringVar(&windowName, "window-name", "", "Set the tmux window name")

@@ -247,6 +247,89 @@ func TestCreateWithBaseRefStartsFromTheStackParentBranch(t *testing.T) {
 	}
 }
 
+func TestCreateRepairsShallowCacheAncestryAndKeepsItConnected(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "shallow",
+		Repositories: []domain.RepositorySpec{{
+			Name: "app", Clone: domain.CloneSpec{URL: "file://" + source, Depth: 1},
+			DefaultBranch: "main",
+		}},
+	}
+	socket := fmt.Sprintf("twt-workspace-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	environment, err := service.Prepare(template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitCreateTestFile(t, source, "second.txt")
+	repository := environment.Repositories[0]
+	legacyFetch := exec.Command("git", "-C", repository.CachePath, "fetch", "--depth", "1", "origin", "+refs/heads/main:refs/remotes/origin/main")
+	if data, err := legacyFetch.CombinedOutput(); err != nil {
+		t.Fatalf("create the legacy shallow-cache state: %v\n%s", err, data)
+	}
+	if command := exec.Command("git", "-C", repository.CachePath, "merge-base", environment.Repositories[0].BaseCommit, "refs/remotes/origin/main"); command.Run() == nil {
+		t.Fatal("test setup did not create disconnected shallow history")
+	}
+
+	workspace, err := service.CreateWithOptions("fix-shallow", template.Name, template, CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := workspace.Repositories[0].Path
+	base := testGitOutput(t, checkout, "merge-base", "HEAD", "refs/remotes/origin/main")
+	if head := testGitOutput(t, checkout, "rev-parse", "HEAD"); base != head {
+		t.Fatalf("Workspace branch starts at %s, but its origin/main merge base is %s", head, base)
+	}
+	if shallow := testGitOutput(t, checkout, "rev-parse", "--is-shallow-repository"); shallow != "false" {
+		t.Fatalf("Workspace Repository Cache is still shallow: %s", shallow)
+	}
+
+	commitCreateTestFile(t, source, "third.txt")
+	if _, err := service.Prepare(template.Name, template); err != nil {
+		t.Fatal(err)
+	}
+	if base := testGitOutput(t, checkout, "merge-base", "HEAD", "refs/remotes/origin/main"); base == "" {
+		t.Fatal("a later cache refresh disconnected the Workspace branch from origin/main")
+	}
+}
+
+func commitCreateTestFile(t *testing.T, repository, name string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repository, name), []byte(name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{{"add", name}, {"commit", "-qm", "add " + name}} {
+		command := exec.Command("git", argv...)
+		command.Dir = repository
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", argv, err, data)
+		}
+	}
+}
+
+func testGitOutput(t *testing.T, repository string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", repository}, args...)...)
+	data, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, data)
+	}
+	return strings.TrimSpace(string(data))
+}
+
 func initCreateTestRepository(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {

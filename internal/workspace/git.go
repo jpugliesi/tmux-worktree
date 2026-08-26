@@ -54,10 +54,7 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 		return fmt.Errorf("prepare temporary cache path: %w", err)
 	}
 	defer os.RemoveAll(temporary)
-	args := []string{"clone", "--bare"}
-	if spec.Clone.Depth > 0 {
-		args = append(args, "--depth", fmt.Sprint(spec.Clone.Depth))
-	}
+	args := []string{"clone", "--bare", "--filter=blob:none"}
 	args = append(args, spec.Clone.URL, temporary)
 	if err := run("", "git", args...); err != nil {
 		return fmt.Errorf("clone repository %q: %w", spec.Name, err)
@@ -158,7 +155,7 @@ func (s *Service) ensureCheckoutLocked(p domain.Workspace, repositoryName string
 		// A stacked Workspace starts from the blocker's pull request branch.
 		// The prepared cache refreshed only the default branch, so fetch the
 		// base ref now, inside the same cache lock.
-		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, p.BaseRef); err != nil {
+		if err := fetchOrigin(repository.CachePath, p.BaseRef); err != nil {
 			return fmt.Errorf("fetch stack base %q: %w", p.BaseRef, err)
 		}
 		startPoint = "refs/remotes/origin/" + p.BaseRef
@@ -199,19 +196,37 @@ func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 	if err != nil {
 		return err
 	}
-	return fetchOrigin(cachePath, spec.Clone.Depth, branch)
+	return fetchOrigin(cachePath, branch)
 }
 
-// fetchOrigin refreshes one branch of the cache from origin. The caller
-// resolves the branch, usually with defaultBranch.
-func fetchOrigin(cachePath string, depth int, branch string) error {
-	args := []string{"fetch", "--prune", "--no-tags"}
-	if depth > 0 {
-		args = append(args, "--depth", fmt.Sprint(depth))
+// fetchOrigin refreshes one branch of the cache from origin. Repository
+// Caches keep full commit history because all Workspace branches share them.
+func fetchOrigin(cachePath, branch string) error {
+	if err := ensureFullHistory(cachePath, branch); err != nil {
+		return err
 	}
+	args := []string{"fetch", "--prune", "--no-tags"}
 	args = append(args, "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch)
 	if err := run(cachePath, "git", args...); err != nil {
 		return fmt.Errorf("refresh repository cache from origin: %w", err)
+	}
+	return nil
+}
+
+// ensureFullHistory repairs a cache made by a version of twt that honored a
+// Template clone depth. A shallow shared cache can disconnect active Workspace
+// branches when its remote-tracking branch moves.
+func ensureFullHistory(cachePath, branch string) error {
+	value, err := output(cachePath, "git", "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return fmt.Errorf("inspect Repository Cache history: %w", err)
+	}
+	if value != "true" {
+		return nil
+	}
+	refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch
+	if err := run(cachePath, "git", "fetch", "--unshallow", "--filter=tree:0", "--prune", "--no-tags", "origin", refspec); err != nil {
+		return fmt.Errorf("repair shallow Repository Cache history: %w", err)
 	}
 	return nil
 }

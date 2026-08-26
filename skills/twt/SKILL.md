@@ -108,6 +108,8 @@ applies to `twt templates edit`, `twt projects plan edit` without `--stdin`,
 
 Create a Workspace from an existing Workspace Template. Let `twt` create the Git
 worktrees and tmux windows. `twt w` is the short alias for `twt workspaces`.
+Repository Caches keep full commit history. twt repairs an old shallow cache
+before it creates a Workspace branch. Do not repair a cache by hand.
 
 A Workspace can work on one or more open Tickets from one Project. Link them
 with repeated `--ticket` flags for a non-interactive create:

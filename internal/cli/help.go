@@ -83,8 +83,8 @@ var commandHelp = map[string]helpContent{
 		long: "Read, link, and snapshot provider transcripts for Agent Sessions.", example: "  twt agents transcript show AGENT_ID --workspace current",
 	},
 	"twt templates repos add": {
-		long:    "Add one repository specification to a Workspace Template. Flags define clone depth, remotes, default branch, and tmux window name.",
-		example: "  twt templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --depth 1 \\\n    --remote github=https://github.com/anysphere/everysphere.git",
+		long:    "Add one repository specification to a Workspace Template. Flags define remotes, the default branch, and the tmux window name. Repository Caches always keep full commit history so Workspace branches keep valid ancestry.",
+		example: "  twt templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --remote github=https://github.com/anysphere/everysphere.git",
 	},
 	"twt templates init set": {
 		long: "Set one initialization command. Put the command and its arguments after --.\n\n" +

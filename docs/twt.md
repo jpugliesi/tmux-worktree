@@ -79,7 +79,6 @@ Add the repository clone policy:
 ```sh
 twt templates repos add everysphere everysphere \
   https://origin.cursor.com/anysphere/everysphere.git \
-  --depth 1 \
   --remote github=https://github.com/anysphere/everysphere.git \
   --default-branch main \
   --window-name everysphere
@@ -109,7 +108,6 @@ repositories:
   - name: everysphere
     clone:
       url: https://origin.cursor.com/anysphere/everysphere.git
-      depth: 1
     remotes:
       github: https://github.com/anysphere/everysphere.git
     default_branch: main
@@ -127,6 +125,10 @@ agents:
 
 `pool_depth` is the number of ready Prepared Environments that `twt` keeps
 for this Workspace Template. The default depth is 1.
+
+Repository Caches keep full commit history. This rule lets every Workspace
+branch retain a merge base when the default branch advances. twt accepts the
+old repository `depth` field for compatibility, but ignores it.
 
 `branch_pattern` sets the default Workspace branch name of the Workspace
 Template, for example `branch_pattern: "{prefix}dev/{name}"`. See

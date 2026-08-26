@@ -432,7 +432,7 @@ func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index
 	if opts.BaseRef != "" {
 		// A stacked Workspace starts from the blocker's pull request branch,
 		// not the default branch the environment was prepared on.
-		if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, opts.BaseRef); err != nil {
+		if err := fetchOrigin(repository.CachePath, opts.BaseRef); err != nil {
 			return "", fmt.Errorf("fetch stack base %q: %w", opts.BaseRef, err)
 		}
 		base, err := output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+opts.BaseRef)
@@ -447,9 +447,12 @@ func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index
 	if err != nil {
 		return "", err
 	}
+	if err := ensureFullHistory(repository.CachePath, branch); err != nil {
+		return "", err
+	}
 	fetchedAt := environment.ReadyAt
 	if !opts.NoFetch {
-		newBase, refreshedAt, err := s.refreshStaleBase(repository, spec, branch, environment.ReadyAt)
+		newBase, refreshedAt, err := s.refreshStaleBase(repository, branch, environment.ReadyAt)
 		if err != nil {
 			return "", err
 		}
@@ -476,10 +479,10 @@ func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index
 // ancestor. It does Git work only and returns the new base commit with the
 // effective fetch time. The caller owns the Prepared Environment record
 // update and save.
-func (s *Service) refreshStaleBase(repository domain.PreparedRepository, spec domain.RepositorySpec, branch string, readyAt *time.Time) (string, *time.Time, error) {
+func (s *Service) refreshStaleBase(repository domain.PreparedRepository, branch string, readyAt *time.Time) (string, *time.Time, error) {
 	base := repository.BaseCommit
 	fetchedAt := readyAt
-	if err := fetchOrigin(repository.CachePath, spec.Clone.Depth, branch); err != nil {
+	if err := fetchOrigin(repository.CachePath, branch); err != nil {
 		s.report("Warning: twt could not fetch origin for repository %q: %v. twt uses the saved base commit.", repository.Name, err)
 	} else {
 		now := s.now()
@@ -494,8 +497,7 @@ func (s *Service) refreshStaleBase(repository domain.PreparedRepository, spec do
 		return "", nil, err
 	}
 	if !ancestor {
-		s.report("Warning: origin/%s does not contain the saved base commit for repository %q. twt keeps the saved base commit.", branch, repository.Name)
-		return base, fetchedAt, nil
+		s.report("Warning: origin/%s rewrote history for repository %q. twt uses the new tip.", branch, repository.Name)
 	}
 	if err := run(repository.Path, "git", "reset", "--hard", tip); err != nil {
 		return "", nil, fmt.Errorf("move repository %q to the new origin/%s tip: %w", repository.Name, branch, err)
