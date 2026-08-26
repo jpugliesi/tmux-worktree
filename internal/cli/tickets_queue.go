@@ -62,13 +62,28 @@ func writeTicketsQueue(out io.Writer, result ticketservice.QueueResult) error {
 			}
 		}
 	}
-	if len(result.Ready) == 0 {
+	if len(result.Ready) == 0 && len(result.StackReady) == 0 {
 		_, err := fmt.Fprintln(out, "No Tickets are ready.")
 		return err
 	}
-	rows := make([][]string, 0, len(result.Ready))
-	for _, ticket := range result.Ready {
-		rows = append(rows, []string{ticket.Slug, fmt.Sprintf("p%d", ticket.Priority), ticket.Title})
+	if len(result.Ready) > 0 {
+		rows := make([][]string, 0, len(result.Ready))
+		for _, ticket := range result.Ready {
+			rows = append(rows, []string{ticket.Slug, fmt.Sprintf("p%d", ticket.Priority), ticket.Title})
+		}
+		if err := writeTable(out, []string{"TICKET", "PRIORITY", "TITLE"}, rows); err != nil {
+			return err
+		}
 	}
-	return writeTable(out, []string{"TICKET", "PRIORITY", "TITLE"}, rows)
+	if len(result.StackReady) > 0 {
+		if _, err := fmt.Fprintf(out, "Stack-ready (open blockers in review; needs a stacking Template):\n"); err != nil {
+			return err
+		}
+		for _, ticket := range result.StackReady {
+			if _, err := fmt.Fprintf(out, "  %s  p%d  %s\n", ticket.Slug, ticket.Priority, ticket.Title); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
