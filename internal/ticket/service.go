@@ -1183,7 +1183,6 @@ func (s *Service) SetWorkspace(ref, workspaceID string, dryRun bool) (domain.Tic
 	})
 }
 
-
 // Comment appends text under the "## Comments" heading and creates that
 // heading when it is missing.
 func (s *Service) Comment(ref, text string, dryRun bool) (domain.Ticket, error) {

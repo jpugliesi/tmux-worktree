@@ -22,19 +22,19 @@ type AgentSession struct {
 	PreferProviderResume bool `json:"preferProviderResume,omitempty"`
 	// Env sets KEY=VALUE pairs in the Agent Session window on start and on
 	// resume.
-	Env []string `json:"env,omitempty"`
-	TmuxPane             string    `json:"tmuxPane,omitempty"`
-	PaneCommand          string    `json:"paneCommand,omitempty"`
-	PaneStart            string    `json:"paneStart,omitempty"`
-	RuntimeReference     string    `json:"runtimeReference,omitempty"`
-	PaneRootProcessID    int       `json:"paneRootProcessId,omitempty"`
-	PaneRootStarted      string    `json:"paneRootStarted,omitempty"`
-	ProcessID            int       `json:"processId,omitempty"`
-	ProcessStarted       string    `json:"processStarted,omitempty"`
-	ProcessCommand       string    `json:"processCommand,omitempty"`
-	ProcessEvidence      string    `json:"processEvidence,omitempty"`
-	CreatedAt            time.Time `json:"createdAt"`
-	UpdatedAt            time.Time `json:"updatedAt"`
+	Env               []string  `json:"env,omitempty"`
+	TmuxPane          string    `json:"tmuxPane,omitempty"`
+	PaneCommand       string    `json:"paneCommand,omitempty"`
+	PaneStart         string    `json:"paneStart,omitempty"`
+	RuntimeReference  string    `json:"runtimeReference,omitempty"`
+	PaneRootProcessID int       `json:"paneRootProcessId,omitempty"`
+	PaneRootStarted   string    `json:"paneRootStarted,omitempty"`
+	ProcessID         int       `json:"processId,omitempty"`
+	ProcessStarted    string    `json:"processStarted,omitempty"`
+	ProcessCommand    string    `json:"processCommand,omitempty"`
+	ProcessEvidence   string    `json:"processEvidence,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // UnmarshalJSON accepts the version-one projectId key. New records always

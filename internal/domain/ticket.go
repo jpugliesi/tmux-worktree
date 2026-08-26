@@ -71,8 +71,8 @@ type Ticket struct {
 	// whose plan lacks the stamp.
 	PlanApprovedBy string `yaml:"plan_approved_by" json:"planApprovedBy,omitempty"`
 	PlanApprovedAt string `yaml:"plan_approved_at" json:"planApprovedAt,omitempty"`
-	Created     string       `yaml:"created" json:"created"`
-	Updated     string       `yaml:"updated" json:"updated"`
+	Created        string `yaml:"created" json:"created"`
+	Updated        string `yaml:"updated" json:"updated"`
 	// Path is the backend locator of this Ticket (a file path for the
 	// markdown store). It is not part of the Store contract: other backends
 	// may leave it empty or use another locator form.

@@ -10,10 +10,10 @@ import (
 func fixedNow() time.Time { return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC) }
 
 type fakeResolver struct {
-	host   string
-	state  PRState
-	err    error
-	calls  int
+	host  string
+	state PRState
+	err   error
+	calls int
 }
 
 func (f *fakeResolver) Host() string { return f.host }
