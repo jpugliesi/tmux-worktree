@@ -20,7 +20,7 @@ import (
 // the test when apply returns an error.
 func applyRequest(t *testing.T, options cli.Options, request string, extra ...string) string {
 	t.Helper()
-	args := append([]string{"apply", "--stdin", "--output", "json"}, extra...)
+	args := append([]string{"apply", "-", "--output", "json"}, extra...)
 	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader(request), args...)
 	if err != nil {
 		t.Fatalf("apply %s: %v\nstderr: %s", request, err, stderr)
@@ -32,7 +32,7 @@ func applyRequest(t *testing.T, options cli.Options, request string, extra ...st
 // error.
 func applyRequestError(t *testing.T, options cli.Options, request string, extra ...string) error {
 	t.Helper()
-	args := append([]string{"apply", "--stdin", "--output", "json"}, extra...)
+	args := append([]string{"apply", "-", "--output", "json"}, extra...)
 	_, _, err := executeCollectingInput(t, options, strings.NewReader(request), args...)
 	if err == nil {
 		t.Fatalf("apply %s did not fail", request)

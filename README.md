@@ -73,7 +73,7 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
 3. Write the plan, then break it into tickets with dependency edges:
 
    ```sh
-   printf '%s' "$PLAN" | twt projects plan edit myfeature --stdin
+   printf '%s' "$PLAN" | twt projects plan edit myfeature -
    twt tickets create "Add the API" --project myfeature --status ready-for-agent
    twt tickets create "Add the UI" --project myfeature --status ready-for-agent \
      --blocked-by add-the-api
@@ -95,7 +95,7 @@ Everything that needs you appears on the board under WAITING ON YOU:
 
 ```sh
 twt projects show myfeature
-printf '%s' "Use OAuth." | twt tickets answer some-ticket --stdin   # answer an agent's question
+printf '%s' "Use OAuth." | twt tickets answer some-ticket -   # answer an agent's question
 twt tickets approve some-ticket                                     # approve a plan for implementation
 twt tickets close some-ticket                                       # merged means done; unblocks dependents
 ```
@@ -175,7 +175,7 @@ twt is built agent-first:
 - Output is JSON whenever stdout is not a terminal; `--output ndjson`
   streams long lists; `--fields` and `--limit` keep reads small.
 - Every mutation supports `--dry-run` (validate, change nothing), and
-  `twt apply --stdin` accepts typed JSON payloads for every non-interactive
+  `twt apply -` accepts typed JSON payloads for every non-interactive
   mutation — no flag translation.
 - Structured errors with stable codes and hints; exit codes 0/1/2/3.
 

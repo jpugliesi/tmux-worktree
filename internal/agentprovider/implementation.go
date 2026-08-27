@@ -140,7 +140,7 @@ func ticketImplementationTask(ticket, claimant string) string {
 		"- every pull request is created and attached",
 		"Record a one-line status at each milestone (implementation done, tests",
 		"green, pull request open):",
-		fmt.Sprintf("printf '%%s' \"STATUS\" | twt tickets comment %s --stdin", ticket),
+		fmt.Sprintf("printf '%%s' \"STATUS\" | twt tickets comment %s -", ticket),
 		"",
 		"When the work ships, record every pull request and release the Ticket in one command:",
 		fmt.Sprintf("twt tickets complete %s --as %s --pr URL", ticket, claimant),
@@ -156,7 +156,7 @@ func ticketImplementationTask(ticket, claimant string) string {
 		"finish under this same contract.",
 		"",
 		"Only when you cannot proceed at all, write what blocks you as a comment, then release the claim:",
-		fmt.Sprintf("printf '%%s' \"BLOCKED_REASON\" | twt tickets comment %s --stdin", ticket),
+		fmt.Sprintf("printf '%%s' \"BLOCKED_REASON\" | twt tickets comment %s -", ticket),
 		fmt.Sprintf("twt tickets unclaim %s --as %s", ticket, claimant),
 	}
 	return strings.Join(lines, "\n")

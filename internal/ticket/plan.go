@@ -49,7 +49,7 @@ func (s *Service) ProjectPlan(name string) (ProjectPlanResult, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return ProjectPlanResult{}, clierr.WithHint(
 			clierr.New(clierr.NotFound, "Project %q has no plan.md", name),
-			"Run 'twt projects plan init %s', or pipe content to 'twt projects plan edit %s --stdin'.", name, name)
+			"Run 'twt projects plan init %s', or pipe content to 'twt projects plan edit %s -'.", name, name)
 	}
 	if err != nil {
 		return ProjectPlanResult{}, fmt.Errorf("read Project %q plan: %w", name, err)
@@ -115,7 +115,7 @@ func (s *Service) writeProjectPlanOnce(name string, content []byte, initOnly, dr
 	if initOnly && existed {
 		return ProjectPlanResult{}, clierr.WithHint(
 			clierr.New(clierr.PreconditionFailed, "Project %q already has plan.md", name),
-			"Edit it with 'twt projects plan edit %s --stdin'.", name)
+			"Edit it with 'twt projects plan edit %s -'.", name)
 	}
 	result := ProjectPlanResult{Project: name, Path: path, Created: !existed}
 	if dryRun {

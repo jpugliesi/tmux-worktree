@@ -141,9 +141,14 @@ func TestTemplatesCreateReadsAFileOrStandardInput(t *testing.T) {
 	}
 
 	options := cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
-	stdinOutput := executeWithOptions(t, options, strings.NewReader("version: 1\nrepositories: []\n"), "templates", "create", "fromstdin")
-	if !strings.Contains(stdinOutput, "fromstdin") {
-		t.Fatalf("templates create --from-stdin needs the flag: %q", stdinOutput)
+	ignoredStdin := executeWithOptions(t, options, strings.NewReader("version: 1\nrepositories: []\n"), "templates", "create", "fromstdin")
+	if !strings.Contains(ignoredStdin, "fromstdin") {
+		t.Fatalf("templates create without --from-file - must ignore standard input: %q", ignoredStdin)
+	}
+	piped := executeWithOptions(t, options, strings.NewReader("version: 1\nrepositories: []\n"),
+		"templates", "create", "piped", "--from-file", "-")
+	if !strings.Contains(piped, "piped") {
+		t.Fatalf("templates create --from-file - = %q", piped)
 	}
 }
 
@@ -151,17 +156,12 @@ func TestTemplatesCreateFromStdinRejectsUnknownFields(t *testing.T) {
 	root := t.TempDir()
 	options := cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
 	_, _, err := executeCollectingInput(t, options, strings.NewReader("version: 1\nname: strict\ntypo: true\n"),
-		"templates", "create", "strict", "--from-stdin")
+		"templates", "create", "strict", "--from-file", "-")
 	if err == nil || !strings.Contains(err.Error(), "field typo not found") {
-		t.Fatalf("templates create --from-stdin with an unknown field = %v", err)
+		t.Fatalf("templates create --from-file - with an unknown field = %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "config", "templates", "strict.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("invalid input created a Workspace Template: %v", statErr)
-	}
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader("version: 1\nrepositories: []\n"),
-		"templates", "create", "both", "--from-stdin", "--from-file", "/tmp/does-not-matter.yaml"); err == nil ||
-		clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("templates create with both input flags = %v", err)
 	}
 }
 

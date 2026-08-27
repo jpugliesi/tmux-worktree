@@ -68,13 +68,13 @@ func TestProjectsCloseForceDryRunAndApply(t *testing.T) {
 
 	_, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"projects.close","project":{"name":"force-close"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("apply projects.close without force = %v", err)
 	}
 	applied, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"projects.close","project":{"name":"force-close","force":true}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil || !strings.Contains(applied, `"operation":"projects.close"`) || !strings.Contains(applied, `"status":"applied"`) {
 		t.Fatalf("apply projects.close = %q, %v", applied, err)
 	}

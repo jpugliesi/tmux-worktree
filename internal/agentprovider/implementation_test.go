@@ -71,7 +71,7 @@ func TestBuildTicketImplementationLaunches(t *testing.T) {
 				"re-claim it if you released it",
 				"twt tickets complete fix-auth --as twt-local-abc12345 --pr URL",
 				"twt tickets unclaim fix-auth --as twt-local-abc12345",
-				"twt tickets comment fix-auth --stdin",
+				"twt tickets comment fix-auth -",
 			} {
 				if !strings.Contains(prompt, want) {
 					t.Fatalf("prompt lacks %q:\n%s", want, prompt)

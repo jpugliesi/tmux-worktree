@@ -773,7 +773,7 @@ func TestAgentsListAndSendUseOwnedWorkspacePane(t *testing.T) {
 	}
 	wrongWorkspace := cli.New(baseOptions)
 	wrongWorkspace.SetIn(strings.NewReader("must not reach the Agent Session\n"))
-	wrongWorkspace.SetArgs(forceTextOutput([]string{"agents", "send", agentID, "--workspace", otherWorkspace.ID, "--stdin"}))
+	wrongWorkspace.SetArgs(forceTextOutput([]string{"agents", "send", agentID, "--workspace", otherWorkspace.ID, "-"}))
 	if err := wrongWorkspace.Execute(); err == nil || !strings.Contains(err.Error(), "does not belong") {
 		t.Fatalf("cross-Workspace send error = %v", err)
 	}
@@ -810,7 +810,7 @@ func TestAgentsListAndSendUseOwnedWorkspacePane(t *testing.T) {
 	}
 
 	feedback := "review feedback must remain text\n"
-	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--workspace", "agent-test", "--stdin", "--output", "json")
+	executeWithOptions(t, baseOptions, strings.NewReader(feedback), "agents", "send", agentID, "--workspace", "agent-test", "-", "--output", "json")
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		capture := runCommand(t, "", "tmux", "-L", socket, "capture-pane", "-p", "-t", pane)

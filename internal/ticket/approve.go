@@ -63,7 +63,7 @@ func (s *Service) Approve(ref, approver, note string, dryRun bool) (domain.Ticke
 		if !HasPlanSection(m.file.Body) {
 			return clierr.WithHint(
 				clierr.New(clierr.PreconditionFailed, "ticket %q has no \"## Plan\" section to approve", m.ticket.Slug),
-				"Write the plan first with 'twt tickets plan %s --stdin'.", m.ticket.Slug)
+				"Write the plan first with 'twt tickets plan %s -'.", m.ticket.Slug)
 		}
 		if m.ticket.PlanApprovedBy != "" {
 			m.skipWrite = true

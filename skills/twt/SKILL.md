@@ -93,16 +93,16 @@ twt create fix-auth \
   --output json
 ```
 
-For typed input, send one strict JSON value to `twt apply --stdin`. It
+For typed input, send one strict JSON value to `twt apply -`. It
 supports every non-interactive mutation. Read the current operation names and
 payload shapes from `twt schema`; this skill does not repeat them.
 
 An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
-applies to `twt templates edit`, `twt tickets plan` without `--stdin`,
-`twt projects plan` without `--stdin`, `twt projects plan edit` without
-`--stdin`, `twt agents focus`, `twt agents open`, and
+applies to `twt templates edit`, `twt tickets plan` without `-`,
+`twt projects plan` without `-`, `twt projects plan edit` without
+`-`, `twt agents focus`, `twt agents open`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
@@ -241,10 +241,10 @@ standard input so shell quoting does not change the text.
 
 ```sh
 printf '%s' "$REVIEW_TEXT" | \
-  twt agents send AGENT_ID --workspace WORKSPACE_ID --stdin --dry-run --output json
+  twt agents send AGENT_ID - --workspace WORKSPACE_ID --dry-run --output json
 
 printf '%s' "$REVIEW_TEXT" | \
-  twt agents send AGENT_ID --workspace WORKSPACE_ID --stdin --output json
+  twt agents send AGENT_ID - --workspace WORKSPACE_ID --output json
 ```
 
 Feedback is valid only for a live pane that has the matching immutable
@@ -374,7 +374,7 @@ below carry the details.
 3. **Plan the Ticket.** When the Ticket needs a plan - the human asked for
    one, dispatch ran with `--plan`, or the work is large - write a
    decision-complete plan into the `## Plan` section:
-   `printf '%s' "$PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT`.
+   `printf '%s' "$PLAN" | twt tickets plan TICKET - --as CLAIMANT`.
    Iterate with the human through `tickets ask` and `tickets answer`. A
    Ticket with a `## Plan` section is gated: implementation starts only
    after the human runs `twt tickets approve TICKET`, and a plan rewrite
@@ -501,7 +501,7 @@ Follow these rules for every ticket command:
 3. Pass `--output json` on every command.
 4. Pass `--dry-run` before every mutation.
 5. Pass `--limit` on list commands.
-6. Create a ticket with a DESCRIPTION argument or `--stdin`. Do not rely on
+6. Create a ticket with a DESCRIPTION argument or a lone `-` with `--title`. Do not rely on
    `$EDITOR`; that path only opens for a person at an interactive terminal.
    `--project` does not create a Project. Create the Project first with
    `twt projects create NAME`.
@@ -540,7 +540,7 @@ twt tickets create "follow-up work" --status ready-for-agent \
   --blocked-by fix-the-vfs-tools --output json
 twt tickets set follow-up-work --blocked-by fix-the-vfs-tools --output json
 printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work","blockedBy":[]}}' \
-  | twt apply --stdin --dry-run --output json
+  | twt apply - --dry-run --output json
 ```
 
 ### Ask the human and answer
@@ -548,7 +548,7 @@ printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work"
 A working agent that needs a decision asks through the Ticket and stops:
 
 ```sh
-printf '%s' "QUESTION" | twt tickets ask TICKET --stdin --as CLAIMANT --output json
+printf '%s' "QUESTION" | twt tickets ask TICKET - --as CLAIMANT --output json
 ```
 
 Ask parks the Ticket on `needs-info`, keeps the claim, and records the
@@ -560,7 +560,7 @@ and the `waitingOnYou` list of `twt projects show`.
 The human answers with:
 
 ```sh
-printf '%s' "ANSWER" | twt tickets answer TICKET --stdin --output json
+printf '%s' "ANSWER" | twt tickets answer TICKET - --output json
 ```
 
 Answer records the reply, restores the pre-ask status, and relays the text
@@ -643,12 +643,12 @@ mirrors it. Read and write it only through twt, so git sync fires:
 ```sh
 twt projects plan show PROJECT --output json
 twt projects plan init PROJECT --output json
-printf '%s' "$PLAN" | twt projects plan edit PROJECT --stdin --output json
+printf '%s' "$PLAN" | twt projects plan edit PROJECT - --output json
 twt projects plan path PROJECT
 ```
 
-`plan edit --stdin` is an upsert: it creates plan.md when missing. An agent
-always passes `--stdin`. Without `--stdin` in an interactive terminal,
+`plan edit -` is an upsert: it creates plan.md when missing. An agent
+always passes `-`. Without `-` in an interactive terminal,
 `twt projects plan` opens VISUAL or EDITOR on the current Project plan, and
 `plan edit PROJECT` opens the named Project. The current Project comes from
 TWT_PROJECT, then the current Workspace Project. `plan.md` and
@@ -660,10 +660,10 @@ writes a decision-complete plan there before implementation; the write
 replaces the whole section and keeps every other section:
 
 ```sh
-printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT --output json
+printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET - --as CLAIMANT --output json
 ```
 
-An agent always passes `--stdin`. Without `--stdin` in an interactive
+An agent always passes `-`. Without `-` in an interactive
 terminal, `twt tickets plan TICKET` opens VISUAL or EDITOR on a draft of
 the current ## Plan section. A claimed Ticket requires the matching
 `--as` claimant.
@@ -672,7 +672,7 @@ A Ticket plan carries a hard approval gate. The human approves with:
 
 ```sh
 twt tickets approve TICKET --output json
-printf '%s' "Ship it; keep the scope small." | twt tickets approve TICKET --stdin --output json
+printf '%s' "Ship it; keep the scope small." | twt tickets approve TICKET - --output json
 ```
 
 The approval stamps `plan_approved_by` and `plan_approved_at`.
@@ -694,10 +694,10 @@ them. Make every change through twt verbs first, then one `plan edit`.
 1. Bootstrap: `twt projects create NAME --template TEMPLATE`, then
    `twt projects plan init NAME`.
 2. Iterate plan.md with the human until the decisions close. Every edit
-   goes through `plan edit --stdin`, never on disk.
-3. Emit the DAG leaves-first: `tickets create --stdin` with
+   goes through `plan edit -`, never on disk.
+3. Emit the DAG leaves-first: `tickets create -` with
    `--status needs-triage` and `--blocked-by` edges. Promote a Ticket to
-   `ready-for-agent` when its spec is firm. Plain `--stdin` bodies land
+   `ready-for-agent` when its spec is firm. Plain `-` bodies land
    under `## What to build` in the skeleton, so every generated Ticket
    keeps its section anchors.
 4. Verify the graph with `twt tickets queue --project NAME --output json`:
@@ -787,9 +787,9 @@ The typed repair operation has no payload:
 
 ```sh
 printf '%s\n' '{"operation":"tickets.repair"}' \
-  | twt apply --stdin --dry-run --output json
+  | twt apply - --dry-run --output json
 printf '%s\n' '{"operation":"tickets.repair"}' \
-  | twt apply --stdin --output json
+  | twt apply - --output json
 ```
 
 ## Keep this skill current

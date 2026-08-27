@@ -61,6 +61,83 @@ func noArgs(command *cobra.Command, args []string) error {
 	return nil
 }
 
+// stdinToken is the positional that means "read standard input", the same
+// convention as cat, kubectl -f, and git commit -F.
+const stdinToken = "-"
+
+func isStdinToken(value string) bool {
+	return value == stdinToken
+}
+
+func stdinTokenArgument(required bool) argumentSchema {
+	condition := "the literal \"-\" reads standard input"
+	if required {
+		return argumentSchema{Name: "-", Type: "string", Required: true, Condition: condition}
+	}
+	return optionalArgument("-", condition)
+}
+
+func missingStdinToken(command *cobra.Command) error {
+	return invalidUsageWithHint(command, "Pass - to read standard input.",
+		"missing required argument -")
+}
+
+func unexpectedStdinToken(command *cobra.Command, value string) error {
+	return invalidUsageWithHint(command, "Pass - to read standard input.",
+		"unexpected argument %q; expected -", value)
+}
+
+// requireStdinToken requires the single positional "-".
+func requireStdinToken() cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return missingStdinToken(command)
+		}
+		if len(args) > 1 {
+			return invalidUsage(command, "unexpected argument %q; expected -", args[1])
+		}
+		if !isStdinToken(args[0]) {
+			return unexpectedStdinToken(command, args[0])
+		}
+		return nil
+	}
+}
+
+// requireResourceThenStdin requires RESOURCE then "-".
+func requireResourceThenStdin(resource string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return invalidUsage(command, "missing required argument %s", resource)
+		}
+		if len(args) < 2 {
+			return missingStdinToken(command)
+		}
+		if len(args) > 2 {
+			return invalidUsage(command, "unexpected argument %q; expected %s -", args[2], resource)
+		}
+		if !isStdinToken(args[1]) {
+			return unexpectedStdinToken(command, args[1])
+		}
+		return nil
+	}
+}
+
+// optionalStdinAfter requires RESOURCE and accepts an optional trailing "-".
+func optionalStdinAfter(resource string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return invalidUsage(command, "missing required argument %s", resource)
+		}
+		if len(args) > 2 {
+			return invalidUsage(command, "unexpected argument %q; expected %s [-]", args[2], resource)
+		}
+		if len(args) == 2 && !isStdinToken(args[1]) {
+			return unexpectedStdinToken(command, args[1])
+		}
+		return nil
+	}
+}
+
 func optionalArg(name string) cobra.PositionalArgs {
 	return func(command *cobra.Command, args []string) error {
 		if len(args) > 1 {

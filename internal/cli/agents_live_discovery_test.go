@@ -179,7 +179,7 @@ func main() {
 	if strings.TrimSpace(markers) != "" {
 		t.Fatalf("list or preview claimed an Agent Session pane: %q", markers)
 	}
-	_, _, err = executeRaw(t, options, "agents", "send", cursorReference, "--workspace", workspace.ID, "--stdin")
+	_, _, err = executeRaw(t, options, "agents", "send", cursorReference, "--workspace", workspace.ID, "-")
 	if clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("empty live-pane send error = %v", err)
 	}
@@ -199,7 +199,7 @@ func main() {
 		AgentID string `json:"agentId"`
 		Status  string `json:"status"`
 	}
-	sendOutput := executeWithOptions(t, options, strings.NewReader("review note"), "agents", "send", cursorReference, "--workspace", workspace.ID, "--stdin", "--output", "json")
+	sendOutput := executeWithOptions(t, options, strings.NewReader("review note"), "agents", "send", cursorReference, "--workspace", workspace.ID, "-", "--output", "json")
 	if err := json.Unmarshal([]byte(sendOutput), &sent); err != nil {
 		t.Fatalf("decode send result: %v\n%s", err, sendOutput)
 	}

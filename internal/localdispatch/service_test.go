@@ -190,7 +190,7 @@ func TestDispatchPlanModeRoutesToThePlanningLaunch(t *testing.T) {
 	// Planning agents run in normal autonomous mode with a plan-only prompt
 	// contract; the planning prompt carries the tickets plan write.
 	prompt := strings.Join(injected.Start, " ")
-	if !strings.Contains(prompt, "HARD RULE: plan only") || !strings.Contains(prompt, "twt tickets plan fix-auth --stdin") {
+	if !strings.Contains(prompt, "HARD RULE: plan only") || !strings.Contains(prompt, "twt tickets plan fix-auth -") {
 		t.Fatalf("plan launch = %v", injected.Start)
 	}
 }

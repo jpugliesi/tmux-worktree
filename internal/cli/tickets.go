@@ -209,7 +209,6 @@ func newTicketsHomeCommand(options Options) *cobra.Command {
 func newTicketsCreateCommand(options Options) *cobra.Command {
 	var project, title, slug, status string
 	var blockedBy []string
-	var fromStdin bool
 	command := &cobra.Command{
 		Use:   "create [DESCRIPTION...]",
 		Short: "Create a Ticket",
@@ -228,10 +227,10 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 				BlockedBy: blockedBy,
 			}
 			switch {
-			case fromStdin:
+			case len(args) == 1 && isStdinToken(args[0]):
 				if strings.TrimSpace(title) == "" {
-					return invalidUsageWithHint(command, "Pass --title together with --stdin.",
-						"--stdin reads only the body and needs a title")
+					return invalidUsageWithHint(command, "Pass --title together with -.",
+						"- reads only the body and needs a title")
 				}
 				body, err := readTicketStdin(command)
 				if err != nil {
@@ -257,7 +256,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 				// --title without DESCRIPTION outside a terminal keeps the
 				// skeleton body. The wizard is TTY-only.
 			default:
-				return invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or --stdin.",
+				return invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or -.",
 					"twt tickets create has no input and no terminal")
 			}
 			return createTicket(command, service, request)
@@ -268,8 +267,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&slug, "slug", "", "Set the file slug; empty derives it from the title")
 	command.Flags().StringVar(&status, "status", "", "Set the initial status; empty selects needs-triage")
 	command.Flags().StringArrayVar(&blockedBy, "blocked-by", nil, "Add a blocker slug or wiki-link; repeat for more blockers")
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the Ticket body from standard input; requires --title")
-	setArguments(command, variadicArgument("description", false, "the body; the first line becomes the title when --title is absent"))
+	setArguments(command, variadicArgument("description", false, "the body, or the literal \"-\" to read standard input; the first line becomes the title when --title is absent"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
 	_ = command.RegisterFlagCompletionFunc("blocked-by", ticketFlagCompletion(options))
@@ -754,16 +752,11 @@ func closeTicket(command *cobra.Command, service ticketservice.Store, ref, claim
 }
 
 func newTicketsCommentCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	command := &cobra.Command{
-		Use:   "comment TICKET --stdin",
+		Use:   "comment TICKET -",
 		Short: "Append a comment to a Ticket",
-		Args:  exactArgs("TICKET"),
+		Args:  requireResourceThenStdin("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !fromStdin {
-				return invalidUsageWithHint(command, "Pass the comment text on standard input with --stdin.",
-					"missing required flag --stdin")
-			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
@@ -775,9 +768,7 @@ func newTicketsCommentCommand(options Options) *cobra.Command {
 			return commentTicket(command, service, args[0], text)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the comment text from standard input")
-	_ = command.MarkFlagRequired("stdin")
-	setArguments(command, requiredArgument("ticket"))
+	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(true))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }

@@ -573,18 +573,11 @@ func newAgentsFocusCommand(agents *agentservice.Service, workspaces *workspacese
 }
 
 func newAgentsSendCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
-	var useStdin bool
 	var workspaceReference string
 	command := &cobra.Command{
-		Use:   "send AGENT_ID",
+		Use:   "send AGENT_ID -",
 		Short: "Send feedback to a live Agent Session pane",
-		Args:  exactArgs("AGENT_ID"),
-		PreRunE: func(command *cobra.Command, _ []string) error {
-			if !useStdin {
-				return invalidUsage(command, "missing required flag --stdin")
-			}
-			return nil
-		},
+		Args:  requireResourceThenStdin("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
 			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
@@ -599,10 +592,9 @@ func newAgentsSendCommand(agents *agentservice.Service, workspaces *workspaceser
 			return sendAgentFeedback(command, agents, workspace, stateDir, args[0], string(data))
 		},
 	}
-	command.Flags().BoolVar(&useStdin, "stdin", false, "Read feedback from standard input")
 	command.Flags().StringVar(&workspaceReference, "workspace", "current", "Select the Workspace by name or ID")
-	_ = command.MarkFlagRequired("stdin")
 	setAgentCommandCompletion(command, agents, workspaces, stateDir)
+	setArguments(command, requiredArgument("agent_id"), stdinTokenArgument(true))
 	return command
 }
 

@@ -192,7 +192,7 @@ Match existing twt Agent DX in [agent-dx.md](agent-dx.md):
 - named JSON envelopes
 - `clierr` codes and the same exit map (0 success, 1 internal, 2 invalid
   usage, 3 failed precondition)
-- `twt apply --stdin` for typed payloads
+- `twt apply -` for typed payloads
 
 Never open `$EDITOR` for an agent. The editor path is TTY-only.
 
@@ -201,7 +201,7 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 ```
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
@@ -213,7 +213,7 @@ twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--b
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
-twt tickets comment TICKET --stdin
+twt tickets comment TICKET -
 twt tickets doctor
 twt tickets repair
 twt projects create NAME
@@ -335,9 +335,9 @@ that keeps atomic-write temp files out of every commit.
 | Input | Behavior |
 |---|---|
 | No args, stdout is a TTY, stdin is a TTY | Ask `Title: `. Then pick a Project with fzf when `fzf` is installed, or a numbered list. The first row is `(none)` for an ungrouped Ticket. A typed name that is not a Project asks `Project "NAME" does not exist. Create it? [Y/n]`. Enter means yes. Then open `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. An empty title or an empty save is `invalid_usage`. `--title` skips the title prompt. `--project` skips the picker. |
-| No args, not a TTY | Exit 2. Hint: pass DESCRIPTION, `--title`, or `--stdin`. |
+| No args, not a TTY | Exit 2. Hint: pass DESCRIPTION, `--title`, or `-`. |
 | DESCRIPTION args | Join as the body. Derive `title` from the first line if `--title` is absent. Derive the slug from the title. Never open the wizard, even on a TTY. |
-| `--stdin` | Read the body from stdin. Require `--title`. Never open the wizard. |
+| `-` | Read the body from stdin. Require `--title`. Never open the wizard. |
 
 Default status is `needs-triage`. `--status ready-for-agent` is allowed.
 `--blocked-by` writes `blocked_by` as wiki-links. Repeat the flag. Each
@@ -449,7 +449,7 @@ removes the claim.
 
 ### `tickets comment`
 
-Require `--stdin`. Append under `## Comments`. Create that heading if it is
+Require `-`. Append under `## Comments`. Create that heading if it is
 missing. Set `updated`.
 
 ### `tickets doctor` and `tickets repair`
@@ -547,7 +547,7 @@ Skill rules:
 3. Pass `--output json` on every command.
 4. Pass `--dry-run` before every mutation.
 5. Pass `--limit` on list commands.
-6. Create with a DESCRIPTION or `--stdin`. Do not rely on `$EDITOR`.
+6. Create with a DESCRIPTION or a lone `-` with `--title`. Do not rely on `$EDITOR`.
    `--project` does not create a Project.
 7. Claim before work with `--as NAME`. Resolve with `set --status done`
    and `unclaim --as NAME`.

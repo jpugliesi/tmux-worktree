@@ -16,12 +16,16 @@ type projectPlanOutput struct {
 }
 
 func newProjectsPlanCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	plan := &cobra.Command{
-		Use:   "plan [--stdin]",
+		Use:   "plan [-]",
 		Short: "Manage the plan document of a Project",
 		RunE: func(command *cobra.Command, args []string) error {
-			if len(args) > 0 {
+			fromStdin := false
+			switch {
+			case len(args) == 0:
+			case len(args) == 1 && isStdinToken(args[0]):
+				fromStdin = true
+			default:
 				if suggestions := command.SuggestionsFor(args[0]); len(suggestions) > 0 {
 					return invalidUsage(command, "twt does not know the command %q; did you mean %q?", args[0], suggestions[0])
 				}
@@ -41,7 +45,7 @@ func newProjectsPlanCommand(options Options) *cobra.Command {
 	if plan.SuggestionsMinimumDistance <= 0 {
 		plan.SuggestionsMinimumDistance = 2
 	}
-	plan.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
+	setArguments(plan, stdinTokenArgument(false))
 	plan.AddCommand(newProjectsPlanShowCommand(options))
 	plan.AddCommand(newProjectsPlanEditCommand(options))
 	plan.AddCommand(newProjectsPlanInitCommand(options))
@@ -92,28 +96,26 @@ func newProjectsPlanShowCommand(options Options) *cobra.Command {
 }
 
 func newProjectsPlanEditCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	command := &cobra.Command{
-		Use:   "edit PROJECT [--stdin]",
+		Use:   "edit PROJECT [-]",
 		Short: "Replace the plan document of a Project",
-		Args:  exactArgs("PROJECT"),
+		Args:  optionalStdinAfter("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			return runProjectPlanEdit(command, options, service, args[0], fromStdin)
+			return runProjectPlanEdit(command, options, service, args[0], len(args) == 2)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
-	setArguments(command, requiredArgument("project"))
+	setArguments(command, requiredArgument("project"), stdinTokenArgument(false))
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command
 }
 
 // runProjectPlanEdit replaces the plan document of one Project. With
-// --stdin it is an upsert. Without --stdin it opens VISUAL or EDITOR on
-// a draft of the existing plan.
+// - it is an upsert. Without - it opens VISUAL or EDITOR on a draft of
+// the existing plan.
 func runProjectPlanEdit(command *cobra.Command, options Options, service ticketservice.Store, name string, fromStdin bool) error {
 	if fromStdin {
 		content, err := readTicketStdin(command)
@@ -125,7 +127,7 @@ func runProjectPlanEdit(command *cobra.Command, options Options, service tickets
 	// The editor is an interactive escape: it opens only for a person
 	// at a terminal, so a piped call never blocks in an editor.
 	if !interactiveTicketSession(command) {
-		return invalidUsageWithHint(command, "Pass the plan content on standard input with --stdin.",
+		return invalidUsageWithHint(command, "Pass - to read the plan content from standard input.",
 			"%s has no terminal", command.CommandPath())
 	}
 	current, err := service.ProjectPlan(name)
@@ -164,7 +166,7 @@ func readPlanDraftInEditor(command *cobra.Command, options Options, seed string)
 		return "", fmt.Errorf("read the plan draft file: %w", err)
 	}
 	if strings.TrimSpace(string(data)) == "" {
-		return "", invalidUsageWithHint(command, "Write the plan and save the file, or pass --stdin.",
+		return "", invalidUsageWithHint(command, "Write the plan and save the file, or pass -.",
 			"the editor saved an empty plan")
 	}
 	return string(data), nil

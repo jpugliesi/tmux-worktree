@@ -128,13 +128,13 @@ func TestApplyOpenAllActiveRepairsMissingSessions(t *testing.T) {
 	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "kill-session", "-t", "=example-fix-auth")
 
 	request := `{"operation":"workspaces.open","workspace":{"allActive":true}}`
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "--stdin", "--dry-run", "--output", "json"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "-", "--dry-run", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-fix-auth").Run(); err == nil {
 		t.Fatal("apply open dry-run created a session")
 	}
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "--stdin", "--output", "json"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-fix-auth").Run(); err != nil {

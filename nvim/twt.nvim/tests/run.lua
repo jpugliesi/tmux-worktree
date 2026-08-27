@@ -502,7 +502,7 @@ test("revalidates the selected Agent and sends feedback on standard input", func
   end)
   assert(ok)
   local sent = calls[#calls]
-  assert(table.concat(sent.argv, " ") == "/test/twt agents send agent-1 --workspace workspace-1 --stdin --output json")
+  assert(table.concat(sent.argv, " ") == "/test/twt agents send agent-1 - --workspace workspace-1 --output json")
   assert(sent.stdin == "review text")
 end)
 

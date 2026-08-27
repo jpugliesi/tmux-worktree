@@ -157,13 +157,14 @@ disk, and `twt` returns the `unsafe_state` error with the validation cause.
 `templates validate` also reports warnings. A warning does not make the
 command fail. A Workspace Template with no repositories gives one warning.
 
-To make a Workspace Template from a file or from a pipe, use these flags. The
-NAME argument stays required: it sets the template name, and a different
-`name` field in the document is an error.
+To make a Workspace Template from a file or from a pipe, pass --from-file.
+Pass - as the file to read standard input. The NAME argument stays required:
+it sets the template name, and a different `name` field in the document is
+an error.
 
 ```sh
 twt templates create everysphere --from-file ./everysphere.yaml
-cat ./everysphere.yaml | twt templates create everysphere --from-stdin
+cat ./everysphere.yaml | twt templates create everysphere --from-file -
 ```
 
 Delete a Workspace Template with:
@@ -512,7 +513,7 @@ twt agents open
 twt agents focus AGENT_ID
 twt agents resume AGENT_ID
 printf '%s\n' 'Please fix the selected review note.' | \
-  twt agents send AGENT_ID --workspace current --stdin
+  twt agents send AGENT_ID - --workspace current
 ```
 
 `agents open` shows an interactive Agent Session picker when AGENT_ID is
@@ -597,7 +598,7 @@ twt context --directory /path/to/current/buffer --output json
 twt agents list --workspace current --output json
 twt agents resume AGENT_ID --output json
 printf '%s' "$REVIEW_TEXT" | \
-  twt agents send AGENT_ID --workspace WORKSPACE_ID --stdin --output json
+  twt agents send AGENT_ID - --workspace WORKSPACE_ID --output json
 twt agents transcript show AGENT_ID --workspace WORKSPACE_ID --output json
 twt agents transcript snapshot AGENT_ID --workspace WORKSPACE_ID --output json
 ```
@@ -869,7 +870,7 @@ reports whether Tickets home is set, exists, and is writable.
 ```sh
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--stdin]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG]
 twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
@@ -882,7 +883,7 @@ twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
-twt tickets comment TICKET --stdin
+twt tickets comment TICKET -
 twt projects create NAME [--template TEMPLATE]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
@@ -911,9 +912,9 @@ cycles. `--limit` cuts only `ready`. It does not cut the graph.
 | Input | Behavior |
 |---|---|
 | No args, stdout is a terminal, stdin is a terminal | Asks for a title, then a Project (`fzf` or a numbered list, with `(none)` for ungrouped). A new Project name is created only after confirm. Then opens `$VISUAL` or `$EDITOR` on an empty file for the description. The CLI writes YAML frontmatter. |
-| No args, not a terminal | Exits 2, with a hint to pass DESCRIPTION, `--title`, or `--stdin`. |
+| No args, not a terminal | Exits 2, with a hint to pass DESCRIPTION, `--title`, or `-`. |
 | DESCRIPTION args | Joins the args as the body. Derives `title` from the first line when `--title` is absent, and derives the slug from the title. Never opens the wizard. |
-| `--stdin` | Reads the body from standard input. Requires `--title`. Never opens the wizard. |
+| `-` | Reads the body from standard input. Requires `--title`. Never opens the wizard. |
 
 The default status is `needs-triage`. `--dry-run` prints the file that would
 be written and writes nothing. `--project` never creates a Project. The
@@ -923,7 +924,7 @@ interactive picker may create a Project after confirm.
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
 twt tickets create "follow-up work" --status ready-for-agent --blocked-by fix-the-vfs-tools --output json
-printf '%s' "$BODY" | twt tickets create --stdin --title "Fix the vfs tools" --output json
+printf '%s' "$BODY" | twt tickets create - --title "Fix the vfs tools" --output json
 ```
 
 `--blocked-by` writes `blocked_by` as wiki-links. Repeat the flag. Each
@@ -1041,11 +1042,11 @@ twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --dry
 twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --output json
 ```
 
-`comment` requires `--stdin`. It appends the text under the `## Comments`
+`comment` requires `-`. It appends the text under the `## Comments`
 heading, creating that heading if it is missing, and sets `updated`:
 
 ```sh
-printf '%s' "$NOTE" | twt tickets comment TICKET --stdin --output json
+printf '%s' "$NOTE" | twt tickets comment TICKET - --output json
 ```
 
 ### Projects
@@ -1128,7 +1129,7 @@ twt tickets abandon SESSION --force --output json
 ```
 
 Use the typed operations `tickets.dispatch`, `tickets.sync`, and
-`tickets.abandon` when a coordinator calls `twt apply --stdin`. Read their
+`tickets.abandon` when a coordinator calls `twt apply -`. Read their
 payloads from `twt schema`.
 
 ### Resolve a TICKET argument
@@ -1280,7 +1281,7 @@ more than one JSON value cause an error.
 
 ```sh
 printf '%s' '{"operation":"workspaces.create","workspace":{"name":"fix-auth","template":"everysphere"}}' | \
-  twt apply --stdin --dry-run --output json
+  twt apply - --dry-run --output json
 ```
 
 `apply` supports these operations. Run `twt schema` for the field list of
@@ -1300,7 +1301,7 @@ data:
 
 ```sh
 printf '%s' '{"operation":"workspaces.remove","workspace":{"reference":"fix-auth","apply":true}}' | \
-  twt apply --stdin --output json
+  twt apply - --output json
 ```
 
 `twt` treats its caller as an untrusted operator: see

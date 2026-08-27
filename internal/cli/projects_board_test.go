@@ -37,7 +37,7 @@ func TestProjectsShowRendersTheBoard(t *testing.T) {
 	run("", "projects", "create", "core")
 	run("", "tickets", "create", "Waiting task", "--slug", "waiting-task", "--project", "core", "--status", "ready-for-agent")
 	run("", "tickets", "claim", "waiting-task", "--as", "agent-a")
-	run("Which schema version?", "tickets", "ask", "waiting-task", "--as", "agent-a", "--stdin")
+	run("Which schema version?", "tickets", "ask", "waiting-task", "--as", "agent-a", "-")
 	run("", "tickets", "create", "Progress task", "--slug", "progress-task", "--project", "core", "--status", "ready-for-agent")
 	run("", "tickets", "claim", "progress-task", "--as", "agent-b")
 	run("", "tickets", "create", "Review task", "--slug", "review-task", "--project", "core", "--status", "ready-for-human")
@@ -68,7 +68,7 @@ func TestProjectsShowRendersTheBoard(t *testing.T) {
 	}
 	for _, want := range []string{
 		"WAITING ON YOU (1)",
-		"waiting-task  @agent-a  <- answer: twt tickets answer waiting-task --stdin",
+		"waiting-task  @agent-a  <- answer: twt tickets answer waiting-task -",
 		"IN PROGRESS (1)",
 		"progress-task  @agent-b  session running (local)",
 		"IN REVIEW (1)",

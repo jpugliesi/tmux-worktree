@@ -404,7 +404,7 @@ func TestApplyWorkspacesCreateLinksTickets(t *testing.T) {
 	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
 
 	request := `{"operation":"workspaces.create","workspace":{"name":"auth-work","template":"example","tickets":["fix-auth","add-auth-tests"]}}`
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "--stdin"); err != nil {
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(request), "apply", "-"); err != nil {
 		t.Fatal(err)
 	}
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("auth-work")

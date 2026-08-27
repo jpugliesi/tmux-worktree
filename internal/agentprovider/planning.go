@@ -101,11 +101,11 @@ func BuildTicketPlanningLaunch(request TicketPlanningRequest, lookPath func(stri
 func askContract(ticket, claimant string) string {
 	return strings.Join([]string{
 		"If you need a decision or information from the human, ask through the Ticket and stop:",
-		fmt.Sprintf("printf '%%s' \"QUESTION\" | twt tickets ask %s --stdin --as %s", ticket, claimant),
+		fmt.Sprintf("printf '%%s' \"QUESTION\" | twt tickets ask %s - --as %s", ticket, claimant),
 		"Then end your turn with the final line WAITING FOR ANSWER. Do not guess, do not",
 		"poll, and do not work around the question. The answer arrives as your next",
 		"message. If the human answers you directly instead, record it yourself:",
-		fmt.Sprintf("printf '%%s' \"THEIR_ANSWER\" | twt tickets answer %s --stdin", ticket),
+		fmt.Sprintf("printf '%%s' \"THEIR_ANSWER\" | twt tickets answer %s -", ticket),
 	}, "\n")
 }
 
@@ -195,7 +195,7 @@ func ticketPlanningTask(tickets []string, claimant string) string {
 		"Write a decision-complete plan into each Ticket. The write replaces the",
 		"whole ## Plan section and keeps every other section:")
 	for _, ticket := range tickets {
-		write := fmt.Sprintf("printf '%%s' \"PLAN\" | twt tickets plan %s --stdin", ticket)
+		write := fmt.Sprintf("printf '%%s' \"PLAN\" | twt tickets plan %s -", ticket)
 		if claimant != "" {
 			write += " --as " + claimant
 		}
@@ -209,7 +209,7 @@ func ticketPlanningTask(tickets []string, claimant string) string {
 func planningApprovalContract(tickets []string, claimant string) string {
 	lines := []string{
 		"When every plan is written, request approval and stop:",
-		fmt.Sprintf("printf '%%s' \"Plan ready for your approval.\" | twt tickets ask %s --stdin --as %s", tickets[0], claimant),
+		fmt.Sprintf("printf '%%s' \"Plan ready for your approval.\" | twt tickets ask %s - --as %s", tickets[0], claimant),
 		"End your turn with the final line WAITING FOR ANSWER.",
 		"The human approves with 'twt tickets approve', which arrives as your next",
 		"message. Only then promote each Ticket for implementation and release it:",

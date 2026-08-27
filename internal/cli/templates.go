@@ -230,18 +230,14 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 
 func newTemplatesCreateCommand(options Options) *cobra.Command {
 	var fromFile string
-	var fromStdin bool
 	command := &cobra.Command{
 		Use:   "create NAME",
 		Short: "Create an empty Workspace Template",
 		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if fromFile != "" && fromStdin {
-				return invalidUsage(command, "do not use --from-file together with --from-stdin")
-			}
 			template := domain.NewTemplate(args[0])
-			if fromFile != "" || fromStdin {
-				decoded, err := readTemplateDocument(command, fromFile, fromStdin)
+			if fromFile != "" {
+				decoded, err := readTemplateDocument(command, fromFile)
 				if err != nil {
 					return err
 				}
@@ -254,8 +250,7 @@ func newTemplatesCreateCommand(options Options) *cobra.Command {
 			return createTemplate(command, options, template)
 		},
 	}
-	command.Flags().StringVar(&fromFile, "from-file", "", "Read the Workspace Template YAML from this file")
-	command.Flags().BoolVar(&fromStdin, "from-stdin", false, "Read the Workspace Template YAML from standard input")
+	command.Flags().StringVar(&fromFile, "from-file", "", "Read the Workspace Template YAML from this file, or - for standard input")
 	setArguments(command, requiredArgument("name"))
 	return command
 }
@@ -288,8 +283,8 @@ func createTemplate(command *cobra.Command, options Options, template domain.Tem
 
 // readTemplateDocument decodes one strict Workspace Template YAML document from
 // a file or from standard input.
-func readTemplateDocument(command *cobra.Command, path string, useStdin bool) (domain.Template, error) {
-	if useStdin {
+func readTemplateDocument(command *cobra.Command, path string) (domain.Template, error) {
+	if isStdinToken(path) {
 		return store.DecodeTemplate(io.LimitReader(command.InOrStdin(), 1024*1024), "standard input")
 	}
 	file, err := os.Open(path)
@@ -434,7 +429,7 @@ func newTemplatesEditCommand(templateStore store.TemplateStore, options Options)
 			// at a terminal, so a piped call never blocks in an editor.
 			if !interactiveInput(command.InOrStdin()) {
 				return invalidUsageWithHint(command,
-					"Run 'twt templates create NAME --from-stdin' or edit the file at 'twt templates path NAME'.",
+					"Run 'twt templates create NAME --from-file -' or edit the file at 'twt templates path NAME'.",
 					"twt templates edit has no terminal")
 			}
 			path, err := templateStore.Path(args[0])

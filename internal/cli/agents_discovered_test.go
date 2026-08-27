@@ -249,7 +249,7 @@ func TestAgentsListShowsDiscoveredSessionsAndUsesExplicitAdoption(t *testing.T) 
 	// send adopts on first touch, then reports that the session is not live.
 	command := cli.New(cli.Options{StateDir: stateDir, DataDir: options.DataDir})
 	command.SetIn(strings.NewReader("Please look at the review note."))
-	command.SetArgs(forceTextOutput([]string{"agents", "send", "claude-one", "--workspace", workspace.ID, "--stdin"}))
+	command.SetArgs(forceTextOutput([]string{"agents", "send", "claude-one", "--workspace", workspace.ID, "-"}))
 	_, err = command.ExecuteC()
 	if err == nil || clierr.CodeOf(err) != clierr.PreconditionFailed || !strings.Contains(err.Error(), "not live") {
 		t.Fatalf("agents send to a discovered session = %v", err)

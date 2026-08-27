@@ -158,7 +158,15 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt tickets set":            {"ticket"},
 		"twt tickets claim":          {"ticket"},
 		"twt tickets unclaim":        {"ticket"},
-		"twt tickets comment":        {"ticket"},
+		"twt tickets comment":        {"ticket", "-"},
+		"twt tickets ask":            {"ticket", "-"},
+		"twt tickets answer":         {"ticket", "-"},
+		"twt tickets plan":           {"ticket", "-"},
+		"twt tickets approve":        {"ticket", "-"},
+		"twt agents send":            {"agent_id", "-"},
+		"twt apply":                  {"-"},
+		"twt projects plan":          {"-"},
+		"twt projects plan edit":     {"project", "-"},
 		"twt projects create":        {"name"},
 		"twt projects show":          {"name"},
 	}
@@ -259,7 +267,7 @@ func TestApplySupportsRepositoryAddAndWorkspaceRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := `{"operation":"templates.repos.add","template":{"name":"product","repository":{"name":"web","url":"https://example.com/web.git","depth":1}}}`
-	output := executeWithOptions(t, options, strings.NewReader(request), "apply", "--stdin", "--output", "json")
+	output := executeWithOptions(t, options, strings.NewReader(request), "apply", "-", "--output", "json")
 	if !strings.Contains(output, `"operation":"templates.repos.add"`) || !strings.Contains(output, `"status":"applied"`) {
 		t.Fatalf("apply templates.repos.add = %s", output)
 	}
@@ -287,7 +295,7 @@ func TestApplySupportsRepositoryAddAndWorkspaceRemoval(t *testing.T) {
 	}
 	plan := executeWithOptions(t, options,
 		strings.NewReader(`{"operation":"workspaces.remove","workspace":{"reference":"remove-me"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	var planResult struct {
 		Applied bool `json:"applied"`
 		Plan    struct {
@@ -305,7 +313,7 @@ func TestApplySupportsRepositoryAddAndWorkspaceRemoval(t *testing.T) {
 	}
 	applied := executeWithOptions(t, options,
 		strings.NewReader(`{"operation":"workspaces.remove","workspace":{"reference":"remove-me","apply":true}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if !strings.Contains(applied, `"applied":true`) {
 		t.Fatalf("apply workspaces.remove --apply = %s", applied)
 	}
@@ -313,7 +321,7 @@ func TestApplySupportsRepositoryAddAndWorkspaceRemoval(t *testing.T) {
 		t.Fatal("apply workspaces.remove kept the Workspace record")
 	}
 
-	_, _, err = executeCollectingInput(t, options, strings.NewReader(`{"operation":"workspaces.nope","workspace":{"reference":"x"}}`), "apply", "--stdin", "--output", "json")
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(`{"operation":"workspaces.nope","workspace":{"reference":"x"}}`), "apply", "-", "--output", "json")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("unknown apply operation = %v (code %q)", err, clierr.CodeOf(err))
 	}
@@ -324,7 +332,7 @@ func TestApplySupportsRepositoryAddAndWorkspaceRemoval(t *testing.T) {
 	}
 	_, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"workspaces.create","workspace":{"name":"x","template":"product","noOpen":false}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "noOpen") {
 		t.Fatalf("apply workspaces.create with noOpen false = %v", err)
 	}

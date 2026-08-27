@@ -341,7 +341,7 @@ local function send_now(agent, workspace_id, directory, text, done)
     return
   end
   record.sending = true
-  client.request({ "agents", "send", agent.id, "--workspace", workspace_id, "--stdin" }, { cwd = directory, stdin = text }, function(send_err, result)
+  client.request({ "agents", "send", agent.id, "-", "--workspace", workspace_id }, { cwd = directory, stdin = text }, function(send_err, result)
     record.sending = nil
     if not send_err then
       local selected_id = result and result.agentId

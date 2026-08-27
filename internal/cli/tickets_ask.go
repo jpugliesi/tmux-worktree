@@ -12,17 +12,12 @@ import (
 )
 
 func newTicketsAskCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	var as string
 	command := &cobra.Command{
-		Use:   "ask TICKET --stdin --as NAME",
+		Use:   "ask TICKET -",
 		Short: "Ask the human a question and wait on the Ticket",
-		Args:  exactArgs("TICKET"),
+		Args:  requireResourceThenStdin("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !fromStdin {
-				return invalidUsageWithHint(command, "Pass the question text on standard input with --stdin.",
-					"missing required flag --stdin")
-			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
@@ -38,10 +33,8 @@ func newTicketsAskCommand(options Options) *cobra.Command {
 			return askTicket(command, service, args[0], claimant, text)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the question text from standard input")
-	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
-	setArguments(command, requiredArgument("ticket"))
+	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(true))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }
@@ -83,17 +76,12 @@ type ticketAnswerOutput struct {
 }
 
 func newTicketsAnswerCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	var agentID string
 	command := &cobra.Command{
-		Use:   "answer TICKET --stdin [--agent AGENT_ID]",
+		Use:   "answer TICKET -",
 		Short: "Answer a waiting Ticket and relay into its agent session",
-		Args:  exactArgs("TICKET"),
+		Args:  requireResourceThenStdin("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !fromStdin {
-				return invalidUsageWithHint(command, "Pass the answer text on standard input with --stdin.",
-					"missing required flag --stdin")
-			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
@@ -105,10 +93,8 @@ func newTicketsAnswerCommand(options Options) *cobra.Command {
 			return answerTicket(command, options, service, args[0], agentID, text)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the answer text from standard input")
-	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&agentID, "agent", "", "Relay into this Agent Session when several are live")
-	setArguments(command, requiredArgument("ticket"))
+	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(true))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }

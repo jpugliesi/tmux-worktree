@@ -42,9 +42,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt templates create": {
 		long: "Create an empty Workspace Template.\n\nNAME is the reusable template name. After creation, add one or more " +
-			"repository specifications.\n\nWith --from-file or --from-stdin, twt reads one strict Workspace Template " +
-			"YAML document. NAME stays required: it sets the template name, and a different name in the document is an error.",
-		example: "  twt templates create everysphere\n  twt templates repos add everysphere app git@github.com:acme/app.git\n  twt templates create everysphere --from-file ./everysphere.yaml",
+			"repository specifications.\n\nWith --from-file, twt reads one strict Workspace Template " +
+			"YAML document. Pass - as the --from-file value to read standard input. NAME stays required: it sets the template name, and a different name in the document is an error.",
+		example: "  twt templates create everysphere\n  twt templates repos add everysphere app git@github.com:acme/app.git\n  twt templates create everysphere --from-file ./everysphere.yaml\n  cat ./everysphere.yaml | twt templates create everysphere --from-file -",
 	},
 	"twt templates list": {
 		long: "List all saved Workspace Templates.", example: "  twt templates list\n  twt templates list --output json",
@@ -163,7 +163,7 @@ var commandHelp = map[string]helpContent{
 		long: "Open an Agent Session of the selected Workspace. A live session is focused. A stopped session starts its saved provider resume command in the current pane. Without AGENT_ID, twt shows an interactive picker. The fzf preview shows a verified transcript or the bounded visible screen of a verified live pane. --preview is read-only and never registers a session or writes a snapshot.", example: "  twt agents open\n  twt agents open AGENT_ID\n  twt agents open --preview AGENT_ID --workspace current",
 	},
 	"twt agents send": {
-		long: "Send standard-input text to a live, owned Agent Session in the selected Workspace. twt can adopt a verified provider process below a shell. Before each send, it checks the saved process identity and the current input target.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID --workspace current --stdin",
+		long: "Send standard-input text to a live, owned Agent Session in the selected Workspace. twt can adopt a verified provider process below a shell. Before each send, it checks the saved process identity and the current input target. Pass - after AGENT_ID to read the text from standard input.", example: "  printf '%s\\n' 'Please fix this review note.' | twt agents send AGENT_ID - --workspace current",
 	},
 	"twt agents transcript show": {
 		long: "Read the provider transcript linked to one Agent Session. twt checks that the transcript belongs to the selected Workspace and does not return its source path.", example: "  twt agents transcript show AGENT_ID --workspace current --output json",
@@ -184,7 +184,7 @@ var commandHelp = map[string]helpContent{
 		long: "Open the Tickets home directory in VISUAL or EDITOR. Tickets home is the ticketsHome value of config.yaml, or TWT_TICKETS_HOME.", example: "  twt tickets home",
 	},
 	"twt tickets create": {
-		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. With --stdin, twt reads the body from standard input and --title is required. With no DESCRIPTION and no --stdin in an interactive terminal, twt asks for a title, then a Project, then opens VISUAL or EDITOR on an empty file for the description. A typed Project name that does not exist is created only after confirm. --project never creates a missing Project. --blocked-by writes blocked_by as wiki-links. Repeat the flag. Each value may be a slug or a wiki-link.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --project change-monitor --output json\n  twt tickets create \"follow-up work\" --status ready-for-agent --blocked-by fix-the-vfs-tools --output json\n  printf '%s\\n' 'Steps...' | twt tickets create --title \"Fix auth\" --stdin",
+		long: "Create one Ticket file. DESCRIPTION becomes the body, and its first line becomes the title when --title is absent. A lone - reads the body from standard input. - requires --title. With no DESCRIPTION and no - in an interactive terminal, twt asks for a title, then a Project, then opens VISUAL or EDITOR on an empty file for the description. A typed Project name that does not exist is created only after confirm. --project never creates a missing Project. --blocked-by writes blocked_by as wiki-links. Repeat the flag. Each value may be a slug or a wiki-link.", example: "  twt tickets create\n  twt tickets create \"fix the vfs tools\" --project change-monitor --output json\n  twt tickets create \"follow-up work\" --status ready-for-agent --blocked-by fix-the-vfs-tools --output json\n  printf '%s\\n' 'Steps...' | twt tickets create - --title \"Fix auth\"",
 	},
 	"twt tickets list": {
 		long: "List Tickets sorted by priority, then by slug. The list uses --project, then TWT_PROJECT, then the current Workspace Project. With no Project in scope, the list includes every Project. A scoped text list is a simple table. --all-projects lists every Project even when a Workspace Project is set.\n\nA wide text table has a PROJECT column. JSON stays a flat array. The list hides done and wontfix Tickets by default. --all includes them, and an explicit --status shows that status. --ready lists only pickable work: ready-for-agent, unclaimed, and with every blocker done or wontfix. --claimed lists Tickets that have a claimant.\n\n--status is a raw filter. Do not use it together with --ready. --project and --all-projects cannot be used together.", example: "  twt tickets list --ready --output json\n  twt tickets list --all-projects --claimed --output json\n  twt tickets list --project change-monitor --limit 10",
@@ -214,19 +214,19 @@ var commandHelp = map[string]helpContent{
 		long: "Resolve one Ticket in one write: the status becomes done and the claim fields become empty. The claimant resolution is the same as claim, and a Ticket that a different claimant holds returns the locked error. Use 'twt tickets set --status' and 'twt tickets unclaim' when you need only one of the two changes.", example: "  twt tickets close fix-the-vfs-tools --as codex-fix-auth\n  twt tickets close fix-the-vfs-tools --as codex-fix-auth --output json",
 	},
 	"twt tickets comment": {
-		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt creates that heading when it is missing.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt tickets comment fix-the-vfs-tools --stdin",
+		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt creates that heading when it is missing. Pass - after TICKET to read the comment from standard input.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt tickets comment fix-the-vfs-tools -",
 	},
 	"twt tickets doctor": {
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
 	"twt projects plan": {
-		long: "Manage the plan document of a Project. The file is plan.md beside the Project tickets. It is visible in Obsidian and git-synced. The plan is the top-level design that the human and the PM agent iterate. The ticket DAG mirrors it.\n\nWith no subcommand, twt edits the current Project plan. The Project comes from TWT_PROJECT, then the current Workspace Project. With --stdin, twt reads the content from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR.", example: "  twt projects plan\n  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
+		long: "Manage the plan document of a Project. The file is plan.md beside the Project tickets. It is visible in Obsidian and git-synced. The plan is the top-level design that the human and the PM agent iterate. The ticket DAG mirrors it.\n\nWith no subcommand, twt edits the current Project plan. The Project comes from TWT_PROJECT, then the current Workspace Project. The argument - reads the content from standard input. In an interactive terminal without -, twt opens VISUAL or EDITOR.", example: "  twt projects plan\n  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
 	},
 	"twt projects plan show": {
 		long: "Print the plan document of a Project. JSON includes the content, path, and updated time. A missing plan is not_found with the init hint.", example: "  twt projects plan show change-monitor\n  twt projects plan show change-monitor --output json",
 	},
 	"twt projects plan edit": {
-		long: "Replace the whole plan document of a Project. With --stdin, twt reads the content from standard input, and the edit is an upsert: it creates plan.md when missing. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on a draft of the existing plan and writes the saved result. Edits through twt trigger the tickets git sync; do not edit plan.md on disk from an agent.", example: "  twt projects plan edit change-monitor\n  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor --stdin --output json",
+		long: "Replace the whole plan document of a Project. The argument - reads the content from standard input, and the edit is an upsert: it creates plan.md when missing. In an interactive terminal without -, twt opens VISUAL or EDITOR on a draft of the existing plan and writes the saved result. Edits through twt trigger the tickets git sync. Do not edit plan.md on disk from an agent.", example: "  twt projects plan edit change-monitor\n  printf '%s' \"$PLAN\" | twt projects plan edit change-monitor - --output json",
 	},
 	"twt projects plan init": {
 		long: "Create the plan document scaffold (Goals, Non-goals, Design, Milestones, Ticket DAG, Decision log). It refuses an existing plan.md.", example: "  twt projects plan init change-monitor --output json",
@@ -235,13 +235,13 @@ var commandHelp = map[string]helpContent{
 		long: "Print the plan document path for editor use. The file itself may not exist yet.", example: "  nvim \"$(twt projects plan path change-monitor)\"",
 	},
 	"twt tickets ask": {
-		long: "Ask the human a question from a working agent: the question lands under the Ticket's ## Questions section, the status parks on needs-info, and the claim stays. The prior status is remembered and restored by answer. Requires the matching --as claimant. After asking, end the turn and wait; the answer arrives as the next message.", example: "  printf '%s' \"Which OAuth provider?\" | twt tickets ask fix-auth --stdin --as twt-local-01234567 --output json",
+		long: "Ask the human a question from a working agent: the question lands under the Ticket's ## Questions section, the status parks on needs-info, and the claim stays. The prior status is remembered and restored by answer. Requires the matching --as claimant. After asking, end the turn and wait; the answer arrives as the next message.", example: "  printf '%s' \"Which OAuth provider?\" | twt tickets ask fix-auth - --as twt-local-01234567 --output json",
 	},
 	"twt tickets answer": {
-		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth --stdin --agent AGENT_ID --output json",
+		long: "Answer a Ticket that waits on input: the reply lands under ## Questions, the pre-ask status is restored, and the answer is relayed into the asking agent's live tmux pane when one exists on this machine (best-effort; the ticket record is the durable copy). Agents may also run answer to record a reply the human gave in the pane directly.", example: "  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth - --output json\n  printf '%s' \"Use OAuth.\" | twt tickets answer fix-auth - --agent AGENT_ID --output json",
 	},
 	"twt tickets approve": {
-		long: "Approve a Ticket's ## Plan section for implementation. The approval stamps plan_approved_by and plan_approved_at; implementation dispatch refuses a planned Ticket without the stamp. When the Ticket waits on the planning agent's approval ask, approve also acts as the answer: it restores the pre-ask status and relays into the live session. A plan rewrite clears the approval.", example: "  twt tickets approve fix-auth --output json\n  printf '%s' \"Ship it; keep the scope small.\" | twt tickets approve fix-auth --stdin --output json",
+		long: "Approve a Ticket's ## Plan section for implementation. The approval stamps plan_approved_by and plan_approved_at; implementation dispatch refuses a planned Ticket without the stamp. When the Ticket waits on the planning agent's approval ask, approve also acts as the answer: it restores the pre-ask status and relays into the live session. A plan rewrite clears the approval.", example: "  twt tickets approve fix-auth --output json\n  printf '%s' \"Ship it; keep the scope small.\" | twt tickets approve fix-auth - --output json",
 	},
 	"twt tickets tree": {
 		long: "Render the Project's dependency graph as a tree, children being the Tickets a node unblocks. Each node shows its derived state (ready, blocked, in-progress, needs-input, in-review, done), claimant, and a PR badge from live forge state (cached ~120s; --no-fetch uses only the cache). --all includes closed Tickets. Cycles print flat below the tree.", example: "  twt tickets tree --project change-monitor --output json\n  twt tickets tree --project change-monitor --all\n  twt tickets tree --project change-monitor --no-fetch",
@@ -256,7 +256,7 @@ var commandHelp = map[string]helpContent{
 		long: "Detach pull request URLs from a Ticket. Removing an absent URL is a no-op. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets pr rm fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --output json",
 	},
 	"twt tickets plan": {
-		long: "Replace the ## Plan section of one Ticket. twt keeps every other section. With --stdin, twt reads the plan from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on a draft of the current plan and writes the saved result. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets plan fix-auth\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
+		long: "Replace the ## Plan section of one Ticket. twt keeps every other section. The argument - reads the plan from standard input. In an interactive terminal without -, twt opens VISUAL or EDITOR on a draft of the current plan and writes the saved result. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets plan fix-auth\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth - --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth - --dry-run --output json",
 	},
 	"twt tickets complete": {
 		long: "Record pull request URLs and release the claim in one write, so the URL write can never race a new claimant. This is the worker's terminal command: run it when the Ticket's work ships. The default status ready-for-human hands the Ticket to review; ready-for-agent returns it to the queue. A retry after success is a no-op.", example: "  twt tickets complete fix-auth --as twt-local-01234567 --pr https://origin.cursor.com/acme/api/pull/7 --output json\n  twt tickets complete fix-auth --as twt-local-01234567 --status ready-for-agent --output json",
@@ -322,7 +322,7 @@ var commandHelp = map[string]helpContent{
 		long: "Show the versioned machine-readable schema for commands, arguments, flags, and raw apply operations.", example: "  twt schema | jq .",
 	},
 	"twt apply": {
-		long: "Read one strict JSON mutation request from standard input. Unknown fields and extra JSON values cause an error.", example: `  printf '%s' '{"operation":"templates.create","template":{"name":"demo"}}' | twt apply --stdin --dry-run --output json`,
+		long: "Read one strict JSON mutation request from standard input. Pass - to read that request. Unknown fields and extra JSON values cause an error.", example: `  printf '%s' '{"operation":"templates.create","template":{"name":"demo"}}' | twt apply - --dry-run --output json`,
 	},
 }
 

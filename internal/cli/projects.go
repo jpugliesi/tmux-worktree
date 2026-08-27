@@ -384,7 +384,7 @@ func writeProjectBoard(out io.Writer, board projectShowOutput, now time.Time) er
 		return line
 	}
 	waiting := func(ticket domain.Ticket) string {
-		return withSession(ticket) + fmt.Sprintf("  <- answer: twt tickets answer %s --stdin", ticket.Slug)
+		return withSession(ticket) + fmt.Sprintf("  <- answer: twt tickets answer %s -", ticket.Slug)
 	}
 	review := func(ticket domain.Ticket) string {
 		line := fmt.Sprintf("%s  %s", ticket.Slug, string(ticket.Status))

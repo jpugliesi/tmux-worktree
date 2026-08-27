@@ -20,7 +20,7 @@ import (
 const ungroupedProjectSentinel = "(none)"
 
 // createTicketWizard collects title, Project, and description for a person at a
-// terminal. DESCRIPTION and --stdin never enter this path. --title skips the
+// terminal. DESCRIPTION and - never enter this path. --title skips the
 // title prompt. --project skips the picker and never creates a missing Project.
 func createTicketWizard(command *cobra.Command, options Options, service ticketservice.Store, request ticketservice.CreateRequest) (ticketservice.CreateRequest, error) {
 	if command.Flags().Changed("project") && strings.TrimSpace(request.Project) != "" {
@@ -34,7 +34,7 @@ func createTicketWizard(command *cobra.Command, options Options, service tickets
 			return request, err
 		}
 		if title == "" {
-			return request, invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or --stdin.",
+			return request, invalidUsageWithHint(command, "Pass DESCRIPTION, --title, or -.",
 				"Ticket creation was canceled; no title was given")
 		}
 		request.Title = title

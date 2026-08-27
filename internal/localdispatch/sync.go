@@ -175,11 +175,11 @@ func (s *Service) reconcileActive(session *domain.LocalDispatchSession, dryRun b
 				}
 				return &finding{code: SyncFindingWaitingOnInput,
 					message: fmt.Sprintf("the agent of Session %q is waiting on your input for ticket %q", session.ID, session.TicketSlug),
-					hint:    "Answer with 'printf ANSWER | twt tickets answer " + session.TicketSlug + " --stdin'."}
+					hint:    "Answer with 'printf ANSWER | twt tickets answer " + session.TicketSlug + " -'."}
 			}
 			return &finding{code: SyncFindingWaitingOnInput,
 				message: fmt.Sprintf("Session %q asked a question and its agent exited; ticket %q waits on your input", session.ID, session.TicketSlug),
-				hint:    "Answer with 'twt tickets answer " + session.TicketSlug + " --stdin', then 'twt agents resume'."}
+				hint:    "Answer with 'twt tickets answer " + session.TicketSlug + " -', then 'twt agents resume'."}
 		}
 		if observation.Found && observation.Live {
 			if dryRun {

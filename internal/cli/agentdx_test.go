@@ -56,10 +56,22 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundArchive := false
 	for _, command := range schema.Commands {
 		if command.Path == "twt tickets plan" {
+			foundStdin := false
 			for _, flag := range command.Flags {
-				if flag.Name == "stdin" && flag.Required {
-					t.Fatal("tickets plan must not require --stdin; the editor path is for a terminal")
+				if flag.Name == "stdin" {
+					t.Fatal("tickets plan must not declare a stdin flag; pass - as the optional argument")
 				}
+			}
+			for _, argument := range command.Arguments {
+				if argument.Name == "-" {
+					foundStdin = true
+					if argument.Required {
+						t.Fatal("tickets plan must not require -; the editor path is for a terminal")
+					}
+				}
+			}
+			if !foundStdin {
+				t.Fatal("tickets plan must declare optional argument -")
 			}
 		}
 		if command.Path == "twt next" {
@@ -198,7 +210,7 @@ func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {
 
 	options := cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
 	request := strings.NewReader(`{"operation":"templates.create","template":{"name":"raw-preview"}}`)
-	rawOutput := executeWithOptions(t, options, request, "apply", "--stdin", "--dry-run", "--output", "json")
+	rawOutput := executeWithOptions(t, options, request, "apply", "-", "--dry-run", "--output", "json")
 	if !strings.Contains(rawOutput, `"operation":"templates.create"`) || !strings.Contains(rawOutput, `"status":"valid"`) {
 		t.Fatalf("raw apply output = %s", rawOutput)
 	}
@@ -212,7 +224,7 @@ func TestDryRunAndRawApplyDoNotChangeState(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetIn(strings.NewReader(`{"operation":"templates.create","template":{"name":"raw-preview"}}`))
-	command.SetArgs(forceTextOutput([]string{"apply", "--stdin", "--dry-run", "--output", "json"}))
+	command.SetArgs(forceTextOutput([]string{"apply", "-", "--dry-run", "--output", "json"}))
 	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate raw dry-run error = %v", err)
 	}
@@ -239,14 +251,14 @@ func TestRawApplyArchivesAWorkspace(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetIn(strings.NewReader(`{"operation":"workspaces.archive","workspace":{"reference":"archive-me","name":"not-valid"}}`))
-	command.SetArgs(forceTextOutput([]string{"apply", "--stdin", "--dry-run", "--output", "json"}))
+	command.SetArgs(forceTextOutput([]string{"apply", "-", "--dry-run", "--output", "json"}))
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), `unknown field "name"`) {
 		t.Fatalf("archive request with create fields error = %v", err)
 	}
 	options.Stdout, options.Stderr = nil, nil
 	request := strings.NewReader(`{"operation":"workspaces.archive","workspace":{"reference":"archive-me"}}`)
-	output := executeWithOptions(t, options, request, "apply", "--stdin", "--output", "json")
+	output := executeWithOptions(t, options, request, "apply", "-", "--output", "json")
 	if !strings.Contains(output, `"operation":"workspaces.archive"`) || !strings.Contains(output, `"status":"applied"`) {
 		t.Fatalf("raw archive output = %s", output)
 	}

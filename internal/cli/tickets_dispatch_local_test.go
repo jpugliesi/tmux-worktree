@@ -94,7 +94,7 @@ func TestApplyTicketsDispatchRunsLocally(t *testing.T) {
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.dispatch","ticket":{"reference":"fix-auth"}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply local dispatch dry run: %v\n%s", err, applyJSON)
 	}
@@ -136,7 +136,7 @@ func TestTicketsCompleteRecordsPullRequestsAndReleasesTheClaim(t *testing.T) {
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.complete","ticket":{"reference":"fix-auth","as":"twt-local-01234567","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply complete dry run: %v\n%s", err, applyJSON)
 	}
@@ -172,7 +172,7 @@ func TestTicketsSyncWorksWithoutTheCursorHarnessOnALocalOnlyProject(t *testing.T
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.sync","ticket":{"project":"core"}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply sync dry run: %v\n%s", err, applyJSON)
 	}
@@ -192,7 +192,7 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 	}
 	planJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader("1. Do the thing.\n2. Test it.\n"),
-		"tickets", "plan", "fix-auth", "--stdin", "--output", "json")
+		"tickets", "plan", "fix-auth", "-", "--output", "json")
 	if err != nil {
 		t.Fatalf("tickets plan: %v\n%s", err, planJSON)
 	}
@@ -208,7 +208,7 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.plan","ticket":{"reference":"fix-auth","plan":"Revised."}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply plan dry run: %v\n%s", err, applyJSON)
 	}
@@ -234,7 +234,7 @@ func TestProjectsPlanCommands(t *testing.T) {
 	}
 	editJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader("# core Plan\n\n## Goals\n\nShip it.\n"),
-		"projects", "plan", "edit", "core", "--stdin", "--output", "json")
+		"projects", "plan", "edit", "core", "-", "--output", "json")
 	if err != nil {
 		t.Fatalf("plan edit: %v\n%s", err, editJSON)
 	}
@@ -258,7 +258,7 @@ func TestProjectsPlanCommands(t *testing.T) {
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"projects.plan.edit","project":{"name":"core","plan":"# core Plan\n\nvia apply\n"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil || !strings.Contains(applyJSON, `"status":"applied"`) {
 		t.Fatalf("apply plan edit = %s err %v", applyJSON, err)
 	}
@@ -343,7 +343,7 @@ func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Without a terminal and without --stdin the command refuses.
+	// Without a terminal and without - the command refuses.
 	options.OpenEditor = func(string) error {
 		return fmt.Errorf("the editor must not open without a terminal")
 	}
@@ -351,7 +351,7 @@ func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("plan without a terminal = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "--stdin") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "Pass -") {
 		t.Fatalf("plan without a terminal hint = %q", hint)
 	}
 
@@ -448,12 +448,12 @@ func TestProjectsPlanOpensTheEditorForTheCurrentProject(t *testing.T) {
 
 	editJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader("# core Plan\n\nvia parent stdin\n"),
-		"projects", "plan", "--stdin", "--output", "json")
+		"projects", "plan", "-", "--output", "json")
 	if err != nil {
-		t.Fatalf("projects plan --stdin: %v\n%s", err, editJSON)
+		t.Fatalf("projects plan -: %v\n%s", err, editJSON)
 	}
 	if !strings.Contains(editJSON, `"operation":"projects.plan.edit"`) || !strings.Contains(editJSON, `"status":"applied"`) {
-		t.Fatalf("projects plan --stdin JSON = %s", editJSON)
+		t.Fatalf("projects plan - JSON = %s", editJSON)
 	}
 
 	_, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "not-a-command")
@@ -477,7 +477,7 @@ func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 	}
 	askJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader("Which OAuth provider should the login use?"),
-		"tickets", "ask", "fix-auth", "--stdin", "--as", "twt-local-01234567", "--output", "json")
+		"tickets", "ask", "fix-auth", "-", "--as", "twt-local-01234567", "--output", "json")
 	if err != nil {
 		t.Fatalf("ask: %v\n%s", err, askJSON)
 	}
@@ -494,7 +494,7 @@ func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 	}
 	answerJSON, answerStderr, err := executeCollectingInput(t, options,
 		strings.NewReader("Use OAuth with the corporate IdP."),
-		"tickets", "answer", "fix-auth", "--stdin", "--output", "json")
+		"tickets", "answer", "fix-auth", "-", "--output", "json")
 	if err != nil {
 		t.Fatalf("answer: %v\n%s", err, answerJSON)
 	}
@@ -511,7 +511,7 @@ func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.ask","ticket":{"reference":"fix-auth","as":"twt-local-01234567","text":"Another question?"}}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil || !strings.Contains(applyJSON, `"status":"valid"`) {
 		t.Fatalf("apply ask dry run = %s err %v", applyJSON, err)
 	}
@@ -544,7 +544,7 @@ func TestTicketsPRAddAndRemove(t *testing.T) {
 	}
 	rmJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.pr.rm","ticket":{"reference":"fix-auth","pullRequests":["https://origin.cursor.com/acme/api/pull/7"]}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil || !strings.Contains(rmJSON, `"status":"applied"`) {
 		t.Fatalf("apply pr rm = %s err %v", rmJSON, err)
 	}

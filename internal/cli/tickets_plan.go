@@ -9,27 +9,25 @@ import (
 )
 
 func newTicketsPlanCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	var as string
 	command := &cobra.Command{
-		Use:   "plan TICKET [--stdin] [--as NAME]",
+		Use:   "plan TICKET [-]",
 		Short: "Replace the ## Plan section of a Ticket",
-		Args:  exactArgs("TICKET"),
+		Args:  optionalStdinAfter("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			text, err := readTicketPlanText(command, options, service, args[0], fromStdin)
+			text, err := readTicketPlanText(command, options, service, args[0], len(args) == 2)
 			if err != nil {
 				return err
 			}
 			return planTicket(command, service, args[0], as, text)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan text from standard input")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name of a claimed Ticket")
-	setArguments(command, requiredArgument("ticket"))
+	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(false))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }
@@ -41,7 +39,7 @@ func readTicketPlanText(command *cobra.Command, options Options, service tickets
 		return readTicketStdin(command)
 	}
 	if !interactiveTicketSession(command) {
-		return "", invalidUsageWithHint(command, "Pass the plan text on standard input with --stdin.",
+		return "", invalidUsageWithHint(command, "Pass - to read the plan text from standard input.",
 			"twt tickets plan has no terminal")
 	}
 	shown, err := service.Show(ref)

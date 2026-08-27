@@ -29,10 +29,10 @@ func TestTicketsApproveGatesAndAnswers(t *testing.T) {
 	}
 
 	run("", "tickets", "claim", "fix-auth", "--as", "twt-local-01234567")
-	run("1. Add the OAuth flow.", "tickets", "plan", "fix-auth", "--stdin", "--as", "twt-local-01234567")
-	run("Plan ready for your approval.", "tickets", "ask", "fix-auth", "--stdin", "--as", "twt-local-01234567")
+	run("1. Add the OAuth flow.", "tickets", "plan", "fix-auth", "-", "--as", "twt-local-01234567")
+	run("Plan ready for your approval.", "tickets", "ask", "fix-auth", "-", "--as", "twt-local-01234567")
 
-	approveJSON := run("Ship it.", "tickets", "approve", "fix-auth", "--stdin", "--as", "john", "--output", "json")
+	approveJSON := run("Ship it.", "tickets", "approve", "fix-auth", "-", "--as", "john", "--output", "json")
 	if !strings.Contains(approveJSON, `"operation":"tickets.approve"`) ||
 		!strings.Contains(approveJSON, `"status":"applied"`) ||
 		!strings.Contains(approveJSON, `"relay"`) {
@@ -48,13 +48,13 @@ func TestTicketsApproveGatesAndAnswers(t *testing.T) {
 	}
 
 	// A plan rewrite clears the approval; the apply op re-approves.
-	run("1. Use SAML instead.", "tickets", "plan", "fix-auth", "--stdin", "--as", "twt-local-01234567")
+	run("1. Use SAML instead.", "tickets", "plan", "fix-auth", "-", "--as", "twt-local-01234567")
 	showJSON = run("", "tickets", "show", "fix-auth", "--output", "json")
 	if strings.Contains(showJSON, "planApprovedBy") {
 		t.Fatalf("plan rewrite kept the approval:\n%s", showJSON)
 	}
 	applyJSON := run(`{"operation":"tickets.approve","ticket":{"reference":"fix-auth","as":"john","note":"Round two."}}`,
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if !strings.Contains(applyJSON, `"status":"applied"`) {
 		t.Fatalf("apply approve = %s", applyJSON)
 	}

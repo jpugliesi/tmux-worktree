@@ -447,17 +447,10 @@ func applyOperationSchemas() []applyOperationSchema {
 }
 
 func newApplyCommand(options Options) *cobra.Command {
-	var useStdin bool
 	command := &cobra.Command{
-		Use:   "apply --stdin",
+		Use:   "apply -",
 		Short: "Apply a typed JSON mutation request",
-		Args:  noArgs,
-		PreRunE: func(command *cobra.Command, _ []string) error {
-			if !useStdin {
-				return invalidUsage(command, "missing required flag --stdin")
-			}
-			return nil
-		},
+		Args:  requireStdinToken(),
 		RunE: func(command *cobra.Command, _ []string) error {
 			decoder := json.NewDecoder(io.LimitReader(command.InOrStdin(), 1024*1024))
 			decoder.DisallowUnknownFields()
@@ -472,8 +465,7 @@ func newApplyCommand(options Options) *cobra.Command {
 			return applyJSONRequest(command, options, request)
 		},
 	}
-	command.Flags().BoolVar(&useStdin, "stdin", false, "Read one JSON request from standard input")
-	_ = command.MarkFlagRequired("stdin")
+	setArguments(command, stdinTokenArgument(true))
 	return command
 }
 

@@ -16,9 +16,9 @@ guarantees that the CLI keeps.
   a second JSON value on standard input. A typo fails loudly instead of
   changing a different field.
 - **Bounded standard input.** Every command that reads standard input reads
-  at most 1 MiB: `twt apply`, `twt templates create --from-stdin`,
-  `twt tickets create --stdin`,
-  `twt tickets comment --stdin`, and `twt agents send --stdin`.
+  at most 1 MiB: `twt apply -`, `twt templates create --from-file -`,
+  `twt tickets create -`,
+  `twt tickets comment -`, and `twt agents send -`.
 - **Provider session IDs.** A provider session ID must be 3 to 256
   characters, and it may not hold a control character, a path separator, or
   `..`. `twt` never returns the provider file path.

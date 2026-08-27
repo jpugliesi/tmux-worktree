@@ -19,12 +19,11 @@ type ticketApproveOutput struct {
 }
 
 func newTicketsApproveCommand(options Options) *cobra.Command {
-	var fromStdin bool
 	var as, agentID string
 	command := &cobra.Command{
-		Use:   "approve TICKET [--stdin] [--as NAME]",
+		Use:   "approve TICKET [-]",
 		Short: "Approve a Ticket's plan for implementation",
-		Args:  exactArgs("TICKET"),
+		Args:  optionalStdinAfter("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
@@ -35,7 +34,7 @@ func newTicketsApproveCommand(options Options) *cobra.Command {
 				return err
 			}
 			note := ""
-			if fromStdin {
+			if len(args) == 2 {
 				note, err = readTicketStdin(command)
 				if err != nil {
 					return err
@@ -44,10 +43,9 @@ func newTicketsApproveCommand(options Options) *cobra.Command {
 			return approveTicket(command, options, service, args[0], approver, note, agentID)
 		},
 	}
-	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read an approval note from standard input")
 	command.Flags().StringVar(&as, "as", "", "Set the approver name")
 	command.Flags().StringVar(&agentID, "agent", "", "Relay into this Agent Session when several are live")
-	setArguments(command, requiredArgument("ticket"))
+	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(false))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }

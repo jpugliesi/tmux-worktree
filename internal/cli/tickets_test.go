@@ -161,7 +161,7 @@ func TestTicketsCreateWithoutInputNeedsATerminal(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || clierr.ExitCode(err) != 2 {
 		t.Fatalf("bare create without a terminal = %v (code %q, exit %d)", err, clierr.CodeOf(err), clierr.ExitCode(err))
 	}
-	if hint := clierr.HintOf(err); !strings.Contains(hint, "--stdin") {
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "or -.") {
 		t.Fatalf("bare create hint = %q", hint)
 	}
 }
@@ -171,13 +171,13 @@ func TestTicketsCreateFromStdin(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := executeCollectingInput(t, options, strings.NewReader("body"), "tickets", "create", "--stdin")
+	_, _, err := executeCollectingInput(t, options, strings.NewReader("body"), "tickets", "create", "-")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(clierr.HintOf(err), "--title") {
-		t.Fatalf("--stdin without --title = %v (hint %q)", err, clierr.HintOf(err))
+		t.Fatalf("- without --title = %v (hint %q)", err, clierr.HintOf(err))
 	}
 	body := "Steps:\n\n1. Reconnect the tools\n"
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader(body),
-		"tickets", "create", "--title", "Fix auth", "--stdin"); err != nil {
+		"tickets", "create", "--title", "Fix auth", "-"); err != nil {
 		t.Fatal(err)
 	}
 	content := readTicketFile(t, filepath.Join(home, "fix-auth.md"))
@@ -481,7 +481,7 @@ func TestTicketsCreateStdinDoesNotOpenTheWizard(t *testing.T) {
 	}
 	body := "stdin body\n"
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader(body),
-		"tickets", "create", "--title", "Stdin ticket", "--stdin"); err != nil {
+		"tickets", "create", "--title", "Stdin ticket", "-"); err != nil {
 		t.Fatal(err)
 	}
 	content := readTicketFile(t, filepath.Join(home, "stdin-ticket.md"))
@@ -1125,7 +1125,7 @@ func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
 
 	stdout, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"apply blocked","status":"ready-for-agent","blockedBy":["base-work"]}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1137,7 +1137,7 @@ func TestTicketsCreateAndSetBlockedBy(t *testing.T) {
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.set","ticket":{"reference":"apply-blocked","blockedBy":[]}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readTicketFile(t, filepath.Join(home, "apply-blocked.md")), "blocked_by: []\n") {
@@ -1156,11 +1156,11 @@ func TestTicketsComment(t *testing.T) {
 	path := filepath.Join(home, "comment-on-me.md")
 
 	_, _, err := executeCollectingInput(t, options, nil, "tickets", "comment", "comment-on-me")
-	if err == nil || !strings.Contains(err.Error(), "stdin") {
-		t.Fatalf("comment without --stdin = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing required argument -") {
+		t.Fatalf("comment without - = %v", err)
 	}
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader("A first note."),
-		"tickets", "comment", "comment-on-me", "--stdin"); err != nil {
+		"tickets", "comment", "comment-on-me", "-"); err != nil {
 		t.Fatal(err)
 	}
 	content := readTicketFile(t, path)
@@ -1496,7 +1496,7 @@ func TestApplySupportsTicketsRepair(t *testing.T) {
 	}
 
 	dry, _, err := executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair"}`),
-		"apply", "--stdin", "--dry-run", "--output", "json")
+		"apply", "-", "--dry-run", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply tickets.repair dry run: %v", err)
 	}
@@ -1505,7 +1505,7 @@ func TestApplySupportsTicketsRepair(t *testing.T) {
 	}
 
 	applied, _, err := executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair"}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil {
 		t.Fatalf("apply tickets.repair: %v", err)
 	}
@@ -1514,7 +1514,7 @@ func TestApplySupportsTicketsRepair(t *testing.T) {
 	}
 
 	_, _, err = executeCollectingInput(t, options, strings.NewReader(`{"operation":"tickets.repair","ticket":{}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "accepts no payload") {
 		t.Fatalf("apply tickets.repair with a payload = %v", err)
 	}
@@ -1527,12 +1527,12 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"projects.create","project":{"name":"change-monitor"}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	stdout, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"apply work","project":"change-monitor","status":"ready-for-agent","priority":1,"body":"From apply."}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1548,28 +1548,28 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	// Apply is never a terminal: claim and unclaim require ticket.as.
 	_, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.claim","ticket":{"reference":"apply-work"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "ticket.as") {
 		t.Fatalf("apply claim without as = %v", err)
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.claim","ticket":{"reference":"apply-work","as":"apply-agent"}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.comment","ticket":{"reference":"apply-work","text":"Done."}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.set","ticket":{"reference":"apply-work","status":"done"}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.unclaim","ticket":{"reference":"apply-work","as":"apply-agent"}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	content = readTicketFile(t, filepath.Join(home, "closed", "change-monitor", "apply-work.md"))
@@ -1580,18 +1580,18 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	// tickets.close resolves in one operation, and it needs ticket.as.
 	if _, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"close via apply","status":"ready-for-agent"}}`),
-		"apply", "--stdin", "--output", "json"); err != nil {
+		"apply", "-", "--output", "json"); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"close-via-apply"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "ticket.as") {
 		t.Fatalf("apply close without as = %v", err)
 	}
 	stdout, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"close-via-apply","as":"apply-agent"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1607,7 +1607,7 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	// Strict payloads reject fields from other operations.
 	_, _, err = executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.set","ticket":{"reference":"apply-work","title":"nope"}}`),
-		"apply", "--stdin", "--output", "json")
+		"apply", "-", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "title") {
 		t.Fatalf("apply set with an unknown field = %v", err)
 	}
