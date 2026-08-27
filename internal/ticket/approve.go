@@ -18,6 +18,20 @@ func HasPlanSection(body string) bool {
 	return ok
 }
 
+// PlanSection returns the body of the "## Plan" section, without the heading.
+// A missing section returns "".
+func PlanSection(body string) string {
+	start, end, ok := sectionBounds(body, planHeadingName)
+	if !ok {
+		return ""
+	}
+	section := body[start:end]
+	if i := strings.IndexByte(section, '\n'); i >= 0 {
+		return strings.Trim(section[i+1:], "\n")
+	}
+	return ""
+}
+
 // RequireApprovedPlan is the implementation dispatch gate: a Ticket whose
 // body has a "## Plan" section must carry the approval stamp. A Ticket
 // without a plan section dispatches freely.

@@ -12,19 +12,15 @@ func newTicketsPlanCommand(options Options) *cobra.Command {
 	var fromStdin bool
 	var as string
 	command := &cobra.Command{
-		Use:   "plan TICKET --stdin [--as NAME]",
+		Use:   "plan TICKET [--stdin] [--as NAME]",
 		Short: "Replace the ## Plan section of a Ticket",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			if !fromStdin {
-				return invalidUsageWithHint(command, "Pass the plan text on standard input with --stdin.",
-					"missing required flag --stdin")
-			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			text, err := readTicketStdin(command)
+			text, err := readTicketPlanText(command, options, service, args[0], fromStdin)
 			if err != nil {
 				return err
 			}
@@ -32,11 +28,27 @@ func newTicketsPlanCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan text from standard input")
-	_ = command.MarkFlagRequired("stdin")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name of a claimed Ticket")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
+}
+
+// readTicketPlanText reads the plan from standard input or from VISUAL or
+// EDITOR. The editor path seeds a draft with the current ## Plan section.
+func readTicketPlanText(command *cobra.Command, options Options, service ticketservice.Store, ref string, fromStdin bool) (string, error) {
+	if fromStdin {
+		return readTicketStdin(command)
+	}
+	if !interactiveTicketSession(command) {
+		return "", invalidUsageWithHint(command, "Pass the plan text on standard input with --stdin.",
+			"twt tickets plan has no terminal")
+	}
+	shown, err := service.Show(ref)
+	if err != nil {
+		return "", err
+	}
+	return readPlanDraftInEditor(command, options, ticketservice.PlanSection(shown.Body))
 }
 
 // planTicket replaces the Plan section. Both the tickets plan command and

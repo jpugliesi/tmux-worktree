@@ -16,15 +16,52 @@ type projectPlanOutput struct {
 }
 
 func newProjectsPlanCommand(options Options) *cobra.Command {
-	plan := groupCommand(&cobra.Command{
-		Use:   "plan",
+	var fromStdin bool
+	plan := &cobra.Command{
+		Use:   "plan [--stdin]",
 		Short: "Manage the plan document of a Project",
-	})
+		RunE: func(command *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				if suggestions := command.SuggestionsFor(args[0]); len(suggestions) > 0 {
+					return invalidUsage(command, "twt does not know the command %q; did you mean %q?", args[0], suggestions[0])
+				}
+				return invalidUsage(command, "twt does not know the command %q", args[0])
+			}
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			name, err := currentPlanProject(command, options)
+			if err != nil {
+				return err
+			}
+			return runProjectPlanEdit(command, options, service, name, fromStdin)
+		},
+	}
+	if plan.SuggestionsMinimumDistance <= 0 {
+		plan.SuggestionsMinimumDistance = 2
+	}
+	plan.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
 	plan.AddCommand(newProjectsPlanShowCommand(options))
 	plan.AddCommand(newProjectsPlanEditCommand(options))
 	plan.AddCommand(newProjectsPlanInitCommand(options))
 	plan.AddCommand(newProjectsPlanPathCommand(options))
 	return plan
+}
+
+// currentPlanProject resolves the Project for a no-arg plan command. The
+// order is TWT_PROJECT, then the current Workspace Project.
+func currentPlanProject(command *cobra.Command, options Options) (string, error) {
+	scope, err := resolveTicketProject(command, options, "", false, false)
+	if err != nil {
+		return "", err
+	}
+	if !scope.Set || scope.Project == "" {
+		return "", invalidUsageWithHint(command,
+			"Set TWT_PROJECT, run this from a Workspace with a Project, or pass a Project to 'twt projects plan edit PROJECT'.",
+			"no Project is in scope")
+	}
+	return scope.Project, nil
 }
 
 func newProjectsPlanShowCommand(options Options) *cobra.Command {
@@ -65,28 +102,7 @@ func newProjectsPlanEditCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if fromStdin {
-				content, err := readTicketStdin(command)
-				if err != nil {
-					return err
-				}
-				return editProjectPlan(command, service, args[0], content)
-			}
-			// The editor is an interactive escape: it opens only for a person
-			// at a terminal, so a piped call never blocks in an editor.
-			if !interactiveInput(command.InOrStdin()) {
-				return invalidUsageWithHint(command, "Pass the plan content on standard input with --stdin.",
-					"twt projects plan edit has no terminal")
-			}
-			current, err := service.ProjectPlan(args[0])
-			if err != nil {
-				return err
-			}
-			content, err := readProjectPlanInEditor(command, options, current.Content)
-			if err != nil {
-				return err
-			}
-			return editProjectPlan(command, service, args[0], content)
+			return runProjectPlanEdit(command, options, service, args[0], fromStdin)
 		},
 	}
 	command.Flags().BoolVar(&fromStdin, "stdin", false, "Read the plan content from standard input")
@@ -95,10 +111,38 @@ func newProjectsPlanEditCommand(options Options) *cobra.Command {
 	return command
 }
 
-// readProjectPlanInEditor opens VISUAL or EDITOR on a draft copy of the plan
-// and returns the saved text. The plan.md file itself changes only through
-// WriteProjectPlan, so git sync sees every edit.
-func readProjectPlanInEditor(command *cobra.Command, options Options, seed string) (string, error) {
+// runProjectPlanEdit replaces the plan document of one Project. With
+// --stdin it is an upsert. Without --stdin it opens VISUAL or EDITOR on
+// a draft of the existing plan.
+func runProjectPlanEdit(command *cobra.Command, options Options, service ticketservice.Store, name string, fromStdin bool) error {
+	if fromStdin {
+		content, err := readTicketStdin(command)
+		if err != nil {
+			return err
+		}
+		return editProjectPlan(command, service, name, content)
+	}
+	// The editor is an interactive escape: it opens only for a person
+	// at a terminal, so a piped call never blocks in an editor.
+	if !interactiveTicketSession(command) {
+		return invalidUsageWithHint(command, "Pass the plan content on standard input with --stdin.",
+			"%s has no terminal", command.CommandPath())
+	}
+	current, err := service.ProjectPlan(name)
+	if err != nil {
+		return err
+	}
+	content, err := readPlanDraftInEditor(command, options, current.Content)
+	if err != nil {
+		return err
+	}
+	return editProjectPlan(command, service, name, content)
+}
+
+// readPlanDraftInEditor opens VISUAL or EDITOR on a draft copy of the plan
+// and returns the saved text. The store file itself changes only through
+// the matching write, so git sync sees every edit.
+func readPlanDraftInEditor(command *cobra.Command, options Options, seed string) (string, error) {
 	temp, err := os.CreateTemp("", "twt-plan-*.md")
 	if err != nil {
 		return "", fmt.Errorf("create the plan draft file: %w", err)

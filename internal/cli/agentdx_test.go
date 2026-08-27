@@ -55,6 +55,13 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundNext := false
 	foundArchive := false
 	for _, command := range schema.Commands {
+		if command.Path == "twt tickets plan" {
+			for _, flag := range command.Flags {
+				if flag.Name == "stdin" && flag.Required {
+					t.Fatal("tickets plan must not require --stdin; the editor path is for a terminal")
+				}
+			}
+		}
 		if command.Path == "twt next" {
 			foundNext = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name_or_ticket" || command.Arguments[0].Required {

@@ -8,6 +8,28 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
+func TestPlanSectionExtractsTheSectionBody(t *testing.T) {
+	tests := []struct {
+		name, body, want string
+	}{
+		{name: "missing section", body: "\n# T\n\n## What to build\n\nbody\n", want: ""},
+		{name: "empty section", body: "\n# T\n\n## Plan\n", want: ""},
+		{name: "plain body", body: "\n# T\n\n## Plan\n\nDo the thing.\n", want: "Do the thing."},
+		{
+			name: "keeps subsections",
+			body: "\n# T\n\n## Plan\n\nold\n\n### detail\n\nx\n\n## Comments\n",
+			want: "old\n\n### detail\n\nx",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := PlanSection(test.body); got != test.want {
+				t.Fatalf("PlanSection = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestReplaceBodySection(t *testing.T) {
 	tests := []struct {
 		name, body, heading, content, want string

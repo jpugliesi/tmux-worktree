@@ -220,7 +220,7 @@ var commandHelp = map[string]helpContent{
 		long: "Check every Ticket file. Report invalid files, duplicate slugs, closed-directory conflicts, and Tickets outside the correct active or closed location. This command never writes files.", example: "  twt tickets doctor\n  twt tickets doctor --output json",
 	},
 	"twt projects plan": {
-		long: "Manage the plan document of a Project: plan.md beside the Project's tickets, Obsidian-visible and git-synced. The plan is the top-level design the human and the PM agent iterate; the ticket DAG mirrors it.", example: "  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
+		long: "Manage the plan document of a Project. The file is plan.md beside the Project tickets. It is visible in Obsidian and git-synced. The plan is the top-level design that the human and the PM agent iterate. The ticket DAG mirrors it.\n\nWith no subcommand, twt edits the current Project plan. The Project comes from TWT_PROJECT, then the current Workspace Project. With --stdin, twt reads the content from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR.", example: "  twt projects plan\n  twt projects plan show change-monitor --output json\n  twt projects plan path change-monitor",
 	},
 	"twt projects plan show": {
 		long: "Print the plan document of a Project. JSON includes the content, path, and updated time. A missing plan is not_found with the init hint.", example: "  twt projects plan show change-monitor\n  twt projects plan show change-monitor --output json",
@@ -256,7 +256,7 @@ var commandHelp = map[string]helpContent{
 		long: "Detach pull request URLs from a Ticket. Removing an absent URL is a no-op. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets pr rm fix-auth --pr https://origin.cursor.com/acme/api/pull/7 --output json",
 	},
 	"twt tickets plan": {
-		long: "Replace the ## Plan section of one Ticket, keeping every other section. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
+		long: "Replace the ## Plan section of one Ticket. twt keeps every other section. With --stdin, twt reads the plan from standard input. In an interactive terminal without --stdin, twt opens VISUAL or EDITOR on a draft of the current plan and writes the saved result. Planning agents write their decision-complete plan here before implementation. A claimed Ticket requires the matching --as claimant.", example: "  twt tickets plan fix-auth\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --as codex-fix-auth --output json\n  printf '%s' \"$PLAN\" | twt tickets plan fix-auth --stdin --dry-run --output json",
 	},
 	"twt tickets complete": {
 		long: "Record pull request URLs and release the claim in one write, so the URL write can never race a new claimant. This is the worker's terminal command: run it when the Ticket's work ships. The default status ready-for-human hands the Ticket to review; ready-for-agent returns it to the queue. A retry after success is a no-op.", example: "  twt tickets complete fix-auth --as twt-local-01234567 --pr https://origin.cursor.com/acme/api/pull/7 --output json\n  twt tickets complete fix-auth --as twt-local-01234567 --status ready-for-agent --output json",

@@ -100,8 +100,9 @@ payload shapes from `twt schema`; this skill does not repeat them.
 An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
-applies to `twt templates edit`, `twt projects plan edit` without `--stdin`,
-`twt agents focus`, `twt agents open`, and
+applies to `twt templates edit`, `twt tickets plan` without `--stdin`,
+`twt projects plan` without `--stdin`, `twt projects plan edit` without
+`--stdin`, `twt agents focus`, `twt agents open`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
@@ -648,7 +649,9 @@ twt projects plan path PROJECT
 
 `plan edit --stdin` is an upsert: it creates plan.md when missing. An agent
 always passes `--stdin`. Without `--stdin` in an interactive terminal,
-`plan edit` opens VISUAL or EDITOR on the existing plan. `plan.md` and
+`twt projects plan` opens VISUAL or EDITOR on the current Project plan, and
+`plan edit PROJECT` opens the named Project. The current Project comes from
+TWT_PROJECT, then the current Workspace Project. `plan.md` and
 `index.md` are reserved names; they are never Tickets, and the slugs `plan`
 and `index` are rejected at create.
 
@@ -660,7 +663,10 @@ replaces the whole section and keeps every other section:
 printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET --stdin --as CLAIMANT --output json
 ```
 
-A claimed Ticket requires the matching `--as` claimant.
+An agent always passes `--stdin`. Without `--stdin` in an interactive
+terminal, `twt tickets plan TICKET` opens VISUAL or EDITOR on a draft of
+the current ## Plan section. A claimed Ticket requires the matching
+`--as` claimant.
 
 A Ticket plan carries a hard approval gate. The human approves with:
 

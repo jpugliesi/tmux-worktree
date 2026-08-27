@@ -333,6 +333,135 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 	}
 }
 
+func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "create", "Fix auth", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without a terminal and without --stdin the command refuses.
+	options.OpenEditor = func(string) error {
+		return fmt.Errorf("the editor must not open without a terminal")
+	}
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "plan", "fix-auth")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("plan without a terminal = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "--stdin") {
+		t.Fatalf("plan without a terminal hint = %q", hint)
+	}
+
+	// A missing Ticket is not_found before any editor opens.
+	options.OpenEditor = func(string) error {
+		return fmt.Errorf("the editor must not open for a missing ticket")
+	}
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "missing-ticket")
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("plan of a missing ticket = %v (code %q)", err, clierr.CodeOf(err))
+	}
+
+	// With no existing ## Plan section the editor gets an empty draft.
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(seed)) != "" {
+			return fmt.Errorf("the draft is not empty: %q", seed)
+		}
+		return os.WriteFile(path, []byte("1. Do the thing.\n"), 0o644)
+	}
+	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "fix-auth")
+	if err != nil {
+		t.Fatalf("editor plan: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `Wrote the plan of ticket "fix-auth"`) {
+		t.Fatalf("editor plan stdout = %q", stdout)
+	}
+
+	// A later edit seeds the draft with the current section body.
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(seed), "Do the thing.") || strings.Contains(string(seed), "## Plan") {
+			return fmt.Errorf("the draft is not the plan section body: %q", seed)
+		}
+		return os.WriteFile(path, []byte("1. Do it better.\n"), 0o644)
+	}
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "fix-auth"); err != nil {
+		t.Fatal(err)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "Do it better.") || strings.Contains(showJSON, "Do the thing.") {
+		t.Fatalf("show after editor plan = %s err %v", showJSON, err)
+	}
+}
+
+func TestProjectsPlanOpensTheEditorForTheCurrentProject(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("plan with no Project in scope = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	if hint := clierr.HintOf(err); !strings.Contains(hint, "TWT_PROJECT") {
+		t.Fatalf("no Project hint = %q", hint)
+	}
+
+	t.Setenv("TWT_PROJECT", "core")
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(seed), "# core Plan") {
+			return fmt.Errorf("the draft is not seeded with the plan: %q", seed)
+		}
+		return os.WriteFile(path, []byte("# core Plan\n\nEdited from projects plan.\n"), 0o644)
+	}
+	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan")
+	if err != nil {
+		t.Fatalf("projects plan editor: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
+		t.Fatalf("projects plan stdout = %q", stdout)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "Edited from projects plan.") {
+		t.Fatalf("plan show after projects plan = %s err %v", showJSON, err)
+	}
+
+	editJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader("# core Plan\n\nvia parent stdin\n"),
+		"projects", "plan", "--stdin", "--output", "json")
+	if err != nil {
+		t.Fatalf("projects plan --stdin: %v\n%s", err, editJSON)
+	}
+	if !strings.Contains(editJSON, `"operation":"projects.plan.edit"`) || !strings.Contains(editJSON, `"status":"applied"`) {
+		t.Fatalf("projects plan --stdin JSON = %s", editJSON)
+	}
+
+	_, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "not-a-command")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("unknown plan subcommand = %v (code %q)", err, clierr.CodeOf(err))
+	}
+}
+
 func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
