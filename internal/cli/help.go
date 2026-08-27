@@ -103,7 +103,7 @@ var commandHelp = map[string]helpContent{
 		long: "Show one Workspace by name or immutable ID.", example: "  twt workspaces show fix-auth --output json",
 	},
 	"twt workspaces rename": {
-		long: "Change the display name of a Workspace. The Workspace ID, root, checkouts, branches, tmux session, and Agent Sessions do not change. Without WORKSPACE, twt shows the interactive Workspace picker. Without NAME, twt asks for the new name. Scripts and JSON output require both arguments.", example: "  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
+		long: "Change the display name of a Workspace. twt also renames the owned tmux session to match. The Workspace ID, root, checkouts, branches, and Agent Sessions do not change. One NAME argument renames the current Workspace. Two arguments set the Workspace and the new name. Without arguments, twt shows the Workspace picker and asks for the new name.", example: "  twt workspaces rename auth-fix\n  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
 	},
 	"twt workspaces current": {
 		long: "Find the Workspace for the current directory or tmux pane.", example: "  twt workspaces current",

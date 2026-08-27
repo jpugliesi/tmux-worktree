@@ -179,7 +179,7 @@ func repositoryEnvironmentKey(name string) string {
 func (s *Service) findSession(workspaceID, name string) (sessionID, ownerID string, exists bool, err error) {
 	rows, err := s.workspaceSessionRows(true)
 	if err != nil {
-		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "no sessions") || strings.Contains(err.Error(), "error connecting to") {
+		if tmuxUnavailable(err) {
 			return "", "", false, nil
 		}
 		return "", "", false, err
@@ -325,4 +325,15 @@ func (s *Service) tmuxArgs(args ...string) []string {
 		return args
 	}
 	return append([]string{"-L", s.options.TmuxSocket, "-f", "/dev/null"}, args...)
+}
+
+func tmuxUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no server running") ||
+		strings.Contains(msg, "no sessions") ||
+		strings.Contains(msg, "error connecting to") ||
+		strings.Contains(msg, "executable file not found")
 }

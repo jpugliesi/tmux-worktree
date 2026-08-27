@@ -78,8 +78,10 @@ func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
 }
 
 func TestWorkspacesRenamePromptsForMissingArguments(t *testing.T) {
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
 	root := t.TempDir()
-	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data")}
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: "twt-rename-cli"}
 	workspace := domain.Workspace{Version: domain.WorkspaceVersion, ID: "rename-id", Name: "old-name", Status: domain.WorkspaceActive}
 	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
 		t.Fatal(err)
@@ -93,6 +95,62 @@ func TestWorkspacesRenamePromptsForMissingArguments(t *testing.T) {
 	got, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
 	if err != nil || got.Name != "new-name" {
 		t.Fatalf("renamed Workspace = %+v, %v", got, err)
+	}
+}
+
+func TestWorkspacesRenameWithOneArgumentRenamesTheCurrentWorkspace(t *testing.T) {
+	root := t.TempDir()
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: "twt-rename-cli"}
+	workspace := domain.Workspace{Version: domain.WorkspaceVersion, ID: "rename-current-id", Name: "old-name", Status: domain.WorkspaceActive}
+	if err := store.NewWorkspaceStore(options.StateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
+	t.Setenv("TMUX_PANE", "")
+
+	output := executeWithOptions(t, options, nil, "workspaces", "rename", "new-name")
+	if output != "Renamed Workspace \"old-name\" to \"new-name\"\n" {
+		t.Fatalf("workspaces rename output = %q", output)
+	}
+	got, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || got.Name != "new-name" {
+		t.Fatalf("renamed Workspace = %+v, %v", got, err)
+	}
+
+	jsonOutput, _, err := executeRaw(t, options, "workspaces", "rename", "json-name")
+	if err != nil {
+		t.Fatalf("workspaces rename NAME JSON: %v", err)
+	}
+	if !strings.Contains(jsonOutput, `"status":"applied"`) || !strings.Contains(jsonOutput, `"name":"json-name"`) {
+		t.Fatalf("workspaces rename NAME JSON = %s", jsonOutput)
+	}
+}
+
+func TestWorkspacesRenameWithTwoArgumentsRenamesTheNamedWorkspace(t *testing.T) {
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+	root := t.TempDir()
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: "twt-rename-cli"}
+	current := domain.Workspace{Version: domain.WorkspaceVersion, ID: "current-id", Name: "current-name", Status: domain.WorkspaceActive}
+	target := domain.Workspace{Version: domain.WorkspaceVersion, ID: "target-id", Name: "old-name", Status: domain.WorkspaceActive}
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	for _, workspace := range []domain.Workspace{current, target} {
+		if err := workspaceStore.Save(workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	output := executeWithOptions(t, options, nil, "workspaces", "rename", "old-name", "new-name")
+	if output != "Renamed Workspace \"old-name\" to \"new-name\"\n" {
+		t.Fatalf("workspaces rename output = %q", output)
+	}
+	got, err := workspaceStore.Find(target.ID)
+	if err != nil || got.Name != "new-name" {
+		t.Fatalf("renamed Workspace = %+v, %v", got, err)
+	}
+	unchanged, err := workspaceStore.Find(current.ID)
+	if err != nil || unchanged.Name != current.Name {
+		t.Fatalf("current Workspace changed = %+v, %v", unchanged, err)
 	}
 }
 

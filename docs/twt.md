@@ -331,7 +331,8 @@ session with that name already exists and belongs to
 something else, `twt` adds the first 8 characters of the Workspace ID to the
 name. The name is presentation only: `twt` finds each session through the
 tmux session ID and the `@twt_workspace_id` option, so you can rename a session
-and every command still works.
+and every command still works. `twt workspaces rename` also updates this
+session name when the Workspace name changes.
 
 From the Workspace tmux session, create the next Workspace and archive the current
 Workspace:
@@ -674,14 +675,17 @@ twt workspaces open --all-active
 Rename a Workspace when its purpose changes:
 
 ```sh
+twt workspaces rename auth-fix
 twt workspaces rename fix-auth auth-fix
 ```
 
-Rename changes only the display name. The Workspace ID, paths, branches,
-tmux session, Ticket links, and Agent Sessions stay unchanged.
+One NAME argument renames the current Workspace. Two arguments set the
+Workspace and the new name. Rename changes the display name and the owned
+tmux session name. The Workspace ID, paths, branches, Ticket links, and
+Agent Sessions stay unchanged.
 
 Without arguments, a terminal shows the Workspace picker and asks for the new
-name. A script and JSON output require both arguments.
+name.
 
 From inside the Workspace tmux session, `archive` behaves like `done --keep`:
 it moves your tmux client to the most recent other active Workspace, or

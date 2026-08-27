@@ -516,6 +516,54 @@ func TestRenamedWorkspaceSessionRemainsTheImmutableTmuxTarget(t *testing.T) {
 	}
 }
 
+func TestWorkspacesRenameRenamesTheTmuxSession(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: policy\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "workspaces", "create", "stable", "--template", "policy", "--no-open")
+
+	output := executeWithOptions(t, options, nil, "workspaces", "rename", "stable", "renamed")
+	if output != "Renamed Workspace \"stable\" to \"renamed\"\n" {
+		t.Fatalf("workspaces rename output = %q", output)
+	}
+	if sessions := runCommand(t, "", "tmux", "-L", socket, "list-sessions", "-F", "#{session_name}"); sessions != "policy-renamed" {
+		t.Fatalf("tmux session after rename = %q", sessions)
+	}
+	got, err := store.NewWorkspaceStore(options.StateDir).Find("renamed")
+	if err != nil || got.Name != "renamed" || got.TmuxSession != "policy-renamed" {
+		t.Fatalf("renamed Workspace = %+v, %v", got, err)
+	}
+
+	runCommand(t, "", "tmux", "-L", socket, "new-session", "-d", "-s", "policy-taken")
+	command := cli.New(options)
+	command.SetArgs(forceTextOutput([]string{"workspaces", "rename", "renamed", "taken"}))
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "policy-taken") {
+		t.Fatalf("rename onto a taken tmux session = %v", err)
+	}
+	still, err := store.NewWorkspaceStore(options.StateDir).Find("renamed")
+	if err != nil || still.Name != "renamed" || still.TmuxSession != "policy-renamed" {
+		t.Fatalf("rejected rename changed Workspace = %+v, %v", still, err)
+	}
+}
+
 func TestWorkspacesRemoveRejectsChangedStatePaths(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")

@@ -20,40 +20,52 @@ func newWorkspacesRenameCommand(options Options, service *workspaceservice.Servi
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			if len(args) < 2 && !canPromptWorkspaceName(command) {
-				return invalidUsage(command, "missing arguments; use '%s WORKSPACE NAME' in a script", command.CommandPath())
+			if len(args) == 0 && !canPromptWorkspaceName(command) {
+				return invalidUsage(command, "missing arguments; use '%s NAME' or '%s WORKSPACE NAME' in a script", command.CommandPath(), command.CommandPath())
 			}
-			var workspace domain.Workspace
-			var err error
-			if len(args) == 0 {
-				workspace, err = pickSwitchWorkspace(command, options, service)
-			} else {
-				workspace, err = resolveWorkspace(service, args[0])
-			}
+			workspace, name, err := resolveRenameArguments(command, options, service, args)
 			if err != nil {
 				return err
-			}
-			name := ""
-			if len(args) == 2 {
-				name = args[1]
-			} else {
-				name, err = promptTicketLine(command, "New Workspace name: ")
-				if err != nil {
-					return err
-				}
-				if name == "" {
-					return invalidUsage(command, "Workspace rename was canceled; no new name was given")
-				}
 			}
 			return renameWorkspace(command, service, workspace.ID, workspace.Name, name)
 		},
 	}
 	setArguments(command,
-		optionalArgument("workspace", "the interactive picker asks for it when absent"),
+		optionalArgument("workspace", "the current Workspace when only NAME is given; the picker asks when both arguments are absent"),
 		optionalArgument("name", "an interactive terminal asks for it when absent"),
 	)
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
+}
+
+func resolveRenameArguments(command *cobra.Command, options Options, service *workspaceservice.Service, args []string) (domain.Workspace, string, error) {
+	switch len(args) {
+	case 0:
+		workspace, err := pickSwitchWorkspace(command, options, service)
+		if err != nil {
+			return domain.Workspace{}, "", err
+		}
+		name, err := promptTicketLine(command, "New Workspace name: ")
+		if err != nil {
+			return domain.Workspace{}, "", err
+		}
+		if name == "" {
+			return domain.Workspace{}, "", invalidUsage(command, "Workspace rename was canceled; no new name was given")
+		}
+		return workspace, name, nil
+	case 1:
+		workspace, err := resolveWorkspace(service, currentWorkspaceReference)
+		if err != nil {
+			return domain.Workspace{}, "", err
+		}
+		return workspace, args[0], nil
+	default:
+		workspace, err := resolveWorkspace(service, args[0])
+		if err != nil {
+			return domain.Workspace{}, "", err
+		}
+		return workspace, args[1], nil
+	}
 }
 
 func renameWorkspace(command *cobra.Command, service *workspaceservice.Service, reference, oldName, name string) error {

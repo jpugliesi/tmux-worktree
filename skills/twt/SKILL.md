@@ -168,10 +168,13 @@ twt workspaces open --all-active --no-attach --dry-run --output json
 twt workspaces open --all-active --no-attach --output json
 ```
 
-Rename only the Workspace display name. The ID, paths, branches, tmux session,
-Ticket links, and Agent Sessions stay unchanged.
+Rename a Workspace. One NAME argument uses the current Workspace. Two
+arguments set the Workspace and the new name. twt also renames the owned
+tmux session.
 
-```bash
+```sh
+twt workspaces rename NAME --dry-run --output json
+twt workspaces rename NAME --output json
 twt workspaces rename WORKSPACE NAME --dry-run --output json
 twt workspaces rename WORKSPACE NAME --output json
 ```
