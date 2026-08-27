@@ -102,7 +102,7 @@ func (c *LocalDispatchSpec) EffectiveMaxConcurrency() int {
 type TemplateAgent struct {
 	Label    string `yaml:"label" json:"label"`
 	Provider string `yaml:"provider" json:"provider"`
-	// Start is the command that twt runs in a new Workspace window.
+	// Start is the command that twt runs for the Agent Session.
 	Start []string `yaml:"start" json:"start"`
 	// Resume is the prompt-free fallback command for a stopped Agent Session.
 	// An empty value keeps the legacy behavior and uses Start.
@@ -110,9 +110,19 @@ type TemplateAgent struct {
 	// PreferProviderResume makes a verified linked provider session take
 	// precedence over Resume.
 	PreferProviderResume bool `yaml:"prefer_provider_resume,omitempty" json:"preferProviderResume,omitempty"`
-	// Env sets KEY=VALUE pairs in the Agent Session window, so the agent's
+	// Env sets KEY=VALUE pairs in the Agent Session process, so the agent's
 	// commands see them regardless of the tmux server environment.
 	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+	// PreferredPane asks twt to replace one existing repository pane. twt
+	// creates an Agent Session window when the pane does not exist.
+	PreferredPane *TemplateAgentPane `yaml:"preferred_pane,omitempty" json:"preferredPane,omitempty"`
+}
+
+// TemplateAgentPane identifies one pane by its repository window and tmux
+// pane index. The repository name avoids dependence on the tmux window index.
+type TemplateAgentPane struct {
+	Repository string `yaml:"repository" json:"repository"`
+	Index      int    `yaml:"index" json:"index"`
 }
 
 // AgentProviders are the supported Agent Session provider names.
@@ -245,7 +255,7 @@ func (t Template) Validate() error {
 	if err := validateSession(t.Session); err != nil {
 		return fmt.Errorf("template session command: %w", err)
 	}
-	if err := validateTemplateAgents(t.Agents); err != nil {
+	if err := validateTemplateAgents(t.Agents, t.Repositories); err != nil {
 		return err
 	}
 	if err := validateLocalDispatch(t.LocalDispatch); err != nil {
@@ -274,8 +284,12 @@ func validateLocalDispatch(config *LocalDispatchSpec) error {
 	return nil
 }
 
-func validateTemplateAgents(agents []TemplateAgent) error {
+func validateTemplateAgents(agents []TemplateAgent, repositories []RepositorySpec) error {
 	labels := make(map[string]struct{}, len(agents))
+	repositoryNames := make(map[string]struct{}, len(repositories))
+	for _, repository := range repositories {
+		repositoryNames[repository.Name] = struct{}{}
+	}
 	for _, agent := range agents {
 		label := strings.TrimSpace(agent.Label)
 		if label == "" {
@@ -304,6 +318,14 @@ func validateTemplateAgents(agents []TemplateAgent) error {
 			key, _, found := strings.Cut(entry, "=")
 			if !found || strings.TrimSpace(key) == "" {
 				return fmt.Errorf("Agent Session %q env entry %q is not KEY=VALUE", label, entry)
+			}
+		}
+		if agent.PreferredPane != nil {
+			if _, exists := repositoryNames[agent.PreferredPane.Repository]; !exists {
+				return fmt.Errorf("Agent Session %q preferred pane uses unknown repository %q", label, agent.PreferredPane.Repository)
+			}
+			if agent.PreferredPane.Index < 0 {
+				return fmt.Errorf("Agent Session %q preferred pane index %d is negative", label, agent.PreferredPane.Index)
 			}
 		}
 	}

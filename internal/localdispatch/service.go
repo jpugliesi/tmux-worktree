@@ -424,7 +424,7 @@ func (s *Service) finishTicketTransition(session *domain.LocalDispatchSession, t
 
 // appendTicketAgent copies the Template and appends the ticket agent under a
 // label that no declared agent uses. The env pairs land in the agent's tmux
-// window, so the worker's twt commands see the right Tickets home even when
+// process, so the worker's twt commands see the right Tickets home even when
 // the tmux server environment differs.
 func appendTicketAgent(template domain.Template, wantLabel string, launch agentprovider.TicketPlanningLaunch, env []string) (domain.Template, string) {
 	template.Agents = append([]domain.TemplateAgent(nil), template.Agents...)
@@ -441,6 +441,12 @@ func appendTicketAgent(template domain.Template, wantLabel string, launch agentp
 		Start: append([]string(nil), launch.Start...), Resume: append([]string(nil), launch.Resume...), PreferProviderResume: true,
 		Env: append([]string(nil), env...),
 	})
+	if len(template.Repositories) > 0 {
+		template.Agents[len(template.Agents)-1].PreferredPane = &domain.TemplateAgentPane{
+			Repository: template.Repositories[0].Name,
+			Index:      3,
+		}
+	}
 	return template, label
 }
 

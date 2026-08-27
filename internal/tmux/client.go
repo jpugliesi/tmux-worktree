@@ -130,13 +130,38 @@ func (c Client) PaneBelongsToAgent(pane, workspaceID, agentID, paneCommand, pane
 	return true
 }
 
-func (c Client) StartAgent(workspace domain.Workspace, label string, command, env []string) (string, error) {
+func (c Client) StartAgent(workspace domain.Workspace, label string, command, env []string, preferredPane *domain.TemplateAgentPane) (string, error) {
 	if len(command) == 0 {
 		return "", fmt.Errorf("Agent Session has no resume command")
 	}
 	sessionID, err := c.workspaceSession(workspace)
 	if err != nil {
 		return "", err
+	}
+	if preferredPane != nil {
+		pane, found, err := c.availablePreferredPane(sessionID, *preferredPane)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			repositoryPath := ""
+			for _, repository := range workspace.Repositories {
+				if repository.Name == preferredPane.Repository {
+					repositoryPath = repository.Path
+					break
+				}
+			}
+			args := []string{"respawn-pane", "-k", "-t", pane, "-c", repositoryPath}
+			for _, entry := range env {
+				args = append(args, "-e", entry)
+			}
+			args = append(args, "--")
+			args = append(args, command...)
+			if _, err := c.output(nil, args...); err != nil {
+				return "", fmt.Errorf("start Agent Session in preferred pane: %w", err)
+			}
+			return pane, nil
+		}
 	}
 	windowName := safeWindowName(label)
 	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionID, "-n", windowName, "-c", workspace.Repositories[0].Path}
@@ -153,6 +178,24 @@ func (c Client) StartAgent(workspace domain.Workspace, label string, command, en
 		return "", fmt.Errorf("tmux did not return an Agent Session pane")
 	}
 	return pane, nil
+}
+
+func (c Client) availablePreferredPane(sessionID string, preferred domain.TemplateAgentPane) (string, bool, error) {
+	value, err := c.output(nil, "list-panes", "-s", "-t", sessionID, "-F", "#{pane_id}\t#{pane_index}\t#{@twt_repository_name}\t#{@twt_agent_id}")
+	if err != nil {
+		return "", false, fmt.Errorf("find preferred Agent Session pane: %w", err)
+	}
+	wantIndex := fmt.Sprintf("%d", preferred.Index)
+	for _, row := range strings.Split(value, "\n") {
+		parts := strings.SplitN(row, "\t", 4)
+		for len(parts) < 4 {
+			parts = append(parts, "")
+		}
+		if parts[1] == wantIndex && parts[2] == preferred.Repository && parts[3] == "" {
+			return parts[0], true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func (c Client) Focus(pane, workspaceID, agentID, paneCommand, paneStart string) error {

@@ -200,6 +200,65 @@ func TestCreateStartsTheDeclaredAgentSessions(t *testing.T) {
 	}
 }
 
+func TestCreateStartsADeclaredAgentInItsPreferredPane(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	layout := `
+tmux -L "$TWT_TMUX_SOCKET" -f /dev/null set-option -g base-index 0
+tmux -L "$TWT_TMUX_SOCKET" -f /dev/null set-option -g pane-base-index 1
+tmux -L "$TWT_TMUX_SOCKET" -f /dev/null split-window -d -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
+tmux -L "$TWT_TMUX_SOCKET" -f /dev/null split-window -d -t "$TWT_TMUX_WINDOW_APP" -c "$TWT_REPOSITORY_APP"
+`
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+		Session:      &domain.SessionSpec{Command: []string{"sh", "-c", layout}},
+		Agents: []domain.TemplateAgent{{
+			Label: "ticket-impl", Provider: "command", Start: []string{"sleep", "60"},
+			PreferredPane: &domain.TemplateAgentPane{Repository: "app", Index: 3},
+		}},
+	}
+	socket := fmt.Sprintf("twt-agent-preferred-pane-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	workspace, err := service.CreateWithOptions("fix-auth", template.Name, template, CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := store.NewAgentStore(stateDir).List(workspace.ID)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("Agent Sessions = %+v, error = %v", sessions, err)
+	}
+	target := testTmuxOutput(t, socket, "display-message", "-p", "-t", sessions[0].TmuxPane,
+		"#{window_index}\t#{pane_index}\t#{@twt_repository_name}")
+	if target != "0\t3\tapp" {
+		t.Fatalf("Agent Session target = %q, want window 0 pane 3 in app", target)
+	}
+	if windows := agentWindowCount(t, socket, workspace.TmuxSession, "ticket-impl"); windows != 0 {
+		t.Fatalf("tmux windows named ticket-impl = %d, want 0", windows)
+	}
+}
+
+func testTmuxOutput(t *testing.T, socket string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-L", socket, "-f", "/dev/null"}, args...)
+	data, err := exec.Command("tmux", commandArgs...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("tmux %v: %v\n%s", args, err, data)
+	}
+	return strings.TrimSpace(string(data))
+}
+
 func agentWindowCount(t *testing.T, socket, sessionName, windowName string) int {
 	t.Helper()
 	command := exec.Command("tmux", "-L", socket, "-f", "/dev/null", "list-windows", "-t", sessionName, "-F", "#{window_name}")

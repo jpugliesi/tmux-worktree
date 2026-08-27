@@ -570,7 +570,7 @@ func (s *Service) ensureTemplateAgent(p domain.Workspace, label string) error {
 	if !exists || ownerID != p.ID {
 		return agents.Save(session)
 	}
-	if _, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).StartDeclared(p, session, declared.Start, declared.Env); err != nil {
+	if _, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).StartDeclared(p, session, declared.Start, declared.Env, declared.PreferredPane); err != nil {
 		return fmt.Errorf("start Agent Session %q: %w", label, err)
 	}
 	return nil

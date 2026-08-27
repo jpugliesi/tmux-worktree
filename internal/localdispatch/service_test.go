@@ -156,6 +156,9 @@ func TestDispatchStartsAnImplementationAgentAndClaimsTheTicket(t *testing.T) {
 	if injected.Label != "ticket-impl" || injected.Provider != "grok" || !injected.PreferProviderResume {
 		t.Fatalf("injected agent = %+v", injected)
 	}
+	if injected.PreferredPane == nil || injected.PreferredPane.Repository != "api" || injected.PreferredPane.Index != 3 {
+		t.Fatalf("injected agent preferred pane = %+v", injected.PreferredPane)
+	}
 	prompt := injected.Start[len(injected.Start)-1]
 	for _, want := range []string{
 		"Use the repo skills.",

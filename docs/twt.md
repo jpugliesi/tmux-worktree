@@ -1105,6 +1105,9 @@ The default mode tells the agent to implement the Ticket, run tests, attach
 each pull request, and report through `tickets complete`. `--plan` requests a
 plan without code changes.
 
+Dispatch starts the agent in pane 3 of the first repository window when that
+pane exists. Otherwise, dispatch creates an Agent Session window.
+
 If repeated syncs cannot recover a stuck Session, use `abandon` as the
 explicit escape hatch. It stops recovery and releases the Ticket only when
 the saved claimant still owns it. It never stops tmux: the Workspace and its

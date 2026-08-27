@@ -399,6 +399,9 @@ provider unset and each machine uses an installed provider. A person can
 attach to the Workspace tmux session at any time and steer. A dispatch can
 take minutes when no Prepared Environment is ready.
 
+Dispatch starts the agent in pane 3 of the first repository window when that
+pane exists. Otherwise, dispatch creates an Agent Session window.
+
 A coordinator runs one wave and then stops:
 
 ```sh

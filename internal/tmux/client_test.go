@@ -69,6 +69,66 @@ func TestClaimAgentPaneDoesNotWriteWhenTheMarkerReadFails(t *testing.T) {
 	}
 }
 
+func TestStartAgentUsesThePreferredRepositoryPane(t *testing.T) {
+	var started []string
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		switch args[0] {
+		case "list-sessions":
+			return "$1\tworkspace-1\t", nil
+		case "list-panes":
+			return "%1\t1\tapp\t\n%3\t3\tapp\t", nil
+		case "respawn-pane":
+			started = append([]string(nil), args...)
+			return "", nil
+		}
+		return "", nil
+	}}
+	workspace := domain.Workspace{
+		ID: "workspace-1", Name: "one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: "/workspace/app"}},
+	}
+	pane, err := client.StartAgent(workspace, "ticket-impl", []string{"codex", "work"}, []string{"TWT_TICKETS_HOME=/tickets"},
+		&domain.TemplateAgentPane{Repository: "app", Index: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pane != "%3" {
+		t.Fatalf("StartAgent() pane = %q, want %%3", pane)
+	}
+	want := []string{"respawn-pane", "-k", "-t", "%3", "-c", "/workspace/app", "-e", "TWT_TICKETS_HOME=/tickets", "--", "codex", "work"}
+	if strings.Join(started, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("respawn command = %q, want %q", started, want)
+	}
+}
+
+func TestStartAgentCreatesAWindowWhenThePreferredPaneIsMissing(t *testing.T) {
+	var started []string
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		switch args[0] {
+		case "list-sessions":
+			return "$1\tworkspace-1\t", nil
+		case "list-panes":
+			return "%1\t1\tapp\t", nil
+		case "new-window":
+			started = append([]string(nil), args...)
+			return "%4", nil
+		}
+		return "", nil
+	}}
+	workspace := domain.Workspace{
+		ID: "workspace-1", Name: "one",
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: "/workspace/app"}},
+	}
+	pane, err := client.StartAgent(workspace, "ticket-impl", []string{"codex"}, nil,
+		&domain.TemplateAgentPane{Repository: "app", Index: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pane != "%4" || len(started) == 0 || started[0] != "new-window" {
+		t.Fatalf("StartAgent() pane = %q, command = %v", pane, started)
+	}
+}
+
 func TestSendPastesFeedbackBracketed(t *testing.T) {
 	var calls [][]string
 	client := Client{run: func(stdin io.Reader, args ...string) (string, error) {
