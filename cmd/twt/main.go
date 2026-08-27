@@ -11,9 +11,7 @@ import (
 // deliberately bypass the clierr exit codes: a worker is a background process
 // without a user, so it reports each failure with exit code 1 only.
 var workers = map[string]func(cli.Options, []string) error{
-	"__twt_prepare_worker":      cli.RunPrepareWorker,
-	"__twt_quick_create_worker": cli.RunQuickCreateWorker,
-	"__twt_done_worker":         cli.RunDoneWorker,
+	"__twt_prepare_worker": cli.RunPrepareWorker,
 }
 
 func main() {

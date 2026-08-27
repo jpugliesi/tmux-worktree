@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	PreparedEnvironmentVersion = 2
+	PreparedEnvironmentVersion = 3
 	PreparationFormatVersion   = 1
 )
 
@@ -63,6 +63,9 @@ const (
 	EnvironmentAssignmentRelease  EnvironmentAssignmentKind  = "release"
 	EnvironmentAssignmentReserved EnvironmentAssignmentPhase = "reserved"
 	EnvironmentAssignmentActive   EnvironmentAssignmentPhase = "active"
+	// EnvironmentAssignmentSessionStopPending means cleanup finished, but the
+	// source tmux session can still change the prepared worktrees.
+	EnvironmentAssignmentSessionStopPending EnvironmentAssignmentPhase = "session_stop_pending"
 )
 
 type EnvironmentAssignment struct {
@@ -72,21 +75,25 @@ type EnvironmentAssignment struct {
 	Workspace   Workspace                  `json:"workspace"`
 	Fingerprint string                     `json:"fingerprint,omitempty"`
 	Force       bool                       `json:"force,omitempty"`
-	ReservedAt  time.Time                  `json:"reservedAt"`
+	// SourceSessionID identifies the tmux session that must disappear before
+	// twt can return a released Environment to the ready pool.
+	SourceSessionID string    `json:"sourceSessionId,omitempty"`
+	ReservedAt      time.Time `json:"reservedAt"`
 }
 
 // UnmarshalJSON accepts the version-one project key. New records always use
 // workspace. A record with two different owners is invalid.
 func (c *EnvironmentAssignment) UnmarshalJSON(data []byte) error {
 	var value struct {
-		Generation  uint64                     `json:"generation"`
-		Kind        EnvironmentAssignmentKind  `json:"kind"`
-		Phase       EnvironmentAssignmentPhase `json:"phase"`
-		Workspace   *Workspace                 `json:"workspace"`
-		Project     *Workspace                 `json:"project"`
-		Fingerprint string                     `json:"fingerprint"`
-		Force       bool                       `json:"force"`
-		ReservedAt  time.Time                  `json:"reservedAt"`
+		Generation      uint64                     `json:"generation"`
+		Kind            EnvironmentAssignmentKind  `json:"kind"`
+		Phase           EnvironmentAssignmentPhase `json:"phase"`
+		Workspace       *Workspace                 `json:"workspace"`
+		Project         *Workspace                 `json:"project"`
+		Fingerprint     string                     `json:"fingerprint"`
+		Force           bool                       `json:"force"`
+		SourceSessionID string                     `json:"sourceSessionId"`
+		ReservedAt      time.Time                  `json:"reservedAt"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
@@ -105,6 +112,7 @@ func (c *EnvironmentAssignment) UnmarshalJSON(data []byte) error {
 	c.Phase = value.Phase
 	c.Fingerprint = value.Fingerprint
 	c.Force = value.Force
+	c.SourceSessionID = value.SourceSessionID
 	c.ReservedAt = value.ReservedAt
 	return nil
 }
@@ -121,7 +129,7 @@ func (e *PreparedEnvironment) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*e = PreparedEnvironment(value.environmentJSON)
-	if e.Version != 1 && e.Version != PreparedEnvironmentVersion {
+	if e.Version != 1 && e.Version != 2 && e.Version != PreparedEnvironmentVersion {
 		return fmt.Errorf("unsupported Prepared Environment version %d", e.Version)
 	}
 	if e.Assignment != nil && value.ClaimReservation != nil && !reflect.DeepEqual(e.Assignment, value.ClaimReservation) {
@@ -213,6 +221,9 @@ func (e PreparedEnvironment) Validate() error {
 		if assignment.Phase == "" {
 			return fmt.Errorf("Prepared Environment %q has no assignment phase", e.ID)
 		}
+		if assignment.Phase == EnvironmentAssignmentSessionStopPending && assignment.SourceSessionID == "" {
+			return fmt.Errorf("Prepared Environment %q has a pending session stop without a source session ID", e.ID)
+		}
 	}
 	switch e.Status {
 	case EnvironmentClaiming, EnvironmentClaimed, EnvironmentReleasing:
@@ -228,7 +239,10 @@ func (e PreparedEnvironment) Validate() error {
 		if e.Status == EnvironmentClaimed && assignment.Phase != EnvironmentAssignmentActive {
 			return fmt.Errorf("Prepared Environment %q has claimed status with assignment phase %q", e.ID, assignment.Phase)
 		}
-		if e.Status != EnvironmentClaimed && assignment.Phase != EnvironmentAssignmentReserved {
+		if e.Status == EnvironmentReleasing && assignment.Phase != EnvironmentAssignmentReserved && assignment.Phase != EnvironmentAssignmentSessionStopPending {
+			return fmt.Errorf("Prepared Environment %q has releasing status with assignment phase %q", e.ID, assignment.Phase)
+		}
+		if e.Status != EnvironmentClaimed && e.Status != EnvironmentReleasing && assignment.Phase != EnvironmentAssignmentReserved {
 			return fmt.Errorf("Prepared Environment %q has status %q with assignment phase %q", e.ID, e.Status, assignment.Phase)
 		}
 	case EnvironmentQueued, EnvironmentPreparing, EnvironmentReady, EnvironmentFailed:

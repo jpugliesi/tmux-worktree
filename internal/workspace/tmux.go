@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -365,4 +366,51 @@ func tmuxUnavailable(err error) bool {
 		strings.Contains(msg, "no sessions") ||
 		strings.Contains(msg, "error connecting to") ||
 		strings.Contains(msg, "executable file not found")
+}
+
+// stopSessionPanesExcept stops every process in a Workspace session except
+// the process that runs release cleanup.
+func (s *Service) stopSessionPanesExcept(sessionID, keepPane string) error {
+	value, err := output("", "tmux", s.tmuxArgs("list-panes", "-s", "-t", sessionID, "-F", "#{pane_id}")...)
+	if err != nil {
+		return fmt.Errorf("list Workspace tmux panes: %w", err)
+	}
+	keepFound := false
+	var targets []string
+	for _, paneID := range strings.Fields(value) {
+		if paneID == keepPane {
+			keepFound = true
+			continue
+		}
+		targets = append(targets, paneID)
+	}
+	if !keepFound {
+		return fmt.Errorf("current tmux pane %q is not in session %q", keepPane, sessionID)
+	}
+	for _, paneID := range targets {
+		if err := run("", "tmux", s.tmuxArgs("kill-pane", "-t", paneID)...); err != nil {
+			return fmt.Errorf("stop Workspace tmux pane %q: %w", paneID, err)
+		}
+	}
+	return nil
+}
+
+// stopPreparedSession lets tmux select another session when possible. The
+// caller restores the option only when tmux refuses the final kill.
+func (s *Service) stopPreparedSession(sessionID string) error {
+	previous, err := output("", "tmux", s.tmuxArgs("show-options", "-v", "-t", sessionID, "detach-on-destroy")...)
+	if err != nil {
+		return fmt.Errorf("read tmux detach behavior: %w", err)
+	}
+	if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "detach-on-destroy", "off")...); err != nil {
+		return fmt.Errorf("set tmux detach behavior: %w", err)
+	}
+	if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
+		restoreErr := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "detach-on-destroy", previous)...)
+		if restoreErr != nil {
+			return errors.Join(fmt.Errorf("stop Workspace tmux session: %w", err), fmt.Errorf("restore tmux detach behavior: %w", restoreErr))
+		}
+		return fmt.Errorf("stop Workspace tmux session: %w", err)
+	}
+	return nil
 }

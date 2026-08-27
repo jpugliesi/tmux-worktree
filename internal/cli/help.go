@@ -20,7 +20,7 @@ var commandHelp = map[string]helpContent{
 		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. The warm path claims prepared worktrees without a fetch. Use --fresh to fetch and refresh a ready Prepared Environment before the claim. Without NAME at a text terminal, twt asks for a Workspace name. A script, a pipe, and --output json still require NAME.", example: "  twt create\n  twt create fix-auth --template everysphere\n  twt create fix-auth --template everysphere --fresh",
 	},
 	"twt next": {
-		long: "Create the next Workspace from the latest saved version of the current Workspace Template. Run this command inside the current Workspace tmux session. twt checks the current Workspace first, switches the calling client, archives the old Workspace, and returns its worktrees to the prepared pool. Without a name, twt shows an interactive Ticket picker. Use --force to discard tracked and nonignored changes. Use --fresh to fetch before the new claim. Use twt create outside a current Workspace.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth --force",
+		long: "Create the next Workspace from the latest saved version of the current Workspace Template. Run this command inside the current Workspace tmux session. twt checks the current Workspace, creates the new Workspace, and cleans the old Workspace. It then stops the old tmux session. Tmux can select another session or detach the client. Without a name, twt shows an interactive Ticket picker. Use --force to discard tracked and nonignored changes. Use --fresh to fetch before the new claim. Use twt create outside a current Workspace.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth --force",
 	},
 	"twt switch": {
 		long: "Switch the calling tmux client to a Workspace. twt claims prepared worktrees for a released Workspace. It then creates or repairs the tmux session. Without WORKSPACE, twt shows an interactive Workspace picker.", example: "  twt switch fix-auth\n  twt switch",
@@ -29,7 +29,7 @@ var commandHelp = map[string]helpContent{
 		long: "Archive a Workspace and return its worktrees to the prepared pool. twt keeps its branches, Workspace Template snapshot, and Agent Session records. Use --force to discard tracked and nonignored changes. twt preserves ignored files.", example: "  twt archive\n  twt archive fix-auth --force",
 	},
 	"twt done": {
-		long: "Finish a Workspace and return its worktrees to the prepared pool. twt keeps the Workspace record and branches. From its tmux session, twt moves the client to another active Workspace or detaches it. Use --force to discard tracked and nonignored changes. When one open Ticket is linked, twt asks whether it must close that Ticket. Use 'twt workspaces remove' to delete Workspace state and branches.", example: "  twt done\n  twt done fix-auth --force",
+		long: "Finish a Workspace and return its worktrees to the prepared pool. twt keeps the Workspace record and branches. From its tmux session, twt completes cleanup in the caller pane. It then stops the complete session. Tmux can select another session or detach the client. Use --force to discard tracked and nonignored changes. When one open Ticket is linked, twt asks whether it must close that Ticket. Use 'twt workspaces remove' to delete Workspace state and branches.", example: "  twt done\n  twt done fix-auth --force",
 	},
 	"twt agents": {
 		long: "Register and control coding Agent Sessions that belong to a Workspace. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --workspace current\n  twt agents open\n  twt agents resume AGENT_ID",
@@ -301,7 +301,7 @@ var commandHelp = map[string]helpContent{
 		long: "Show a safe cleanup plan for failed and obsolete Prepared Environments, orphan Transcript Snapshots, and orphan Agent Session records. Add --apply to remove only twt-owned data.", example: "  twt storage clean\n  twt storage clean --apply",
 	},
 	"twt environments list": {
-		long: "List the Prepared Environments of each Workspace Template, with status, age, and disk space. A ready Prepared Environment that no longer matches its Workspace Template has status obsolete.", example: "  twt environments list\n  twt environments list --limit 10 --output json",
+		long: "List the Prepared Environments of each Workspace Template, with status, age, and disk space. The list shows releasing while an Environment waits for source session confirmation. The next Workspace claim completes that confirmation. A ready Prepared Environment that no longer matches its Workspace Template has status obsolete.", example: "  twt environments list\n  twt environments list --limit 10 --output json",
 	},
 	"twt environments show": {
 		long: "Show one Prepared Environment, its preparation steps, its base commit for each repository, and the Workspace that claims it. ENVIRONMENT_ID accepts a unique ID prefix.", example: "  twt environments show 1a2b3c4d\n  twt environments show ENVIRONMENT_ID --output json",

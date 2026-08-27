@@ -58,8 +58,8 @@ func newArchiveCommand(options Options) *cobra.Command {
 	return command
 }
 
-// archiveWorkspace archives one Workspace. Inside the Workspace tmux session it
-// relocates the calling client first and uses the shared release.
+// archiveWorkspace archives one Workspace. Inside the Workspace tmux session,
+// it cleans from the caller pane and then stops the complete session.
 func archiveWorkspace(command *cobra.Command, options Options, service *workspaceservice.Service, reference string, force bool) error {
 	releaseOptions, err := releaseOptions(command, service, reference, force)
 	if err != nil {
@@ -73,17 +73,17 @@ func archiveWorkspace(command *cobra.Command, options Options, service *workspac
 		return err
 	}
 	currentPane := os.Getenv("TMUX_PANE")
-	relocate, err := relocationNeeded(command, options, service, workspace.ID, currentPane)
+	fromCurrentSession, err := releaseFromCurrentSession(command, options, service, workspace.ID, currentPane)
 	if err != nil {
 		return err
 	}
-	if relocate {
-		return relocateAndComplete(command, options, service, workspace, currentPane, true, releaseOptions, doneTicketPlan{})
+	if fromCurrentSession {
+		return completeFromPane(command, options, service, workspace, currentPane, true, releaseOptions, doneTicketPlan{})
 	}
 	return archiveWorkspaceRecord(command, service, workspace.ID, releaseOptions)
 }
 
-// archiveWorkspaceRecord archives one Workspace without tmux client relocation.
+// archiveWorkspaceRecord archives one Workspace from outside its tmux session.
 // The apply command uses it directly.
 func archiveWorkspaceRecord(command *cobra.Command, service *workspaceservice.Service, reference string, opts workspaceservice.ReleaseOptions) error {
 	result := workspaceservice.ArchiveResult{}

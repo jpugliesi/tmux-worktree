@@ -65,12 +65,21 @@ func (s *Service) Archive(reference, currentPane string) (ArchiveResult, error) 
 // clearAgentPanes blanks the recorded pane identity on the Workspace's Agent
 // Session records after their panes stopped.
 func (s *Service) clearAgentPanes(workspaceID string) error {
+	return s.clearAgentPanesExcept(workspaceID, "")
+}
+
+// clearAgentPanesExcept keeps the caller Agent Session live while release
+// cleanup runs in its pane.
+func (s *Service) clearAgentPanesExcept(workspaceID, keepPane string) error {
 	agentStore := store.NewAgentStore(s.options.StateDir)
 	agents, err := agentStore.List(workspaceID)
 	if err != nil {
 		return err
 	}
 	for _, agent := range agents {
+		if keepPane != "" && agent.TmuxPane == keepPane {
+			continue
+		}
 		if agent.TmuxPane == "" && agent.PaneCommand == "" && agent.PaneStart == "" &&
 			agent.RuntimeReference == "" && agent.PaneRootProcessID == 0 && agent.PaneRootStarted == "" &&
 			agent.ProcessID == 0 && agent.ProcessStarted == "" && agent.ProcessCommand == "" &&
@@ -101,6 +110,17 @@ func (s *Service) ValidateArchive(reference, currentPane string) error {
 }
 
 func (s *Service) validateArchive(reference, currentPane string) (domain.Workspace, []string, error) {
+	p, sessions, err := s.validateArchiveTarget(reference)
+	if err != nil {
+		return p, nil, err
+	}
+	if err := s.requireOutsideOwnedSessions(p.Name, "archive", currentPane, sessions); err != nil {
+		return p, nil, err
+	}
+	return p, sessions, nil
+}
+
+func (s *Service) validateArchiveTarget(reference string) (domain.Workspace, []string, error) {
 	p, err := s.store.Find(reference)
 	if err != nil {
 		return p, nil, err
@@ -115,10 +135,32 @@ func (s *Service) validateArchive(reference, currentPane string) (domain.Workspa
 	if len(sessions) > 1 {
 		return p, nil, fmt.Errorf("Workspace %q owns more than one tmux session", p.Name)
 	}
-	if err := s.requireOutsideOwnedSessions(p.Name, "archive", currentPane, sessions); err != nil {
-		return p, nil, err
-	}
 	return p, sessions, nil
+}
+
+func (s *Service) validateArchiveFromPane(reference, currentPane string) (domain.Workspace, string, string, error) {
+	p, sessions, err := s.validateArchiveTarget(reference)
+	if err != nil {
+		return p, "", "", err
+	}
+	if currentPane == "" {
+		return p, "", "", clierr.New(clierr.PreconditionFailed, "release from inside Workspace %q requires the current tmux pane", p.Name)
+	}
+	if len(sessions) != 1 {
+		return p, "", "", clierr.New(clierr.PreconditionFailed, "Workspace %q has no owned tmux session", p.Name)
+	}
+	identity, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", currentPane, "#{session_id}\t#{pane_id}")...)
+	if err != nil {
+		return p, "", "", fmt.Errorf("inspect the current tmux pane before release: %w", err)
+	}
+	parts := strings.SplitN(identity, "\t", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return p, "", "", fmt.Errorf("inspect the current tmux pane before release: tmux returned invalid identifiers")
+	}
+	if parts[0] != sessions[0] {
+		return p, "", "", clierr.New(clierr.PreconditionFailed, "current pane is not in the owned tmux session for Workspace %q", p.Name)
+	}
+	return p, sessions[0], parts[1], nil
 }
 
 func (s *Service) requireOutsideOwnedSessions(workspaceName, action, currentPane string, sessions []string) error {

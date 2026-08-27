@@ -369,8 +369,9 @@ twt next fix-auth-tokens add-auth-tests
 
 The command uses the latest saved version of the same Workspace Template. It
 checks the current Workspace before it creates the next Workspace. It claims a
-matching Prepared Environment and switches the calling tmux client. It then
-returns the old worktrees to the prepared pool. Other tmux clients do not switch.
+matching Prepared Environment. It then cleans the old Workspace in the caller
+pane and stops the old tmux session. Tmux selects another session or detaches
+each client. You can attach to the new Workspace if tmux detaches your client.
 
 `twt next --force` discards tracked and nonignored changes in the current
 Workspace. It preserves ignored files. `twt next --fresh` refreshes the new
@@ -384,8 +385,8 @@ active.
 
 If creation or setup fails, the current Workspace stays active. `twt` keeps a
 Workspace that has a setup failure. You can inspect it and run
-`twt workspaces setup retry WORKSPACE`. If the tmux switch fails, `twt` keeps
-both the new Workspace and the current Workspace active.
+`twt workspaces setup retry WORKSPACE`. If old Workspace cleanup fails, `twt`
+keeps the new Workspace active and reports the old Workspace failure.
 
 Switch the tmux client to a different Workspace:
 
@@ -677,10 +678,17 @@ for each Ticket. A close failure gives a warning with the `twt tickets close
 or on no, `done` keeps the Ticket open and prints the close
 hint. A dry run never asks.
 
-From inside the Workspace tmux session, `done` moves your tmux client to the
-most recent other active Workspace, or detaches the client, and a worker window
-completes the work. This flow uses text output. For JSON output, run `done`
-from a different session. A dry run validates the release and changes nothing.
+From inside the Workspace tmux session, `done` completes cleanup in the caller
+pane. It stops the other panes before it returns the worktrees. It then stops
+the complete session. Tmux selects another session or detaches each client.
+The command does not create a worker window or a background process.
+
+If the command process stops with its tmux session, the Environment stays in
+the releasing state. `twt environments list` shows this state. The next claim
+completes the release after it confirms that the source session is gone.
+
+This flow uses text output. For JSON output, run `done` from a different
+session. A dry run validates the release and changes nothing.
 
 Open an archived Workspace to claim prepared worktrees and restore its saved
 branches. twt runs Workspace Initialization and creates its tmux session again.
@@ -709,10 +717,10 @@ Agent Sessions stay unchanged.
 Without arguments, a terminal shows the Workspace picker and asks for the new
 name.
 
-From inside the Workspace tmux session, `archive` uses the same release as `done`:
-it moves your tmux client to the most recent other active Workspace, or
-detaches the client, and a worker window completes the archive. This flow
-uses text output; for JSON output, run `archive` from a different session.
+From inside the Workspace tmux session, `archive` uses the same release as
+`done`. It completes cleanup in the caller pane and then stops the complete
+session. Tmux selects another session or detaches each client. This flow uses
+text output. For JSON output, run `archive` from a different session.
 
 ## Storage and safe removal
 

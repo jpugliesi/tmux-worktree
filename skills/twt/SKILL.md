@@ -137,6 +137,9 @@ output is a terminal, but `--no-open` states the intention.
 `twt next` and `twt switch` are interactive commands for a person in tmux.
 Run `twt next` inside the tmux session of the current Workspace.
 `twt next` with no name opens a Ticket picker when open Tickets exist.
+A normal `twt next` cleans the current Workspace in the caller pane. It then
+stops the complete current session. Tmux selects another session or detaches
+the client. Attach to the new Workspace if tmux detaches the client.
 A person at a terminal can omit `NAME` on `twt create`. twt then asks for
 it. For agent work, use `twt create` and `twt workspaces archive` with
 explicit names, dry-runs, and JSON output. Do not omit `NAME`.
@@ -223,6 +226,12 @@ twt done WORKSPACE --dry-run --output json
 twt done WORKSPACE --output json
 twt done WORKSPACE --force --output json
 ```
+
+Inside the Workspace tmux session, `done` completes cleanup in the caller
+pane. It then stops the complete session. It does not create a worker window
+or a background process. Tmux selects another session or detaches the client.
+`twt environments list` shows a pending release as releasing. The next claim
+completes the release after the source session is gone.
 
 ## Work with Agent Sessions
 

@@ -14,7 +14,6 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
-	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -335,12 +334,7 @@ func TestTicketsStartKeepsTheCurrentWorkspace(t *testing.T) {
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
-	var archived []string
 	options.QuickCreateSwitch = func(_, _ string) error { return nil }
-	options.QuickCreateArchive = func(_, oldID, _ string, _ workspaceservice.ReleaseOptions) error {
-		archived = append(archived, oldID)
-		return nil
-	}
 
 	output := executeWithOptions(t, options, nil, "tickets", "start", "fix-auth-tokens", "--as", "tester")
 	if strings.Contains(output, "archiving Workspace") {
@@ -348,9 +342,6 @@ func TestTicketsStartKeepsTheCurrentWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(output, `Workspace "current" stays active`) {
 		t.Fatalf("tickets start output = %q", output)
-	}
-	if len(archived) != 0 {
-		t.Fatalf("tickets start archived %v", archived)
 	}
 	old, err := store.NewWorkspaceStore(options.StateDir).Find(current.ID)
 	if err != nil || old.Status != domain.WorkspaceActive {
@@ -432,8 +423,6 @@ func TestNextAcceptsManyTicketSlugs(t *testing.T) {
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Add auth tests", "--project", "core")
-	options.QuickCreateSwitch = func(_, _ string) error { return nil }
-	options.QuickCreateArchive = func(_, _, _ string, _ workspaceservice.ReleaseOptions) error { return nil }
 
 	executeWithOptions(t, options, nil, "next", "fix-auth", "add-auth-tests", "--as", "tester")
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth")
@@ -679,13 +668,6 @@ func TestNextPickerClaimsTheSelectedTicket(t *testing.T) {
 		pickedLines = append([]string(nil), lines...)
 		return 0, nil
 	}
-	var switched []string
-	options.QuickCreateSwitch = func(_ string, session string) error {
-		switched = append(switched, session)
-		return nil
-	}
-	options.QuickCreateArchive = func(_, _, _ string, _ workspaceservice.ReleaseOptions) error { return nil }
-
 	output := executeWithOptions(t, options, nil, "next", "--as", "tester")
 	if len(pickedLines) != 1 {
 		t.Fatalf("next picker lines = %v", pickedLines)
@@ -703,8 +685,9 @@ func TestNextPickerClaimsTheSelectedTicket(t *testing.T) {
 	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
 		t.Fatalf("Workspace after next picker: %+v error=%v", workspace, err)
 	}
-	if len(switched) != 1 || switched[0] != workspace.TmuxSession {
-		t.Fatalf("next picker switch events = %v", switched)
+	clientSession := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-clients", "-F", "#{session_name}")
+	if clientSession != workspace.TmuxSession {
+		t.Fatalf("next picker client session = %q, want %q", clientSession, workspace.TmuxSession)
 	}
 	content := readTicketFile(t, filepath.Join(home, "core", "fix-auth-tokens.md"))
 	if !strings.Contains(content, "tester") {
@@ -740,8 +723,6 @@ func TestNextWithATicketSlugClaimsTheTicket(t *testing.T) {
 	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "projects", "create", "core")
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
-	options.QuickCreateSwitch = func(_ string, _ string) error { return nil }
-	options.QuickCreateArchive = func(_, _, _ string, _ workspaceservice.ReleaseOptions) error { return nil }
 
 	output := executeWithOptions(t, options, nil, "next", "fix-auth-tokens", "--as", "tester")
 	if !strings.Contains(output, `Claimed ticket "fix-auth-tokens" as "tester"`) {

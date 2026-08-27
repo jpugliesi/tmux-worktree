@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -20,30 +19,6 @@ import (
 	skillasset "github.com/jpugliesi/tmux-worktree/skills"
 	"github.com/spf13/cobra"
 )
-
-// RelocationRequest describes one archive or removal that must move the
-// calling tmux client out of the Workspace session first.
-type RelocationRequest struct {
-	// WorkspaceID is the Workspace that twt archives or removes.
-	WorkspaceID string
-	// DestinationWorkspaceID is the Workspace that receives the tmux client. It
-	// is empty when no other active Workspace exists; twt then detaches the
-	// client.
-	DestinationWorkspaceID string
-	// Keep selects archive wording. Both archive and done release worktrees.
-	Keep bool
-	// Force permits cleanup of uncommitted changes.
-	Force bool
-	// Fingerprint binds force authorization to the inspected worktree state.
-	Fingerprint string
-	// CurrentPane is the tmux pane that runs the command.
-	CurrentPane string
-	// CloseTicket is the slug of the Ticket that the worker closes after a
-	// successful removal. It is empty when done closes no Ticket.
-	CloseTicket string
-	// CloseClaimant is the resolved claimant of the Ticket close.
-	CloseClaimant string
-}
 
 type Options struct {
 	ConfigDir  string
@@ -73,13 +48,6 @@ type Options struct {
 	// installs the real tmux implementation when it is nil; tests replace it
 	// with a fake.
 	QuickCreateSwitch func(clientName, session string) error
-	// QuickCreateArchive archives the old Workspace after the client switch.
-	// New installs the real relocation worker implementation when it is nil.
-	QuickCreateArchive func(clientName, oldWorkspaceID, newWorkspaceID string, releaseOptions workspaceservice.ReleaseOptions) error
-	// DoneRelocate moves the calling tmux client out of the Workspace session
-	// and completes the archive or removal. New installs the real relocation
-	// worker implementation when it is nil.
-	DoneRelocate func(request RelocationRequest) error
 	// SwitchPick selects one line index from the switch Workspace picker. New
 	// installs the real fzf or numbered-list implementation when it is nil.
 	SwitchPick func(command *cobra.Command, lines []string) (int, error)
@@ -95,10 +63,8 @@ type Options struct {
 	// PickTicketProject selects one Project picker line. The result is "(none)",
 	// an existing Project name, or a typed new name. New installs the real fzf
 	// or numbered-list implementation when it is nil.
-	PickTicketProject      func(command *cobra.Command, lines []string) (string, error)
-	QuickCreateExecutable  string
-	QuickCreateWaitTimeout time.Duration
-	PreparationExecutable  string
+	PickTicketProject     func(command *cobra.Command, lines []string) (string, error)
+	PreparationExecutable string
 	// PRResolvers replaces the live gh/origin PR-state resolvers. Tests use
 	// fakes; nil installs the real ones.
 	PRResolvers []prstate.Resolver
@@ -280,12 +246,6 @@ func DefaultOptions() Options {
 func withRealWorkflows(options Options) Options {
 	if options.QuickCreateSwitch == nil {
 		options.QuickCreateSwitch = realQuickCreateSwitch(options)
-	}
-	if options.QuickCreateArchive == nil {
-		options.QuickCreateArchive = realQuickCreateArchive(options)
-	}
-	if options.DoneRelocate == nil {
-		options.DoneRelocate = realDoneRelocate(options)
 	}
 	if options.SwitchPick == nil {
 		options.SwitchPick = realSwitchPick

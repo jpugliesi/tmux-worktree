@@ -265,6 +265,267 @@ func TestReleaseMakesThePreparedEnvironmentReadyForAnotherWorkspace(t *testing.T
 	}
 }
 
+func TestPrepareReleaseFromPaneKeepsOnlyTheCallerUntilTheSessionStops(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-in-session-release-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	created, err := service.Create("inside", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceSession, err := service.OwnedSessionID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerPane := testTmuxOutput(t, socket, "display-message", "-p", "-t", sourceSession, "#{pane_id}")
+	testTmuxOutput(t, socket, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", callerPane, "-c", created.Root)
+
+	prepared, err := service.PrepareReleaseFromPane(created.ID, callerPane, ReleaseOptions{})
+	if err != nil {
+		t.Fatalf("PrepareReleaseFromPane() error = %v", err)
+	}
+	if prepared.SourceSessionID != sourceSession {
+		t.Fatalf("source session = %q, want %q", prepared.SourceSessionID, sourceSession)
+	}
+	panes := strings.Fields(testTmuxOutput(t, socket, "list-panes", "-s", "-t", sourceSession, "-F", "#{pane_id}"))
+	if len(panes) != 1 || panes[0] != callerPane {
+		t.Fatalf("remaining panes = %v, want only %q", panes, callerPane)
+	}
+	bound, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.Status != domain.WorkspaceArchived || !bound.Materialized || bound.EnvironmentID != created.EnvironmentID {
+		t.Fatalf("prepared Workspace = %+v", bound)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment.Status != domain.EnvironmentReleasing || environment.Assignment == nil ||
+		environment.Assignment.Phase != domain.EnvironmentAssignmentSessionStopPending ||
+		environment.Assignment.SourceSessionID != sourceSession {
+		t.Fatalf("prepared Environment = %+v", environment)
+	}
+
+	if err := service.Reconcile(); err != nil {
+		t.Fatal(err)
+	}
+	stillBound, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil || !stillBound.Materialized {
+		t.Fatalf("Workspace before session stop = %+v, error = %v", stillBound, err)
+	}
+	if err := service.StopPreparedRelease(prepared); err != nil {
+		t.Fatalf("StopPreparedRelease() error = %v", err)
+	}
+	restarted := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+	if err := restarted.Reconcile(); err != nil {
+		t.Fatal(err)
+	}
+	released, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Materialized || released.EnvironmentID != "" || released.Root != "" || released.Repositories[0].Path != "" {
+		t.Fatalf("reconciled Workspace = %+v", released)
+	}
+	environment, err = store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil || environment.Status != domain.EnvironmentReady || environment.Assignment != nil {
+		t.Fatalf("reconciled Environment = %+v, error = %v", environment, err)
+	}
+}
+
+func TestReconcileKeepsAnEnvironmentUnavailableWhenTheCallerChangesItAfterCleanup(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-release-change-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	created, err := service.Create("changed", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceSession, err := service.OwnedSessionID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerPane := testTmuxOutput(t, socket, "display-message", "-p", "-t", sourceSession, "#{pane_id}")
+	prepared, err := service.PrepareReleaseFromPane(created.ID, callerPane, ReleaseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedPath := filepath.Join(created.Repositories[0].Path, "changed-after-cleanup.txt")
+	if err := os.WriteFile(changedPath, []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.StopPreparedRelease(prepared); err != nil {
+		t.Fatal(err)
+	}
+	err = service.Reconcile()
+	if err == nil || !strings.Contains(err.Error(), "changed after release cleanup") {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil || environment.Status != domain.EnvironmentReleasing {
+		t.Fatalf("changed Environment = %+v, error = %v", environment, err)
+	}
+	workspace, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil || !workspace.Materialized {
+		t.Fatalf("changed Workspace = %+v, error = %v", workspace, err)
+	}
+
+	if err := os.Remove(changedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Reconcile(); err != nil {
+		t.Fatal(err)
+	}
+	environment, err = store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil || environment.Status != domain.EnvironmentReady {
+		t.Fatalf("recovered Environment = %+v, error = %v", environment, err)
+	}
+}
+
+func TestPrepareReleaseFromPaneRestoresOwnershipAfterCleanupFails(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{
+			Name: "app", Clone: domain.CloneSpec{URL: source},
+			Recycle: &domain.RecycleSpec{Command: []string{"sh", "-c", "exit 23"}},
+		}},
+	}
+	socket := fmt.Sprintf("twt-in-session-rollback-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	created, err := service.Create("rollback", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceSession, err := service.OwnedSessionID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerPane := testTmuxOutput(t, socket, "display-message", "-p", "-t", sourceSession, "#{pane_id}")
+	if _, err := service.PrepareReleaseFromPane(created.ID, callerPane, ReleaseOptions{}); err == nil || !strings.Contains(err.Error(), "recycle command") {
+		t.Fatalf("PrepareReleaseFromPane() error = %v", err)
+	}
+
+	restored, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != domain.WorkspaceActive || !restored.Materialized || restored.EnvironmentID != created.EnvironmentID {
+		t.Fatalf("restored Workspace = %+v", restored)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment.Status != domain.EnvironmentClaimed || environment.Assignment == nil ||
+		environment.Assignment.Kind != domain.EnvironmentAssignmentClaim ||
+		environment.Assignment.Phase != domain.EnvironmentAssignmentActive {
+		t.Fatalf("restored Environment = %+v", environment)
+	}
+	if branch := testGitOutput(t, created.Repositories[0].Path, "branch", "--show-current"); branch != created.Repositories[0].Branch {
+		t.Fatalf("restored branch = %q, want %q", branch, created.Repositories[0].Branch)
+	}
+	if _, err := os.Stat(filepath.Join(created.Root, ".twt-owned.json")); err != nil {
+		t.Fatalf("restored ownership marker: %v", err)
+	}
+}
+
+func TestOpenRestoresAPreparedReleaseWhileItsSourceSessionExists(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-pending-open-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	created, err := service.Create("restore-pending", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceSession, err := service.OwnedSessionID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerPane := testTmuxOutput(t, socket, "display-message", "-p", "-t", sourceSession, "#{pane_id}")
+	if _, err := service.PrepareReleaseFromPane(created.ID, callerPane, ReleaseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := service.Open(created.ID)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if opened.Status != domain.WorkspaceActive || !opened.Materialized || opened.EnvironmentID != created.EnvironmentID {
+		t.Fatalf("opened Workspace = %+v", opened)
+	}
+	if branch := testGitOutput(t, opened.Repositories[0].Path, "branch", "--show-current"); branch != created.Repositories[0].Branch {
+		t.Fatalf("opened branch = %q, want %q", branch, created.Repositories[0].Branch)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil || environment.Status != domain.EnvironmentClaimed || environment.Assignment == nil ||
+		environment.Assignment.Kind != domain.EnvironmentAssignmentClaim {
+		t.Fatalf("opened Environment = %+v, error = %v", environment, err)
+	}
+}
+
 func TestOpenRestoresAWorkspaceAfterARecycleFailure(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -556,7 +817,7 @@ func TestOpenDoesNotRaceAnActiveRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lock, err := service.reserveRelease(&workspace, plan, ReleaseOptions{})
+	lock, err := service.reserveRelease(&workspace, plan, ReleaseOptions{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

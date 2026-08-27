@@ -243,8 +243,8 @@ func TestNextHelpExplainsTheWorkspaceChange(t *testing.T) {
 	}
 	for _, want := range []string{
 		"latest saved version of the current Workspace Template",
-		"switches the calling client",
-		"archives the old Workspace",
+		"cleans the old Workspace",
+		"stops the old tmux session",
 		"interactive Ticket picker",
 		"twt next fix-auth",
 		"twt create",

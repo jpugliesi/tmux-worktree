@@ -22,7 +22,7 @@ func NewEnvironmentStore(stateDir string) EnvironmentStore {
 }
 
 func (s EnvironmentStore) Save(environment domain.PreparedEnvironment) error {
-	if environment.Version != 1 && environment.Version != domain.PreparedEnvironmentVersion {
+	if environment.Version != 1 && environment.Version != 2 && environment.Version != domain.PreparedEnvironmentVersion {
 		return fmt.Errorf("unsupported Prepared Environment version %d: expected %d", environment.Version, domain.PreparedEnvironmentVersion)
 	}
 	environment.Version = domain.PreparedEnvironmentVersion
@@ -131,7 +131,7 @@ func (s EnvironmentStore) loadPath(path string) (domain.PreparedEnvironment, err
 	if err := json.Unmarshal(data, &header); err != nil {
 		return domain.PreparedEnvironment{}, fmt.Errorf("decode Prepared Environment state %q: %w", path, err)
 	}
-	if header.Version != 1 && header.Version != domain.PreparedEnvironmentVersion {
+	if header.Version != 1 && header.Version != 2 && header.Version != domain.PreparedEnvironmentVersion {
 		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment state %q uses unsupported version %d", path, header.Version)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))

@@ -14,7 +14,6 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
-	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 )
 
 func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
@@ -102,17 +101,6 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no Workspace name was given") {
 		t.Fatalf("quick create without a Workspace name = %v", err)
 	}
-	var events []string
-	options.QuickCreateSwitch = func(_ string, session string) error {
-		events = append(events, "switch:"+session)
-		return nil
-	}
-	options.QuickCreateArchive = func(_ string, workspaceID string, _ string, releaseOptions workspaceservice.ReleaseOptions) error {
-		events = append(events, "archive:"+workspaceID)
-		service := workspaceservice.NewService(workspaceservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: socket})
-		_, err := service.Release(workspaceID, "", releaseOptions)
-		return err
-	}
 	attachControlClient(t, socket, "example-old-workspace")
 
 	var promptOutput, promptError bytes.Buffer
@@ -138,10 +126,6 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantEvents := []string{"switch:" + newWorkspace.TmuxSession, "archive:" + oldWorkspace.ID}
-	if strings.Join(events, "\n") != strings.Join(wantEvents, "\n") {
-		t.Fatalf("quick create events = %v, want %v", events, wantEvents)
-	}
 	oldWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
 	if err != nil || oldWorkspace.Status != domain.WorkspaceArchived {
 		t.Fatalf("old Workspace after quick create: status=%q error=%v", oldWorkspace.Status, err)
@@ -149,45 +133,22 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	if newWorkspace.Status != domain.WorkspaceActive || newWorkspace.TemplateName != "example" || newWorkspace.Repositories[0].WindowName != "latest-app" {
 		t.Fatalf("new Workspace does not use the latest Workspace Template: %+v", newWorkspace)
 	}
+	clientSession := runCommand(t, "", "tmux", "-L", socket, "list-clients", "-F", "#{session_name}")
+	if clientSession != newWorkspace.TmuxSession {
+		t.Fatalf("client session = %q, want %q", clientSession, newWorkspace.TmuxSession)
+	}
 
 	newPane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=example-new-workspace", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", newPane)
-	attachControlClient(t, socket, "example-new-workspace")
-	archiveCalled := false
-	options.QuickCreateSwitch = func(string, string) error { return fmt.Errorf("test switch failure") }
-	options.QuickCreateArchive = func(string, string, string, workspaceservice.ReleaseOptions) error {
-		archiveCalled = true
-		return nil
-	}
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
-	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"next", "failed-switch"}))
-	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "test switch failure") ||
-		!strings.Contains(err.Error(), "could not switch to the new Workspace") ||
-		!strings.Contains(err.Error(), "twt workspaces open failed-switch") {
-		t.Fatalf("quick create switch failure = %v", err)
-	}
-	if archiveCalled {
-		t.Fatal("quick create archived the current Workspace after a failed switch")
-	}
-	failedSwitch, findErr := store.NewWorkspaceStore(options.StateDir).Find("failed-switch")
-	if findErr != nil || failedSwitch.Status != domain.WorkspaceActive {
-		t.Fatalf("new Workspace after switch failure: status=%q error=%v", failedSwitch.Status, findErr)
-	}
-	currentAfterFailure, findErr := store.NewWorkspaceStore(options.StateDir).Find(newWorkspace.ID)
-	if findErr != nil || currentAfterFailure.Status != domain.WorkspaceActive {
-		t.Fatalf("current Workspace after switch failure: status=%q error=%v", currentAfterFailure.Status, findErr)
-	}
-
 	failingTemplate := latestTemplate + "    initialize:\n      command: [\"false\"]\n"
 	if err := os.WriteFile(templatePath, []byte(failingTemplate), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stdout.Reset()
 	stderr.Reset()
-	command = cli.New(options)
+	command := cli.New(options)
 	command.SetArgs(forceTextOutput([]string{"next", "setup-fails"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "initialization") {
@@ -209,7 +170,7 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	if failedEnvironments == 0 {
 		t.Fatal("repository initialization failure did not keep a failed Prepared Environment record")
 	}
-	currentAfterFailure, findErr = store.NewWorkspaceStore(options.StateDir).Find(newWorkspace.ID)
+	currentAfterFailure, findErr := store.NewWorkspaceStore(options.StateDir).Find(newWorkspace.ID)
 	if findErr != nil || currentAfterFailure.Status != domain.WorkspaceActive {
 		t.Fatalf("current Workspace after setup failure: status=%q error=%v", currentAfterFailure.Status, findErr)
 	}
@@ -258,7 +219,7 @@ func TestNextRequiresACurrentWorkspace(t *testing.T) {
 	}
 }
 
-func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
+func TestNextChecksDirtyStateBeforeWorkspaceSetup(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -291,19 +252,6 @@ func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	command := cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"next", "must-not-exist"}))
-	err := command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "clients are attached to its Workspace session") {
-		t.Fatalf("quick create client preflight error = %v", err)
-	}
-	if _, err := os.Stat(initLog); !os.IsNotExist(err) {
-		t.Fatalf("quick create ran initialization before client preflight: %v", err)
-	}
-	if _, err := store.NewWorkspaceStore(options.StateDir).Find("must-not-exist"); err == nil {
-		t.Fatal("quick create made a Workspace before client preflight")
-	}
-
 	attachControlClient(t, socket, "example-old-workspace")
 	current, err := store.NewWorkspaceStore(options.StateDir).Find("old-workspace")
 	if err != nil {
@@ -312,7 +260,7 @@ func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(current.Repositories[0].Path, "unsaved.txt"), []byte("keep\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	command = cli.New(options)
+	command := cli.New(options)
 	command.SetArgs(forceTextOutput([]string{"next", "dirty-must-not-exist"}))
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
@@ -326,7 +274,7 @@ func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
 	}
 }
 
-func TestQuickCreateWorkerArchivesOldWorkspaceFromTheNewSession(t *testing.T) {
+func TestNextCleansBeforeItStopsTheSourceSession(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -335,85 +283,6 @@ func TestQuickCreateWorkerArchivesOldWorkspaceFromTheNewSession(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	source := filepath.Join(root, "source")
-	initGitRepository(t, source)
-	configDir := filepath.Join(root, "config")
-	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
-	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
-	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
-	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
-	executeWithOptions(t, options, nil, "workspaces", "create", "old-workspace", "--template", "example", "--no-open")
-	executeWithOptions(t, options, nil, "workspaces", "create", "new-workspace", "--template", "example", "--no-open")
-	oldWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("old-workspace")
-	if err != nil {
-		t.Fatal(err)
-	}
-	newWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("new-workspace")
-	if err != nil {
-		t.Fatal(err)
-	}
-	helperPane := runCommand(t, "", "tmux", "-L", socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=example-new-workspace", "-n", "archive-helper", "--", "sleep", "60")
-	t.Setenv("TMUX_PANE", helperPane)
-	timeoutOptions := options
-	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
-	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldWorkspace.ID, newWorkspace.ID, "force=false", "-", "twt-create-worker-timeout", "no-client"})
-	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt archive "+oldWorkspace.ID) {
-		t.Fatalf("quick create worker timeout = %v", err)
-	}
-	oldWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
-	if err != nil || oldWorkspace.Status != domain.WorkspaceActive {
-		t.Fatalf("old Workspace after worker timeout: status=%q error=%v", oldWorkspace.Status, err)
-	}
-	windowName := runCommand(t, "", "tmux", "-L", socket, "display-message", "-p", "-t", helperPane, "#{window_name}")
-	if windowName != "archive-failed" {
-		t.Fatalf("worker timeout window = %q", windowName)
-	}
-	runCommand(t, "", "tmux", "-L", socket, "rename-window", "-t", helperPane, "archive-helper")
-	channel := "twt-create-worker-test"
-	signalResult := make(chan error, 1)
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		signalResult <- exec.Command("tmux", "-L", socket, "wait-for", "-S", channel).Run()
-	}()
-	if err := cli.RunQuickCreateWorker(options, []string{oldWorkspace.ID, newWorkspace.ID, "force=false", "-", channel, "no-client"}); err != nil {
-		t.Fatalf("run quick create worker: %v", err)
-	}
-	if err := <-signalResult; err != nil {
-		t.Fatalf("signal quick create worker: %v", err)
-	}
-	oldWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
-	if err != nil || oldWorkspace.Status != domain.WorkspaceArchived || oldWorkspace.Materialized {
-		t.Fatalf("old Workspace after worker: %+v, error=%v", oldWorkspace, err)
-	}
-	newWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(newWorkspace.ID)
-	if err != nil || newWorkspace.Status != domain.WorkspaceActive {
-		t.Fatalf("new Workspace after worker: status=%q error=%v", newWorkspace.Status, err)
-	}
-	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=example-old-workspace").Run(); err == nil {
-		t.Fatal("quick create worker kept the old tmux session")
-	}
-}
-
-func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux is not installed")
-	}
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go is not installed")
-	}
-
-	root := t.TempDir()
-	binary := filepath.Join(root, "twt")
-	runCommand(t, filepath.Join("..", ".."), "go", "build", "-o", binary, "./cmd/twt")
 	source := filepath.Join(root, "source")
 	initGitRepository(t, source)
 	configDir := filepath.Join(root, "config")
@@ -427,11 +296,10 @@ func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{
-		ConfigDir:             configDir,
-		StateDir:              filepath.Join(root, "state"),
-		DataDir:               filepath.Join(root, "data"),
-		TmuxSocket:            socket,
-		QuickCreateExecutable: binary,
+		ConfigDir:  configDir,
+		StateDir:   filepath.Join(root, "state"),
+		DataDir:    filepath.Join(root, "data"),
+		TmuxSocket: socket,
 	}
 	executeWithOptions(t, options, nil, "workspaces", "create", "old-workspace", "--template", "example", "--no-open")
 	oldWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("old-workspace")
@@ -472,8 +340,8 @@ func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	failingOutputCommand.SetArgs(forceTextOutput([]string{"next", "output-fails"}))
 	err = failingOutputCommand.Execute()
 	if err == nil || !strings.Contains(err.Error(), "test output failure") ||
-		!strings.Contains(err.Error(), "could not switch to the new Workspace") ||
-		!strings.Contains(err.Error(), "twt workspaces open output-fails") {
+		!strings.Contains(err.Error(), "could not report its cleanup step") ||
+		!strings.Contains(err.Error(), "current Workspace stays active") {
 		t.Fatalf("quick create output failure = %v", err)
 	}
 	failedOutputWorkspace, findErr := store.NewWorkspaceStore(options.StateDir).Find("output-fails")
@@ -489,13 +357,13 @@ func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 		t.Fatalf("calling client after output failure = %q, want %q", clientSessionBeforeSuccess, oldWorkspace.TmuxSession)
 	}
 	output := executeWithOptions(t, options, nil, "next", "new-workspace")
-	if !strings.Contains(output, "archiving Workspace \"old-workspace\"") {
+	if !strings.Contains(output, "Archived Workspace \"old-workspace\"") {
 		t.Fatalf("real quick create output = %q", output)
 	}
-	waitFor(t, 10*time.Second, func() bool {
-		workspace, err := store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
-		return err == nil && workspace.Status == domain.WorkspaceArchived && !workspace.Materialized && workspace.EnvironmentID == ""
-	}, "old Workspace release did not finish")
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
+	if err != nil || workspace.Status != domain.WorkspaceArchived || workspace.Materialized || workspace.EnvironmentID != "" {
+		t.Fatalf("old Workspace after next = %+v, error = %v", workspace, err)
+	}
 	newWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("new-workspace")
 	if err != nil || newWorkspace.Status != domain.WorkspaceActive {
 		t.Fatalf("new Workspace after real quick create: status=%q error=%v", newWorkspace.Status, err)
@@ -504,10 +372,10 @@ func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if clientSession != newWorkspace.TmuxSession {
 		t.Fatalf("calling client session = %q, want %q", clientSession, newWorkspace.TmuxSession)
 	}
-	waitFor(t, 2*time.Second, func() bool {
-		windows, err := exec.Command("tmux", "-L", socket, "list-windows", "-t", newWorkspace.TmuxSession, "-F", "#{window_name}").CombinedOutput()
-		return err == nil && strings.TrimSpace(string(windows)) == "app"
-	}, "successful archive helper window did not close")
+	windows := runCommand(t, "", "tmux", "-L", socket, "list-windows", "-t", newWorkspace.TmuxSession, "-F", "#{window_name}")
+	if windows != "app" {
+		t.Fatalf("destination windows = %q, want only app", windows)
+	}
 }
 
 func TestNextRequiresTheCurrentWorkspaceTmuxPane(t *testing.T) {

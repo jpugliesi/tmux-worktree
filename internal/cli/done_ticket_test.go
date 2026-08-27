@@ -2,11 +2,9 @@ package cli_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -216,7 +214,7 @@ func TestDoneWarnsWhenTheTicketCloseIsLocked(t *testing.T) {
 	}
 }
 
-func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
+func TestDoneFromItsSessionClosesTheConfirmedTicket(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TWT_WORKSPACE_ID", "")
 	createLinkedWorkspace(t, options, "worker-src", "fix-auth")
@@ -225,26 +223,17 @@ func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	helperPane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=example-worker-dest", "-n", "done-helper", "--", "sleep", "60")
-	t.Setenv("TMUX_PANE", helperPane)
-
-	channel := "twt-done-ticket-worker-test"
-	signalResult := make(chan error, 1)
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		signalResult <- exec.Command("tmux", "-L", options.TmuxSocket, "wait-for", "-S", channel).Run()
-	}()
-	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "-", "fix-auth", "tester", channel, "no-client"}); err != nil {
-		t.Fatalf("run done worker: %v", err)
-	}
-	if err := <-signalResult; err != nil {
-		t.Fatalf("signal done worker: %v", err)
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "="+source.TmuxSession, "-F", "#{pane_id}")
+	attachControlClient(t, options.TmuxSocket, source.TmuxSession)
+	t.Setenv("TMUX_PANE", sourcePane)
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", source.ID); err != nil {
+		t.Fatalf("done from source session: %v", err)
 	}
 	released, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID)
 	if err != nil || released.Status != domain.WorkspaceArchived || released.Materialized {
-		t.Fatalf("done worker Workspace = %+v, error = %v", released, err)
+		t.Fatalf("done Workspace = %+v, error = %v", released, err)
 	}
 	if !ticketStatusDone(t, home) {
-		t.Fatal("done worker did not close the confirmed Ticket")
+		t.Fatal("done did not close the confirmed Ticket")
 	}
 }

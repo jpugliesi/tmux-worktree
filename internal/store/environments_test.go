@@ -258,8 +258,37 @@ func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
 	if strings.Contains(string(rewritten), `"project":`) || !strings.Contains(string(rewritten), `"workspace":`) {
 		t.Fatalf("saved Prepared Environment keeps the legacy claim key:\n%s", rewritten)
 	}
-	if !strings.Contains(string(rewritten), `"version": 2`) || !strings.Contains(string(rewritten), `"assignment":`) || strings.Contains(string(rewritten), `"claimReservation":`) {
-		t.Fatalf("saved Prepared Environment has no version-two assignment:\n%s", rewritten)
+	if !strings.Contains(string(rewritten), `"version": 3`) || !strings.Contains(string(rewritten), `"assignment":`) || strings.Contains(string(rewritten), `"claimReservation":`) {
+		t.Fatalf("saved Prepared Environment has no current assignment:\n%s", rewritten)
+	}
+}
+
+func TestEnvironmentStoreLoadsVersionTwoState(t *testing.T) {
+	stateDir := t.TempDir()
+	environments := NewEnvironmentStore(stateDir)
+	environment := testEnvironment("version-two", time.Now().UTC())
+	if err := environments.Save(environment); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(stateDir, "environments", environment.ID+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := bytes.Replace(data, []byte(`"version": 3`), []byte(`"version": 2`), 1)
+	if bytes.Equal(legacy, data) {
+		t.Fatal("current Prepared Environment state does not use version 3")
+	}
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := environments.Find(environment.ID)
+	if err != nil {
+		t.Fatalf("Find() version-two state: %v", err)
+	}
+	if got.Version != domain.PreparedEnvironmentVersion {
+		t.Fatalf("loaded version = %d, want %d", got.Version, domain.PreparedEnvironmentVersion)
 	}
 }
 

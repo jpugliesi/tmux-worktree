@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	agentservice "github.com/jpugliesi/tmux-worktree/internal/agent"
 	"github.com/jpugliesi/tmux-worktree/internal/agentprovider"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -272,7 +271,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		}
 	}
 	clientName := ""
-	if !request.Detached && !outside && !isDryRun(command) {
+	if request.KeepCurrent && !request.Detached && !outside && !isDryRun(command) {
 		clientName, err = callingTmuxClient(options, currentPane)
 		if err != nil {
 			return err
@@ -335,30 +334,30 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		return nil
 	}
 
-	if !request.KeepCurrent {
-		if liveAgents, liveErr := agentservice.NewService(options.StateDir, options.TmuxSocket).Live(current.ID); liveErr == nil {
-			if err := printStoppedAgents(out, liveAgents); err != nil {
-				return err
-			}
-		}
-	}
-	message := fmt.Sprintf("Created Workspace %q; switching to it and archiving Workspace %q\n", created.Name, current.Name)
+	message := fmt.Sprintf("Created Workspace %q. Cleanup of Workspace %q runs before tmux stops its session.\n", created.Name, current.Name)
 	if request.KeepCurrent {
-		message = fmt.Sprintf("Created Workspace %q; switching to it; Workspace %q stays active\n", created.Name, current.Name)
+		message = fmt.Sprintf("Created Workspace %q. Switching to it. Workspace %q stays active.\n", created.Name, current.Name)
 	}
 	if _, err := fmt.Fprint(out, message); err != nil {
-		return quickCreateSwitchFailure(created, fmt.Errorf("write quick create result: %w", err))
-	}
-	if err := options.QuickCreateSwitch(clientName, created.TmuxSession); err != nil {
-		return quickCreateSwitchFailure(created, err)
+		return fmt.Errorf("new Workspace %q is active, but twt could not report its cleanup step: %w. The current Workspace stays active", created.Name, err)
 	}
 	if request.KeepCurrent {
+		if err := options.QuickCreateSwitch(clientName, created.TmuxSession); err != nil {
+			return quickCreateSwitchFailure(created, err)
+		}
 		return nil
 	}
-	if err := options.QuickCreateArchive(clientName, current.ID, created.ID, currentReleaseOptions); err != nil {
-		return fmt.Errorf("new Workspace %q is active, but old Workspace %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
+	prepared, err := service.PrepareReleaseFromPane(current.ID, currentPane, currentReleaseOptions)
+	if err != nil {
+		return fmt.Errorf("new Workspace %q is active, but old Workspace %q was not archived: %w", created.Name, current.Name, err)
 	}
-	return nil
+	return finishPreparedRelease(service, prepared, func() error {
+		if err := printStoppedAgents(out, prepared.ArchiveResult.StoppedAgents); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintf(out, "Archived Workspace %q. Cleanup is complete. Tmux will now stop its session.\n", current.Name)
+		return err
+	})
 }
 
 func quickCreateOperation(request quickCreateRequest) string {

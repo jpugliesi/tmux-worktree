@@ -35,6 +35,8 @@ _Avoid_: Workspace, repository clone
 A reusable lifecycle record for a set of Git worktrees for one exact Workspace
 Template revision. One Workspace can claim the complete set as its Checkout
 Leases. A release returns the same set to the ready state.
+During an in-session release, it stays releasing until twt confirms that the
+source tmux session is gone.
 _Avoid_: Warm Workspace, spare worktree, checkout pool item
 
 **Agent Session**:

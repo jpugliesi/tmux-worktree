@@ -136,8 +136,8 @@ twt done                                   # finish and return worktrees to the 
 Templates can declare tmux window layouts, initialization commands, and
 agent sessions to start. `twt templates prepare` keeps a warm pool of
 initialized worktrees. `twt done` keeps Workspace state and branches. It
-returns the physical worktrees for fast reuse. `twt agents
-list/send/resume` control the coding agents inside a workspace; dispatch
+cleans the physical worktrees and then stops the complete tmux session.
+The `twt agents list/send/resume` commands control the coding agents inside a Workspace. Dispatch
 uses the same machinery. Providers: `codex`, `claude`, `cursor`, `grok`.
 
 ## Drive it from any client (chat bots included)

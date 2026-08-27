@@ -115,31 +115,16 @@ func (s *Service) Release(reference, currentPane string, opts ReleaseOptions) (A
 	if workspace.Adopted || workspace.EnvironmentID == "" {
 		return s.Archive(workspace.ID, currentPane)
 	}
-	plan := ReleasePlan{WorkspaceID: workspace.ID, Name: workspace.Name, Fingerprint: opts.ExpectedFingerprint}
-	if !opts.Prevalidated || plan.Fingerprint == "" {
-		plan, err = s.inspectRelease(workspace)
-		if err != nil {
-			return ArchiveResult{Workspace: workspace}, err
-		}
-		if plan.GitOperation != "" {
-			return ArchiveResult{Workspace: workspace}, clierr.New(clierr.UnsafeState,
-				"Workspace %q has active Git operation %q in repository %q", workspace.Name, plan.GitOperation, plan.GitRepository)
-		}
-		if plan.Dirty && !opts.Force {
-			return ArchiveResult{Workspace: workspace}, clierr.WithHint(
-				clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name),
-				"Save the changes or run the command with --force.")
-		}
-		if opts.ExpectedFingerprint != "" && opts.ExpectedFingerprint != plan.Fingerprint {
-			return ArchiveResult{Workspace: workspace}, clierr.New(clierr.UnsafeState, "Workspace %q changed after release approval", workspace.Name)
-		}
+	plan, err := s.releasePlan(workspace, opts)
+	if err != nil {
+		return ArchiveResult{Workspace: workspace}, err
 	}
 
 	stopped, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).Live(workspace.ID)
 	if err != nil {
 		return ArchiveResult{Workspace: workspace}, err
 	}
-	environmentLock, err := s.reserveRelease(&workspace, plan, opts)
+	environmentLock, err := s.reserveRelease(&workspace, plan, opts, "")
 	if err != nil {
 		return ArchiveResult{Workspace: workspace}, err
 	}
@@ -151,37 +136,66 @@ func (s *Service) Release(reference, currentPane string, opts ReleaseOptions) (A
 		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
 	}
 
+	environment, err := s.cleanReleasedEnvironment(workspace, plan, opts)
+	if err != nil {
+		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+	}
+	released, err := s.finalizeReleasedEnvironment(workspace, &environment)
+	if err != nil {
+		return ArchiveResult{Workspace: released, StoppedAgents: stopped}, err
+	}
+	return ArchiveResult{Workspace: released, StoppedAgents: stopped}, nil
+}
+
+func (s *Service) releasePlan(workspace domain.Workspace, opts ReleaseOptions) (ReleasePlan, error) {
+	plan := ReleasePlan{WorkspaceID: workspace.ID, Name: workspace.Name, Fingerprint: opts.ExpectedFingerprint}
+	if opts.Prevalidated && plan.Fingerprint != "" {
+		return plan, nil
+	}
+	inspected, err := s.inspectRelease(workspace)
+	if err != nil {
+		return plan, err
+	}
+	if inspected.GitOperation != "" {
+		return inspected, clierr.New(clierr.UnsafeState, "Workspace %q has active Git operation %q in repository %q", workspace.Name, inspected.GitOperation, inspected.GitRepository)
+	}
+	if inspected.Dirty && !opts.Force {
+		return inspected, clierr.WithHint(clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name), "Save the changes or run the command with --force.")
+	}
+	if opts.ExpectedFingerprint != "" && opts.ExpectedFingerprint != inspected.Fingerprint {
+		return inspected, clierr.New(clierr.UnsafeState, "Workspace %q changed after release approval", workspace.Name)
+	}
+	return inspected, nil
+}
+
+func (s *Service) cleanReleasedEnvironment(workspace domain.Workspace, plan ReleasePlan, opts ReleaseOptions) (domain.PreparedEnvironment, error) {
 	environment, err := s.environments.Find(workspace.EnvironmentID)
 	if err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return environment, err
 	}
 	if environment.Status != domain.EnvironmentReleasing || environment.Assignment == nil || environment.Assignment.Workspace.ID != workspace.ID {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, fmt.Errorf("Prepared Environment %q does not contain the release assignment", environment.ID)
+		return environment, fmt.Errorf("Prepared Environment %q does not contain the release assignment", environment.ID)
 	}
 	if environment.Assignment.Generation != environment.Generation {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, fmt.Errorf("Prepared Environment %q release generation changed", environment.ID)
+		return environment, fmt.Errorf("Prepared Environment %q release generation changed", environment.ID)
 	}
-
 	current, states, err := s.inspectReleaseState(workspace)
 	if err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return environment, err
 	}
 	if current.Fingerprint != plan.Fingerprint {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, clierr.New(clierr.UnsafeState,
-			"Workspace %q changed after release approval; its worktrees stay assigned", workspace.Name)
+		return environment, clierr.New(clierr.UnsafeState, "Workspace %q changed after release approval. Its worktrees stay assigned", workspace.Name)
 	}
 	if current.GitOperation != "" {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, clierr.New(clierr.UnsafeState,
-			"Workspace %q has active Git operation %q in repository %q", workspace.Name, current.GitOperation, current.GitRepository)
+		return environment, clierr.New(clierr.UnsafeState, "Workspace %q has active Git operation %q in repository %q", workspace.Name, current.GitOperation, current.GitRepository)
 	}
 	if current.Dirty {
 		if !opts.Force {
-			return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, clierr.New(clierr.UnsafeState,
-				"Workspace %q has uncommitted changes", workspace.Name)
+			return environment, clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name)
 		}
 		for _, repository := range workspace.Repositories {
 			if err := cleanRepositoryForRelease(repository.Path); err != nil {
-				return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+				return environment, err
 			}
 		}
 	}
@@ -193,18 +207,21 @@ func (s *Service) Release(reference, currentPane string, opts ReleaseOptions) (A
 		baselines = nil
 	}
 	if err := s.runRecycleHooks(workspace, baselines); err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return environment, err
 	}
 	if err := s.detachReleasedRepositories(workspace, &environment); err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return environment, err
 	}
 	if err := os.Remove(filepath.Join(workspace.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, fmt.Errorf("remove Workspace ownership marker: %w", err)
+		return environment, fmt.Errorf("remove Workspace ownership marker: %w", err)
 	}
 	if err := writeEnvironmentMarker(environment); err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return environment, err
 	}
+	return environment, nil
+}
 
+func (s *Service) finalizeReleasedEnvironment(workspace domain.Workspace, environment *domain.PreparedEnvironment) (domain.Workspace, error) {
 	released := workspace
 	released.EnvironmentID = ""
 	released.Root = ""
@@ -218,17 +235,17 @@ func (s *Service) Release(reference, currentPane string, opts ReleaseOptions) (A
 	released.ArchivedAt = &now
 	released.UpdatedAt = now
 	if err := s.store.Save(released); err != nil {
-		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+		return workspace, err
 	}
 	environment.Status = domain.EnvironmentReady
 	environment.Assignment = nil
 	environment.ReadyAt = &now
 	environment.UpdatedAt = now
 	environment.Failure = ""
-	if err := s.environments.Save(environment); err != nil {
-		return ArchiveResult{Workspace: released, StoppedAgents: stopped}, err
+	if err := s.environments.Save(*environment); err != nil {
+		return released, err
 	}
-	return ArchiveResult{Workspace: released, StoppedAgents: stopped}, nil
+	return released, nil
 }
 
 func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[string]repositoryReleaseState) error {
@@ -271,7 +288,7 @@ func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[stri
 	return nil
 }
 
-func (s *Service) reserveRelease(workspace *domain.Workspace, plan ReleasePlan, opts ReleaseOptions) (*store.NamedLock, error) {
+func (s *Service) reserveRelease(workspace *domain.Workspace, plan ReleasePlan, opts ReleaseOptions, sourceSessionID string) (*store.NamedLock, error) {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return nil, err
@@ -306,7 +323,7 @@ func (s *Service) reserveRelease(workspace *domain.Workspace, plan ReleasePlan, 
 	environment.Assignment = &domain.EnvironmentAssignment{
 		Generation: environment.Generation, Kind: domain.EnvironmentAssignmentRelease,
 		Phase: domain.EnvironmentAssignmentReserved, Workspace: latest, Fingerprint: plan.Fingerprint,
-		Force: opts.Force, ReservedAt: s.now(),
+		Force: opts.Force, SourceSessionID: sourceSessionID, ReservedAt: s.now(),
 	}
 	environment.UpdatedAt = s.now()
 	if err := s.environments.Save(environment); err != nil {
@@ -394,8 +411,9 @@ func (s *Service) openReleasedWorkspace(workspace domain.Workspace) (domain.Work
 	return s.completeEnvironmentClaim(environment.ID, latest.ID, CreateOptions{})
 }
 
-// Reconcile completes durable release transitions after an interrupted
-// worker. It does not clean or detach a still-materialized Workspace.
+// Reconcile completes durable release transitions after the source tmux
+// session stops. It never makes an Environment ready while an owned session
+// can still change its worktrees.
 func (s *Service) Reconcile() error {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
@@ -410,20 +428,93 @@ func (s *Service) Reconcile() error {
 		if environment.Status != domain.EnvironmentReleasing || environment.Assignment == nil {
 			continue
 		}
-		workspace, err := s.store.Find(environment.Assignment.Workspace.ID)
-		if err != nil {
+		if err := s.reconcileReleasedEnvironment(environment); errors.Is(err, store.ErrLockHeld) {
 			continue
-		}
-		if workspace.Materialized || workspace.EnvironmentID != "" || workspace.Root != "" {
-			continue
-		}
-		now := s.now()
-		environment.Status = domain.EnvironmentReady
-		environment.Assignment = nil
-		environment.ReadyAt = &now
-		environment.UpdatedAt = now
-		if err := s.environments.Save(environment); err != nil {
+		} else if err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) reconcileReleasedEnvironment(environment domain.PreparedEnvironment) error {
+	environmentLock, err := store.AcquireEnvironmentLock(s.options.StateDir, environment.ID)
+	if err != nil {
+		return err
+	}
+	defer environmentLock.Release()
+	latest, err := s.environments.Find(environment.ID)
+	if err != nil {
+		return err
+	}
+	if latest.Status != domain.EnvironmentReleasing || latest.Assignment == nil {
+		return nil
+	}
+	workspace, err := s.store.Find(latest.Assignment.Workspace.ID)
+	if err != nil {
+		return nil
+	}
+	assignment := latest.Assignment
+	if workspace.Materialized || workspace.EnvironmentID != "" || workspace.Root != "" {
+		if assignment.Phase != domain.EnvironmentAssignmentSessionStopPending {
+			return nil
+		}
+		present, err := s.preparedSessionPresent(assignment.SourceSessionID, workspace.ID)
+		if err != nil {
+			return err
+		}
+		if present {
+			return nil
+		}
+		if err := validateReleasedEnvironment(workspace, latest); err != nil {
+			return err
+		}
+		if err := s.clearAgentPanes(workspace.ID); err != nil {
+			return err
+		}
+		_, err = s.finalizeReleasedEnvironment(workspace, &latest)
+		return err
+	}
+	now := s.now()
+	latest.Status = domain.EnvironmentReady
+	latest.Assignment = nil
+	latest.ReadyAt = &now
+	latest.UpdatedAt = now
+	return s.environments.Save(latest)
+}
+
+// validateReleasedEnvironment confirms that no process changed a worktree
+// after cleanup and before the source tmux session stopped.
+func validateReleasedEnvironment(workspace domain.Workspace, environment domain.PreparedEnvironment) error {
+	if err := validateEnvironmentMarker(environment); err != nil {
+		return err
+	}
+	for _, repository := range workspace.Repositories {
+		_, prepared, _, err := preparedRepositoryFor(environment, repository.Name)
+		if err != nil {
+			return err
+		}
+		operation, _, err := activeGitOperation(repository.Path)
+		if err != nil {
+			return err
+		}
+		status, err := gitBytes(repository.Path, "status", "--porcelain=v1", "-z", "--ignore-submodules=none")
+		if err != nil {
+			return fmt.Errorf("inspect released repository %q: %w", repository.Name, err)
+		}
+		head, err := output(repository.Path, "git", "rev-parse", "HEAD")
+		if err != nil {
+			return fmt.Errorf("inspect released repository %q HEAD: %w", repository.Name, err)
+		}
+		base := repository.BaseCommit
+		if base == "" {
+			base = prepared.BaseCommit
+		}
+		if operation != "" || len(status) != 0 || head != base {
+			return clierr.WithHint(
+				clierr.New(clierr.UnsafeState, "Workspace %q changed after release cleanup in repository %q. Prepared Environment %q stays unavailable", workspace.Name, repository.Name, environment.ID),
+				fmt.Sprintf("Run 'twt workspaces open %s' to inspect the Workspace.", workspace.ID),
+			)
 		}
 	}
 	return nil
@@ -453,28 +544,9 @@ func (s *Service) restoreBoundWorkspace(workspace *domain.Workspace) error {
 	if environment.Assignment == nil || environment.Assignment.Workspace.ID != workspace.ID {
 		return clierr.New(clierr.UnsafeState, "Prepared Environment %q has no matching release assignment", environment.ID)
 	}
-	for _, repository := range workspace.Repositories {
-		if err := s.withCacheLock(repository.CachePath, func() error {
-			branch, err := output(repository.Path, "git", "branch", "--show-current")
-			if err != nil {
-				return err
-			}
-			if branch == repository.Branch {
-				return nil
-			}
-			if err := run(repository.Path, "git", "switch", repository.Branch); err != nil {
-				return fmt.Errorf("restore Workspace branch for repository %q: %w", repository.Name, err)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-	marker := map[string]string{"owner": "twt", "workspaceId": workspace.ID, "environmentId": environment.ID}
-	if err := writeJSON(filepath.Join(workspace.Root, ".twt-owned.json"), marker, 0o600); err != nil {
+	if err := s.restoreReleaseOwnership(*workspace, &environment); err != nil {
 		return err
 	}
-	_ = os.Remove(filepath.Join(workspace.Root, environmentMarkerName))
 	environment.Generation++
 	environment.Status = domain.EnvironmentClaimed
 	environment.Assignment = &domain.EnvironmentAssignment{

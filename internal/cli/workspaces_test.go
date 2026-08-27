@@ -397,22 +397,25 @@ func TestWorkspacesArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	executeWithOptions(t, options, nil, "workspaces", "open", workspace.ID, "--no-attach")
 	pane := runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=example-archive-me", "-F", "#{pane_id}")
 	t.Setenv("TMUX_PANE", pane)
-	command = cli.New(options)
-	command.SetArgs(forceTextOutput([]string{"workspaces", "archive", workspace.ID}))
-	err = command.Execute()
-	// Inside the owned session, archive relocates the calling tmux client
-	// first. Without a client, the relocation fails and nothing changes.
-	if err == nil || !strings.Contains(err.Error(), "not active in a client") {
-		t.Fatalf("archive from the target session error = %v", err)
+	output = executeWithOptions(t, options, nil, "workspaces", "archive", workspace.ID)
+	if !strings.Contains(output, "Archived Workspace \"archive-me\"") {
+		t.Fatalf("archive from the target session output = %q", output)
 	}
-	stillActive, err = store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
-	if err != nil {
-		t.Fatal(err)
+	archivedFromPane, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || archivedFromPane.Status != domain.WorkspaceArchived || archivedFromPane.Materialized {
+		t.Fatalf("self-archived Workspace = %+v, error = %v", archivedFromPane, err)
 	}
-	if stillActive.Status != domain.WorkspaceActive {
-		t.Fatalf("self-archive changed Workspace status to %q", stillActive.Status)
+	if err := exec.Command("tmux", "-L", socket, "has-session", "-t", "=example-archive-me").Run(); err == nil {
+		t.Fatal("self-archive kept the Workspace tmux session")
 	}
 
+	executeWithOptions(t, options, nil, "workspaces", "open", workspace.ID, "--no-attach")
+	pane = runCommand(t, "", "tmux", "-L", socket, "list-panes", "-t", "=example-archive-me", "-F", "#{pane_id}")
+	t.Setenv("TMUX_PANE", pane)
+	stillActive, err = store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || stillActive.Status != domain.WorkspaceActive {
+		t.Fatalf("reopened Workspace = %+v, error = %v", stillActive, err)
+	}
 	blockedPlan := executeWithOptions(t, options, nil, "workspaces", "remove", workspace.ID)
 	if !strings.Contains(blockedPlan, "Blocked:") || !strings.Contains(blockedPlan, "not archived") || !strings.Contains(blockedPlan, "The removal is blocked") {
 		t.Fatalf("active Workspace removal plan = %q", blockedPlan)
