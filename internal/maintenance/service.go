@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -108,14 +109,14 @@ func NewService(configDir, stateDir, dataDir, ticketsHome string) *Service {
 	}
 }
 
-// WithSkillCheck adds the agent skill drift check to doctor. version is the
-// version that 'twt skills install' stamps, and paths are the installed skill
-// files. Doctor skips the check without both values.
 func (s *Service) WithTmuxSocket(socket string) *Service {
 	s.tmuxSocket = socket
 	return s
 }
 
+// WithSkillCheck adds the agent skill drift check to doctor. version is the
+// version that 'twt skills install' stamps, and paths are the installed skill
+// files. Doctor skips the check without both values.
 func (s *Service) WithSkillCheck(version string, paths []string) *Service {
 	s.skillVersion = version
 	s.skillPaths = paths
@@ -414,14 +415,14 @@ func (s *Service) addSessionGapChecks(report *DoctorReport) {
 	}
 }
 
-// checkSkill compares each installed agent skill file with the running build.
-// A copy from another build, or a copy with no version, is a warning: the
-// skill still works, but its rules can be old. Doctor reports nothing when no
-// skill tree holds the twt skill.
+// checkSkill compares each installed agent skill file with the exact content
+// that the running build installs. Doctor reports nothing when no skill tree
+// holds the twt skill.
 func (s *Service) checkSkill(report *DoctorReport) {
 	if strings.TrimSpace(s.skillVersion) == "" || len(s.skillPaths) == 0 {
 		return
 	}
+	expected := []byte(skills.Stamped(s.skillVersion))
 	installed, stale := 0, []string{}
 	for _, path := range s.skillPaths {
 		content, err := os.ReadFile(path)
@@ -429,7 +430,7 @@ func (s *Service) checkSkill(report *DoctorReport) {
 			continue
 		}
 		installed++
-		if skills.Version(string(content)) != s.skillVersion {
+		if !bytes.Equal(content, expected) {
 			stale = append(stale, path)
 		}
 	}
@@ -437,11 +438,11 @@ func (s *Service) checkSkill(report *DoctorReport) {
 		return
 	}
 	if len(stale) > 0 {
-		report.addWarning("skills", fmt.Sprintf("%d of %d installed twt skill files are not version %s (%s). Run 'twt skills install' to update the twt skill.",
+		report.addWarning("skills", fmt.Sprintf("%d of %d installed twt skill files do not match twt version %s (%s). Run 'twt skills install' to update the twt skill.",
 			len(stale), installed, s.skillVersion, strings.Join(stale, ", ")))
 		return
 	}
-	report.addPass("skills", fmt.Sprintf("%d installed twt skill files are version %s", installed, s.skillVersion))
+	report.addPass("skills", fmt.Sprintf("%d installed twt skill files match twt version %s", installed, s.skillVersion))
 }
 
 // checkTicketsHome reports the state of the Tickets home. A missing or

@@ -796,8 +796,8 @@ twt skills install --output json
 twt doctor --output json
 ```
 
-`twt doctor` gives a `skills` warning when an installed copy comes from
-another build.
+`twt doctor` gives a `skills` warning when an installed file does not match
+the exact skill content from the running binary.
 
 ## Completion
 

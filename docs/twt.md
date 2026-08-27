@@ -1180,12 +1180,12 @@ twt skills install --dir ./skills --dry-run --output json
 twt skills show
 ```
 
-Run `twt skills install` again after a `twt` upgrade. `twt doctor` reports a
-`skills` warning when an installed copy comes from another build:
+Run `twt skills install` again after a `twt` upgrade. `twt doctor` compares
+each installed file with the exact skill content from the running binary:
 
 ```console
 $ twt doctor
-warn	skills	1 of 3 installed twt skill files are not version 0.4.0 (...). Run 'twt skills install' to update the twt skill.
+warn	skills	1 of 3 installed twt skill files do not match twt version 0.4.0 (...). Run 'twt skills install' to update the twt skill.
 ```
 
 ## Security posture

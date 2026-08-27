@@ -34,6 +34,7 @@ func TestDoctorSkillCheckReportsDrift(t *testing.T) {
 		status  string
 	}{
 		{name: "same version", content: skills.Stamped("1.2.3"), status: "pass"},
+		{name: "same version changed content", content: strings.Replace(skills.Stamped("1.2.3"), "Use `twt` as the state owner.", "Use direct state files.", 1), status: "warn"},
 		{name: "other version", content: skills.Stamped("0.9.0"), status: "warn"},
 		{name: "no version", content: skills.Canonical(), status: "warn"},
 	}
