@@ -80,11 +80,11 @@ func TestEnvironmentStoreRejectsInvalidStateAndVersions(t *testing.T) {
 	}
 }
 
-func TestEnvironmentStoreDoesNotChangeAClaimReservation(t *testing.T) {
+func TestEnvironmentStoreChangesAnAssignmentForANewGeneration(t *testing.T) {
 	environments := NewEnvironmentStore(t.TempDir())
 	environment := testEnvironment("claim-once", time.Now().UTC())
 	environment.Status = domain.EnvironmentClaiming
-	environment.ClaimReservation = &domain.EnvironmentClaim{
+	environment.Assignment = &domain.EnvironmentAssignment{
 		Workspace: domain.Workspace{
 			Version:       domain.WorkspaceVersion,
 			ID:            "first-workspace",
@@ -95,16 +95,18 @@ func TestEnvironmentStoreDoesNotChangeAClaimReservation(t *testing.T) {
 	if err := environments.Save(environment); err != nil {
 		t.Fatal(err)
 	}
-	environment.ClaimReservation.Workspace.ID = "different-workspace"
-	if err := environments.Save(environment); err == nil || !strings.Contains(err.Error(), "claim reservation cannot change") {
-		t.Fatalf("Save() changed reservation error = %v", err)
+	environment.Assignment.Generation = 2
+	environment.Assignment.Workspace.ID = "different-workspace"
+	environment.Assignment.Workspace.EnvironmentID = environment.ID
+	if err := environments.Save(environment); err != nil {
+		t.Fatalf("Save() changed assignment: %v", err)
 	}
 	got, err := environments.Find(environment.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ClaimReservation.Workspace.ID != "first-workspace" {
-		t.Fatalf("saved Workspace ID = %q", got.ClaimReservation.Workspace.ID)
+	if got.Assignment.Workspace.ID != "different-workspace" || got.Assignment.Generation != 2 {
+		t.Fatalf("saved Workspace ID = %q", got.Assignment.Workspace.ID)
 	}
 }
 
@@ -112,7 +114,7 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 	environments := NewEnvironmentStore(t.TempDir())
 	environment := testEnvironment("claimed", time.Now().UTC())
 	environment.Status = domain.EnvironmentClaiming
-	environment.ClaimReservation = &domain.EnvironmentClaim{
+	environment.Assignment = &domain.EnvironmentAssignment{
 		Workspace: domain.Workspace{
 			Version:       domain.WorkspaceVersion,
 			ID:            "workspace-id",
@@ -135,8 +137,8 @@ func TestEnvironmentStorePersistsACompleteClaimReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ClaimReservation == nil || got.ClaimReservation.Workspace.TmuxSession != "fix-auth-workspace-id" || len(got.ClaimReservation.Workspace.Repositories) != 1 {
-		t.Fatalf("claim reservation = %+v", got.ClaimReservation)
+	if got.Assignment == nil || got.Assignment.Workspace.TmuxSession != "fix-auth-workspace-id" || len(got.Assignment.Workspace.Repositories) != 1 {
+		t.Fatalf("claim reservation = %+v", got.Assignment)
 	}
 }
 
@@ -145,7 +147,7 @@ func TestEnvironmentStoreLoadsALegacyWorkspaceClaim(t *testing.T) {
 	environments := NewEnvironmentStore(stateDir)
 	environment := testEnvironment("legacy-claim", time.Now().UTC())
 	environment.Status = domain.EnvironmentClaiming
-	environment.ClaimReservation = &domain.EnvironmentClaim{
+	environment.Assignment = &domain.EnvironmentAssignment{
 		Workspace: domain.Workspace{
 			Version:       domain.WorkspaceVersion,
 			ID:            "legacy-workspace",
@@ -173,8 +175,8 @@ func TestEnvironmentStoreLoadsALegacyWorkspaceClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ClaimReservation == nil || got.ClaimReservation.Workspace.ID != "legacy-workspace" {
-		t.Fatalf("legacy claim = %+v", got.ClaimReservation)
+	if got.Assignment == nil || got.Assignment.Workspace.ID != "legacy-workspace" {
+		t.Fatalf("legacy claim = %+v", got.Assignment)
 	}
 }
 
@@ -187,7 +189,7 @@ func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
 		Status: domain.StepSucceeded, Attempts: 1,
 	}}
 	environment.Status = domain.EnvironmentClaiming
-	environment.ClaimReservation = &domain.EnvironmentClaim{
+	environment.Assignment = &domain.EnvironmentAssignment{
 		Workspace: domain.Workspace{
 			Version: domain.WorkspaceVersion, ID: "legacy-workspace",
 			EnvironmentID: environment.ID, Name: "auth-fix",
@@ -208,6 +210,8 @@ func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
 		t.Fatalf("current fixture has %d Workspace claim keys", bytes.Count(raw, legacyKey))
 	}
 	raw = bytes.Replace(raw, legacyKey, []byte(`"project":`), 1)
+	raw = bytes.Replace(raw, []byte(`"version": 2`), []byte(`"version": 1`), 1)
+	raw = bytes.Replace(raw, []byte(`"assignment":`), []byte(`"claimReservation":`), 1)
 	raw = append(raw, '\n')
 	directory := filepath.Join(stateDir, "environments")
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -225,7 +229,7 @@ func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
 	if got.Steps[0].ID != "environment_root" || got.Steps[0].Kind != domain.StepWorkspaceRoot {
 		t.Fatalf("legacy Environment root step = %+v", got.Steps[0])
 	}
-	claimSteps := got.ClaimReservation.Workspace.Steps
+	claimSteps := got.Assignment.Workspace.Steps
 	if claimSteps[0].ID != "workspace_root" || claimSteps[0].Kind != domain.StepWorkspaceRoot {
 		t.Fatalf("legacy claim root step = %+v", claimSteps[0])
 	}
@@ -253,6 +257,9 @@ func TestEnvironmentStoreNormalizesAllVersionOneSetupStepsOnRead(t *testing.T) {
 	}
 	if strings.Contains(string(rewritten), `"project":`) || !strings.Contains(string(rewritten), `"workspace":`) {
 		t.Fatalf("saved Prepared Environment keeps the legacy claim key:\n%s", rewritten)
+	}
+	if !strings.Contains(string(rewritten), `"version": 2`) || !strings.Contains(string(rewritten), `"assignment":`) || strings.Contains(string(rewritten), `"claimReservation":`) {
+		t.Fatalf("saved Prepared Environment has no version-two assignment:\n%s", rewritten)
 	}
 }
 

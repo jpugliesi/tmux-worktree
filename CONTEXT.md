@@ -12,9 +12,9 @@ _Avoid_: Project template, change template
 
 **Workspace**:
 A temporary, resumable place for work on zero or more Tickets from one
-Project. It owns its tmux session and Agent Sessions and, when created from a
-Workspace Template, one Checkout Lease for each Repository Specification; an
-adopted Workspace can have no Checkout Leases.
+Project. An active Workspace owns a tmux session and Checkout Leases. An
+archived Workspace keeps its branches, Template snapshot, and Agent Sessions.
+An adopted Workspace can have no Checkout Leases.
 _Avoid_: Project, session, workdir
 
 **Repository Specification**:
@@ -32,9 +32,9 @@ A Git worktree assigned to one Workspace for one repository.
 _Avoid_: Workspace, repository clone
 
 **Prepared Environment**:
-A lifecycle record for a set of Git worktrees for one exact Workspace
-Template revision. twt prepares the set, and one Workspace can claim the
-complete set as its checkout leases.
+A reusable lifecycle record for a set of Git worktrees for one exact Workspace
+Template revision. One Workspace can claim the complete set as its Checkout
+Leases. A release returns the same set to the ready state.
 _Avoid_: Warm Workspace, spare worktree, checkout pool item
 
 **Agent Session**:
@@ -83,14 +83,15 @@ to an Agent Session or tmux pane.
 _Avoid_: Workspace review, Agent feedback
 
 **Initialization**:
-A declared setup action that prepares a new physical Git worktree or Workspace
-for use. Repository initialization runs at most once on each physical worktree.
+A declared setup action that prepares a physical Git worktree or Workspace for
+use. Repository initialization runs after preparation and after a base refresh.
+Workspace initialization runs after each claim.
 _Avoid_: Bootstrap magic, implicit setup
 
 **Environment Digest**:
 The hash of the part of a Workspace Template revision that changes the physical
 worktrees: each repository name, clone source, depth, remotes, default branch,
-and repository initialization. A Workspace can claim a Prepared Environment
+repository initialization, and recycle command. A Workspace can claim a Prepared Environment
 only when the digests match. A change to the template name, a window name, the
 Workspace initialization, or the pool depth keeps the digest.
 _Avoid_: Template hash, template version

@@ -40,6 +40,9 @@ func TestWorkspaceStoreLoadsTheVersionOneTicketField(t *testing.T) {
 	if len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth" {
 		t.Fatalf("legacy Workspace Tickets = %v", workspace.Tickets)
 	}
+	if workspace.Version != 2 || !workspace.Materialized {
+		t.Fatalf("legacy Workspace normalization = %+v", workspace)
+	}
 }
 
 func TestWorkspaceStoreNormalizesVersionOneSetupStepsOnRead(t *testing.T) {
@@ -134,6 +137,9 @@ func TestWorkspaceStoreNormalizesVersionOneSetupStepsOnRead(t *testing.T) {
 	}
 	if !strings.Contains(string(rewritten), `"workspace_root"`) || !strings.Contains(string(rewritten), `"workspace_init"`) {
 		t.Fatalf("saved Workspace has no current setup-step names:\n%s", rewritten)
+	}
+	if !strings.Contains(string(rewritten), `"version": 2`) || !strings.Contains(string(rewritten), `"materialized": true`) {
+		t.Fatalf("saved Workspace has no version-two lifecycle fields:\n%s", rewritten)
 	}
 }
 

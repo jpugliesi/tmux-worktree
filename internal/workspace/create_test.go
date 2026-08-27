@@ -284,7 +284,7 @@ func TestCreateRepairsShallowCacheAncestryAndKeepsItConnected(t *testing.T) {
 		t.Fatal("test setup did not create disconnected shallow history")
 	}
 
-	workspace, err := service.CreateWithOptions("fix-shallow", template.Name, template, CreateOptions{})
+	workspace, err := service.CreateWithOptions("fix-shallow", template.Name, template, CreateOptions{Fresh: true})
 	if err != nil {
 		t.Fatal(err)
 	}

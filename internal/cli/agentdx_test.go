@@ -47,7 +47,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 40 {
+	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 42 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -59,6 +59,11 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 			foundNext = true
 			if len(command.Arguments) != 1 || command.Arguments[0].Name != "name_or_ticket" || command.Arguments[0].Required {
 				t.Fatalf("next schema arguments = %+v", command.Arguments)
+			}
+			for _, flag := range command.Flags {
+				if flag.Name == "no-fetch" {
+					t.Fatal("next keeps the removed --no-fetch flag")
+				}
 			}
 		}
 		if command.Path == "twt archive" {
@@ -97,8 +102,11 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 		if _, ok := flags["branch"]; !ok {
 			t.Fatalf("%s schema misses --branch: %+v", command.Path, flags)
 		}
-		if _, ok := flags["no-fetch"]; !ok {
-			t.Fatalf("%s schema misses --no-fetch: %+v", command.Path, flags)
+		if _, ok := flags["fresh"]; !ok {
+			t.Fatalf("%s schema misses --fresh: %+v", command.Path, flags)
+		}
+		if _, ok := flags["no-fetch"]; ok {
+			t.Fatalf("%s keeps the removed --no-fetch flag", command.Path)
 		}
 	}
 	if !foundCreate {
@@ -119,7 +127,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 			t.Fatalf("agents.register fields = %+v", operation.Fields)
 		}
 		if operation.Operation == "workspaces.archive" {
-			foundArchiveOperation = len(operation.Fields) == 1 && operation.Fields[0].Path == "workspace.reference"
+			foundArchiveOperation = len(operation.Fields) == 2 && operation.Fields[0].Path == "workspace.reference" && operation.Fields[1].Path == "workspace.force"
 		}
 	}
 	if !foundArchiveOperation {

@@ -217,7 +217,7 @@ func TestEnvironmentsListGroupsEnvironmentsByWorkspaceTemplate(t *testing.T) {
 	})
 	log := writePrepareLog(t, options.StateDir, failed.ID)
 	claimed := saveEnvironmentRecord(t, options, "claimed000000000000000000000000ef", domain.EnvironmentClaimed, template, 2048, func(environment *domain.PreparedEnvironment) {
-		environment.ClaimReservation = &domain.EnvironmentClaim{
+		environment.Assignment = &domain.EnvironmentAssignment{
 			Workspace: domain.Workspace{
 				Version: domain.WorkspaceVersion, ID: "workspace-id", EnvironmentID: environment.ID, Name: "fix-auth",
 				TemplateName: template.Name, Status: domain.WorkspaceActive,

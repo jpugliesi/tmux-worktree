@@ -93,8 +93,9 @@ func TestDoneAsksToCloseTheLinkedTicket(t *testing.T) {
 	if ticketStatusDone(t, home) {
 		t.Fatal("the answer n closed the Ticket")
 	}
-	if _, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID); err == nil {
-		t.Fatal("done kept the Workspace record")
+	released, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || released.Status != domain.WorkspaceArchived || released.Materialized {
+		t.Fatalf("Workspace after done: %+v, error = %v", released, err)
 	}
 
 	// The answer "y" closes the Ticket after the removal.
@@ -164,28 +165,25 @@ func TestDoneWithManyTicketsDoesNotCloseThem(t *testing.T) {
 	}
 }
 
-func TestDoneKeepNeverPromptsForTheTicket(t *testing.T) {
+func TestDoneRejectsTheRemovedKeepFlag(t *testing.T) {
 	options, home := doneTicketFixture(t)
 	t.Setenv("TMUX_PANE", "")
 	t.Setenv("TWT_WORKSPACE_ID", "")
 	workspace := createLinkedWorkspace(t, options, "keep-linked", "fix-auth")
 
 	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", "keep-linked", "--keep")
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --keep") {
+		t.Fatalf("done --keep error = %v", err)
 	}
 	if strings.Contains(stderr, "Close Ticket") || strings.Contains(stdout, "Close Ticket") {
-		t.Fatalf("done --keep prompted: %q %q", stdout, stderr)
-	}
-	if !strings.Contains(stdout, "Run 'twt tickets close fix-auth' when the work is complete.") {
-		t.Fatalf("done --keep has no hint: %q", stdout)
+		t.Fatalf("rejected done --keep prompted: %q %q", stdout, stderr)
 	}
 	if ticketStatusDone(t, home) {
 		t.Fatal("done --keep closed the Ticket")
 	}
-	archived, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
-	if err != nil || archived.Status != domain.WorkspaceArchived {
-		t.Fatalf("Workspace after done --keep: status=%q error=%v", archived.Status, err)
+	unchanged, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || unchanged.Status != domain.WorkspaceActive {
+		t.Fatalf("Workspace after rejected done --keep: status=%q error=%v", unchanged.Status, err)
 	}
 }
 
@@ -209,11 +207,12 @@ func TestDoneWarnsWhenTheTicketCloseIsLocked(t *testing.T) {
 	if ticketStatusDone(t, home) {
 		t.Fatal("done closed a Ticket that a different claimant holds")
 	}
-	if !strings.Contains(stdout, "Removed Workspace \"locked-linked\"") {
-		t.Fatalf("done did not remove the Workspace: %q", stdout)
+	if !strings.Contains(stdout, "Finished Workspace \"locked-linked\"") {
+		t.Fatalf("done did not finish the Workspace: %q", stdout)
 	}
-	if _, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID); err == nil {
-		t.Fatal("done kept the Workspace record")
+	released, err := store.NewWorkspaceStore(options.StateDir).Find(workspace.ID)
+	if err != nil || released.Status != domain.WorkspaceArchived || released.Materialized {
+		t.Fatalf("Workspace after done: %+v, error = %v", released, err)
 	}
 }
 
@@ -235,14 +234,15 @@ func TestDoneWorkerClosesTheConfirmedTicket(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		signalResult <- exec.Command("tmux", "-L", options.TmuxSocket, "wait-for", "-S", channel).Run()
 	}()
-	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "fix-auth", "tester", channel, "no-client"}); err != nil {
+	if err := cli.RunDoneWorker(options, []string{source.ID, "keep=false", "force=false", "-", "-", "fix-auth", "tester", channel, "no-client"}); err != nil {
 		t.Fatalf("run done worker: %v", err)
 	}
 	if err := <-signalResult; err != nil {
 		t.Fatalf("signal done worker: %v", err)
 	}
-	if _, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID); err == nil {
-		t.Fatal("done worker kept the Workspace record")
+	released, err := store.NewWorkspaceStore(options.StateDir).Find(source.ID)
+	if err != nil || released.Status != domain.WorkspaceArchived || released.Materialized {
+		t.Fatalf("done worker Workspace = %+v, error = %v", released, err)
 	}
 	if !ticketStatusDone(t, home) {
 		t.Fatal("done worker did not close the confirmed Ticket")

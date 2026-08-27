@@ -26,8 +26,10 @@ type quickCreateRequest struct {
 	TemplateName string
 	// KeepCurrent keeps the current Workspace active after the switch.
 	KeepCurrent bool
-	// NoFetch turns the default-branch refresh before the claim off.
-	NoFetch bool
+	// Fresh refreshes the default branch before the claim.
+	Fresh bool
+	// Force permits cleanup of uncommitted changes in the current Workspace.
+	Force bool
 	// Branch is an optional custom Workspace branch name.
 	Branch string
 	// Tickets are the Ticket slugs that the new Workspace works on.
@@ -45,7 +47,8 @@ type quickCreateRequest struct {
 
 func newNextCommand(options Options) *cobra.Command {
 	var templateName string
-	var noFetch bool
+	var fresh bool
+	var force bool
 	var branch string
 	var as string
 	command := &cobra.Command{
@@ -59,7 +62,8 @@ func newNextCommand(options Options) *cobra.Command {
 			}
 			request := quickCreateRequest{
 				TemplateName: templateName,
-				NoFetch:      noFetch,
+				Fresh:        fresh,
+				Force:        force,
 				Branch:       branch,
 			}
 			if len(args) > 1 {
@@ -76,7 +80,8 @@ func newNextCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
-	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not fetch the default branch before the claim")
+	command.Flags().BoolVar(&fresh, "fresh", false, "Fetch the default branch before the claim")
+	command.Flags().BoolVar(&force, "force", false, "Discard current Workspace changes and preserve ignored files")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name when next claims a Ticket")
 	setArguments(command, variadicArgument("name_or_ticket", false, "one value can be a Workspace name or Ticket slug; many values must be Ticket slugs from one Project"))
@@ -273,6 +278,13 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 			return err
 		}
 	}
+	currentReleaseOptions := workspaceservice.ReleaseOptions{}
+	if known && !outside && !request.KeepCurrent {
+		currentReleaseOptions, err = releaseOptions(command, service, current.ID, request.Force)
+		if err != nil {
+			return err
+		}
+	}
 	template, err := templateStore.Load(selected)
 	if err != nil {
 		return err
@@ -287,10 +299,15 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 			return err
 		}
 	}
-	createOptions := workspaceservice.CreateOptions{Branch: request.Branch, NoFetch: request.NoFetch, Tickets: request.Tickets, Project: request.Project}
+	createOptions := workspaceservice.CreateOptions{Branch: request.Branch, Fresh: request.Fresh, Tickets: request.Tickets, Project: request.Project}
 	if isDryRun(command) {
 		if err := validateCreate(options, service, name, selected, template, createOptions); err != nil {
 			return err
+		}
+		if known && !outside && !request.KeepCurrent {
+			if err := service.ValidateRelease(current.ID, "", currentReleaseOptions); err != nil {
+				return err
+			}
 		}
 		return writeMutation(command, quickCreateOperation(request), statusValid, "", name)
 	}
@@ -338,7 +355,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 	if request.KeepCurrent {
 		return nil
 	}
-	if err := options.QuickCreateArchive(clientName, current.ID, created.ID); err != nil {
+	if err := options.QuickCreateArchive(clientName, current.ID, created.ID, currentReleaseOptions); err != nil {
 		return fmt.Errorf("new Workspace %q is active, but old Workspace %q was not archived: %w; run 'twt archive %s' if the archive failure window appears", created.Name, current.Name, err, current.ID)
 	}
 	return nil

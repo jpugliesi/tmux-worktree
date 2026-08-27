@@ -30,10 +30,12 @@ type RelocationRequest struct {
 	// is empty when no other active Workspace exists; twt then detaches the
 	// client.
 	DestinationWorkspaceID string
-	// Keep stops the operation after the archive.
+	// Keep selects archive wording. Both archive and done release worktrees.
 	Keep bool
-	// AllowUnpublished permits removal of a branch with unpublished commits.
-	AllowUnpublished bool
+	// Force permits cleanup of uncommitted changes.
+	Force bool
+	// Fingerprint binds force authorization to the inspected worktree state.
+	Fingerprint string
 	// CurrentPane is the tmux pane that runs the command.
 	CurrentPane string
 	// CloseTicket is the slug of the Ticket that the worker closes after a
@@ -73,7 +75,7 @@ type Options struct {
 	QuickCreateSwitch func(clientName, session string) error
 	// QuickCreateArchive archives the old Workspace after the client switch.
 	// New installs the real relocation worker implementation when it is nil.
-	QuickCreateArchive func(clientName, oldWorkspaceID, newWorkspaceID string) error
+	QuickCreateArchive func(clientName, oldWorkspaceID, newWorkspaceID string, releaseOptions workspaceservice.ReleaseOptions) error
 	// DoneRelocate moves the calling tmux client out of the Workspace session
 	// and completes the archive or removal. New installs the real relocation
 	// worker implementation when it is nil.

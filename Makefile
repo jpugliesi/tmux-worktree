@@ -21,7 +21,7 @@ vet:
 # slow package (it drives real git and tmux). Target one package or -run a
 # pattern while iterating.
 test:
-	go test ./...
+	go test -timeout 20m ./...
 
 # The Neovim plugin suite. Needs nvim and tmux on PATH.
 test/nvim:

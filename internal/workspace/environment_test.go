@@ -58,8 +58,8 @@ func TestRetryRestoresWorkspaceFromDurableEnvironmentClaim(t *testing.T) {
 		Steps: []domain.SetupStep{{
 			ID: "environment_root", Kind: domain.StepWorkspaceRoot, Status: domain.StepSucceeded,
 		}},
-		ClaimReservation: &domain.EnvironmentClaim{Workspace: workspace, ReservedAt: now},
-		CreatedAt:        now, UpdatedAt: now,
+		Assignment: &domain.EnvironmentAssignment{Workspace: workspace, ReservedAt: now},
+		CreatedAt:  now, UpdatedAt: now,
 	}
 	if err := store.NewEnvironmentStore(stateDir).Save(environment); err != nil {
 		t.Fatal(err)

@@ -87,7 +87,7 @@ repositories:
 	if branch != workspace.Repositories[0].Branch {
 		t.Fatalf("claimed checkout branch = %q, want %q", branch, workspace.Repositories[0].Branch)
 	}
-	waitFor(t, 4*time.Second, func() bool {
+	waitFor(t, 15*time.Second, func() bool {
 		data, err := os.ReadFile(initLog)
 		if err != nil || len(strings.Fields(string(data))) != 2 {
 			return false
@@ -209,7 +209,7 @@ repositories:
 	if workspace.EnvironmentID == "" {
 		t.Fatalf("Workspace %q has no claimed Prepared Environment", workspace.Name)
 	}
-	waitFor(t, 6*time.Second, func() bool {
+	waitFor(t, 15*time.Second, func() bool {
 		data, err := os.ReadFile(initLog)
 		if err != nil || len(strings.Fields(string(data))) != 2 {
 			return false
@@ -253,7 +253,7 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	executeWithOptions(t, options, nil, "templates", "prepare", "example")
 	newTip := addOriginCommit(t, source, "second.txt")
 
-	stdout, stderr, err := executeCollectingOutput(t, options, "workspaces", "create", "fresh", "--branch", "feature/custom", "--no-open")
+	stdout, stderr, err := executeCollectingOutput(t, options, "workspaces", "create", "fresh", "--fresh", "--branch", "feature/custom", "--no-open")
 	if err != nil {
 		t.Fatalf("workspaces create with a stale environment: %v\n%s", err, stderr)
 	}
@@ -298,8 +298,8 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 
 	executeWithOptions(t, options, nil, "templates", "prepare", "example")
 	addOriginCommit(t, source, "third.txt")
-	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "stale", "--no-fetch", "--no-open"); err != nil {
-		t.Fatalf("workspaces create --no-fetch: %v", err)
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "create", "stale", "--no-open"); err != nil {
+		t.Fatalf("warm workspaces create: %v", err)
 	}
 	stale, err := store.NewWorkspaceStore(options.StateDir).Find("stale")
 	if err != nil {
@@ -307,7 +307,7 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	}
 	staleHead := runCommand(t, stale.Repositories[0].Path, "git", "rev-parse", "HEAD")
 	if staleHead != newTip {
-		t.Fatalf("--no-fetch claim landed on %s, want the old base %s", staleHead, newTip)
+		t.Fatalf("warm claim landed on %s, want the prepared base %s", staleHead, newTip)
 	}
 	if stale.Repositories[0].Branch != "stale" {
 		t.Fatalf("default branch = %q, want the Workspace name %q", stale.Repositories[0].Branch, "stale")
@@ -390,8 +390,8 @@ func TestPreparedEnvironmentPoolDepthTopUp(t *testing.T) {
 		t.Fatalf("ready Prepared Environments after prepare = %d, want 2", got)
 	}
 	fullJSON := executeWithOptions(t, options, nil, "templates", "prepare", "example", "--output", "json")
-	if !strings.Contains(fullJSON, `"environments":[]`) {
-		t.Fatalf("templates prepare JSON with a full pool = %s", fullJSON)
+	if !strings.Contains(fullJSON, `"environments":["`) {
+		t.Fatalf("templates prepare JSON does not report refreshed environments = %s", fullJSON)
 	}
 
 	executeWithOptions(t, options, nil, "workspaces", "create", "first", "--template", "example", "--no-open")

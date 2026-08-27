@@ -26,7 +26,7 @@ func TestAgentsListDiscoversAndPreviewsLiveProviderPanesWithoutWritingState(t *t
 	if err != nil {
 		t.Skip("go is not installed")
 	}
-
+	goCache := strings.TrimSpace(runCommand(t, "", goBinary, "env", "GOCACHE"))
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	repository := filepath.Join(root, "workspace", "app")
@@ -36,6 +36,7 @@ func TestAgentsListDiscoversAndPreviewsLiveProviderPanesWithoutWritingState(t *t
 		}
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("GOCACHE", goCache)
 	t.Setenv("TMUX_PANE", "")
 
 	helperSource := filepath.Join(root, "fake-agent")

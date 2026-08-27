@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	PreparedEnvironmentVersion = 1
+	PreparedEnvironmentVersion = 2
 	PreparationFormatVersion   = 1
 )
 
@@ -20,6 +20,7 @@ const (
 	EnvironmentReady     PreparedEnvironmentStatus = "ready"
 	EnvironmentClaiming  PreparedEnvironmentStatus = "claiming"
 	EnvironmentClaimed   PreparedEnvironmentStatus = "claimed"
+	EnvironmentReleasing PreparedEnvironmentStatus = "releasing"
 	EnvironmentFailed    PreparedEnvironmentStatus = "failed"
 )
 
@@ -36,7 +37,8 @@ type PreparedEnvironment struct {
 	Steps            []SetupStep               `json:"steps"`
 	QueueToken       string                    `json:"queueToken"`
 	QueuedAt         time.Time                 `json:"queuedAt"`
-	ClaimReservation *EnvironmentClaim         `json:"claimReservation,omitempty"`
+	Generation       uint64                    `json:"generation,omitempty"`
+	Assignment       *EnvironmentAssignment    `json:"assignment,omitempty"`
 	ReadyAt          *time.Time                `json:"readyAt,omitempty"`
 	CreatedAt        time.Time                 `json:"createdAt"`
 	UpdatedAt        time.Time                 `json:"updatedAt"`
@@ -53,18 +55,38 @@ type PreparedRepository struct {
 
 // EnvironmentClaim records the complete Workspace reserved for one claim. Code
 // that resumes an interrupted claim must use this value without changing it.
-type EnvironmentClaim struct {
-	Workspace  Workspace `json:"workspace"`
-	ReservedAt time.Time `json:"reservedAt"`
+type EnvironmentAssignmentKind string
+type EnvironmentAssignmentPhase string
+
+const (
+	EnvironmentAssignmentClaim    EnvironmentAssignmentKind  = "claim"
+	EnvironmentAssignmentRelease  EnvironmentAssignmentKind  = "release"
+	EnvironmentAssignmentReserved EnvironmentAssignmentPhase = "reserved"
+	EnvironmentAssignmentActive   EnvironmentAssignmentPhase = "active"
+)
+
+type EnvironmentAssignment struct {
+	Generation  uint64                     `json:"generation"`
+	Kind        EnvironmentAssignmentKind  `json:"kind"`
+	Phase       EnvironmentAssignmentPhase `json:"phase"`
+	Workspace   Workspace                  `json:"workspace"`
+	Fingerprint string                     `json:"fingerprint,omitempty"`
+	Force       bool                       `json:"force,omitempty"`
+	ReservedAt  time.Time                  `json:"reservedAt"`
 }
 
 // UnmarshalJSON accepts the version-one project key. New records always use
 // workspace. A record with two different owners is invalid.
-func (c *EnvironmentClaim) UnmarshalJSON(data []byte) error {
+func (c *EnvironmentAssignment) UnmarshalJSON(data []byte) error {
 	var value struct {
-		Workspace  *Workspace `json:"workspace"`
-		Project    *Workspace `json:"project"`
-		ReservedAt time.Time  `json:"reservedAt"`
+		Generation  uint64                     `json:"generation"`
+		Kind        EnvironmentAssignmentKind  `json:"kind"`
+		Phase       EnvironmentAssignmentPhase `json:"phase"`
+		Workspace   *Workspace                 `json:"workspace"`
+		Project     *Workspace                 `json:"project"`
+		Fingerprint string                     `json:"fingerprint"`
+		Force       bool                       `json:"force"`
+		ReservedAt  time.Time                  `json:"reservedAt"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
@@ -78,7 +100,54 @@ func (c *EnvironmentClaim) UnmarshalJSON(data []byte) error {
 	case value.Project != nil:
 		c.Workspace = *value.Project
 	}
+	c.Generation = value.Generation
+	c.Kind = value.Kind
+	c.Phase = value.Phase
+	c.Fingerprint = value.Fingerprint
+	c.Force = value.Force
 	c.ReservedAt = value.ReservedAt
+	return nil
+}
+
+// UnmarshalJSON reads version-one claimReservation state and normalizes it in
+// memory. A read alone does not change the state file.
+func (e *PreparedEnvironment) UnmarshalJSON(data []byte) error {
+	type environmentJSON PreparedEnvironment
+	var value struct {
+		environmentJSON
+		ClaimReservation *EnvironmentAssignment `json:"claimReservation"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*e = PreparedEnvironment(value.environmentJSON)
+	if e.Version != 1 && e.Version != PreparedEnvironmentVersion {
+		return fmt.Errorf("unsupported Prepared Environment version %d", e.Version)
+	}
+	if e.Assignment != nil && value.ClaimReservation != nil && !reflect.DeepEqual(e.Assignment, value.ClaimReservation) {
+		return fmt.Errorf("Prepared Environment has conflicting assignment and claimReservation values")
+	}
+	if e.Assignment == nil {
+		e.Assignment = value.ClaimReservation
+	}
+	if e.Assignment != nil {
+		if e.Assignment.Generation == 0 {
+			e.Assignment.Generation = 1
+		}
+		if e.Assignment.Kind == "" {
+			e.Assignment.Kind = EnvironmentAssignmentClaim
+		}
+		if e.Assignment.Phase == "" {
+			e.Assignment.Phase = EnvironmentAssignmentReserved
+			if e.Status == EnvironmentClaimed {
+				e.Assignment.Phase = EnvironmentAssignmentActive
+			}
+		}
+	}
+	if e.Generation == 0 && e.Assignment != nil {
+		e.Generation = e.Assignment.Generation
+	}
+	e.Version = PreparedEnvironmentVersion
 	return nil
 }
 
@@ -124,28 +193,50 @@ func (e PreparedEnvironment) Validate() error {
 	if e.ReadyAt != nil && e.ReadyAt.IsZero() {
 		return fmt.Errorf("Prepared Environment %q has an empty ready time", e.ID)
 	}
-	if e.ClaimReservation != nil {
-		if e.ClaimReservation.Workspace.ID == "" || e.ClaimReservation.Workspace.Version != WorkspaceVersion {
+	assignment := e.Assignment
+	if assignment != nil {
+		if assignment.Workspace.ID == "" || assignment.Workspace.Version != WorkspaceVersion {
 			return fmt.Errorf("Prepared Environment %q has an invalid Workspace claim reservation", e.ID)
 		}
-		if e.ClaimReservation.Workspace.EnvironmentID != e.ID {
-			return fmt.Errorf("Prepared Environment %q has a claim reservation for environment %q", e.ID, e.ClaimReservation.Workspace.EnvironmentID)
+		if assignment.Workspace.EnvironmentID != e.ID {
+			return fmt.Errorf("Prepared Environment %q has an assignment for environment %q", e.ID, assignment.Workspace.EnvironmentID)
 		}
-		if e.ClaimReservation.ReservedAt.IsZero() {
-			return fmt.Errorf("Prepared Environment %q has no claim reservation time", e.ID)
+		if assignment.ReservedAt.IsZero() {
+			return fmt.Errorf("Prepared Environment %q has no assignment time", e.ID)
+		}
+		if assignment.Generation == 0 || assignment.Generation != e.Generation {
+			return fmt.Errorf("Prepared Environment %q has an invalid assignment generation", e.ID)
+		}
+		if assignment.Kind != EnvironmentAssignmentClaim && assignment.Kind != EnvironmentAssignmentRelease {
+			return fmt.Errorf("Prepared Environment %q has invalid assignment kind %q", e.ID, assignment.Kind)
+		}
+		if assignment.Phase == "" {
+			return fmt.Errorf("Prepared Environment %q has no assignment phase", e.ID)
 		}
 	}
 	switch e.Status {
-	case EnvironmentClaiming, EnvironmentClaimed:
-		if e.ClaimReservation == nil {
-			return fmt.Errorf("Prepared Environment %q has status %q without a Workspace claim reservation", e.ID, e.Status)
+	case EnvironmentClaiming, EnvironmentClaimed, EnvironmentReleasing:
+		if assignment == nil {
+			return fmt.Errorf("Prepared Environment %q has status %q without a Workspace assignment", e.ID, e.Status)
+		}
+		if e.Status == EnvironmentReleasing && assignment.Kind != EnvironmentAssignmentRelease {
+			return fmt.Errorf("Prepared Environment %q has releasing status with assignment kind %q", e.ID, assignment.Kind)
+		}
+		if e.Status != EnvironmentReleasing && assignment.Kind != EnvironmentAssignmentClaim {
+			return fmt.Errorf("Prepared Environment %q has status %q with assignment kind %q", e.ID, e.Status, assignment.Kind)
+		}
+		if e.Status == EnvironmentClaimed && assignment.Phase != EnvironmentAssignmentActive {
+			return fmt.Errorf("Prepared Environment %q has claimed status with assignment phase %q", e.ID, assignment.Phase)
+		}
+		if e.Status != EnvironmentClaimed && assignment.Phase != EnvironmentAssignmentReserved {
+			return fmt.Errorf("Prepared Environment %q has status %q with assignment phase %q", e.ID, e.Status, assignment.Phase)
 		}
 	case EnvironmentQueued, EnvironmentPreparing, EnvironmentReady, EnvironmentFailed:
-		if e.ClaimReservation != nil {
-			return fmt.Errorf("Prepared Environment %q has status %q with a Workspace claim reservation", e.ID, e.Status)
+		if assignment != nil {
+			return fmt.Errorf("Prepared Environment %q has status %q with a Workspace assignment", e.ID, e.Status)
 		}
 	}
-	if e.Status == EnvironmentReady || e.Status == EnvironmentClaiming || e.Status == EnvironmentClaimed {
+	if e.Status == EnvironmentReady || e.Status == EnvironmentClaiming || e.Status == EnvironmentClaimed || e.Status == EnvironmentReleasing {
 		if len(e.Repositories) != len(e.TemplateSnapshot.Repositories) {
 			return fmt.Errorf("Prepared Environment %q has incomplete prepared repositories", e.ID)
 		}
@@ -168,7 +259,7 @@ func (e PreparedEnvironment) Validate() error {
 
 func validPreparedEnvironmentStatus(status PreparedEnvironmentStatus) bool {
 	switch status {
-	case EnvironmentQueued, EnvironmentPreparing, EnvironmentReady, EnvironmentClaiming, EnvironmentClaimed, EnvironmentFailed:
+	case EnvironmentQueued, EnvironmentPreparing, EnvironmentReady, EnvironmentClaiming, EnvironmentClaimed, EnvironmentReleasing, EnvironmentFailed:
 		return true
 	default:
 		return false

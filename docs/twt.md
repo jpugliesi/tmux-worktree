@@ -123,8 +123,9 @@ agents:
     prefer_provider_resume: true
 ```
 
-`pool_depth` is the number of ready Prepared Environments that `twt` keeps
-for this Workspace Template. The default depth is 1.
+`pool_depth` is the minimum number of ready Prepared Environments that `twt`
+keeps for this Workspace Template. The default depth is 1. A release keeps
+every returned Prepared Environment, even when the ready count exceeds this value.
 
 Repository Caches keep full commit history. This rule lets every Workspace
 branch retain a merge base when the default branch advances. twt accepts the
@@ -180,10 +181,12 @@ Prepare the next environment before you need it:
 twt templates prepare everysphere
 ```
 
-This command creates one worktree for each repository and runs repository
-initialization once on each new physical worktree. A Workspace later claims the
-complete Prepared Environment. After each claim, twt prepares one replacement
-in the background, up to the pool depth.
+This command refreshes each matching ready Prepared Environment. It then
+creates enough environments to meet `pool_depth`. A refresh fetches the default
+branch. When the base commit changes, twt runs repository initialization again.
+
+A Workspace later claims the complete Prepared Environment. The normal claim
+does not fetch, clone, add a worktree, or run repository initialization.
 
 Repository initialization runs before a Workspace name exists. It receives
 `TWT_ENVIRONMENT_ID`, `TWT_ENVIRONMENT_ROOT`, `TWT_TEMPLATE_NAME`,
@@ -203,6 +206,18 @@ twt templates init set everysphere \
 `templates init set` sets one initialization command. With `--repo REPO` it
 sets repository initialization, and `--cwd` is not valid. Without `--repo` it
 sets Workspace initialization, and `--cwd PATH` is required.
+
+Set a repository recycle command when ignored files need cleanup before reuse:
+
+```sh
+twt templates recycle set everysphere --repo everysphere -- ./scripts/recycle.sh
+twt templates recycle unset everysphere --repo everysphere
+```
+
+The recycle command runs while the old Workspace branch is still checked out.
+It can change ignored files. It must not leave tracked or nonignored changes.
+A failure keeps the Workspace bound to its worktrees. Open the Workspace to
+restore its active state.
 
 Workspace initialization receives these environment variables:
 
@@ -286,8 +301,9 @@ command lists the available names and stops.
 Two flags control the Git start point:
 
 - `--branch NAME` sets a custom Workspace branch name.
-- Create fetches `origin/<default-branch>` before it claims the Prepared
-  Environment. `--no-fetch` uses the saved base commit and skips that fetch.
+- The normal warm create uses the saved base commit without a fetch.
+- `--fresh` fetches the default branch and refreshes the Prepared Environment
+  before the claim.
 
 ### Workspace branch names
 
@@ -352,9 +368,13 @@ twt next fix-auth-tokens add-auth-tests
 ```
 
 The command uses the latest saved version of the same Workspace Template. It
-claims a matching Prepared Environment, switches the calling tmux client to
-the new Workspace, and archives `fix-auth`. Other tmux clients do not switch.
-Preparation of the replacement environment continues in the background.
+checks the current Workspace before it creates the next Workspace. It claims a
+matching Prepared Environment and switches the calling tmux client. It then
+returns the old worktrees to the prepared pool. Other tmux clients do not switch.
+
+`twt next --force` discards tracked and nonignored changes in the current
+Workspace. It preserves ignored files. `twt next --fresh` refreshes the new
+Prepared Environment before its claim.
 
 `twt next` finds the current Workspace from the current directory, the
 `TWT_WORKSPACE_ID` value, or the current tmux pane. A real run must be inside
@@ -457,10 +477,10 @@ the Workspace ID. After the adopt, `switch`, `context`, and the Agent Session
 commands work: a Codex or Claude session that ran inside an adopted
 repository appears in `agents list` as a discovered session.
 
-`twt` did not create the directories of an adopted Workspace. Removal never
-deletes them: `twt done` and `workspaces remove` delete only the twt state,
-show `keep_directory` actions in the plan, and release the session marker. A
-session with no git repository in any pane adopts with zero repositories.
+`twt` did not create the directories of an adopted Workspace. `twt done`
+archives the Workspace and keeps its directories. `workspaces remove` deletes
+only twt state and releases the session marker.
+A session with no git repository in any pane adopts with zero repositories.
 
 ## Agent Sessions
 
@@ -628,40 +648,42 @@ twt archive fix-auth
 twt workspaces archive fix-auth
 ```
 
-Archive stops the owned tmux session and live Agent processes. It keeps the
-Workspace record, worktrees, branches, Workspace Template snapshot, repository
-caches, and Agent Session records. An Agent Session can start again only if it
-has a saved resume command.
+Archive stops the owned tmux session and live Agent processes. It returns the
+worktrees to the prepared pool. It keeps the Workspace record, branches,
+Workspace Template snapshot, repository caches, and Agent Session records.
 
-To archive a Workspace and remove its data in one step, use `done`:
+Archive refuses tracked and nonignored changes. Use `--force` to discard them.
+The force option preserves ignored files. An active Git operation always blocks
+the release. Each repository recycle command runs before the worktree returns.
+
+To finish a Workspace and return its worktrees, use `done`:
 
 ```sh
 twt done
 twt done fix-auth
-twt done fix-auth --keep
 twt done fix-auth --dry-run --output json
 ```
 
-`done` archives the Workspace, then applies the removal plan. `--keep` stops
-after the archive. `--force` removes a branch that has commits which are not
-on the remote.
+`done` uses the same release as archive. It keeps the Workspace record and
+branches. `--force` discards tracked and nonignored changes. Use
+`twt workspaces remove WORKSPACE --apply` for destructive removal.
 
 When the Workspace links one open Ticket, an interactive `done` asks `Close
 Ticket "<slug>"? [y/N]` before any change; the default is No. On yes, `done`
-closes the Ticket after a successful removal. When the Workspace links many
+closes the Ticket after a successful release. When the Workspace links many
 open Tickets, `done` does not close any of them. It prints one close command
 for each Ticket. A close failure gives a warning with the `twt tickets close
 <slug>` hint and never fails `done`. Without a terminal, with `--output json`,
-with `--keep`, or on no, `done` keeps the Ticket open and prints the close
+or on no, `done` keeps the Ticket open and prints the close
 hint. A dry run never asks.
 
 From inside the Workspace tmux session, `done` moves your tmux client to the
 most recent other active Workspace, or detaches the client, and a worker window
 completes the work. This flow uses text output. For JSON output, run `done`
-from a different session. A dry run reports the archive and the complete
-removal plan and changes nothing.
+from a different session. A dry run validates the release and changes nothing.
 
-Open an archived Workspace to make it active and create its tmux session again.
+Open an archived Workspace to claim prepared worktrees and restore its saved
+branches. twt runs Workspace Initialization and creates its tmux session again.
 The same command repairs an active Workspace whose session is missing after a
 reboot:
 
@@ -687,7 +709,7 @@ Agent Sessions stay unchanged.
 Without arguments, a terminal shows the Workspace picker and asks for the new
 name.
 
-From inside the Workspace tmux session, `archive` behaves like `done --keep`:
+From inside the Workspace tmux session, `archive` uses the same release as `done`:
 it moves your tmux client to the most recent other active Workspace, or
 detaches the client, and a worker window completes the archive. This flow
 uses text output; for JSON output, run `archive` from a different session.

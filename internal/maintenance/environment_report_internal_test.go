@@ -66,6 +66,7 @@ func TestMeasureEnvironmentSizesSkipsWorkspaceBoundRoots(t *testing.T) {
 		{ID: "failed", root: "/failed", environmentStatus: domain.EnvironmentFailed},
 		{ID: "claiming", root: "/claiming", environmentStatus: domain.EnvironmentClaiming},
 		{ID: "claimed", root: "/claimed", environmentStatus: domain.EnvironmentClaimed},
+		{ID: "releasing", root: "/releasing", environmentStatus: domain.EnvironmentReleasing},
 	}
 
 	service.MeasureEnvironmentSizes(report)

@@ -175,6 +175,38 @@ func TestTemplatesInitializationCommands(t *testing.T) {
 	}
 }
 
+func TestTemplatesRecycleSetAndUnset(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if _, err := execute(t, root, "templates", "create", "example"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(t, root, "templates", "repos", "add", "example", "app", "https://example.com/app.git"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(t, root, "templates", "recycle", "set", "example", "--repo", "app", "--", "./clean.sh", "--fast"); err != nil {
+		t.Fatalf("templates recycle set: %v", err)
+	}
+	template, err := store.NewTemplateStore(filepath.Join(root, "config")).Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if template.Repositories[0].Recycle == nil || strings.Join(template.Repositories[0].Recycle.Command, " ") != "./clean.sh --fast" {
+		t.Fatalf("saved recycle command = %+v", template.Repositories[0].Recycle)
+	}
+	if _, err := execute(t, root, "templates", "recycle", "unset", "example", "--repo", "app"); err != nil {
+		t.Fatalf("templates recycle unset: %v", err)
+	}
+	template, err = store.NewTemplateStore(filepath.Join(root, "config")).Load("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if template.Repositories[0].Recycle != nil {
+		t.Fatalf("recycle command was not removed: %+v", template.Repositories[0].Recycle)
+	}
+}
+
 func TestTemplatesInitRequiresExplicitWorkingDirectory(t *testing.T) {
 	t.Parallel()
 

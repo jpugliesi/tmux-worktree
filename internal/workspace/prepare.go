@@ -208,6 +208,10 @@ func (s *Service) runPreparedInitialize(environment domain.PreparedEnvironment, 
 	if spec.Initialize == nil || len(spec.Initialize.Command) == 0 {
 		return fmt.Errorf("repository initialization command is empty")
 	}
+	before, err := inspectRepositoryRelease(domain.WorkspaceRepository{Name: repository.Name, Path: repository.Path})
+	if err != nil {
+		return err
+	}
 	activityLock, err := store.AcquireActivityLock(s.options.StateDir, environment.ID)
 	if err != nil {
 		return err
@@ -220,7 +224,17 @@ func (s *Service) runPreparedInitialize(environment domain.PreparedEnvironment, 
 		"TWT_REPOSITORY_NAME="+repository.Name,
 		"TWT_REPOSITORY_PATH="+repository.Path,
 	)
-	return runInitializationProcess(repository.Path, spec.Initialize.Command, env, activityLock.File())
+	if err := runInitializationProcess(repository.Path, spec.Initialize.Command, env, activityLock.File()); err != nil {
+		return err
+	}
+	state, err := inspectRepositoryRelease(domain.WorkspaceRepository{Name: repository.Name, Path: repository.Path})
+	if err != nil {
+		return err
+	}
+	if state.gitOperation != "" || state.dirty || state.fingerprint != before.fingerprint {
+		return fmt.Errorf("repository initialization left prepared repository %q with tracked or nonignored changes", repository.Name)
+	}
+	return nil
 }
 
 func writeEnvironmentMarker(environment domain.PreparedEnvironment) error {

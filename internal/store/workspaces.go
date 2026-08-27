@@ -23,6 +23,11 @@ func NewWorkspaceStore(stateDir string) WorkspaceStore {
 }
 
 func (s WorkspaceStore) Save(workspace domain.Workspace) error {
+	if workspace.Version != 1 && workspace.Version != domain.WorkspaceVersion {
+		return fmt.Errorf("Workspace %q uses unsupported state version %d", workspace.Name, workspace.Version)
+	}
+	workspace.Version = domain.WorkspaceVersion
+	workspace.Materialized = workspace.Root != "" || workspace.Adopted
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create Workspace state directory: %w", err)
 	}
@@ -108,8 +113,5 @@ func (s WorkspaceStore) loadPath(path string) (domain.Workspace, error) {
 		return domain.Workspace{}, fmt.Errorf("decode Workspace state %q: %w", path, err)
 	}
 	normalizeLegacySetupSteps(workspace.Steps)
-	if workspace.Version != domain.WorkspaceVersion {
-		return domain.Workspace{}, fmt.Errorf("Workspace %q uses unsupported state version %d", workspace.Name, workspace.Version)
-	}
 	return workspace, nil
 }

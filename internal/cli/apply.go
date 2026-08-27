@@ -41,6 +41,12 @@ type templateInitializeSetRequest struct {
 	Command          []string `json:"command"`
 }
 
+type templateRecycleRequest struct {
+	Name       string   `json:"name"`
+	Repository string   `json:"repo"`
+	Command    []string `json:"command,omitempty"`
+}
+
 type templateRepositoryRemoveRequest struct {
 	Name       string `json:"name"`
 	Repository string `json:"repo"`
@@ -64,6 +70,8 @@ type workspaceCreateRequest struct {
 	Name     string   `json:"name"`
 	Template string   `json:"template"`
 	NoOpen   *bool    `json:"noOpen,omitempty"`
+	Fresh    bool     `json:"fresh,omitempty"`
+	Branch   string   `json:"branch,omitempty"`
 	Tickets  []string `json:"tickets,omitempty"`
 }
 
@@ -71,6 +79,11 @@ type workspaceCreateRequest struct {
 // Workspace.
 type workspaceReferenceRequest struct {
 	Reference string `json:"reference"`
+}
+
+type workspaceArchiveRequest struct {
+	Reference string `json:"reference"`
+	Force     bool   `json:"force,omitempty"`
 }
 
 type workspaceRenameRequest struct {
@@ -241,6 +254,15 @@ func applyOperations() []applyOperation {
 			{Path: "template.repo", Type: "string", Required: false, Condition: "sets repository initialization, which runs in the repository worktree"},
 			{Path: "template.cwd", Type: "string", Required: false, Condition: "required when template.repo is empty; the path is relative to the Workspace root"},
 		}}, applyTemplatesInitSet},
+		{applyOperationSchema{Operation: "templates.recycle.set", Payload: "template", Fields: []requestFieldSchema{
+			{Path: "template.name", Type: "string", Required: true},
+			{Path: "template.repo", Type: "string", Required: true},
+			{Path: "template.command", Type: "array[string]", Required: true},
+		}}, applyTemplatesRecycleSet},
+		{applyOperationSchema{Operation: "templates.recycle.unset", Payload: "template", Fields: []requestFieldSchema{
+			{Path: "template.name", Type: "string", Required: true},
+			{Path: "template.repo", Type: "string", Required: true},
+		}}, applyTemplatesRecycleUnset},
 		{applyOperationSchema{Operation: "templates.repos.add", Payload: "template", Fields: []requestFieldSchema{
 			{Path: "template.name", Type: "string", Required: true},
 			{Path: "template.repository.name", Type: "string", Required: true},
@@ -258,6 +280,8 @@ func applyOperations() []applyOperation {
 			{Path: "workspace.name", Type: "string", Required: true},
 			{Path: "workspace.template", Type: "string", Required: true},
 			{Path: "workspace.noOpen", Type: "boolean", Required: false, Condition: "must be true or absent; apply never opens a tmux session"},
+			{Path: "workspace.fresh", Type: "boolean", Required: false, Condition: "fetches the default branch before the claim"},
+			{Path: "workspace.branch", Type: "string", Required: false, Condition: "sets a custom Workspace branch name"},
 			{Path: "workspace.tickets", Type: "array[string]", Required: false, Condition: "all Tickets must be open and belong to one Project"},
 		}}, applyWorkspacesCreate},
 		{applyOperationSchema{Operation: "workspaces.open", Payload: "workspace", Fields: []requestFieldSchema{
@@ -274,6 +298,7 @@ func applyOperations() []applyOperation {
 		}}, applyWorkspacesSetupRetry},
 		{applyOperationSchema{Operation: "workspaces.archive", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.force", Type: "boolean", Required: false, Condition: "discards uncommitted changes and preserves ignored files"},
 		}}, applyWorkspacesArchive},
 		{applyOperationSchema{Operation: "workspaces.remove", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
@@ -554,6 +579,31 @@ func applyTemplatesInitSet(command *cobra.Command, options Options, request appl
 	return setTemplateInitialization(command, options, options.templateStore(), options.StateDir, payload.Name, repository, workingDirectory, payload.Command)
 }
 
+func applyTemplatesRecycleSet(command *cobra.Command, options Options, request applyRequest) error {
+	var payload templateRecycleRequest
+	if err := decodeApplyPayload("templates.recycle.set", "template", request.Template, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Repository == "" || len(payload.Command) == 0 {
+		return fmt.Errorf("template.name, template.repo, and template.command are required for templates.recycle.set")
+	}
+	return setTemplateRecycle(command, options, options.templateStore(), options.StateDir, payload.Name, payload.Repository, payload.Command)
+}
+
+func applyTemplatesRecycleUnset(command *cobra.Command, options Options, request applyRequest) error {
+	var payload templateRecycleRequest
+	if err := decodeApplyPayload("templates.recycle.unset", "template", request.Template, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.Repository == "" {
+		return fmt.Errorf("template.name and template.repo are required for templates.recycle.unset")
+	}
+	if len(payload.Command) != 0 {
+		return fmt.Errorf("template.command is not supported for templates.recycle.unset")
+	}
+	return setTemplateRecycle(command, options, options.templateStore(), options.StateDir, payload.Name, payload.Repository, nil)
+}
+
 func applyTemplatesReposRemove(command *cobra.Command, options Options, request applyRequest) error {
 	var payload templateRepositoryRemoveRequest
 	if err := decodeApplyPayload("templates.repos.remove", "template", request.Template, &payload); err != nil {
@@ -605,13 +655,16 @@ func applyWorkspacesCreate(command *cobra.Command, options Options, request appl
 	if err != nil {
 		return err
 	}
+	createOptions := workspaceservice.CreateOptions{
+		Branch: payload.Branch, Fresh: payload.Fresh, Project: project, Tickets: tickets,
+	}
 	if isDryRun(command) {
-		if err := validateCreate(options, options.workspaceService(), payload.Name, payload.Template, template, workspaceservice.CreateOptions{Project: project, Tickets: tickets}); err != nil {
+		if err := validateCreate(options, options.workspaceService(), payload.Name, payload.Template, template, createOptions); err != nil {
 			return err
 		}
 		return writeMutation(command, "workspaces.create", statusValid, "", payload.Name)
 	}
-	workspace, err := createWorkspace(command, options, payload.Name, payload.Template, template, workspaceservice.CreateOptions{Project: project, Tickets: tickets})
+	workspace, err := createWorkspace(command, options, payload.Name, payload.Template, template, createOptions)
 	if err != nil {
 		return err
 	}
@@ -683,12 +736,19 @@ func applyWorkspacesRename(command *cobra.Command, options Options, request appl
 }
 
 func applyWorkspacesArchive(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceArchiveRequest
+	if err := decodeApplyPayload("workspaces.archive", "workspace", request.Workspace, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" {
+		return fmt.Errorf("workspace.reference is required for workspaces.archive")
+	}
 	service := options.workspaceService()
-	reference, err := resolveApplyWorkspaceReference("workspaces.archive", request.Workspace, service)
+	reference, err := resolveWorkspaceReference(service, payload.Reference)
 	if err != nil {
 		return err
 	}
-	return archiveWorkspaceRecord(command, service, reference)
+	return archiveWorkspaceRecord(command, service, reference, workspaceservice.ReleaseOptions{Force: payload.Force})
 }
 
 func applyWorkspacesRemove(command *cobra.Command, options Options, request applyRequest) error {

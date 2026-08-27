@@ -155,6 +155,7 @@ func writeWorkspace(command *cobra.Command, workspace domain.Workspace) error {
 		{"ID", workspace.ID},
 		{"Template", workspace.TemplateName},
 		{"Status", string(workspace.Status)},
+		{"Materialized", fmt.Sprintf("%t", workspace.Materialized)},
 		{"Root", workspace.Root},
 	}
 	if workspace.Project != "" {
@@ -204,6 +205,11 @@ func newWorkspacesPathCommand(service *workspaceservice.Service) *cobra.Command 
 			workspace, err := resolveWorkspace(service, args[0])
 			if err != nil {
 				return err
+			}
+			if !workspace.Materialized {
+				return clierr.WithHint(
+					clierr.New(clierr.PreconditionFailed, "Workspace %q has no assigned worktrees", workspace.Name),
+					"Run 'twt workspaces open %s' first.", workspace.Name)
 			}
 			path := workspace.Root
 			if len(args) == 2 {

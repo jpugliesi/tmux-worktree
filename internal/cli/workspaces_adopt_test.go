@@ -12,6 +12,7 @@ import (
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
@@ -93,20 +94,25 @@ func TestWorkspacesAdoptTurnsATmuxSessionIntoAWorkspace(t *testing.T) {
 		t.Fatalf("agents list for the adopted Workspace = %s", list)
 	}
 
-	// Done archives and removes the adopted Workspace. The plan keeps the
-	// directories, and removal deletes only the twt state.
+	// Done archives the adopted Workspace and keeps its directories. An
+	// explicit removal then deletes only the twt state.
 	done := executeWithOptions(t, options, nil, "done", "handmade", "--output", "json")
-	if !strings.Contains(done, "keep_directory") || strings.Contains(done, "remove_worktree") {
-		t.Fatalf("done plan for the adopted Workspace = %s", done)
+	if !strings.Contains(done, `"operation":"workspaces.done"`) || !strings.Contains(done, `"status":"applied"`) {
+		t.Fatalf("done result for the adopted Workspace = %s", done)
 	}
-	if _, err := store.NewWorkspaceStore(options.StateDir).Find("handmade"); err == nil {
-		t.Fatal("done kept the adopted Workspace record")
+	archived, err := store.NewWorkspaceStore(options.StateDir).Find("handmade")
+	if err != nil || archived.Status != domain.WorkspaceArchived {
+		t.Fatalf("done result for the adopted Workspace = %+v, %v", archived, err)
 	}
 	if _, err := os.Stat(filepath.Join(repository, "README.md")); err != nil {
 		t.Fatalf("done deleted the adopted repository: %v", err)
 	}
 	if _, err := os.Stat(plain); err != nil {
 		t.Fatalf("done deleted the plain pane directory: %v", err)
+	}
+	executeWithOptions(t, options, nil, "workspaces", "remove", "handmade", "--apply")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find("handmade"); err == nil {
+		t.Fatal("removal kept the adopted Workspace record")
 	}
 }
 

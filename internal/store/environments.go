@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -23,6 +22,30 @@ func NewEnvironmentStore(stateDir string) EnvironmentStore {
 }
 
 func (s EnvironmentStore) Save(environment domain.PreparedEnvironment) error {
+	if environment.Version != 1 && environment.Version != domain.PreparedEnvironmentVersion {
+		return fmt.Errorf("unsupported Prepared Environment version %d: expected %d", environment.Version, domain.PreparedEnvironmentVersion)
+	}
+	environment.Version = domain.PreparedEnvironmentVersion
+	if environment.Assignment != nil {
+		if environment.Assignment.Generation == 0 {
+			if environment.Generation == 0 {
+				environment.Generation = 1
+			}
+			environment.Assignment.Generation = environment.Generation
+		}
+		if environment.Generation == 0 {
+			environment.Generation = environment.Assignment.Generation
+		}
+		if environment.Assignment.Kind == "" {
+			environment.Assignment.Kind = domain.EnvironmentAssignmentClaim
+		}
+		if environment.Assignment.Phase == "" {
+			environment.Assignment.Phase = domain.EnvironmentAssignmentReserved
+			if environment.Status == domain.EnvironmentClaimed {
+				environment.Assignment.Phase = domain.EnvironmentAssignmentActive
+			}
+		}
+	}
 	if err := validateEnvironment(environment); err != nil {
 		return err
 	}
@@ -30,10 +53,7 @@ func (s EnvironmentStore) Save(environment domain.PreparedEnvironment) error {
 		return fmt.Errorf("create Prepared Environment state directory: %w", err)
 	}
 	path := filepath.Join(s.dir, environment.ID+".json")
-	existing, err := s.loadPath(path)
-	if err == nil && existing.ClaimReservation != nil && !reflect.DeepEqual(existing.ClaimReservation, environment.ClaimReservation) {
-		return fmt.Errorf("Prepared Environment %q claim reservation cannot change", environment.ID)
-	}
+	_, err := s.loadPath(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect Prepared Environment %q before save: %w", environment.ID, err)
 	}
@@ -111,7 +131,7 @@ func (s EnvironmentStore) loadPath(path string) (domain.PreparedEnvironment, err
 	if err := json.Unmarshal(data, &header); err != nil {
 		return domain.PreparedEnvironment{}, fmt.Errorf("decode Prepared Environment state %q: %w", path, err)
 	}
-	if header.Version != domain.PreparedEnvironmentVersion {
+	if header.Version != 1 && header.Version != domain.PreparedEnvironmentVersion {
 		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment state %q uses unsupported version %d", path, header.Version)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -123,8 +143,8 @@ func (s EnvironmentStore) loadPath(path string) (domain.PreparedEnvironment, err
 		return domain.PreparedEnvironment{}, fmt.Errorf("decode Prepared Environment state %q: %w", path, err)
 	}
 	normalizeLegacySetupSteps(environment.Steps)
-	if environment.ClaimReservation != nil {
-		normalizeLegacySetupSteps(environment.ClaimReservation.Workspace.Steps)
+	if environment.Assignment != nil {
+		normalizeLegacySetupSteps(environment.Assignment.Workspace.Steps)
 	}
 	if environment.ID != filenameID(path) {
 		return domain.PreparedEnvironment{}, fmt.Errorf("Prepared Environment state file %q contains ID %q", path, environment.ID)

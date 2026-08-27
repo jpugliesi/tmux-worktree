@@ -154,8 +154,11 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	var activeBytes, archivedBytes int64
 	activeCount, archivedCount := 0, 0
 	for _, workspace := range workspaces {
-		worktrees += len(workspace.Repositories)
-		bytes := measure(workspace.Root)
+		bytes := int64(0)
+		if workspace.Materialized {
+			worktrees += len(workspace.Repositories)
+			bytes = measure(workspace.Root)
+		}
 		if workspace.Status == domain.WorkspaceArchived {
 			archivedBytes += bytes
 			archivedCount++
@@ -171,7 +174,7 @@ func (s *Service) StorageStatus() (StorageStatus, error) {
 	var preparedBytes int64
 	preparedCount, readyCount, preparingCount, failedCount, preparedWorktrees := 0, 0, 0, 0, 0
 	for _, environment := range environments {
-		if environment.Status == domain.EnvironmentClaimed || environment.Status == domain.EnvironmentClaiming {
+		if environment.Status == domain.EnvironmentClaimed || environment.Status == domain.EnvironmentClaiming || environment.Status == domain.EnvironmentReleasing {
 			continue
 		}
 		preparedBytes += measure(environment.Root)
@@ -252,8 +255,8 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 			info.BaseCommits[repository.Name] = shortCommit(repository.BaseCommit)
 		}
 		info.LogPath = s.prepareLogPath(environment.ID)
-		if environment.ClaimReservation != nil {
-			reserved := environment.ClaimReservation.Workspace
+		if environment.Assignment != nil {
+			reserved := environment.Assignment.Workspace
 			claim := EnvironmentWorkspace{ID: reserved.ID, Name: reserved.Name, Status: string(reserved.Status)}
 			if current, found := live[reserved.ID]; found {
 				claim.Name = current.Name
@@ -272,7 +275,7 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 func (s *Service) MeasureEnvironmentSizes(report []EnvironmentInfo) {
 	for index := range report {
 		info := &report[index]
-		if info.environmentStatus == domain.EnvironmentClaimed || info.environmentStatus == domain.EnvironmentClaiming {
+		if info.environmentStatus == domain.EnvironmentClaimed || info.environmentStatus == domain.EnvironmentClaiming || info.environmentStatus == domain.EnvironmentReleasing {
 			continue
 		}
 		bytes, warning := s.measureDirectoryBytes(info.root)
@@ -335,7 +338,7 @@ func (s *Service) Doctor() DoctorReport {
 		for _, workspace := range workspaces {
 			// An adopted Workspace wraps directories twt did not create, so
 			// it never carries an ownership marker.
-			if workspace.Adopted {
+			if workspace.Adopted || !workspace.Materialized {
 				continue
 			}
 			if err := workspaceservice.ValidateWorkspaceMarker(workspace.Root, workspace.ID); err != nil {
@@ -361,8 +364,12 @@ func (s *Service) Doctor() DoctorReport {
 			if environment.Status == domain.EnvironmentClaiming || environment.Status == domain.EnvironmentClaimed {
 				markerName = ".twt-owned.json"
 			}
-			if _, err := os.Stat(filepath.Join(environment.Root, markerName)); err != nil {
-				if (environment.Status == domain.EnvironmentPreparing || environment.Status == domain.EnvironmentFailed) && os.IsNotExist(err) {
+			_, markerErr := os.Stat(filepath.Join(environment.Root, markerName))
+			if environment.Status == domain.EnvironmentReleasing && markerErr != nil {
+				_, markerErr = os.Stat(filepath.Join(environment.Root, ".twt-owned.json"))
+			}
+			if markerErr != nil {
+				if (environment.Status == domain.EnvironmentPreparing || environment.Status == domain.EnvironmentFailed) && os.IsNotExist(markerErr) {
 					continue
 				}
 				report.addFailure("environment:"+environment.ID, "Prepared Environment ownership marker is missing")

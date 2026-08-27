@@ -14,22 +14,22 @@ var commandHelp = map[string]helpContent{
 		long: "Create and maintain reusable YAML Workspace Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create everysphere\n  twt templates show everysphere",
 	},
 	"twt workspaces": {
-		long: "Create and manage change-focused Workspaces. Each Workspace owns its worktrees, tmux session, setup checkpoints, and Agent Sessions.", example: "  twt create fix-auth --template everysphere\n  twt workspaces open fix-auth",
+		long: "Create and manage change-focused Workspaces. An active Workspace owns prepared worktrees and a tmux session. An archived Workspace keeps its branches and logical state.", example: "  twt create fix-auth --template everysphere\n  twt workspaces open fix-auth",
 	},
 	"twt create": {
-		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. It does not archive another Workspace. Without NAME, and when standard input and standard output are terminals and output is text, twt asks for a Workspace name. A script, a pipe, and --output json still require NAME.", example: "  twt create\n  twt create fix-auth --template everysphere\n  twt create auth-work --ticket fix-auth --ticket add-auth-tests --dry-run --output json",
+		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. The warm path claims prepared worktrees without a fetch. Use --fresh to fetch and refresh a ready Prepared Environment before the claim. Without NAME at a text terminal, twt asks for a Workspace name. A script, a pipe, and --output json still require NAME.", example: "  twt create\n  twt create fix-auth --template everysphere\n  twt create fix-auth --template everysphere --fresh",
 	},
 	"twt next": {
-		long: "Create a new Workspace from the latest saved version of the current Workspace Template. Run this command inside the tmux session of the current Workspace. twt switches the calling client to the new Workspace, then archives the old Workspace. One or more Ticket slugs claim those Tickets and link the new Workspace to them; all Tickets must belong to one Project. With no argument and open Tickets, twt shows an interactive Ticket picker: it uses fzf when fzf is installed, or a numbered list. If no Tickets exist, twt asks for a Workspace name. Use 'twt create' when there is no current Workspace or for automation.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth add-auth-tests",
+		long: "Create the next Workspace from the latest saved version of the current Workspace Template. Run this command inside the current Workspace tmux session. twt checks the current Workspace first, switches the calling client, archives the old Workspace, and returns its worktrees to the prepared pool. Without a name, twt shows an interactive Ticket picker. Use --force to discard tracked and nonignored changes. Use --fresh to fetch before the new claim. Use twt create outside a current Workspace.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth --force",
 	},
 	"twt switch": {
-		long: "Switch the calling tmux client to the session of a Workspace. twt repairs a missing or unowned session first. An archived Workspace becomes active. Without WORKSPACE, twt shows an interactive Workspace picker: it uses fzf when fzf is installed, or a numbered list.", example: "  twt switch fix-auth\n  twt switch",
+		long: "Switch the calling tmux client to a Workspace. twt claims prepared worktrees for a released Workspace. It then creates or repairs the tmux session. Without WORKSPACE, twt shows an interactive Workspace picker.", example: "  twt switch fix-auth\n  twt switch",
 	},
 	"twt archive": {
-		long: "Archive the current Workspace or a Workspace that you specify. twt keeps its worktrees, branches, Workspace Template snapshot, and Agent Session records.", example: "  twt archive\n  twt archive fix-auth",
+		long: "Archive a Workspace and return its worktrees to the prepared pool. twt keeps its branches, Workspace Template snapshot, and Agent Session records. Use --force to discard tracked and nonignored changes. twt preserves ignored files.", example: "  twt archive\n  twt archive fix-auth --force",
 	},
 	"twt done": {
-		long: "Archive the current Workspace or a Workspace that you specify, then remove its worktrees, branches, and state. From inside the Workspace tmux session, twt moves your tmux client to the most recent other active Workspace, or detaches the client. Use --keep to stop after the archive. Use --force to remove a branch with unpublished commits. When the Workspace links one open Ticket, twt asks whether it must close that Ticket. With many open Tickets, twt keeps them open and prints one close command for each Ticket.", example: "  twt done\n  twt done fix-auth --keep",
+		long: "Finish a Workspace and return its worktrees to the prepared pool. twt keeps the Workspace record and branches. From its tmux session, twt moves the client to another active Workspace or detaches it. Use --force to discard tracked and nonignored changes. When one open Ticket is linked, twt asks whether it must close that Ticket. Use 'twt workspaces remove' to delete Workspace state and branches.", example: "  twt done\n  twt done fix-auth --force",
 	},
 	"twt agents": {
 		long: "Register and control coding Agent Sessions that belong to a Workspace. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --workspace current\n  twt agents open\n  twt agents resume AGENT_ID",
@@ -56,13 +56,22 @@ var commandHelp = map[string]helpContent{
 		long: "Validate the YAML and all fields in one Workspace Template.", example: "  twt templates validate everysphere",
 	},
 	"twt templates prepare": {
-		long: "Create and initialize one Prepared Environment for the next Workspace. Repository initialization does not run again when a Workspace claims it.", example: "  twt templates prepare everysphere",
+		long: "Refresh each matching ready Prepared Environment. Then create enough Prepared Environments to meet pool_depth. Repository initialization runs again only when a refresh changes the saved base commit.", example: "  twt templates prepare everysphere",
 	},
 	"twt templates repos": {
 		long: "Manage the repository specifications inside one Workspace Template.", example: "  twt templates repos add everysphere app https://example.com/app.git\n  twt templates repos remove everysphere app",
 	},
 	"twt templates init": {
 		long: "Manage the initialization commands of a Workspace Template. One command runs for the Workspace, and one command runs for each repository.", example: "  twt templates init set product --cwd web -- ./scripts/init-workspace.sh\n  twt templates init set product --repo web -- ./init.sh",
+	},
+	"twt templates recycle": {
+		long: "Manage the command that cleans ignored files before twt reuses a repository worktree.", example: "  twt templates recycle set product --repo app -- ./clean.sh",
+	},
+	"twt templates recycle set": {
+		long: "Set one repository recycle command. twt runs it before the worktree returns to the prepared pool.", example: "  twt templates recycle set product --repo app -- ./clean.sh",
+	},
+	"twt templates recycle unset": {
+		long: "Remove one repository recycle command.", example: "  twt templates recycle unset product --repo app",
 	},
 	"twt templates path": {
 		long: "Print the YAML file path of one Workspace Template. The output is one bare path for command substitution.", example: "  twt templates path everysphere\n  $EDITOR $(twt templates path everysphere)",
@@ -88,13 +97,13 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt templates init set": {
 		long: "Set one initialization command. Put the command and its arguments after --.\n\n" +
-			"With --repo REPO, the command is repository initialization: twt runs it one time on each new physical worktree of that repository.\n\n" +
+			"With --repo REPO, the command is repository initialization. twt runs it after preparation and after a base refresh.\n\n" +
 			"Without --repo, the command is Workspace initialization: twt runs it after all repository worktrees exist, and --cwd PATH must give its working directory inside the Workspace root.",
 		example: "  twt templates init set product --cwd web -- ./scripts/init-workspace.sh\n  twt templates init set product --repo web -- ./init.sh",
 	},
 	"twt workspaces create": {
-		long:    "Create a Workspace from a saved Workspace Template. Repeat --ticket to link one or more open Tickets from one Project. twt claims a matching Prepared Environment or prepares one when necessary, then creates the tmux session. The Workspace branch name comes from --branch, then the branch_pattern of the Workspace Template, then the default pattern {prefix}{name}. Without a branch prefix (TWT_BRANCH_PREFIX or the branchPrefix value of config.yaml) the default is the Workspace name. Without NAME, and when standard input and standard output are terminals and output is text, twt asks for a Workspace name. A script, a pipe, and --output json still require NAME.",
-		example: "  twt workspaces create\n  twt workspaces create fix-auth --template everysphere\n  twt workspaces create auth-work --ticket fix-auth --ticket add-auth-tests --dry-run --output json",
+		long:    "Create a Workspace from a saved Workspace Template. The warm path claims a ready Prepared Environment without a fetch. Use --fresh to fetch and refresh it first. Repeat --ticket to link open Tickets from one Project. The branch name comes from --branch, the template branch_pattern, or the default pattern {prefix}{name}. Without NAME at a text terminal, twt asks for a Workspace name. A script, a pipe, and --output json still require NAME.",
+		example: "  twt workspaces create\n  twt workspaces create fix-auth --template everysphere\n  twt workspaces create fix-auth --template everysphere --fresh",
 	},
 	"twt workspaces list": {
 		long: "List Workspaces and their setup state. --project, --ticket, and --status filter the list. JSON includes the linked Project and Ticket slugs.", example: "  twt workspaces list\n  twt workspaces list --project change-monitor --status active --output json\n  twt workspaces list --ticket fix-auth --output json",
@@ -112,10 +121,10 @@ var commandHelp = map[string]helpContent{
 		long: "Print the root path of a Workspace, or the checkout path of one repository in it. The output is one bare path for command substitution.", example: "  cd $(twt workspaces path fix-auth)\n  cd $(twt workspaces path fix-auth app)",
 	},
 	"twt workspaces open": {
-		long: "Open a Workspace tmux session. twt makes an archived Workspace active. It also repairs a missing session and missing managed windows. An unowned tmux session with the Workspace session name is claimed, so a tmux-resurrect restore after a reboot does not create a second session. --all-active repairs every active Workspace and attaches no client.", example: "  twt workspaces open fix-auth\n  twt workspaces open fix-auth --no-attach\n  twt workspaces open --all-active --dry-run --output json\n  twt workspaces open --all-active",
+		long: "Open a Workspace tmux session. An archived Workspace claims matching prepared worktrees and restores its saved branches. Workspace Initialization runs again. twt claims an unowned tmux session with the expected name. It also repairs missing managed windows. --all-active repairs each active Workspace and attaches no client.", example: "  twt workspaces open fix-auth\n  twt workspaces open fix-auth --no-attach\n  twt workspaces open --all-active",
 	},
 	"twt workspaces archive": {
-		long: "Archive a Workspace and stop its owned tmux session. twt keeps the Workspace data so that you can open it again.", example: "  twt workspaces archive fix-auth\n  twt workspaces open fix-auth",
+		long: "Archive a Workspace and return its worktrees to the prepared pool. twt keeps its branches and logical state. Use --force to discard tracked and nonignored changes. twt preserves ignored files.", example: "  twt workspaces archive fix-auth\n  twt workspaces open fix-auth",
 	},
 	"twt workspaces setup retry": {
 		long: "Retry failed or interrupted setup steps from the saved Workspace Template snapshot.", example: "  twt workspaces setup retry fix-auth",
@@ -124,7 +133,7 @@ var commandHelp = map[string]helpContent{
 		long: "Adopt an existing tmux session as a Workspace. twt records the git repositories that the panes of the session sit in, and marks the session with the Workspace ID. twt did not create the directories of an adopted Workspace, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt workspaces adopt\n  twt workspaces adopt my-session --name fix-auth",
 	},
 	"twt workspaces remove": {
-		long: "Show a safe removal plan for an archived Workspace. Add --apply to remove clean, published Workspace worktrees and state. Use --force to also remove a branch with unpublished commits. Use --all-archived with an optional --older-than age to plan or apply removal of all archived Workspaces; apply skips blocked Workspaces.", example: "  twt workspaces archive fix-auth\n  twt workspaces remove fix-auth --apply\n  twt workspaces remove --all-archived --older-than 14d --apply",
+		long: "Show a safe removal plan for an archived Workspace. Add --apply to remove its saved branches and state. A released Workspace does not remove its ready Prepared Environment. Use --force to remove an unpublished branch. Use --all-archived with --older-than to select archived Workspaces.", example: "  twt workspaces archive fix-auth\n  twt workspaces remove fix-auth --apply\n  twt workspaces remove --all-archived --older-than 14d --apply",
 	},
 	"twt agents register": {
 		long: "Register a resumable coding Agent Session with a Workspace. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --workspace fix-auth --label review -- grok --resume SESSION_ID",

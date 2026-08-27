@@ -99,20 +99,24 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		}
 	} else {
 		for _, repository := range p.Repositories {
-			plan.Worktrees = append(plan.Worktrees, repository.Path)
+			if p.Materialized && repository.Path != "" {
+				plan.Worktrees = append(plan.Worktrees, repository.Path)
+			}
 		}
 		actions = []RemovalAction{{Kind: "stop_tmux_session", Target: p.ID}}
 		for _, repository := range p.Repositories {
+			if p.Materialized && repository.Path != "" {
+				actions = append(actions, RemovalAction{Kind: "remove_worktree", Target: repository.Path})
+			}
 			actions = append(actions,
-				RemovalAction{Kind: "remove_worktree", Target: repository.Path},
 				RemovalAction{Kind: "delete_branch", Target: repository.Branch},
-				RemovalAction{Kind: "keep_repository_cache", Target: repository.CachePath},
-			)
+				RemovalAction{Kind: "keep_repository_cache", Target: repository.CachePath})
 		}
-		actions = append(actions,
-			RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt-owned.json")},
-			RemovalAction{Kind: "remove_workspace_root", Target: p.Root},
-		)
+		if p.Materialized && p.Root != "" {
+			actions = append(actions,
+				RemovalAction{Kind: "delete_ownership_marker", Target: filepath.Join(p.Root, ".twt-owned.json")},
+				RemovalAction{Kind: "remove_workspace_root", Target: p.Root})
+		}
 	}
 
 	if p.Status != domain.WorkspaceArchived && p.Status != domain.WorkspaceRemoving && p.Status != domain.WorkspaceSetupFailed {
@@ -192,10 +196,12 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 	}
 	baseCommits := s.recordedBaseCommits(p)
 	for _, repository := range p.Repositories {
-		if _, err := os.Stat(repository.Path); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return plan, p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+		if p.Materialized && repository.Path != "" {
+			if _, err := os.Stat(repository.Path); errors.Is(err, os.ErrNotExist) {
+				continue
+			} else if err != nil {
+				return plan, p, nil, fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
+			}
 		}
 		if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
 			// validateRemovalState reports a checkout without a cache.
@@ -205,12 +211,14 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 		}
 		var repositoryBlockers []RemovalBlocker
 		if err := s.withCacheLock(repository.CachePath, func() error {
-			blocker, err := worktreeChangesBlocker(repository.Path)
-			if err != nil {
-				return err
-			}
-			if blocker != nil {
-				repositoryBlockers = append(repositoryBlockers, *blocker)
+			if p.Materialized && repository.Path != "" {
+				blocker, err := worktreeChangesBlocker(repository.Path)
+				if err != nil {
+					return err
+				}
+				if blocker != nil {
+					repositoryBlockers = append(repositoryBlockers, *blocker)
+				}
 			}
 			if err := ensureOriginFetchRefspec(repository.CachePath); err != nil {
 				return err
@@ -254,7 +262,7 @@ func (s *Service) planRemoval(reference, currentPane string, opts RemovalOptions
 			repositoryBlockers = append(repositoryBlockers, RemovalBlocker{
 				Code:    BlockerUnpublishedBranch,
 				Message: fmt.Sprintf("branch %q has commits that are not on the remote \"origin\" and not on another remote-tracking ref", repository.Branch),
-				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt workspaces remove %s --force --apply' to remove it without publication.", repository.Path, repository.Branch, reference),
+				Hint:    fmt.Sprintf("Run 'git -C %s push origin %s' to publish the branch, or run 'twt workspaces remove %s --force --apply' to remove it without publication.", repository.CachePath, repository.Branch, reference),
 			})
 			return nil
 		}); err != nil {
@@ -278,7 +286,7 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	if len(plan.Blockers) > 0 {
 		return plan, removalRefusal(p.Name, plan.Blockers)
 	}
-	if !p.Adopted {
+	if !p.Adopted && p.Materialized && p.Root != "" {
 		// Measure the Workspace root just before removal. The size feeds the
 		// reclaimed-space summary; a plan without removal does not pay for
 		// the walk. An adopted Workspace reclaims no space.
@@ -312,21 +320,25 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	}
 	for _, repository := range p.Repositories {
 		if err := s.withCacheLock(repository.CachePath, func() error {
-			if _, err := os.Stat(repository.Path); err == nil {
-				blocker, err := worktreeChangesBlocker(repository.Path)
-				if err != nil {
-					return err
-				}
-				if blocker != nil {
-					plan.Blockers = append(plan.Blockers, *blocker)
-					return removalRefusal(p.Name, plan.Blockers)
-				}
-				// Git requires --force for every worktree that contains an
-				// initialized submodule, including a clean worktree. The strict
-				// status check above keeps this Git compatibility flag from
-				// discarding changes that submodule ignore settings can hide.
-				if err := run(repository.CachePath, "git", "worktree", "remove", "--force", repository.Path); err != nil {
-					return fmt.Errorf("remove worktree %q: %w", repository.Path, err)
+			if p.Materialized && repository.Path != "" {
+				if _, err := os.Stat(repository.Path); err == nil {
+					blocker, err := worktreeChangesBlocker(repository.Path)
+					if err != nil {
+						return err
+					}
+					if blocker != nil {
+						plan.Blockers = append(plan.Blockers, *blocker)
+						return removalRefusal(p.Name, plan.Blockers)
+					}
+					// Git requires --force for every worktree that contains an
+					// initialized submodule, including a clean worktree. The strict
+					// status check above keeps this Git compatibility flag from
+					// discarding changes that submodule ignore settings can hide.
+					if err := run(repository.CachePath, "git", "worktree", "remove", "--force", repository.Path); err != nil {
+						return fmt.Errorf("remove worktree %q: %w", repository.Path, err)
+					}
+				} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("inspect worktree %q: %w", repository.Path, err)
 				}
 			}
 			if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
@@ -348,11 +360,13 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 			return plan, err
 		}
 	}
-	if err := os.Remove(filepath.Join(p.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return plan, fmt.Errorf("remove Workspace ownership marker: %w", err)
-	}
-	if err := os.Remove(p.Root); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return plan, fmt.Errorf("remove Workspace root %q: %w", p.Root, err)
+	if p.Materialized && p.Root != "" {
+		if err := os.Remove(filepath.Join(p.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return plan, fmt.Errorf("remove Workspace ownership marker: %w", err)
+		}
+		if err := os.Remove(p.Root); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return plan, fmt.Errorf("remove Workspace root %q: %w", p.Root, err)
+		}
 	}
 	return plan, s.removeState(p)
 }
@@ -415,7 +429,7 @@ func (s *Service) BulkRemovalPlans(olderThan time.Duration, opts RemovalOptions)
 		}
 		// The bulk plan shows the size of each selected Workspace. An adopted
 		// Workspace reclaims no space.
-		if !p.Adopted {
+		if !p.Adopted && p.Materialized && p.Root != "" {
 			plan.Bytes, _ = store.DirectoryBytes(p.Root)
 		}
 		plans = append(plans, plan)
@@ -486,6 +500,36 @@ func (s *Service) validateRemovalState(p domain.Workspace) ([]RemovalBlocker, er
 	if len(p.ID) < 8 {
 		return blocked(BlockerInvalidState, "Workspace %q has an invalid ID", p.Name), nil
 	}
+	if !p.Materialized {
+		if p.EnvironmentID != "" || p.Root != "" {
+			return blocked(BlockerInvalidState, "released Workspace %q keeps physical ownership", p.Name), nil
+		}
+		for _, repository := range p.Repositories {
+			spec, _, err := repositoryFor(p, repository.Name)
+			if err != nil {
+				return blocked(BlockerInvalidState, "%s", err.Error()), nil
+			}
+			if repository.Path != "" || repository.CachePath != s.cachePath(repository.Name, spec.Clone.URL) || repository.Branch == "" {
+				return blocked(BlockerInvalidState, "released repository %q has invalid logical state", repository.Name), nil
+			}
+			if _, err := os.Stat(repository.CachePath); errors.Is(err, os.ErrNotExist) {
+				continue
+			} else if err != nil {
+				return nil, fmt.Errorf("inspect repository cache: %w", err)
+			}
+			if err := validateCacheMarker(repository.CachePath, spec.Clone.URL); err != nil {
+				return blocked(BlockerUnsafeState, "%s", err.Error()), nil
+			}
+			protected := spec.DefaultBranch
+			if detected, err := defaultBranch(repository.CachePath, spec); err == nil {
+				protected = detected
+			}
+			if protected != "" && repository.Branch == protected {
+				return blocked(BlockerProtectedBranch, "repository %q records the default branch %q as its Workspace branch; removal does not delete the default branch", repository.Name, protected), nil
+			}
+		}
+		return nil, nil
+	}
 	tolerantStatus := p.Status == domain.WorkspaceRemoving || p.Status == domain.WorkspaceSetupFailed
 	expectedRoot := filepath.Join(s.options.DataDir, "projects", p.Name+"-"+p.ID[:8])
 	if p.EnvironmentID != "" {
@@ -495,7 +539,7 @@ func (s *Service) validateRemovalState(p domain.Workspace) ([]RemovalBlocker, er
 			// A retry can continue after the Prepared Environment record was deleted.
 		} else if err != nil {
 			return nil, err
-		} else if environment.Status != domain.EnvironmentClaimed || environment.ClaimReservation == nil || environment.ClaimReservation.Workspace.ID != p.ID {
+		} else if environment.Status != domain.EnvironmentClaimed || environment.Assignment == nil || environment.Assignment.Workspace.ID != p.ID {
 			return blocked(BlockerInvalidState, "Workspace %q does not own its Prepared Environment", p.Name), nil
 		}
 	}
@@ -590,18 +634,28 @@ func dirtyPaths(status string, limit int) []string {
 }
 
 // recordedBaseCommits maps each repository to the base commit its checkout
-// started from, when the Prepared Environment record still exists.
+// started from.
 func (s *Service) recordedBaseCommits(p domain.Workspace) map[string]string {
+	commits := make(map[string]string, len(p.Repositories))
+	for _, repository := range p.Repositories {
+		if repository.BaseCommit != "" {
+			commits[repository.Name] = repository.BaseCommit
+		}
+	}
+	if len(commits) == len(p.Repositories) {
+		return commits
+	}
 	if p.EnvironmentID == "" {
-		return nil
+		return commits
 	}
 	environment, err := s.environments.Find(p.EnvironmentID)
 	if err != nil {
-		return nil
+		return commits
 	}
-	commits := make(map[string]string, len(environment.Repositories))
 	for _, repository := range environment.Repositories {
-		commits[repository.Name] = repository.BaseCommit
+		if commits[repository.Name] == "" {
+			commits[repository.Name] = repository.BaseCommit
+		}
 	}
 	return commits
 }

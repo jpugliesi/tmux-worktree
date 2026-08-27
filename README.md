@@ -130,12 +130,13 @@ The workspace layer also works on its own, without tickets:
 twt create fix-auth --template myproject   # worktrees + tmux session
 twt next                                   # next workspace, archive the current one
 twt switch                                 # jump between workspace sessions
-twt done                                   # archive and clean up
+twt done                                   # finish and return worktrees to the pool
 ```
 
 Templates can declare tmux window layouts, initialization commands, and
 agent sessions to start. `twt templates prepare` keeps a warm pool of
-initialized worktrees so workspace creation is instant. `twt agents
+initialized worktrees. `twt done` keeps Workspace state and branches. It
+returns the physical worktrees for fast reuse. `twt agents
 list/send/resume` control the coding agents inside a workspace; dispatch
 uses the same machinery. Providers: `codex`, `claude`, `cursor`, `grok`.
 

@@ -168,8 +168,12 @@ func TestWorkspacesRemoveRefusesUnpublishedCommits(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not on the remote") {
 		t.Fatalf("unpublished removal error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(checkout, "new-work.txt")); err != nil {
-		t.Fatalf("unpublished removal changed the checkout: %v", err)
+	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("unpublished")
+	if err != nil || workspace.Materialized {
+		t.Fatalf("blocked released Workspace = %+v, error = %v", workspace, err)
+	}
+	if content := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "show", workspace.Repositories[0].Branch+":new-work.txt"); content != "important" {
+		t.Fatalf("unpublished branch content = %q", content)
 	}
 
 	// The plan migrates the origin fetch refspec into the bare cache, so a
@@ -185,18 +189,15 @@ func TestWorkspacesRemoveRefusesUnpublishedCommits(t *testing.T) {
 	}
 
 	// After publication the plan is clean.
-	branch := runCommand(t, checkout, "git", "branch", "--show-current")
-	runCommand(t, checkout, "git", "push", "-q", "origin", branch)
+	branch := workspace.Repositories[0].Branch
+	runCommand(t, "", "git", "-C", cache, "push", "-q", "origin", branch)
 	cleanPlan := executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished")
 	if strings.Contains(cleanPlan, "Blocked:") || !strings.Contains(cleanPlan, "Run again with --apply") {
 		t.Fatalf("published removal plan = %q", cleanPlan)
 	}
 	executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished", "--apply")
-	if _, err := os.Stat(filepath.Join(root, "data", "projects")); err == nil {
-		entries, readErr := os.ReadDir(filepath.Join(root, "data", "projects"))
-		if readErr != nil || len(entries) != 0 {
-			t.Fatalf("published removal kept Workspace data: entries=%v error=%v", entries, readErr)
-		}
+	if _, err := os.Stat(checkout); err != nil {
+		t.Fatalf("published removal deleted the prepared worktree: %v", err)
 	}
 }
 
@@ -254,8 +255,12 @@ func TestWorkspacesRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) 
 	if len(removal.Blockers) != 1 || removal.Blockers[0].Code != "unpublished_unknown" || !strings.Contains(removal.Blockers[0].Message, "could not read the remote") {
 		t.Fatalf("unreachable-remote removal blockers = %+v", removal.Blockers)
 	}
-	if _, err := os.Stat(filepath.Join(checkout, "new-work.txt")); err != nil {
-		t.Fatalf("unreachable-remote plan changed the checkout: %v", err)
+	released, err := store.NewWorkspaceStore(options.StateDir).Find("offline")
+	if err != nil || released.Materialized {
+		t.Fatalf("unreachable-remote released Workspace = %+v, error = %v", released, err)
+	}
+	if content := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "show", workspace.Repositories[0].Branch+":new-work.txt"); content != "important" {
+		t.Fatalf("unreachable-remote branch content = %q", content)
 	}
 }
 
@@ -302,8 +307,8 @@ func TestWorkspacesRemoveForceRemovesUnpublishedWork(t *testing.T) {
 		t.Fatalf("force plan = %q", plan)
 	}
 	executeWithOptions(t, options, nil, "workspaces", "remove", "escape", "--force", "--apply")
-	if _, err := os.Stat(workspace.Root); !os.IsNotExist(err) {
-		t.Fatalf("force removal kept the Workspace root: %v", err)
+	if _, err := os.Stat(workspace.Root); err != nil {
+		t.Fatalf("force removal deleted the prepared root: %v", err)
 	}
 	if output := executeWithOptions(t, options, nil, "workspaces", "list"); output != "" {
 		t.Fatalf("workspaces list after force removal = %q", output)
@@ -615,7 +620,7 @@ func TestWorkspacesRemoveRejectsChangedStatePaths(t *testing.T) {
 	command := cli.New(options)
 	command.SetArgs(forceTextOutput([]string{"workspaces", "remove", "tampered", "--apply"}))
 	err = command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "outside its Workspace root") {
+	if err == nil || !strings.Contains(err.Error(), "invalid logical state") {
 		t.Fatalf("changed state removal error = %v", err)
 	}
 	if data, err := os.ReadFile(protected); err != nil || string(data) != "protected" {

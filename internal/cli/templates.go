@@ -53,7 +53,105 @@ func newTemplatesCommand(options Options) *cobra.Command {
 	templates.AddCommand(newTemplatePrepareCommand(options, templateStore))
 	templates.AddCommand(newTemplateRepositoriesCommand(options, templateStore))
 	templates.AddCommand(newTemplateInitializeCommand(options, templateStore, options.StateDir))
+	templates.AddCommand(newTemplateRecycleCommand(options, templateStore, options.StateDir))
 	return templates
+}
+
+func newTemplateRecycleCommand(options Options, templateStore store.TemplateStore, stateDir string) *cobra.Command {
+	recycle := groupCommand(&cobra.Command{Use: "recycle", Short: "Manage repository recycle commands"})
+	var setRepository string
+	set := &cobra.Command{
+		Use:   "set TEMPLATE --repo REPO -- COMMAND...",
+		Short: "Set a repository recycle command",
+		Args: func(command *cobra.Command, args []string) error {
+			if strings.TrimSpace(setRepository) == "" {
+				return invalidUsage(command, "missing required flag --repo REPO")
+			}
+			if command.ArgsLenAtDash() != 1 || len(args) < 2 {
+				return invalidUsage(command, "expected TEMPLATE --repo REPO -- COMMAND...")
+			}
+			return nil
+		},
+		RunE: func(command *cobra.Command, args []string) error {
+			return setTemplateRecycle(command, options, templateStore, stateDir, args[0], setRepository, args[1:])
+		},
+	}
+	set.Flags().StringVar(&setRepository, "repo", "", "Select the repository")
+	_ = set.MarkFlagRequired("repo")
+	setArguments(set, requiredArgument("template"), variadicArgument("command", true, ""))
+	set.ValidArgsFunction = templateNameCompletion(templateStore)
+	_ = set.RegisterFlagCompletionFunc("repo", templateRepositoryFlagCompletion(templateStore))
+
+	var unsetRepository string
+	unset := &cobra.Command{
+		Use:   "unset TEMPLATE --repo REPO",
+		Short: "Remove a repository recycle command",
+		Args:  exactArgs("TEMPLATE"),
+		RunE: func(command *cobra.Command, args []string) error {
+			return setTemplateRecycle(command, options, templateStore, stateDir, args[0], unsetRepository, nil)
+		},
+	}
+	unset.Flags().StringVar(&unsetRepository, "repo", "", "Select the repository")
+	_ = unset.MarkFlagRequired("repo")
+	setArguments(unset, requiredArgument("template"))
+	unset.ValidArgsFunction = templateNameCompletion(templateStore)
+	_ = unset.RegisterFlagCompletionFunc("repo", templateRepositoryFlagCompletion(templateStore))
+	recycle.AddCommand(set, unset)
+	return recycle
+}
+
+func templateRepositoryFlagCompletion(templateStore store.TemplateStore) completionFunc {
+	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return nil, noFileCompletion
+		}
+		return repositoryNames(templateStore, args[0], toComplete), noFileCompletion
+	}
+}
+
+func setTemplateRecycle(command *cobra.Command, options Options, templateStore store.TemplateStore, stateDir, templateName, repositoryName string, recycleCommand []string) error {
+	defer syncSharedTemplates(command, options)
+	lock, err := store.AcquireMutationLock(stateDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	template, err := templateStore.Load(templateName)
+	if err != nil {
+		return err
+	}
+	found := false
+	for index := range template.Repositories {
+		if template.Repositories[index].Name != repositoryName {
+			continue
+		}
+		found = true
+		if len(recycleCommand) == 0 {
+			template.Repositories[index].Recycle = nil
+		} else {
+			template.Repositories[index].Recycle = &domain.RecycleSpec{Command: append([]string(nil), recycleCommand...)}
+		}
+		break
+	}
+	if !found {
+		return clierr.New(clierr.NotFound, "repository %q does not exist in Workspace Template %q", repositoryName, templateName)
+	}
+	if err := template.Validate(); err != nil {
+		return err
+	}
+	operation := "templates.recycle.set"
+	verb := "Set"
+	if len(recycleCommand) == 0 {
+		operation = "templates.recycle.unset"
+		verb = "Removed"
+	}
+	return runMutation(command, operation,
+		func() (string, string, error) { return "", repositoryName, nil },
+		func() (string, string, error) { return "", repositoryName, templateStore.Save(template) },
+		func(out io.Writer, _, _ string) error {
+			_, err := fmt.Fprintf(out, "%s recycle command for repository %q in Workspace Template %q\n", verb, repositoryName, templateName)
+			return err
+		})
 }
 
 type templatePrepareOutput struct {
@@ -96,11 +194,18 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 		}
 	}
 	service := workspaceservice.NewService(serviceOptions)
+	refreshed, err := service.RefreshReadyEnvironments(template)
+	if err != nil {
+		return err
+	}
 	queued, err := service.TopUpPool(name, template, template.EffectivePoolDepth())
 	if err != nil {
 		return err
 	}
-	prepared := make([]string, 0, len(queued))
+	prepared := make([]string, 0, len(refreshed)+len(queued))
+	for _, environment := range refreshed {
+		prepared = append(prepared, environment.ID)
+	}
 	for _, entry := range queued {
 		environment, err := service.PrepareQueued(entry.ID, entry.QueueToken)
 		if err != nil {
@@ -431,15 +536,17 @@ func checkTemplateIsUnused(options Options, name string) error {
 	tickets, ticketErr := options.ticketService()
 	if ticketErr == nil {
 		projects, listErr := tickets.Projects()
-		if listErr != nil {
+		if listErr != nil && clierr.CodeOf(listErr) != clierr.PreconditionFailed && clierr.CodeOf(listErr) != clierr.NotFound {
 			return listErr
 		}
-		for _, project := range projects {
-			if project.TemplateName == name {
-				projectUsers = append(projectUsers, project.Name)
+		if listErr == nil {
+			for _, project := range projects {
+				if project.TemplateName == name {
+					projectUsers = append(projectUsers, project.Name)
+				}
 			}
 		}
-	} else if clierr.CodeOf(ticketErr) != clierr.PreconditionFailed {
+	} else if clierr.CodeOf(ticketErr) != clierr.PreconditionFailed && clierr.CodeOf(ticketErr) != clierr.NotFound {
 		return ticketErr
 	}
 	if len(workspaceUsers) > 0 {

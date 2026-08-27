@@ -38,15 +38,24 @@ Initialization commands from a Workspace Template run with a working directory
 inside the Workspace root. `twt` starts a command directly; it never starts a
 shell, so it never expands text from a template into a shell.
 
+Release and reuse preserve ignored files by default. A later Workspace can see
+those files in the same physical worktree. Use a repository recycle command to
+remove secrets, credentials, build output, or other ignored files before reuse.
+The recycle command is trusted Template code and can remove ignored files.
+
 ## Destructive actions are plans
 
-A destructive command builds a plan and shows it. `twt workspaces remove`,
-`twt done`, and `twt storage clean` change nothing without `--apply`. A plan
+A destructive command builds a plan and shows it. `twt workspaces remove`
+and `twt storage clean` change nothing without `--apply`. A plan
 that cannot run safely returns typed blockers, each with a stable `code`,
 such as `not_archived`, `uncommitted_changes`, or `unpublished_branch`. An
 agent must read the blockers and correct the cause; it must not repeat the
 same request. Every mutation also accepts `--dry-run`, which validates the
 request and reports `status: "valid"` without a state, Git, or tmux change.
+
+`twt archive` and `twt done` release worktrees for reuse. They refuse tracked
+and nonignored changes unless the user passes `--force`. An active Git operation
+always blocks release. The force option preserves ignored files.
 
 ## Local dispatch boundary
 

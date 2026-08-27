@@ -62,10 +62,11 @@ type commandError struct {
 }
 
 type workspaceOutput struct {
-	ID       string                 `json:"id"`
-	Name     string                 `json:"name"`
-	Template string                 `json:"template"`
-	Status   domain.WorkspaceStatus `json:"status"`
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Template     string                 `json:"template"`
+	Status       domain.WorkspaceStatus `json:"status"`
+	Materialized bool                   `json:"materialized"`
 	// Adopted marks a Workspace that twt made from an existing tmux session.
 	// Removal never deletes its directories.
 	Adopted bool   `json:"adopted,omitempty"`
@@ -105,6 +106,7 @@ func toWorkspaceOutput(workspace domain.Workspace) workspaceOutput {
 		Name:         workspace.Name,
 		Template:     workspace.TemplateName,
 		Status:       workspace.Status,
+		Materialized: workspace.Materialized,
 		Adopted:      workspace.Adopted,
 		Project:      workspace.Project,
 		Tickets:      append([]string(nil), workspace.Tickets...),

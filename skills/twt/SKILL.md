@@ -106,8 +106,8 @@ applies to `twt templates edit`, `twt projects plan edit` without `--stdin`,
 
 ## Work with Workspaces
 
-Create a Workspace from an existing Workspace Template. Let `twt` create the Git
-worktrees and tmux windows. `twt w` is the short alias for `twt workspaces`.
+Create a Workspace from an existing Workspace Template. Let `twt` claim the Git
+worktrees and create the tmux windows. `twt w` is the short alias for `twt workspaces`.
 Repository Caches keep full commit history. twt repairs an old shallow cache
 before it creates a Workspace branch. Do not repair a cache by hand.
 
@@ -126,8 +126,10 @@ twt templates prepare TEMPLATE --dry-run --output json
 twt templates prepare TEMPLATE --output json
 ```
 
-Workspace creation claims the matching Prepared Environment. Repository
-initialization does not run again for that physical worktree.
+Workspace creation claims a matching Prepared Environment. The normal warm
+path does not fetch, clone, add a worktree, or run repository initialization.
+Use `--fresh` only when the new Workspace needs the latest default branch.
+Repository initialization runs again when that refresh changes the base commit.
 
 Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
@@ -159,8 +161,8 @@ twt workspaces setup retry WORKSPACE --output json
 ```
 
 After a reboot, repair every active Workspace session. Do not use tmux-resurrect
-as the source of truth. `open` claims an unowned session with the Workspace
-name, or it creates a missing session:
+as the source of truth. `open` creates a missing session. Opening an archived
+Workspace claims prepared worktrees and restores its saved branches:
 
 ```sh
 twt doctor --output json
@@ -180,17 +182,28 @@ twt workspaces rename WORKSPACE NAME --output json
 ```
 
 Archive a completed Workspace from outside its tmux session. Archive stops live
-processes. It keeps worktrees, branches, Template snapshots, and Agent Session
-records.
+processes and returns the worktrees to the prepared pool. It keeps branches,
+Template snapshots, and Agent Session records. It refuses tracked and
+nonignored changes. Use `--force` only with user authority. Force preserves
+ignored files. An active Git operation always blocks the release.
 
 ```sh
 twt workspaces archive WORKSPACE --dry-run --output json
 twt workspaces archive WORKSPACE --output json
+twt workspaces archive WORKSPACE --force --output json
 ```
 
-Use removal only for authorized disk cleanup. The Workspace must be archived.
-Read every action and every blocker in the plan before you apply it. `twt`
-refuses dirty worktrees and unpublished Workspace commits.
+Ignored files can pass from one Workspace to the next in a reused worktree.
+Set a repository recycle command when a Template must remove them:
+
+```sh
+twt templates recycle set TEMPLATE --repo REPO -- COMMAND
+```
+
+Use removal only for authorized logical cleanup. The Workspace must be archived.
+Read every action and every blocker before you apply the plan. A released
+Workspace removal deletes its branches and state. It keeps the ready Prepared
+Environment. `twt` refuses unpublished Workspace commits.
 
 ```sh
 twt workspaces remove WORKSPACE --output json
@@ -198,17 +211,17 @@ twt workspaces remove WORKSPACE --apply --output json
 ```
 
 A blocked plan gives `blockers` with a stable `code` for each cause, such as
-`not_archived`, `uncommitted_changes`, or `unpublished_branch`. Correct the
+`not_archived` or `unpublished_branch`. Correct the
 cause; do not repeat the same request.
 
-`twt done WORKSPACE` archives the Workspace and then applies the removal plan.
-Run it from outside the Workspace tmux session for JSON output. Use the dry run
-to read the complete plan first:
+`twt done WORKSPACE` finishes the Workspace and returns its worktrees to the
+prepared pool. It keeps the Workspace record and branches. Run it from outside
+the Workspace tmux session for JSON output. Use the dry run first:
 
 ```sh
 twt done WORKSPACE --dry-run --output json
 twt done WORKSPACE --output json
-twt done WORKSPACE --keep --output json
+twt done WORKSPACE --force --output json
 ```
 
 ## Work with Agent Sessions

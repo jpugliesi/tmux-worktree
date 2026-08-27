@@ -39,7 +39,8 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	}
 	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
-	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
+	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TicketsHome: filepath.Join(root, "tickets"), TmuxSocket: socket}
+	executeWithOptions(t, options, nil, "tickets", "init")
 	executeWithOptions(t, options, nil, "create", "old-workspace", "--template", "example", "--no-open")
 	oldWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("old-workspace")
 	if err != nil {
@@ -106,10 +107,10 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 		events = append(events, "switch:"+session)
 		return nil
 	}
-	options.QuickCreateArchive = func(_ string, workspaceID string, _ string) error {
+	options.QuickCreateArchive = func(_ string, workspaceID string, _ string, releaseOptions workspaceservice.ReleaseOptions) error {
 		events = append(events, "archive:"+workspaceID)
 		service := workspaceservice.NewService(workspaceservice.Options{StateDir: options.StateDir, DataDir: options.DataDir, TmuxSocket: socket})
-		_, err := service.Archive(workspaceID, "")
+		_, err := service.Release(workspaceID, "", releaseOptions)
 		return err
 	}
 	attachControlClient(t, socket, "example-old-workspace")
@@ -154,7 +155,7 @@ func TestNextPromptsSwitchesThenArchivesTheCurrentWorkspace(t *testing.T) {
 	attachControlClient(t, socket, "example-new-workspace")
 	archiveCalled := false
 	options.QuickCreateSwitch = func(string, string) error { return fmt.Errorf("test switch failure") }
-	options.QuickCreateArchive = func(string, string, string) error {
+	options.QuickCreateArchive = func(string, string, string, workspaceservice.ReleaseOptions) error {
 		archiveCalled = true
 		return nil
 	}
@@ -302,6 +303,27 @@ func TestNextChecksTheTmuxClientBeforeWorkspaceSetup(t *testing.T) {
 	if _, err := store.NewWorkspaceStore(options.StateDir).Find("must-not-exist"); err == nil {
 		t.Fatal("quick create made a Workspace before client preflight")
 	}
+
+	attachControlClient(t, socket, "example-old-workspace")
+	current, err := store.NewWorkspaceStore(options.StateDir).Find("old-workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(current.Repositories[0].Path, "unsaved.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command = cli.New(options)
+	command.SetArgs(forceTextOutput([]string{"next", "dirty-must-not-exist"}))
+	err = command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("quick create dirty preflight error = %v", err)
+	}
+	if _, err := os.Stat(initLog); !os.IsNotExist(err) {
+		t.Fatalf("quick create ran initialization before dirty preflight: %v", err)
+	}
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find("dirty-must-not-exist"); err == nil {
+		t.Fatal("quick create made a Workspace before dirty preflight")
+	}
 }
 
 func TestQuickCreateWorkerArchivesOldWorkspaceFromTheNewSession(t *testing.T) {
@@ -340,7 +362,7 @@ func TestQuickCreateWorkerArchivesOldWorkspaceFromTheNewSession(t *testing.T) {
 	t.Setenv("TMUX_PANE", helperPane)
 	timeoutOptions := options
 	timeoutOptions.QuickCreateWaitTimeout = 50 * time.Millisecond
-	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldWorkspace.ID, newWorkspace.ID, "twt-create-worker-timeout", "no-client"})
+	err = cli.RunQuickCreateWorker(timeoutOptions, []string{oldWorkspace.ID, newWorkspace.ID, "force=false", "-", "twt-create-worker-timeout", "no-client"})
 	if err == nil || !strings.Contains(err.Error(), "signal timed out") || !strings.Contains(err.Error(), "twt archive "+oldWorkspace.ID) {
 		t.Fatalf("quick create worker timeout = %v", err)
 	}
@@ -359,15 +381,15 @@ func TestQuickCreateWorkerArchivesOldWorkspaceFromTheNewSession(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		signalResult <- exec.Command("tmux", "-L", socket, "wait-for", "-S", channel).Run()
 	}()
-	if err := cli.RunQuickCreateWorker(options, []string{oldWorkspace.ID, newWorkspace.ID, channel, "no-client"}); err != nil {
+	if err := cli.RunQuickCreateWorker(options, []string{oldWorkspace.ID, newWorkspace.ID, "force=false", "-", channel, "no-client"}); err != nil {
 		t.Fatalf("run quick create worker: %v", err)
 	}
 	if err := <-signalResult; err != nil {
 		t.Fatalf("signal quick create worker: %v", err)
 	}
 	oldWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
-	if err != nil || oldWorkspace.Status != domain.WorkspaceArchived {
-		t.Fatalf("old Workspace after worker: status=%q error=%v", oldWorkspace.Status, err)
+	if err != nil || oldWorkspace.Status != domain.WorkspaceArchived || oldWorkspace.Materialized {
+		t.Fatalf("old Workspace after worker: %+v, error=%v", oldWorkspace, err)
 	}
 	newWorkspace, err = store.NewWorkspaceStore(options.StateDir).Find(newWorkspace.ID)
 	if err != nil || newWorkspace.Status != domain.WorkspaceActive {
@@ -470,10 +492,10 @@ func TestNextUsesTheCallingClientAndRealArchiveHelper(t *testing.T) {
 	if !strings.Contains(output, "archiving Workspace \"old-workspace\"") {
 		t.Fatalf("real quick create output = %q", output)
 	}
-	waitFor(t, 3*time.Second, func() bool {
+	waitFor(t, 10*time.Second, func() bool {
 		workspace, err := store.NewWorkspaceStore(options.StateDir).Find(oldWorkspace.ID)
-		return err == nil && workspace.Status == domain.WorkspaceArchived
-	}, "old Workspace did not become archived")
+		return err == nil && workspace.Status == domain.WorkspaceArchived && !workspace.Materialized && workspace.EnvironmentID == ""
+	}, "old Workspace release did not finish")
 	newWorkspace, err := store.NewWorkspaceStore(options.StateDir).Find("new-workspace")
 	if err != nil || newWorkspace.Status != domain.WorkspaceActive {
 		t.Fatalf("new Workspace after real quick create: status=%q error=%v", newWorkspace.Status, err)

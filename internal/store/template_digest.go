@@ -120,11 +120,16 @@ type environmentDigestRepository struct {
 	DefaultBranch string                       `json:"defaultBranch"`
 	Remotes       map[string]string            `json:"remotes"`
 	Initialize    *environmentDigestInitialize `json:"initialize"`
+	Recycle       *environmentDigestRecycle    `json:"recycle,omitempty"`
 }
 
 type environmentDigestInitialize struct {
 	Command          []string `json:"command"`
 	WorkingDirectory string   `json:"workingDirectory"`
+}
+
+type environmentDigestRecycle struct {
+	Command []string `json:"command"`
 }
 
 // EnvironmentDigest identifies the physical worktree set of one Workspace
@@ -148,6 +153,9 @@ func EnvironmentDigest(template domain.Template) (string, error) {
 				Command:          repository.Initialize.Command,
 				WorkingDirectory: repository.Initialize.WorkingDirectory,
 			}
+		}
+		if repository.Recycle != nil {
+			entry.Recycle = &environmentDigestRecycle{Command: repository.Recycle.Command}
 		}
 		payload.Repositories = append(payload.Repositories, entry)
 	}

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const WorkspaceVersion = 1
+const WorkspaceVersion = 2
 
 type WorkspaceStatus string
 
@@ -41,13 +41,15 @@ const (
 )
 
 type Workspace struct {
-	Version          int             `json:"version"`
-	ID               string          `json:"id"`
-	EnvironmentID    string          `json:"environmentId,omitempty"`
-	Name             string          `json:"name"`
-	TemplateName     string          `json:"templateName"`
-	TemplateSnapshot Template        `json:"templateSnapshot"`
-	Status           WorkspaceStatus `json:"status"`
+	Version           int             `json:"version"`
+	ID                string          `json:"id"`
+	EnvironmentID     string          `json:"environmentId,omitempty"`
+	EnvironmentDigest string          `json:"environmentDigest,omitempty"`
+	Materialized      bool            `json:"materialized"`
+	Name              string          `json:"name"`
+	TemplateName      string          `json:"templateName"`
+	TemplateSnapshot  Template        `json:"templateSnapshot"`
+	Status            WorkspaceStatus `json:"status"`
 	// Adopted marks a Workspace that twt made from an existing tmux session.
 	// twt did not create its directories, and removal never deletes them:
 	// removal only deletes the twt state and releases the session marker.
@@ -82,6 +84,13 @@ func (w *Workspace) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*w = Workspace(value.workspaceJSON)
+	if w.Version != 1 && w.Version != WorkspaceVersion {
+		return fmt.Errorf("unsupported Workspace version %d", w.Version)
+	}
+	w.Version = WorkspaceVersion
+	if w.Root != "" || w.Adopted {
+		w.Materialized = true
+	}
 	if value.Ticket != "" && len(w.Tickets) > 0 && (len(w.Tickets) != 1 || w.Tickets[0] != value.Ticket) {
 		return fmt.Errorf("Workspace has conflicting ticket and tickets values")
 	}
@@ -96,6 +105,7 @@ type WorkspaceRepository struct {
 	CachePath  string `json:"cachePath"`
 	Path       string `json:"path"`
 	Branch     string `json:"branch"`
+	BaseCommit string `json:"baseCommit,omitempty"`
 	WindowName string `json:"windowName"`
 }
 

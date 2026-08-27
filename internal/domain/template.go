@@ -148,6 +148,13 @@ type RepositorySpec struct {
 	DefaultBranch string            `yaml:"default_branch,omitempty" json:"defaultBranch,omitempty"`
 	WindowName    string            `yaml:"window_name,omitempty" json:"windowName,omitempty"`
 	Initialize    *InitializeSpec   `yaml:"initialize,omitempty" json:"initialize,omitempty"`
+	Recycle       *RecycleSpec      `yaml:"recycle,omitempty" json:"recycle,omitempty"`
+}
+
+// RecycleSpec declares one command that cleans reusable ignored state before
+// a Workspace releases its physical worktree.
+type RecycleSpec struct {
+	Command []string `yaml:"command" json:"command"`
 }
 
 type CloneSpec struct {
@@ -227,6 +234,9 @@ func (t Template) Validate() error {
 		}
 		if err := validateInitialize(repository.Initialize, false); err != nil {
 			return fmt.Errorf("repository %q initialization: %w", repository.Name, err)
+		}
+		if repository.Recycle != nil && len(repository.Recycle.Command) == 0 {
+			return fmt.Errorf("repository %q recycle command is empty", repository.Name)
 		}
 	}
 	if err := validateInitialize(t.Initialize, true); err != nil {

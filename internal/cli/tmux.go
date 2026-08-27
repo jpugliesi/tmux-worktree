@@ -22,7 +22,7 @@ type workerSpec struct {
 	argument string
 	// channelPrefix guards the tmux wait-for signal channel.
 	channelPrefix string
-	// windowName names the worker window in the destination session.
+	// windowName names the worker window in its host session.
 	windowName string
 	// failedWindow names the worker window after a failure.
 	failedWindow string
@@ -80,13 +80,16 @@ func realQuickCreateSwitch(options Options) func(clientName, session string) err
 // QuickCreateArchive hook. It starts the archive worker in the new Workspace
 // session and signals it. The worker archives the old Workspace and keeps its
 // window visible on failure.
-func realQuickCreateArchive(options Options) func(clientName, oldWorkspaceID, newWorkspaceID string) error {
-	return func(clientName, oldWorkspaceID, newWorkspaceID string) error {
+func realQuickCreateArchive(options Options) func(clientName, oldWorkspaceID, newWorkspaceID string, releaseOptions workspaceservice.ReleaseOptions) error {
+	return func(clientName, oldWorkspaceID, newWorkspaceID string, releaseOptions workspaceservice.ReleaseOptions) error {
 		hostSessionID, err := options.workspaceService().OwnedSessionID(newWorkspaceID)
 		if err != nil {
 			return err
 		}
-		helper, err := startRelocationHelper(options, quickCreateWorker, hostSessionID, clientName, []string{oldWorkspaceID, newWorkspaceID})
+		helper, err := startRelocationHelper(options, quickCreateWorker, hostSessionID, clientName, []string{
+			oldWorkspaceID, newWorkspaceID,
+			workerBoolArg("force", releaseOptions.Force), workerValueArg(releaseOptions.ExpectedFingerprint),
+		})
 		if err != nil {
 			return err
 		}
@@ -94,7 +97,7 @@ func realQuickCreateArchive(options Options) func(clientName, oldWorkspaceID, ne
 	}
 }
 
-// relocationHelper is a worker window inside a destination tmux session. The
+// relocationHelper is a worker window inside its host tmux session. The
 // caller switches or detaches the tmux client, then signals the worker with
 // commit. The worker window keeps its output on failure through
 // remain-on-exit.
@@ -108,6 +111,22 @@ type relocationHelper struct {
 // given host session. workerArgs does not contain the argv mode, the signal
 // channel, or the client name; this function adds them.
 func startRelocationHelper(options Options, spec workerSpec, hostSessionID, clientName string, workerArgs []string) (*relocationHelper, error) {
+	return startRelocationHelperWithCommand(options, spec, clientName, workerArgs, []string{
+		"new-window", "-d", "-P", "-F", "#{window_id}", "-t", hostSessionID,
+		"-n", spec.windowName,
+	})
+}
+
+// startPrivateRelocationHelper starts one worker as the only window in a
+// private session. The caller supplies a unique session name.
+func startPrivateRelocationHelper(options Options, spec workerSpec, sessionName, clientName string, workerArgs []string) (*relocationHelper, error) {
+	return startRelocationHelperWithCommand(options, spec, clientName, workerArgs, []string{
+		"new-session", "-d", "-P", "-F", "#{window_id}", "-s", sessionName,
+		"-n", spec.windowName,
+	})
+}
+
+func startRelocationHelperWithCommand(options Options, spec workerSpec, clientName string, workerArgs, commandArgs []string) (*relocationHelper, error) {
 	random := make([]byte, 12)
 	if _, err := rand.Read(random); err != nil {
 		return nil, fmt.Errorf("create relocation signal: %w", err)
@@ -121,12 +140,12 @@ func startRelocationHelper(options Options, spec workerSpec, hostSessionID, clie
 			return nil, fmt.Errorf("find twt executable: %w", err)
 		}
 	}
-	args := tmuxCommandArgs(options,
-		"new-window", "-d", "-P", "-F", "#{window_id}", "-t", hostSessionID,
-		"-n", spec.windowName, "-e", "TWT_CONFIG_DIR="+options.ConfigDir,
+	commandArgs = append(commandArgs,
+		"-e", "TWT_CONFIG_DIR="+options.ConfigDir,
 		"-e", "TWT_STATE_DIR="+options.StateDir, "-e", "TWT_DATA_DIR="+options.DataDir,
 		"-e", "TWT_TMUX_SOCKET="+options.TmuxSocket, "--", executable, spec.argument,
 	)
+	args := tmuxCommandArgs(options, commandArgs...)
 	args = append(args, workerArgs...)
 	args = append(args, channel, clientName)
 	windowID, err := commandOutput("tmux", args...)
@@ -138,6 +157,14 @@ func startRelocationHelper(options Options, spec workerSpec, hostSessionID, clie
 		return nil, fmt.Errorf("protect the relocation helper output: %w", err)
 	}
 	return &relocationHelper{options: options, channel: channel, windowID: windowID}, nil
+}
+
+func uniqueRelocationSessionName(prefix string) (string, error) {
+	random := make([]byte, 12)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("create relocation session name: %w", err)
+	}
+	return prefix + "-" + hex.EncodeToString(random), nil
 }
 
 func (h *relocationHelper) commit() error {
@@ -152,7 +179,7 @@ func (h *relocationHelper) cancel() {
 // and runs the completion step of one worker. It shows the result message on
 // the moved client. On failure it renames its window and pulls the client
 // back to it.
-func runRelocationWorker(options Options, spec workerSpec, workspaceID, channel, clientName, retry string, complete func(*workspaceservice.Service, workspaceservice.ArchiveResult) (string, error)) error {
+func runRelocationWorker(options Options, spec workerSpec, workspaceID, channel, clientName, retry string, releaseOptions workspaceservice.ReleaseOptions, complete func(*workspaceservice.Service, workspaceservice.ArchiveResult) (string, error)) error {
 	if !strings.HasPrefix(channel, spec.channelPrefix) {
 		return fmt.Errorf("invalid relocation signal")
 	}
@@ -164,7 +191,7 @@ func runRelocationWorker(options Options, spec workerSpec, workspaceID, channel,
 	result := workspaceservice.ArchiveResult{}
 	_, err := service.Find(workspaceID)
 	if err == nil {
-		result, err = service.Archive(workspaceID, os.Getenv("TMUX_PANE"))
+		result, err = service.Release(workspaceID, os.Getenv("TMUX_PANE"), releaseOptions)
 	}
 	if err != nil {
 		showRelocationFailureWindow(options, clientName, spec.failedWindow)
@@ -182,12 +209,19 @@ func runRelocationWorker(options Options, spec workerSpec, workspaceID, channel,
 // RunQuickCreateWorker runs the private __twt_quick_create_worker argv
 // mode. It waits for the relocation signal and archives the old Workspace.
 func RunQuickCreateWorker(options Options, args []string) error {
-	if len(args) != 4 {
+	if len(args) != 6 {
 		return fmt.Errorf("invalid quick create worker request")
 	}
-	oldWorkspaceID, newWorkspaceID, channel, clientName := args[0], args[1], args[2], args[3]
+	oldWorkspaceID, newWorkspaceID := args[0], args[1]
+	force, err := parseWorkerBoolArg("force", args[2])
+	if err != nil {
+		return err
+	}
+	fingerprint := parseWorkerValueArg(args[3])
+	channel, clientName := args[4], args[5]
 	retry := "twt archive " + oldWorkspaceID
-	err := runRelocationWorker(options, quickCreateWorker, oldWorkspaceID, channel, clientName, retry,
+	err = runRelocationWorker(options, quickCreateWorker, oldWorkspaceID, channel, clientName, retry,
+		workspaceservice.ReleaseOptions{Force: force, ExpectedFingerprint: fingerprint, Prevalidated: true},
 		func(service *workspaceservice.Service, result workspaceservice.ArchiveResult) (string, error) {
 			newWorkspace, _ := service.Find(newWorkspaceID)
 			return fmt.Sprintf("Created Workspace %s; archived Workspace %s", newWorkspace.Name, result.Workspace.Name), nil

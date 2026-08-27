@@ -14,8 +14,8 @@ import (
 
 const doneWorkerArgument = "__twt_done_worker"
 
-// doneTransientSession hosts the done worker when no other active Workspace
-// exists. The worker kills this session after a successful completion.
+// doneTransientSession prefixes the private session that hosts a done worker.
+// The worker kills its session after a successful completion.
 const doneTransientSession = "twt-done"
 
 // noTransientSession marks a worker that runs in another Workspace session.
@@ -23,11 +23,10 @@ const noTransientSession = "-"
 
 func newDoneCommand(options Options) *cobra.Command {
 	service := options.workspaceService()
-	var keep bool
 	var force bool
 	command := &cobra.Command{
 		Use:   "done [WORKSPACE]",
-		Short: "Archive a Workspace and remove its data",
+		Short: "Finish a Workspace and return its worktrees to the prepared pool",
 		Args:  optionalArg("WORKSPACE"),
 		RunE: func(command *cobra.Command, args []string) error {
 			reference := currentWorkspaceReference
@@ -38,24 +37,26 @@ func newDoneCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			removalOptions := workspaceservice.RemovalOptions{AllowUnpublished: force}
-			if isDryRun(command) {
-				return doneDryRun(command, service, workspace.ID, removalOptions)
+			releaseOptions, err := releaseOptions(command, service, workspace.ID, force)
+			if err != nil {
+				return err
 			}
-			ticketPlan := resolveDoneTicket(command, options, workspace, keep)
+			if isDryRun(command) {
+				return doneDryRun(command, service, workspace.ID, releaseOptions)
+			}
+			ticketPlan := resolveDoneTicket(command, options, workspace)
 			currentPane := os.Getenv("TMUX_PANE")
 			relocate, err := relocationNeeded(command, options, service, workspace.ID, currentPane)
 			if err != nil {
 				return err
 			}
 			if relocate {
-				return relocateAndComplete(command, options, service, workspace, currentPane, keep, removalOptions, ticketPlan)
+				return relocateAndComplete(command, options, service, workspace, currentPane, false, releaseOptions, ticketPlan)
 			}
-			return doneSynchronously(command, options, service, workspace.ID, currentPane, keep, removalOptions, ticketPlan)
+			return doneSynchronously(command, options, service, workspace.ID, currentPane, releaseOptions, ticketPlan)
 		},
 	}
-	command.Flags().BoolVar(&keep, "keep", false, "Stop after the archive and keep the Workspace data")
-	command.Flags().BoolVar(&force, "force", false, "Remove a branch with unpublished commits")
+	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes and preserve ignored files")
 	setArguments(command, optionalArgument("workspace", "the current Workspace when absent"))
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
@@ -78,31 +79,17 @@ func relocationNeeded(command *cobra.Command, options Options, service *workspac
 // doneDryRun validates the archive and shows the removal plan without a
 // change. It validates without the current pane because done relocates the
 // tmux client before the archive.
-func doneDryRun(command *cobra.Command, service *workspaceservice.Service, workspaceID string, opts workspaceservice.RemovalOptions) error {
-	if err := service.ValidateArchive(workspaceID, ""); err != nil {
-		return err
-	}
-	plan, err := service.PlanRemoval(workspaceID, "", opts)
-	if err != nil {
-		return err
-	}
-	// Done archives the Workspace before removal, so the not_archived blocker
-	// does not apply.
-	blockers := plan.Blockers[:0]
-	for _, blocker := range plan.Blockers {
-		if blocker.Code != "not_archived" {
-			blockers = append(blockers, blocker)
-		}
-	}
-	plan.Blockers = blockers
-	if WantsJSON(command) {
-		return writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: false, Plan: plan, Blockers: plan.Blockers})
-	}
-	out := command.OutOrStdout()
-	if _, err := fmt.Fprintf(out, "Archive of Workspace %q is valid.\n", plan.WorkspaceName); err != nil {
-		return err
-	}
-	return printRemovalPlanText(out, plan, false)
+func doneDryRun(command *cobra.Command, service *workspaceservice.Service, workspaceID string, opts workspaceservice.ReleaseOptions) error {
+	return runMutation(command, "workspaces.done",
+		func() (string, string, error) {
+			workspace, err := service.Find(workspaceID)
+			if err != nil {
+				return "", workspaceID, err
+			}
+			return workspace.ID, workspace.Name, service.ValidateRelease(workspaceID, "", opts)
+		},
+		func() (string, string, error) { return "", "", nil },
+		func(io.Writer, string, string) error { return nil })
 }
 
 // doneTicketPlan is the Ticket decision of one done run. An empty Slugs list
@@ -111,7 +98,7 @@ func doneDryRun(command *cobra.Command, service *workspaceservice.Service, works
 type doneTicketPlan struct {
 	// Slugs are the linked open Tickets.
 	Slugs []string
-	// Close applies the confirmed close after a successful removal. It can be
+	// Close applies the confirmed close after a successful release. It can be
 	// true only when Slugs contains one Ticket.
 	Close bool
 	// Claimant is the resolved claimant of the confirmed close.
@@ -121,8 +108,7 @@ type doneTicketPlan struct {
 // resolveDoneTicket resolves the linked Ticket of the Workspace and asks the
 // user whether done must close it. The prompt runs only in an interactive
 // text session, before any relocation or mutation; the default answer is No.
-// --keep never prompts, because the work is not complete after an archive.
-func resolveDoneTicket(command *cobra.Command, options Options, workspace domain.Workspace, keep bool) doneTicketPlan {
+func resolveDoneTicket(command *cobra.Command, options Options, workspace domain.Workspace) doneTicketPlan {
 	if len(workspace.Tickets) == 0 {
 		return doneTicketPlan{}
 	}
@@ -143,7 +129,7 @@ func resolveDoneTicket(command *cobra.Command, options Options, workspace domain
 	}
 	// done never chooses one Ticket from a set. The user must close each linked
 	// Ticket explicitly after the Workspace is gone.
-	if len(plan.Slugs) > 1 || keep || WantsJSON(command) || !interactiveTicketSession(command) {
+	if len(plan.Slugs) > 1 || WantsJSON(command) || !interactiveTicketSession(command) {
 		return plan
 	}
 	slug := plan.Slugs[0]
@@ -168,7 +154,7 @@ func resolveDoneTicket(command *cobra.Command, options Options, workspace domain
 	return plan
 }
 
-// finishDoneTicket runs after a successful removal: it closes the confirmed
+// finishDoneTicket runs after a successful release. It closes the confirmed
 // Ticket, or prints the close hint for an open one. A close failure warns and
 // never fails done.
 func finishDoneTicket(command *cobra.Command, options Options, plan doneTicketPlan) error {
@@ -209,10 +195,10 @@ func printTicketCloseWarning(out io.Writer, slug string, cause error) {
 	_, _ = fmt.Fprintf(out, "Warning: twt could not close Ticket %q: %v. Run 'twt tickets close %s'.\n", slug, cause, slug)
 }
 
-// doneSynchronously archives and removes the Workspace from the current
-// process. The caller is outside the Workspace tmux session.
-func doneSynchronously(command *cobra.Command, options Options, service *workspaceservice.Service, workspaceID, currentPane string, keep bool, opts workspaceservice.RemovalOptions, ticketPlan doneTicketPlan) error {
-	result, err := service.Archive(workspaceID, currentPane)
+// doneSynchronously releases the Workspace from the current process. The
+// caller is outside the Workspace tmux session.
+func doneSynchronously(command *cobra.Command, options Options, service *workspaceservice.Service, workspaceID, currentPane string, opts workspaceservice.ReleaseOptions, ticketPlan doneTicketPlan) error {
+	result, err := service.Release(workspaceID, currentPane, opts)
 	if err != nil {
 		return err
 	}
@@ -225,49 +211,22 @@ func doneSynchronously(command *cobra.Command, options Options, service *workspa
 			return err
 		}
 	}
-	if keep {
-		if WantsJSON(command) {
-			if err := writeMutation(command, "workspaces.done", "archived", result.Workspace.ID, result.Workspace.Name); err != nil {
-				return err
-			}
-		}
-		return finishDoneTicket(command, options, ticketPlan)
-	}
-	plan, err := service.Remove(workspaceID, currentPane, opts)
-	if err != nil {
-		if !WantsJSON(command) && len(plan.Blockers) > 0 {
-			if err := printRemovalBlockers(out, plan.Blockers, ""); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "The removal is blocked. Workspace %q stays archived. Correct the causes above, then run 'twt done %s' again.\n", plan.WorkspaceName, plan.WorkspaceID); err != nil {
-				return err
-			}
-		}
-		return err
-	}
 	if WantsJSON(command) {
-		if err := writeJSONOutput(command, removalOutput{SchemaVersion: jsonSchemaVersion, Applied: true, Plan: plan, Blockers: plan.Blockers}); err != nil {
+		if err := writeMutation(command, "workspaces.done", statusApplied, result.Workspace.ID, result.Workspace.Name); err != nil {
 			return err
 		}
 		return finishDoneTicket(command, options, ticketPlan)
 	}
-	for _, worktree := range plan.Worktrees {
-		if _, err := fmt.Fprintf(out, "Removed worktree %s\n", worktree); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintf(out, "Removed Workspace %q. Reclaimed %s.\n", plan.WorkspaceName, formatBytes(plan.Bytes)); err != nil {
+	if _, err := fmt.Fprintf(out, "Finished Workspace %q. Its worktrees returned to the prepared pool.\n", result.Workspace.Name); err != nil {
 		return err
 	}
 	return finishDoneTicket(command, options, ticketPlan)
 }
 
 // relocateAndComplete tells the user about the client relocation, then hands
-// the archive or removal to the DoneRelocate hook. The real hook moves the
-// tmux client and completes the work through a worker window in the
-// destination session. With keep, the worker only archives; archive from
-// inside the Workspace session behaves like done --keep.
-func relocateAndComplete(command *cobra.Command, options Options, service *workspaceservice.Service, workspace domain.Workspace, currentPane string, keep bool, opts workspaceservice.RemovalOptions, ticketPlan doneTicketPlan) error {
+// the release to the DoneRelocate hook. The real hook moves the tmux client
+// and completes the work through a private worker session.
+func relocateAndComplete(command *cobra.Command, options Options, service *workspaceservice.Service, workspace domain.Workspace, currentPane string, keep bool, opts workspaceservice.ReleaseOptions, ticketPlan doneTicketPlan) error {
 	destination, found, err := latestOtherActiveWorkspace(service, workspace.ID)
 	if err != nil {
 		return err
@@ -297,7 +256,8 @@ func relocateAndComplete(command *cobra.Command, options Options, service *works
 		WorkspaceID:            workspace.ID,
 		DestinationWorkspaceID: destinationID,
 		Keep:                   keep,
-		AllowUnpublished:       opts.AllowUnpublished,
+		Force:                  opts.Force,
+		Fingerprint:            opts.ExpectedFingerprint,
 		CurrentPane:            currentPane,
 	}
 	if ticketPlan.Close {
@@ -308,10 +268,9 @@ func relocateAndComplete(command *cobra.Command, options Options, service *works
 }
 
 // realDoneRelocate returns the tmux implementation of the DoneRelocate hook.
-// It starts the done worker in the destination session, moves the calling
-// client there or detaches it, then signals the worker. The worker archives
-// the Workspace, removes it unless the request keeps it, and keeps its window
-// visible on failure.
+// It starts the done worker in a private session, moves the calling client to
+// the destination session or detaches it, then signals the worker. The worker
+// keeps its private window visible on failure.
 func realDoneRelocate(options Options) func(RelocationRequest) error {
 	return func(request RelocationRequest) error {
 		service := options.workspaceService()
@@ -323,34 +282,32 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 		if err != nil {
 			return err
 		}
-		hostSessionID := ""
-		transient := noTransientSession
+		targetSessionID := ""
 		if request.DestinationWorkspaceID != "" {
-			hostSessionID, err = destinationSessionID(service, request.DestinationWorkspaceID)
+			targetSessionID, err = destinationSessionID(service, request.DestinationWorkspaceID)
 			if err != nil {
 				return err
 			}
-		} else {
-			hostSessionID, err = ensureTransientDoneSession(options)
-			if err != nil {
-				return err
-			}
-			transient = doneTransientSession
+		}
+		transient, err := uniqueRelocationSessionName(doneTransientSession)
+		if err != nil {
+			return err
 		}
 		workerArgs := []string{
 			request.WorkspaceID,
 			workerBoolArg("keep", request.Keep),
-			workerBoolArg("force", request.AllowUnpublished),
+			workerBoolArg("force", request.Force),
+			workerValueArg(request.Fingerprint),
 			transient,
 			workerValueArg(request.CloseTicket),
 			workerValueArg(request.CloseClaimant),
 		}
-		helper, err := startRelocationHelper(options, doneWorker, hostSessionID, clientName, workerArgs)
+		helper, err := startPrivateRelocationHelper(options, doneWorker, transient, clientName, workerArgs)
 		if err != nil {
 			return err
 		}
 		if request.DestinationWorkspaceID != "" {
-			if err := switchTmuxClient(options, clientName, hostSessionID); err != nil {
+			if err := switchTmuxClient(options, clientName, targetSessionID); err != nil {
 				helper.cancel()
 				return err
 			}
@@ -366,17 +323,18 @@ func realDoneRelocate(options Options) func(RelocationRequest) error {
 }
 
 // RunDoneWorker runs the private __twt_done_worker argv mode. It waits for
-// the relocation signal, archives the Workspace, and removes it unless the
-// keep flag is set. After a successful removal it closes the confirmed
+// the relocation signal and releases the Workspace. After a successful
+// release, it closes the confirmed
 // Ticket; a close failure only adds a warning with the close hint. On
 // failure it keeps its remain-on-exit window visible.
 func RunDoneWorker(options Options, args []string) error {
-	if len(args) != 8 {
+	if len(args) != 9 {
 		return fmt.Errorf("invalid done worker request")
 	}
-	workspaceID, keepArg, forceArg, transient := args[0], args[1], args[2], args[3]
-	closeTicket, closeClaimant := parseWorkerValueArg(args[4]), parseWorkerValueArg(args[5])
-	channel, clientName := args[6], args[7]
+	workspaceID, keepArg, forceArg := args[0], args[1], args[2]
+	fingerprint, transient := parseWorkerValueArg(args[3]), args[4]
+	closeTicket, closeClaimant := parseWorkerValueArg(args[5]), parseWorkerValueArg(args[6])
+	channel, clientName := args[7], args[8]
 	keep, err := parseWorkerBoolArg("keep", keepArg)
 	if err != nil {
 		return err
@@ -390,15 +348,12 @@ func RunDoneWorker(options Options, args []string) error {
 		retry = "twt archive " + workspaceID
 	}
 	err = runRelocationWorker(options, doneWorker, workspaceID, channel, clientName, retry,
+		workspaceservice.ReleaseOptions{Force: force, ExpectedFingerprint: fingerprint, Prevalidated: true},
 		func(service *workspaceservice.Service, result workspaceservice.ArchiveResult) (string, error) {
+			message := fmt.Sprintf("Finished Workspace %s; returned its worktrees to the prepared pool", result.Workspace.Name)
 			if keep {
-				return fmt.Sprintf("Archived Workspace %s", result.Workspace.Name), nil
+				message = fmt.Sprintf("Archived Workspace %s; returned its worktrees to the prepared pool", result.Workspace.Name)
 			}
-			plan, removeErr := service.Remove(workspaceID, os.Getenv("TMUX_PANE"), workspaceservice.RemovalOptions{AllowUnpublished: force})
-			if removeErr != nil {
-				return "", fmt.Errorf("%w; Workspace %q stays archived; run 'twt done %s' to retry", removeErr, result.Workspace.Name, workspaceID)
-			}
-			message := fmt.Sprintf("Finished Workspace %s; reclaimed %s", plan.WorkspaceName, formatBytes(plan.Bytes))
 			if closeTicket == "" {
 				return message, nil
 			}
@@ -478,18 +433,6 @@ func destinationSessionID(service *workspaceservice.Service, workspaceID string)
 		return "", err
 	}
 	return service.OwnedSessionID(workspaceID)
-}
-
-func ensureTransientDoneSession(options Options) (string, error) {
-	sessionID, err := commandOutput("tmux", tmuxCommandArgs(options, "display-message", "-p", "-t", "="+doneTransientSession, "#{session_id}")...)
-	if err == nil && sessionID != "" {
-		return sessionID, nil
-	}
-	sessionID, err = commandOutput("tmux", tmuxCommandArgs(options, "new-session", "-d", "-P", "-F", "#{session_id}", "-s", doneTransientSession)...)
-	if err != nil {
-		return "", fmt.Errorf("create the transient done session: %w", err)
-	}
-	return sessionID, nil
 }
 
 // insideOwnedSession reports whether the current pane is inside the tmux

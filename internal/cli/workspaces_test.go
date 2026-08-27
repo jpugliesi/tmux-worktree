@@ -331,12 +331,15 @@ func TestWorkspacesArchivePreservesDataAndOpenRestoresSession(t *testing.T) {
 	if archived.ArchivedAt == nil {
 		t.Fatal("archived Workspace has no archive time")
 	}
-	firstArchivedAt := *archived.ArchivedAt
-	if _, err := os.Stat(archived.Root); err != nil {
-		t.Fatalf("archive removed the Workspace root: %v", err)
+	if archived.Materialized || archived.Root != "" || archived.Repositories[0].Path != "" {
+		t.Fatalf("archived Workspace keeps physical ownership: %+v", archived)
 	}
-	if _, err := os.Stat(archived.Repositories[0].Path); err != nil {
-		t.Fatalf("archive removed the worktree: %v", err)
+	firstArchivedAt := *archived.ArchivedAt
+	if _, err := os.Stat(workspace.Root); err != nil {
+		t.Fatalf("archive removed the prepared root: %v", err)
+	}
+	if _, err := os.Stat(workspace.Repositories[0].Path); err != nil {
+		t.Fatalf("archive removed the prepared worktree: %v", err)
 	}
 	agents, err := store.NewAgentStore(options.StateDir).List(workspace.ID)
 	if err != nil || len(agents) != 1 || agents[0].ID != agent.ID {
@@ -914,7 +917,7 @@ func TestWorkspacesRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	}
 
 	plan := executeWithOptions(t, options, nil, "workspaces", "remove", "remove-me")
-	for _, want := range []string{"stop_tmux_session", "remove_worktree", "delete_branch", "keep_repository_cache", "delete_ownership_marker", "remove_workspace_root", "delete_transcript_snapshot", "delete_environment_record", "delete_workspace_state", "Run again with --apply"} {
+	for _, want := range []string{"stop_tmux_session", "delete_branch", "keep_repository_cache", "delete_transcript_snapshot", "delete_workspace_state", "Run again with --apply"} {
 		if !strings.Contains(plan, want) {
 			t.Fatalf("removal plan does not contain %q: %s", want, plan)
 		}
@@ -952,7 +955,7 @@ func TestWorkspacesRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	for _, action := range removal.Plan.Actions {
 		kinds[action.Kind] = true
 	}
-	for _, want := range []string{"delete_environment_record", "keep_repository_cache"} {
+	for _, want := range []string{"delete_branch", "keep_repository_cache", "delete_workspace_state"} {
 		if !kinds[want] {
 			t.Fatalf("removal plan JSON has no %q action: %s", want, planJSON)
 		}
@@ -964,8 +967,8 @@ func TestWorkspacesRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 		t.Fatalf("plan changed the Transcript Snapshot: %v", err)
 	}
 	executeWithOptions(t, options, nil, "workspaces", "remove", "remove-me", "--apply")
-	if _, err := os.Stat(workspaceRoot); !os.IsNotExist(err) {
-		t.Fatalf("Workspace root still exists after removal: %v", err)
+	if _, err := os.Stat(workspaceRoot); err != nil {
+		t.Fatalf("removal deleted the reusable Prepared Environment: %v", err)
 	}
 	if output := executeWithOptions(t, options, nil, "workspaces", "list"); output != "" {
 		t.Fatalf("workspaces list after removal = %q", output)
@@ -1007,7 +1010,17 @@ func TestWorkspacesRemoveRefusesDirtyWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspaceRoot, "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	executeWithOptions(t, options, nil, "workspaces", "archive", "keep-me")
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	workspace, err := workspaceStore.Find("keep-me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedAt := time.Now().UTC()
+	workspace.Status = domain.WorkspaceArchived
+	workspace.ArchivedAt = &archivedAt
+	if err := workspaceStore.Save(workspace); err != nil {
+		t.Fatal(err)
+	}
 
 	// The plan renders with blockers and exit code 0 without --apply.
 	planOutput := executeWithOptions(t, options, nil, "workspaces", "remove", "keep-me")
@@ -1022,7 +1035,7 @@ func TestWorkspacesRemoveRefusesDirtyWorktree(t *testing.T) {
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
 	command.SetArgs(forceTextOutput([]string{"workspaces", "remove", "keep-me", "--apply", "--dry-run"}))
-	err := command.Execute()
+	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--apply") {
 		t.Fatalf("--dry-run with --apply error = %v", err)
 	}
@@ -1237,20 +1250,28 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	roots := map[string]string{}
 	for _, name := range []string{"old-clean", "old-dirty", "fresh"} {
 		executeWithOptions(t, options, nil, "workspaces", "create", name, "--template", "example", "--no-open")
-		executeWithOptions(t, options, nil, "workspaces", "archive", name)
 		workspace, err := workspaceStore.Find(name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		roots[name] = workspace.Root
+		if name == "old-dirty" {
+			if err := os.WriteFile(filepath.Join(workspace.Root, "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			executeWithOptions(t, options, nil, "workspaces", "archive", name)
+			workspace, err = workspaceStore.Find(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		archivedAt := time.Now().UTC().Add(-ages[name])
+		workspace.Status = domain.WorkspaceArchived
 		workspace.ArchivedAt = &archivedAt
 		if err := workspaceStore.Save(workspace); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := os.WriteFile(filepath.Join(roots["old-dirty"], "app", "unsaved.txt"), []byte("keep"), 0o644); err != nil {
-		t.Fatal(err)
 	}
 
 	// The flags are mutually exclusive with a positional and --cancel.
@@ -1279,9 +1300,6 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	if strings.Contains(plan, "fresh") {
 		t.Fatalf("bulk removal plan selected a fresh archive: %s", plan)
 	}
-	if strings.Contains(plan, "size 0 B") {
-		t.Fatalf("bulk removal plan has no Workspace size: %s", plan)
-	}
 	for _, name := range []string{"old-clean", "old-dirty", "fresh"} {
 		if _, err := os.Stat(roots[name]); err != nil {
 			t.Fatalf("bulk removal plan changed Workspace %q: %v", name, err)
@@ -1306,7 +1324,7 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	if bulk.SchemaVersion != 2 || bulk.Applied || bulk.RemovedCount != 0 || bulk.SkippedCount != 0 || len(bulk.Plans) != 3 {
 		t.Fatalf("bulk removal JSON metadata = %+v", bulk)
 	}
-	if bulk.Plans[0].WorkspaceName != "old-clean" || bulk.Plans[0].ArchivedAt == "" || bulk.Plans[0].Bytes <= 0 {
+	if bulk.Plans[0].WorkspaceName != "old-clean" || bulk.Plans[0].ArchivedAt == "" || bulk.Plans[0].Bytes != 0 {
 		t.Fatalf("bulk removal JSON first plan = %+v", bulk.Plans[0])
 	}
 
@@ -1314,8 +1332,8 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	if !strings.Contains(applied, "Removed 1 Workspaces (") || !strings.Contains(applied, "Skipped 1 blocked Workspaces.") {
 		t.Fatalf("bulk removal apply output = %q", applied)
 	}
-	if _, err := os.Stat(roots["old-clean"]); !os.IsNotExist(err) {
-		t.Fatalf("bulk removal apply kept the clean Workspace root: %v", err)
+	if _, err := os.Stat(roots["old-clean"]); err != nil {
+		t.Fatalf("bulk removal apply deleted the reusable Prepared Environment: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(roots["old-dirty"], "app", "unsaved.txt")); err != nil {
 		t.Fatalf("bulk removal apply changed the blocked Workspace: %v", err)
@@ -1440,6 +1458,9 @@ func initGitRepository(t *testing.T, path string) {
 	if err := os.WriteFile(filepath.Join(path, "init.sh"), []byte("#!/bin/sh\nset -eu\nprintf 'initialized\\n' > .initialized\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runCommand(t, path, "git", "add", "README.md", "init.sh")
+	if err := os.WriteFile(filepath.Join(path, ".gitignore"), []byte(".initialized\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, path, "git", "add", "README.md", "init.sh", ".gitignore")
 	runCommand(t, path, "git", "commit", "-qm", "initial commit")
 }

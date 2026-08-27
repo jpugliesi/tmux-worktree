@@ -1,6 +1,9 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +74,63 @@ func TestEnvironmentDigestIgnoresChangesThatKeepTheWorktreeSet(t *testing.T) {
 				t.Fatalf("digest changed: %q != %q", digest, base)
 			}
 		})
+	}
+}
+
+func TestEnvironmentDigestChangesWithARepositoryRecycleCommand(t *testing.T) {
+	template := digestTemplate()
+	before, err := EnvironmentDigest(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template.Repositories[0].Recycle = &domain.RecycleSpec{Command: []string{"./clean.sh"}}
+	after, err := EnvironmentDigest(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("Environment Digest ignored the repository recycle command")
+	}
+}
+
+func TestEnvironmentDigestKeepsCompatibilityWhenRecycleIsAbsent(t *testing.T) {
+	template := digestTemplate()
+	digest, err := EnvironmentDigest(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type repositoryBeforeRecycle struct {
+		Name          string                       `json:"name"`
+		CloneURL      string                       `json:"cloneUrl"`
+		CloneDepth    int                          `json:"cloneDepth"`
+		DefaultBranch string                       `json:"defaultBranch"`
+		Remotes       map[string]string            `json:"remotes"`
+		Initialize    *environmentDigestInitialize `json:"initialize"`
+	}
+	payload := struct {
+		FormatVersion int                       `json:"formatVersion"`
+		Repositories  []repositoryBeforeRecycle `json:"repositories"`
+	}{FormatVersion: domain.PreparationFormatVersion}
+	for _, repository := range template.Repositories {
+		entry := repositoryBeforeRecycle{
+			Name: repository.Name, CloneURL: repository.Clone.URL, CloneDepth: repository.Clone.Depth,
+			DefaultBranch: repository.DefaultBranch, Remotes: repository.Remotes,
+		}
+		if repository.Initialize != nil {
+			entry.Initialize = &environmentDigestInitialize{
+				Command: repository.Initialize.Command, WorkingDirectory: repository.Initialize.WorkingDirectory,
+			}
+		}
+		payload.Repositories = append(payload.Repositories, entry)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compatible := sha256.Sum256(encoded)
+	compatibleDigest := hex.EncodeToString(compatible[:])
+	if digest != compatibleDigest {
+		t.Fatalf("an absent recycle command changed the Environment Digest: %q != %q", digest, compatibleDigest)
 	}
 }
 

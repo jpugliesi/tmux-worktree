@@ -58,8 +58,9 @@ type CreateOptions struct {
 	// resolves it from TWT_BRANCH_PREFIX and then the branchPrefix value of
 	// config.yaml.
 	BranchPrefix string
-	// NoFetch turns the default-branch refresh before the claim off.
-	NoFetch bool
+	// Fresh refreshes the default branch before the claim. The default warm
+	// path uses the base commit that preparation saved.
+	Fresh bool
 	// Tickets are the Ticket slugs that the new Workspace works on. The
 	// Workspace record and its claim reservation snapshot carry them.
 	Tickets []string
@@ -72,6 +73,9 @@ type CreateOptions struct {
 }
 
 func (s *Service) CreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) (domain.Workspace, error) {
+	if err := s.Reconcile(); err != nil {
+		return domain.Workspace{}, err
+	}
 	if reserved, found, err := s.restoreReservedWorkspace(name); err != nil {
 		return domain.Workspace{}, err
 	} else if found {
@@ -105,6 +109,13 @@ func (s *Service) prepareAndClaim(name, templateName string, template domain.Tem
 	environment, err := s.Prepare(templateName, template)
 	if err != nil {
 		return domain.Workspace{}, err
+	}
+	if opts.Fresh && opts.BaseRef == "" {
+		environment, err = s.RefreshPreparedEnvironment(environment.ID)
+		if err != nil {
+			return domain.Workspace{}, err
+		}
+		opts.Fresh = false
 	}
 	return s.claimPreparedEnvironment(name, templateName, template, environment.ID, opts)
 }
@@ -163,7 +174,11 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 	if err == nil {
 		workspace = s.workspaceForEnvironment(name, templateName, template, environment, workspaceID, branch, opts)
 		environment.Status = domain.EnvironmentClaiming
-		environment.ClaimReservation = &domain.EnvironmentClaim{Workspace: workspace, ReservedAt: s.now()}
+		environment.Generation++
+		environment.Assignment = &domain.EnvironmentAssignment{
+			Generation: environment.Generation, Kind: domain.EnvironmentAssignmentClaim,
+			Phase: domain.EnvironmentAssignmentReserved, Workspace: workspace, ReservedAt: s.now(),
+		}
 		environment.UpdatedAt = s.now()
 		err = s.environments.Save(environment)
 	}
@@ -280,7 +295,7 @@ func (s *Service) requireWorkspaceNameAvailable(name string) error {
 		return err
 	}
 	for _, environment := range environments {
-		if environment.ClaimReservation != nil && environment.ClaimReservation.Workspace.Name == name {
+		if environment.Assignment != nil && environment.Assignment.Workspace.Name == name {
 			return clierr.New(clierr.AlreadyExists, "Workspace %q is already reserved by a Prepared Environment claim", name)
 		}
 	}
@@ -292,6 +307,7 @@ func (s *Service) workspaceForEnvironment(name, templateName string, template do
 	workspace := domain.Workspace{
 		Version: domain.WorkspaceVersion, ID: id, Name: name, TemplateName: templateName,
 		TemplateSnapshot: template, EnvironmentID: environment.ID, Status: domain.WorkspaceInitializing,
+		EnvironmentDigest: environment.TemplateDigest, Materialized: true,
 		Project: opts.Project, Tickets: append([]string(nil), opts.Tickets...),
 		BaseRef: opts.BaseRef,
 		Root:    environment.Root, TmuxSession: sessionName(templateName, name), CreatedAt: now, UpdatedAt: now,
@@ -300,7 +316,7 @@ func (s *Service) workspaceForEnvironment(name, templateName string, template do
 	for _, repository := range environment.Repositories {
 		workspace.Repositories = append(workspace.Repositories, domain.WorkspaceRepository{
 			Name: repository.Name, CachePath: repository.CachePath, Path: repository.Path,
-			Branch: branch, WindowName: repository.WindowName,
+			Branch: branch, BaseCommit: repository.BaseCommit, WindowName: repository.WindowName,
 		})
 		workspace.Steps = append(workspace.Steps,
 			successfulStep("cache:"+repository.Name, domain.StepCache, repository.Name, now),
@@ -328,7 +344,7 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 	if err != nil {
 		return domain.Workspace{}, err
 	}
-	if environment.ClaimReservation == nil || environment.ClaimReservation.Workspace.ID != workspaceID {
+	if environment.Assignment == nil || environment.Assignment.Workspace.ID != workspaceID {
 		return domain.Workspace{}, fmt.Errorf("Prepared Environment %q does not contain Workspace claim %q", environmentID, workspaceID)
 	}
 	workspace, err := s.store.Find(workspaceID)
@@ -350,12 +366,22 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 				return err
 			}
 			if branch == "" {
-				base, err := s.claimBaseCommit(&environment, preparedIndex, spec, opts)
+				exists, err := refExists(repository.CachePath, "refs/heads/"+repository.Branch)
 				if err != nil {
 					return err
 				}
-				if err := run(repository.Path, "git", "switch", "-c", repository.Branch, base); err != nil {
-					return fmt.Errorf("create Workspace branch for repository %q: %w", repository.Name, err)
+				if exists {
+					if err := run(repository.Path, "git", "switch", repository.Branch); err != nil {
+						return fmt.Errorf("restore Workspace branch for repository %q: %w", repository.Name, err)
+					}
+				} else {
+					base, err := s.claimBaseCommit(&environment, preparedIndex, spec, opts)
+					if err != nil {
+						return err
+					}
+					if err := run(repository.Path, "git", "switch", "-c", repository.Branch, base); err != nil {
+						return fmt.Errorf("create Workspace branch for repository %q: %w", repository.Name, err)
+					}
 				}
 			} else if branch != repository.Branch {
 				return fmt.Errorf("claimed checkout for repository %q uses branch %q; expected %q", repository.Name, branch, repository.Branch)
@@ -379,6 +405,8 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 		return workspace, err
 	}
 	environment.Status = domain.EnvironmentClaimed
+	environment.Assignment.Phase = domain.EnvironmentAssignmentActive
+	environment.Assignment.Workspace = workspace
 	environment.UpdatedAt = s.now()
 	if err := s.environments.Save(environment); err != nil {
 		return workspace, err
@@ -424,9 +452,8 @@ func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, wo
 }
 
 // claimBaseCommit returns the base commit for the new Workspace branch of one
-// repository. It runs inside the repository cache lock. It fetches
-// origin/<default-branch> unless NoFetch is set, then owns the one record
-// update and save that a moved base commit needs.
+// repository. It runs inside the repository cache lock. Fresh fetches the
+// default branch. The normal warm path uses the saved base commit.
 func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index int, spec domain.RepositorySpec, opts CreateOptions) (string, error) {
 	repository := environment.Repositories[index]
 	if opts.BaseRef != "" {
@@ -447,11 +474,11 @@ func (s *Service) claimBaseCommit(environment *domain.PreparedEnvironment, index
 	if err != nil {
 		return "", err
 	}
-	if err := ensureFullHistory(repository.CachePath, branch); err != nil {
-		return "", err
-	}
 	fetchedAt := environment.ReadyAt
-	if !opts.NoFetch {
+	if opts.Fresh {
+		if err := ensureFullHistory(repository.CachePath, branch); err != nil {
+			return "", err
+		}
 		newBase, refreshedAt, err := s.refreshStaleBase(repository, branch, environment.ReadyAt)
 		if err != nil {
 			return "", err

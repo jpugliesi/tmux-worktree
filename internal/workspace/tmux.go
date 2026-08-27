@@ -91,26 +91,13 @@ func (s *Service) ensureTmux(p *domain.Workspace, unownedPolicy unownedSessionPo
 			return fmt.Errorf("save tmux session name: %w", err)
 		}
 	}
-	createdSession := false
 	if !exists {
-		first := p.Repositories[0]
-		created, createErr := output("", "tmux", s.tmuxArgs("new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}", "-s", name, "-n", first.WindowName, "-c", first.Path)...)
-		if createErr != nil {
-			return fmt.Errorf("create tmux session: %w", createErr)
-		}
-		parts := strings.SplitN(created, "\t", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("create tmux session: tmux returned invalid identifiers")
-		}
-		sessionID = parts[0]
-		windowID := parts[1]
-		if err := s.claimSession(sessionID, p.ID); err != nil {
+		var windowIDs map[string]string
+		sessionID, windowIDs, err = s.createWorkspaceSession(name, *p)
+		if err != nil {
 			return err
 		}
-		if err := s.markWindow(windowID, first); err != nil {
-			return err
-		}
-		createdSession = true
+		return s.runSessionCommand(*p, sessionID, windowIDs)
 	}
 	windowIDs := make(map[string]string, len(p.Repositories))
 	for _, repository := range p.Repositories {
@@ -129,10 +116,39 @@ func (s *Service) ensureTmux(p *domain.Workspace, unownedPolicy unownedSessionPo
 		}
 		windowIDs[repository.Name] = windowID
 	}
-	if !createdSession {
-		return nil
+	return nil
+}
+
+// createWorkspaceSession creates the base session and all managed windows in
+// one tmux process. A second process writes all owner options.
+func (s *Service) createWorkspaceSession(name string, workspace domain.Workspace) (string, map[string]string, error) {
+	first := workspace.Repositories[0]
+	args := s.tmuxArgs("new-session", "-d", "-P", "-F", "#{session_id}\t#{window_id}", "-s", name, "-n", first.WindowName, "-c", first.Path)
+	for _, repository := range workspace.Repositories[1:] {
+		args = append(args, ";", "new-window", "-d", "-P", "-F", "#{window_id}", "-t", "="+name, "-n", repository.WindowName, "-c", repository.Path)
 	}
-	return s.runSessionCommand(*p, sessionID, windowIDs)
+	created, err := output("", "tmux", args...)
+	if err != nil {
+		return "", nil, fmt.Errorf("create tmux session: %w", err)
+	}
+	lines := strings.Split(created, "\n")
+	parts := strings.SplitN(lines[0], "\t", 2)
+	if len(parts) != 2 || len(lines) != len(workspace.Repositories) {
+		return "", nil, fmt.Errorf("create tmux session: tmux returned invalid identifiers")
+	}
+	sessionID := parts[0]
+	windowIDs := map[string]string{first.Name: parts[1]}
+	for index, repository := range workspace.Repositories[1:] {
+		windowIDs[repository.Name] = lines[index+1]
+	}
+	markArgs := s.tmuxArgs("set-option", "-t", sessionID, workspaceTmuxOption, workspace.ID)
+	for _, repository := range workspace.Repositories {
+		markArgs = append(markArgs, ";", "set-option", "-w", "-t", windowIDs[repository.Name], "@twt_repository_name", repository.Name)
+	}
+	if err := run("", "tmux", markArgs...); err != nil {
+		return "", nil, fmt.Errorf("mark Workspace tmux session: %w", err)
+	}
+	return sessionID, windowIDs, nil
 }
 
 // runSessionCommand runs the declared session command of the Workspace Template.
@@ -221,27 +237,40 @@ func (s *Service) workspaceSessionRows(includeName bool) ([]tmuxSessionRow, erro
 	if includeName {
 		prefix = "#{session_id}\t#{session_name}\t"
 	}
-	current, currentErr := output("", "tmux", s.tmuxArgs("list-sessions", "-F", prefix+workspaceTmuxFormat)...)
-	legacy, legacyErr := output("", "tmux", s.tmuxArgs("list-sessions", "-F", prefix+legacyProjectTmuxFormat)...)
-	if currentErr != nil && legacyErr != nil {
-		return nil, currentErr
+	value, err := output("", "tmux", s.tmuxArgs("list-sessions", "-F", prefix+workspaceTmuxFormat+"\t"+legacyProjectTmuxFormat)...)
+	if err != nil {
+		return nil, err
 	}
-	rows := parseWorkspaceSessionRows(current, includeName)
-	byID := make(map[string]int, len(rows))
-	for index := range rows {
-		byID[rows[index].id] = index
+	return parseCombinedWorkspaceSessionRows(value, includeName), nil
+}
+
+func parseCombinedWorkspaceSessionRows(value string, includeName bool) []tmuxSessionRow {
+	fieldCount := 3
+	if includeName {
+		fieldCount = 4
 	}
-	for _, legacyRow := range parseWorkspaceSessionRows(legacy, includeName) {
-		if index, ok := byID[legacyRow.id]; ok {
-			if rows[index].ownerID == "" {
-				rows[index].ownerID = legacyRow.ownerID
-			}
+	rows := []tmuxSessionRow{}
+	for _, valueRow := range strings.Split(value, "\n") {
+		parts := strings.Split(valueRow, "\t")
+		for len(parts) < fieldCount {
+			parts = append(parts, "")
+		}
+		if len(parts) != fieldCount || parts[0] == "" {
 			continue
 		}
-		byID[legacyRow.id] = len(rows)
-		rows = append(rows, legacyRow)
+		row := tmuxSessionRow{id: parts[0]}
+		ownerIndex := 1
+		if includeName {
+			row.name = parts[1]
+			ownerIndex = 2
+		}
+		row.ownerID = parts[ownerIndex]
+		if row.ownerID == "" {
+			row.ownerID = parts[ownerIndex+1]
+		}
+		rows = append(rows, row)
 	}
-	return rows, nil
+	return rows
 }
 
 func parseWorkspaceSessionRows(value string, includeName bool) []tmuxSessionRow {

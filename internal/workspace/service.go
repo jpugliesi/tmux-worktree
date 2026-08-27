@@ -342,10 +342,10 @@ func (s *Service) restoreReservedWorkspace(reference string) (domain.Workspace, 
 	}
 	var match *domain.Workspace
 	for _, environment := range environments {
-		if environment.Status != domain.EnvironmentClaiming || environment.ClaimReservation == nil {
+		if environment.Status != domain.EnvironmentClaiming || environment.Assignment == nil {
 			continue
 		}
-		workspace := environment.ClaimReservation.Workspace
+		workspace := environment.Assignment.Workspace
 		if workspace.ID != reference && workspace.Name != reference {
 			continue
 		}
@@ -384,14 +384,29 @@ func (s *Service) validateRetry(reference string) (domain.Workspace, error) {
 }
 
 func (s *Service) Open(reference string) (domain.Workspace, error) {
+	if err := s.Reconcile(); err != nil {
+		return domain.Workspace{}, err
+	}
+	p, err := s.validateOpen(reference)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	if p.Status == domain.WorkspaceArchived && !p.Adopted && !p.Materialized {
+		return s.openReleasedWorkspace(p)
+	}
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return domain.Workspace{}, err
 	}
 	defer lock.Release()
-	p, err := s.validateOpen(reference)
+	p, err = s.validateOpen(reference)
 	if err != nil {
 		return domain.Workspace{}, err
+	}
+	if p.Materialized && p.EnvironmentID != "" {
+		if err := s.restoreBoundWorkspace(&p); err != nil {
+			return p, err
+		}
 	}
 	if err := s.ensureTmux(&p, claimUnownedSession); err != nil {
 		return p, err

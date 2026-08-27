@@ -15,7 +15,7 @@ import (
 func newWorkspacesCreateCommand(options Options, service *workspaceservice.Service) *cobra.Command {
 	var templateName string
 	var noOpen bool
-	var noFetch bool
+	var fresh bool
 	var branch string
 	var ticketRefs []string
 	command := &cobra.Command{
@@ -55,7 +55,7 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 					return err
 				}
 			}
-			createOptions := workspaceservice.CreateOptions{Branch: branch, NoFetch: noFetch, Project: project, Tickets: tickets}
+			createOptions := workspaceservice.CreateOptions{Branch: branch, Fresh: fresh, Project: project, Tickets: tickets}
 			var workspace domain.Workspace
 			if err := runMutation(command, "workspaces.create",
 				func() (string, string, error) {
@@ -80,7 +80,7 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template")
 	command.Flags().BoolVar(&noOpen, "no-open", false, "Do not open the tmux session")
-	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not fetch the default branch before the claim")
+	command.Flags().BoolVar(&fresh, "fresh", false, "Fetch the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringArrayVar(&ticketRefs, "ticket", nil, "Link a Ticket; repeat for more Tickets")
 	setArguments(command, optionalArgument("name", "the prompt asks for it when stdin is a terminal and output is text"))
