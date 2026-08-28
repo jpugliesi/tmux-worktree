@@ -530,3 +530,51 @@ func TestPreparedInitializationRejectsTrackedChangesAndAMovedHead(t *testing.T) 
 		})
 	}
 }
+
+// A preparing Prepared Environment without a live worker (for example after
+// a reboot) returns to the queue on the next pool top-up.
+func TestTopUpPoolRequeuesAnAbandonedPreparingEnvironment(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	stateDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: source},
+		}},
+	}
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir()})
+	queued, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentStore := store.NewEnvironmentStore(stateDir)
+	abandoned, err := environmentStore.Find(queued[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abandoned.Status = domain.EnvironmentPreparing
+	if err := environmentStore.Save(abandoned); err != nil {
+		t.Fatal(err)
+	}
+
+	relaunched, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(relaunched) != 1 || relaunched[0].ID != abandoned.ID {
+		t.Fatalf("TopUpPool() relaunched %+v, want the abandoned environment %s", relaunched, abandoned.ID)
+	}
+	environment, err := service.PrepareQueued(relaunched[0].ID, relaunched[0].QueueToken)
+	if err != nil {
+		t.Fatalf("PrepareQueued() after the relaunch: %v", err)
+	}
+	if environment.Status != domain.EnvironmentReady {
+		t.Fatalf("Prepared Environment status = %q, want %q", environment.Status, domain.EnvironmentReady)
+	}
+}

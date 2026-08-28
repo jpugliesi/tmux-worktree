@@ -49,8 +49,23 @@ func (s *Service) TopUpPool(templateName string, template domain.Template, depth
 			continue
 		}
 		switch environment.Status {
-		case domain.EnvironmentReady, domain.EnvironmentPreparing:
+		case domain.EnvironmentReady:
 			pooled++
+		case domain.EnvironmentPreparing:
+			pooled++
+			// A preparing environment without a lock holder has no live
+			// worker, for example after a reboot. Requeue it, so a new
+			// worker resumes its unfinished steps.
+			environmentLock, lockErr := store.AcquireEnvironmentLock(s.options.StateDir, environment.ID)
+			if lockErr != nil {
+				continue
+			}
+			relaunchErr := s.requeueAbandoned(&environment)
+			environmentLock.Release()
+			if relaunchErr != nil {
+				return nil, relaunchErr
+			}
+			start = append(start, environment)
 		case domain.EnvironmentQueued:
 			pooled++
 			if s.now().Sub(environment.QueuedAt) >= preparationLaunchLease {
@@ -95,6 +110,15 @@ func (s *Service) saveNewQueuedEnvironment(templateName string, digests store.Di
 		return domain.PreparedEnvironment{}, err
 	}
 	return environment, nil
+}
+
+// requeueAbandoned returns one abandoned preparing Prepared Environment to
+// the queue with a new queue token. The caller must hold the mutation lock
+// and the environment lock, which proves that no worker is live.
+func (s *Service) requeueAbandoned(environment *domain.PreparedEnvironment) error {
+	s.report("Restarting abandoned preparation of Prepared Environment %s", environment.ID)
+	environment.Status = domain.EnvironmentQueued
+	return s.relaunchQueued(environment)
 }
 
 // requeueFailed returns one failed Prepared Environment to the queue with a
