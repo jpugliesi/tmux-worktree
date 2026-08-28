@@ -257,6 +257,8 @@ func (g *gitSync) push() error {
 	}
 	message := err.Error()
 	if strings.Contains(message, "[rejected]") ||
+		strings.Contains(message, "[remote rejected]") ||
+		strings.Contains(message, "cannot lock ref") ||
 		strings.Contains(message, "non-fast-forward") ||
 		strings.Contains(message, "fetch first") ||
 		strings.Contains(message, "stale info") {
