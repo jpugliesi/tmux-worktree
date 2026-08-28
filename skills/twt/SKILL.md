@@ -30,6 +30,13 @@ needs no flag. Set the format when the call must be exact:
   command with a long result, so the result streams and never builds one big
   value. Only a list command accepts it.
 
+Reads without a resource argument follow the caller context: `twt workspaces
+get` uses the tmux pane or the working directory, and `twt projects get`,
+`twt tickets list`, and the `twt tickets start` picker use TWT_PROJECT, then
+the current Workspace Project. Pass an explicit name unless you intend that
+ambient scope; your shell often runs outside the target Workspace. Pass
+`--all-projects` for a deliberate cross-Project list.
+
 Keep the context cost of each read small:
 
 - `--fields` keeps only the fields that you name.
