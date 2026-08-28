@@ -443,6 +443,7 @@ twt create fix-logout \
 ```sh
 twt workspaces list
 twt workspaces list --project change-monitor --status active
+twt workspaces get
 twt workspaces get fix-auth
 twt workspaces current
 twt workspaces path fix-auth everysphere
@@ -923,8 +924,15 @@ twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
-twt projects get NAME
+twt projects get [NAME]
 ```
+
+The no-argument reads follow the current context, like a kubectl namespace.
+`twt workspaces get` shows the current Workspace from the tmux pane or the
+working directory. `twt projects get` shows the current Project: TWT_PROJECT,
+then the current Workspace Project. `twt tickets list` and the
+`twt tickets start` picker use the same Project scope; `--all-projects`
+(short `-A`) widens them to every Project.
 
 `twt tickets init` creates Tickets home if it is missing, and writes
 `index.md` and `templates/ticket.md` only when those files are missing. It
@@ -1073,6 +1081,7 @@ its CLI has no supported plan-mode start flag.
 
 ```sh
 twt tickets start
+twt tickets start -A
 twt tickets start fix-auth-tokens
 twt tickets start fix-auth-tokens add-auth-tests
 twt tickets start fix-auth-tokens --name auth-fix --template everysphere

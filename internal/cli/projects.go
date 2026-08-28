@@ -197,16 +197,31 @@ func newProjectsListCommand(options Options) *cobra.Command {
 func newProjectsShowCommand(options Options) *cobra.Command {
 	var noFetch, fresh bool
 	command := &cobra.Command{
-		Use:   "get NAME",
+		Use:   "get [NAME]",
 		Short: "Get a Project",
-		Args:  exactArgs("NAME"),
+		Args:  optionalArg("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			} else {
+				scope, err := resolveTicketProject(command, options, "", false, false)
+				if err != nil {
+					return err
+				}
+				if !scope.Set || scope.Project == "" {
+					return invalidUsageWithHint(command,
+						"Pass NAME, set TWT_PROJECT, or run this from a Workspace with a Project.",
+						"no Project is in scope")
+				}
+				name = scope.Project
+			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
 			freshenTicketStore(command, service, fresh)
-			project, err := service.Project(args[0])
+			project, err := service.Project(name)
 			if err != nil {
 				return err
 			}
@@ -222,7 +237,7 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 	}
 	command.Flags().BoolVar(&noFetch, "no-fetch", false, "Use only cached PR state; never call the forge")
 	addFreshFlag(command, &fresh)
-	setArguments(command, requiredArgument("name"))
+	setArguments(command, optionalArgument("name", "the current Project when absent"))
 	addFieldsFlag(command, projectShowOutput{})
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command

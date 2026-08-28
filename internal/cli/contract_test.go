@@ -154,7 +154,7 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt templates edit":         {"name"},
 		"twt templates repos remove": {"template", "repo"},
 		"twt tickets create":         {"description"},
-		"twt tickets get":           {"ticket"},
+		"twt tickets get":            {"ticket"},
 		"twt tickets set":            {"ticket"},
 		"twt tickets claim":          {"ticket"},
 		"twt tickets unclaim":        {"ticket"},
@@ -167,7 +167,7 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt apply":                  {"-"},
 		"twt projects plan":          {"project", "-"},
 		"twt projects create":        {"name"},
-		"twt projects get":          {"name"},
+		"twt projects get":           {"name"},
 	}
 	for path, names := range want {
 		if strings.Join(arguments[path], ",") != strings.Join(names, ",") {

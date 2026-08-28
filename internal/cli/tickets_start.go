@@ -12,7 +12,7 @@ import (
 
 func newTicketsStartCommand(options Options) *cobra.Command {
 	var name, templateName, as string
-	var withAgent, detached bool
+	var withAgent, detached, allProjects bool
 	command := &cobra.Command{
 		Use:   "start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]",
 		Short: "Claim Tickets and start one Workspace for them",
@@ -38,7 +38,11 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 				}
 				return startFromTickets(command, options, tickets, request, as)
 			}
-			tickets, err := listStartableTickets(options)
+			scope, err := resolveTicketProject(command, options, "", false, allProjects)
+			if err != nil {
+				return err
+			}
+			tickets, err := listStartableTickets(options, scope)
 			if err != nil {
 				return err
 			}
@@ -58,6 +62,7 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
 	command.Flags().BoolVar(&withAgent, "with-agent", false, "Start one configured Ticket planning Agent Session")
 	command.Flags().BoolVarP(&detached, "detached", "d", false, "Create and start the Workspace without opening or switching tmux")
+	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "Offer Tickets from every Project in the picker")
 	setArguments(command, variadicArgument("ticket", false, "the picker asks for one Ticket when absent; many values must be Ticket slugs from one Project"))
 	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
@@ -71,8 +76,9 @@ func startFromTicket(command *cobra.Command, options Options, ticket domain.Tick
 }
 
 // listStartableTickets lists open Tickets that start can claim. A Ticket
-// without a Project cannot start a Workspace, so the picker omits it.
-func listStartableTickets(options Options) ([]domain.Ticket, error) {
+// without a Project cannot start a Workspace, so the picker omits it. A set
+// scope keeps only that Project, like the tickets list default.
+func listStartableTickets(options Options, scope ticketProjectScope) ([]domain.Ticket, error) {
 	service, err := options.ticketService()
 	if err != nil {
 		return nil, err
@@ -83,9 +89,13 @@ func listStartableTickets(options Options) ([]domain.Ticket, error) {
 	}
 	startable := make([]domain.Ticket, 0, len(tickets))
 	for _, ticket := range tickets {
-		if ticket.Project != "" {
-			startable = append(startable, ticket)
+		if ticket.Project == "" {
+			continue
 		}
+		if scope.Set && ticket.Project != scope.Project {
+			continue
+		}
+		startable = append(startable, ticket)
 	}
 	return startable, nil
 }

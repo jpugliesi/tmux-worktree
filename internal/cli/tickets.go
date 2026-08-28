@@ -360,7 +360,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
-	command.Flags().BoolVar(&allProjects, "all-projects", false, "List Tickets from every Project")
+	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "List Tickets from every Project")
 	command.Flags().StringVar(&status, "status", "", "List one status")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")

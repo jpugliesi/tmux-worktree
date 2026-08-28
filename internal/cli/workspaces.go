@@ -128,18 +128,22 @@ func workspaceHasTicket(workspace domain.Workspace, slug string) bool {
 
 func newWorkspacesShowCommand(service *workspaceservice.Service) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "get WORKSPACE",
+		Use:   "get [WORKSPACE]",
 		Short: "Get a Workspace",
-		Args:  exactArgs("WORKSPACE"),
+		Args:  optionalArg("WORKSPACE"),
 		RunE: func(command *cobra.Command, args []string) error {
-			workspace, err := resolveWorkspace(service, args[0])
+			reference := currentWorkspaceReference
+			if len(args) == 1 {
+				reference = args[0]
+			}
+			workspace, err := resolveWorkspace(service, reference)
 			if err != nil {
 				return err
 			}
 			return writeWorkspace(command, workspace)
 		},
 	}
-	setArguments(command, requiredArgument("workspace"))
+	setArguments(command, optionalArgument("workspace", "the current Workspace when absent"))
 	addFieldsFlag(command, workspaceOutput{})
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command

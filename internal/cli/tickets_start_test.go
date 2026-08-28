@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -731,5 +732,78 @@ func TestNextWithATicketSlugClaimsTheTicket(t *testing.T) {
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("fix-auth-tokens")
 	if err != nil || len(workspace.Tickets) != 1 || workspace.Tickets[0] != "fix-auth-tokens" {
 		t.Fatalf("Workspace after next with a Ticket slug: %+v error=%v", workspace, err)
+	}
+}
+
+// The start picker offers the current Project only, like the tickets list
+// default. --all-projects widens the picker to every Project.
+func TestTicketsStartPickerScopesToTheCurrentProject(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "projects", "create", "other")
+	executeWithOptions(t, options, nil, "tickets", "create", "Core work", "--project", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Other work", "--project", "other")
+	t.Setenv("TWT_PROJECT", "core")
+	var pickedLines []string
+	options.TicketPick = func(_ *cobra.Command, lines []string) (int, error) {
+		pickedLines = append([]string(nil), lines...)
+		return 0, nil
+	}
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+
+	executeWithOptions(t, options, nil, "tickets", "start", "--as", "tester")
+	if len(pickedLines) != 1 || !strings.HasPrefix(pickedLines[0], "core-work\t") {
+		t.Fatalf("scoped tickets start picker lines = %v", pickedLines)
+	}
+
+	executeWithOptions(t, options, nil, "tickets", "close", "core-work", "--as", "tester")
+	pickedLines = nil
+	executeWithOptions(t, options, nil, "tickets", "start", "--all-projects", "--as", "tester")
+	if len(pickedLines) != 1 || !strings.HasPrefix(pickedLines[0], "other-work\t") {
+		t.Fatalf("--all-projects tickets start picker lines = %v", pickedLines)
+	}
+}
+
+// The no-argument reads follow the current context: projects get shows the
+// current Project, and workspaces get shows the current Workspace.
+func TestContextDefaultsForProjectsGetAndWorkspacesGet(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core")
+	executeWithOptions(t, options, nil, "tickets", "create", "Some work", "--project", "core")
+	options.QuickCreateSwitch = func(_, _ string) error { return nil }
+	executeWithOptions(t, options, nil, "tickets", "start", "some-work", "--as", "tester")
+
+	t.Setenv("TWT_PROJECT", "core")
+	board := executeWithOptions(t, options, nil, "projects", "get", "--output", "json")
+	if !strings.Contains(board, `"name":"core"`) {
+		t.Fatalf("projects get without NAME = %s", board)
+	}
+
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	workspace, err := workspaceStore.Find("some-work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
+	current := executeWithOptions(t, options, nil, "workspaces", "get", "--output", "json")
+	if !strings.Contains(current, `"name":"some-work"`) {
+		t.Fatalf("workspaces get without WORKSPACE = %s", current)
+	}
+
+	t.Setenv("TWT_PROJECT", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	var stderr bytes.Buffer
+	failing := options
+	failing.Stdout, failing.Stderr = &bytes.Buffer{}, &stderr
+	command := cli.New(failing)
+	command.SetArgs(forceTextOutput([]string{"projects", "get"}))
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "no Project is in scope") {
+		t.Fatalf("projects get without a scope error = %v", err)
 	}
 }
