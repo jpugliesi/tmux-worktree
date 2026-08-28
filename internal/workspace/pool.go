@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -58,6 +59,18 @@ func (s *Service) TopUpPool(templateName string, template domain.Template, depth
 				}
 				start = append(start, environment)
 			}
+		case domain.EnvironmentFailed:
+			// A failed environment keeps its finished steps, so a retry is
+			// cheaper than a new preparation. Requeue it before twt creates
+			// a new environment.
+			if pooled >= depth {
+				continue
+			}
+			pooled++
+			if err := s.requeueFailed(&environment); err != nil {
+				return nil, err
+			}
+			start = append(start, environment)
 		}
 	}
 	for pooled < depth {
@@ -82,6 +95,25 @@ func (s *Service) saveNewQueuedEnvironment(templateName string, digests store.Di
 		return domain.PreparedEnvironment{}, err
 	}
 	return environment, nil
+}
+
+// requeueFailed returns one failed Prepared Environment to the queue with a
+// new queue token, so the next preparation retries its unfinished steps. The
+// caller must hold the mutation lock.
+func (s *Service) requeueFailed(environment *domain.PreparedEnvironment) error {
+	s.report("Retrying failed Prepared Environment %s: %s", environment.ID, firstLine(environment.Failure))
+	environment.Status = domain.EnvironmentQueued
+	environment.Failure = ""
+	return s.relaunchQueued(environment)
+}
+
+// firstLine returns the first line of a message, so a multi-line failure
+// stays one report line.
+func firstLine(message string) string {
+	if index := strings.IndexByte(message, '\n'); index >= 0 {
+		return message[:index]
+	}
+	return message
 }
 
 // relaunchQueued gives one queued Prepared Environment a new queue token and
@@ -135,24 +167,44 @@ func (s *Service) Prepare(templateName string, template domain.Template) (domain
 					lock.Release()
 					return domain.PreparedEnvironment{}, err
 				}
+				lock.Release()
 			} else {
 				s.reportBackgroundWait(environment.ID)
+				lock.Release()
+				s.awaitBackgroundPreparation(environment.ID)
 			}
-			lock.Release()
 			return s.PrepareQueued(environment.ID, environment.QueueToken)
 		case domain.EnvironmentPreparing:
 			environmentLock, lockErr := store.AcquireEnvironmentLock(s.options.StateDir, environment.ID)
 			if lockErr == nil {
 				environmentLock.Release()
+				lock.Release()
 			} else if errors.Is(lockErr, store.ErrLockHeld) {
 				s.reportBackgroundWait(environment.ID)
+				lock.Release()
+				s.awaitBackgroundPreparation(environment.ID)
 			} else {
 				lock.Release()
 				return domain.PreparedEnvironment{}, lockErr
 			}
-			lock.Release()
 			return s.PrepareQueued(environment.ID, environment.QueueToken)
 		}
+	}
+	for _, environment := range environments {
+		if environment.FormatVersion != domain.PreparationFormatVersion || !digests.Matches(environment.TemplateDigest) {
+			continue
+		}
+		if environment.Status != domain.EnvironmentFailed {
+			continue
+		}
+		// Retry the failed environment instead of a full new preparation.
+		// Its finished steps stay done, so the retry runs only the rest.
+		if err := s.requeueFailed(&environment); err != nil {
+			lock.Release()
+			return domain.PreparedEnvironment{}, err
+		}
+		lock.Release()
+		return s.PrepareQueued(environment.ID, environment.QueueToken)
 	}
 	environment, err := s.saveNewQueuedEnvironment(templateName, digests, template)
 	if releaseErr := lock.Release(); err == nil && releaseErr != nil {
@@ -169,4 +221,51 @@ func (s *Service) Prepare(templateName string, template domain.Template) (domain
 func (s *Service) reportBackgroundWait(environmentID string) {
 	s.report("Waiting for the background preparation of Prepared Environment %s. Log: %s.",
 		environmentID, PrepareLogPath(s.options.StateDir, environmentID))
+}
+
+// preparationPollInterval is the time between progress reads while a caller
+// waits for a background preparation.
+var preparationPollInterval = 2 * time.Second
+
+// awaitBackgroundPreparation waits for the background worker of one Prepared
+// Environment and reports each step change, so the user sees progress instead
+// of silence. It returns when the worker releases the environment lock or
+// when the record leaves the queued and preparing states. The caller then
+// joins through PrepareQueued as before.
+func (s *Service) awaitBackgroundPreparation(environmentID string) {
+	lastReported := ""
+	for {
+		lock, err := store.AcquireEnvironmentLock(s.options.StateDir, environmentID)
+		if err == nil {
+			lock.Release()
+			return
+		}
+		if !errors.Is(err, store.ErrLockHeld) {
+			return
+		}
+		environment, findErr := s.environments.Find(environmentID)
+		if findErr != nil {
+			return
+		}
+		if environment.Status != domain.EnvironmentQueued && environment.Status != domain.EnvironmentPreparing {
+			return
+		}
+		if line := runningStepLine(environment.Steps); line != "" && line != lastReported {
+			lastReported = line
+			s.report("  %s", line)
+		}
+		time.Sleep(preparationPollInterval)
+	}
+}
+
+// runningStepLine describes the running setup step of a Prepared Environment,
+// or returns an empty value when no step runs.
+func runningStepLine(steps []domain.SetupStep) string {
+	for index, step := range steps {
+		if step.Status != domain.StepRunning {
+			continue
+		}
+		return fmt.Sprintf("%s (step %d of %d)", step.ID, index+1, len(steps))
+	}
+	return ""
 }

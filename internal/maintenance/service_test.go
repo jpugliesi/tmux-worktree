@@ -80,3 +80,57 @@ func TestDoctorSkipsTheSkillCheckWithoutAnInstalledSkill(t *testing.T) {
 		t.Fatalf("doctor reported the skills check with no request: %+v", *check)
 	}
 }
+
+func TestDoctorWarnsAboutAnEmptyPreparedPool(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := `version: 1
+name: example
+repositories:
+  - name: app
+    clone:
+      url: https://example.com/app.git
+`
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := maintenance.NewService(configDir, filepath.Join(root, "state"), filepath.Join(root, "data"), "")
+	report := service.Doctor()
+	check := findCheck(report, "pool:example")
+	if check == nil {
+		t.Fatalf("doctor has no pool check: %+v", report.Checks)
+	}
+	if check.Status != "warn" || !strings.Contains(check.Message, "twt templates prepare example") {
+		t.Fatalf("pool check = %+v, want a warning with the prepare hint", *check)
+	}
+}
+
+func TestDoctorWarnsAboutABloatedRepositoryCache(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	packDirectory := filepath.Join(dataDir, "caches", "app-abc.git", "objects", "pack")
+	if err := os.MkdirAll(packDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 65; index++ {
+		name := filepath.Join(packDirectory, "pack-"+strings.Repeat("a", 3)+string(rune('a'+index%26))+string(rune('a'+index/26))+".pack")
+		if err := os.WriteFile(name, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(packDirectory, "tmp_pack_x"), make([]byte, 2_000_000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := maintenance.NewService(filepath.Join(root, "config"), filepath.Join(root, "state"), dataDir, "")
+	report := service.Doctor()
+	check := findCheck(report, "cache:app-abc.git")
+	if check == nil {
+		t.Fatalf("doctor has no cache check: %+v", report.Checks)
+	}
+	if check.Status != "warn" || !strings.Contains(check.Message, "65 pack files") || !strings.Contains(check.Message, "2 MB") {
+		t.Fatalf("cache check = %+v", *check)
+	}
+}

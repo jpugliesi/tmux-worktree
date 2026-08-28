@@ -386,10 +386,101 @@ func (s *Service) Doctor() DoctorReport {
 			}
 			report.addWarning("environment:"+environment.ID, s.failedEnvironmentMessage(environment))
 		}
+		s.checkPreparedPools(&report, templates, environments)
 	}
+	s.checkRepositoryCaches(&report)
 	s.checkTicketsHome(&report)
 	s.checkSkill(&report)
 	return report
+}
+
+// checkPreparedPools warns when a Workspace Template has no ready Prepared
+// Environment, because the next create then waits for a full preparation.
+func (s *Service) checkPreparedPools(report *DoctorReport, templates store.TemplateStore, environments []domain.PreparedEnvironment) {
+	names, err := templates.List()
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		template, err := templates.Load(name)
+		if err != nil || len(template.Repositories) == 0 {
+			continue
+		}
+		digests, err := store.Digests(template)
+		if err != nil {
+			continue
+		}
+		ready, pending := 0, 0
+		for _, environment := range environments {
+			if environment.FormatVersion != domain.PreparationFormatVersion || !digests.Matches(environment.TemplateDigest) {
+				continue
+			}
+			switch environment.Status {
+			case domain.EnvironmentReady:
+				ready++
+			case domain.EnvironmentQueued, domain.EnvironmentPreparing:
+				pending++
+			}
+		}
+		depth := template.EffectivePoolDepth()
+		if ready >= depth {
+			report.addPass("pool:"+name, fmt.Sprintf("%d of %d Prepared Environments are ready", ready, depth))
+			continue
+		}
+		if pending > 0 {
+			report.addPass("pool:"+name, fmt.Sprintf("%d of %d Prepared Environments are ready, %d in preparation", ready, depth, pending))
+			continue
+		}
+		report.addWarning("pool:"+name, fmt.Sprintf(
+			"%d of %d Prepared Environments are ready. The next create waits for a full preparation. Run 'twt templates prepare %s'.",
+			ready, depth, name))
+	}
+}
+
+// doctorCachePackLimit is the pack count that makes doctor warn about one
+// Repository Cache. Cache refresh repacks above half this count, so a cache
+// past the limit means that maintenance does not keep up.
+const doctorCachePackLimit = 64
+
+// checkRepositoryCaches warns about Repository Caches that slow every Git
+// command: too many pack files, or leftover temporary packs from interrupted
+// fetches.
+func (s *Service) checkRepositoryCaches(report *DoctorReport) {
+	cacheRoot := filepath.Join(s.dataDir, "caches")
+	entries, err := os.ReadDir(cacheRoot)
+	if err != nil {
+		return
+	}
+	healthy := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		packDirectory := filepath.Join(cacheRoot, entry.Name(), "objects", "pack")
+		packs, err := filepath.Glob(filepath.Join(packDirectory, "*.pack"))
+		if err != nil {
+			continue
+		}
+		var garbageBytes int64
+		garbage, _ := filepath.Glob(filepath.Join(packDirectory, "tmp_pack_*"))
+		for _, path := range garbage {
+			if info, statErr := os.Stat(path); statErr == nil {
+				garbageBytes += info.Size()
+			}
+		}
+		if len(packs) <= doctorCachePackLimit && garbageBytes == 0 {
+			healthy++
+			continue
+		}
+		message := fmt.Sprintf("Repository Cache %s holds %d pack files", entry.Name(), len(packs))
+		if garbageBytes > 0 {
+			message += fmt.Sprintf(" and %d MB of temporary pack garbage", garbageBytes/1_000_000)
+		}
+		report.addWarning("cache:"+entry.Name(), message+". The next cache refresh repairs it.")
+	}
+	if healthy > 0 {
+		report.addPass("repository-caches", fmt.Sprintf("%d Repository Caches are compact", healthy))
+	}
 }
 
 // addSessionGapChecks reports tmux sessions that drifted from Workspace

@@ -204,6 +204,15 @@ This command refreshes each matching ready Prepared Environment. It then
 creates enough environments to meet `pool_depth`. A refresh fetches the default
 branch. When the base commit changes, twt runs repository initialization again.
 
+When a create waits for a background preparation, it reports each setup step
+as the worker reaches it, with the step position and the log path.
+
+A failed Prepared Environment keeps its finished steps. The next create, and
+the pool top-up after a create or a release, requeue it and retry only the
+unfinished steps. When the retry fails again, create removes the environment
+and prepares a replacement. `twt doctor` warns about failed environments and
+about a pool with no ready environment.
+
 A Workspace later claims the complete Prepared Environment. The normal claim
 does not fetch, clone, add a worktree, or run repository initialization.
 
@@ -852,6 +861,12 @@ Check tools, YAML files, Workspace records, and ownership markers:
 twt doctor
 twt doctor --output json
 ```
+
+Doctor also checks readiness and speed. It warns when a Workspace Template
+has no ready Prepared Environment, because the next create then waits for a
+full preparation. It warns when a Repository Cache holds too many pack files
+or temporary pack garbage, because such a cache slows every Git command. The
+next cache refresh repairs a bloated cache.
 
 ## Track work with tickets
 

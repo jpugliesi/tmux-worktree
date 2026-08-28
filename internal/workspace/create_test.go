@@ -360,3 +360,173 @@ func initCreateTestRepository(t *testing.T, path string) {
 		}
 	}
 }
+
+// A failed Prepared Environment from an earlier session keeps its finished
+// steps. The next create retries it instead of preparing a new environment.
+func TestCreateRetriesAFailedEnvironmentFromAnEarlierSession(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: source},
+			// The initialization fails on the first run and succeeds on the
+			// retry, like an initialization stopped by a signal.
+			Initialize: &domain.InitializeSpec{Command: []string{"sh", "-c",
+				`test -f "$TWT_ENVIRONMENT_ROOT/.tried" && exit 0; touch "$TWT_ENVIRONMENT_ROOT/.tried"; exit 1`}},
+		}},
+	}
+	socket := fmt.Sprintf("twt-workspace-retry-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+
+	var mu sync.Mutex
+	var messages []string
+	service := NewService(Options{
+		StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket,
+		Progress: func(message string) {
+			mu.Lock()
+			messages = append(messages, message)
+			mu.Unlock()
+		},
+	})
+	queued, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentID := queued[0].ID
+	if _, err := service.PrepareQueued(environmentID, queued[0].QueueToken); err == nil {
+		t.Fatal("PrepareQueued() succeeded, want the initialization failure")
+	}
+
+	workspace, err := service.CreateWithOptions("retry", template.Name, template, CreateOptions{})
+	if err != nil {
+		t.Fatalf("CreateWithOptions() after a failed preparation: %v", err)
+	}
+	if workspace.Status != domain.WorkspaceActive || workspace.EnvironmentID != environmentID {
+		t.Fatalf("Workspace = status %q, environment %q; want an active claim of %q",
+			workspace.Status, workspace.EnvironmentID, environmentID)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	retried := false
+	for _, message := range messages {
+		if strings.Contains(message, "Retrying failed Prepared Environment "+environmentID) {
+			retried = true
+		}
+	}
+	if !retried {
+		t.Fatalf("progress does not report the retry: %v", messages)
+	}
+}
+
+func TestRunningStepLineDescribesTheRunningStep(t *testing.T) {
+	now := time.Now()
+	steps := []domain.SetupStep{
+		{ID: "environment_root", Status: domain.StepSucceeded},
+		{ID: "cache:app", Status: domain.StepRunning, StartedAt: &now},
+		{ID: "checkout:app", Status: domain.StepPending},
+	}
+	if line := runningStepLine(steps); line != "cache:app (step 2 of 3)" {
+		t.Fatalf("runningStepLine() = %q", line)
+	}
+	if line := runningStepLine([]domain.SetupStep{{ID: "cache:app", Status: domain.StepPending}}); line != "" {
+		t.Fatalf("runningStepLine() with no running step = %q", line)
+	}
+}
+
+// Repository initialization may initialize submodules and install ignored
+// files. Only tracked changes, a moved HEAD, or an active Git operation fail
+// the preparation.
+func TestPreparedInitializationAcceptsSubmoduleInitialization(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	submoduleSource := filepath.Join(t.TempDir(), "library")
+	initCreateTestRepository(t, submoduleSource)
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	for _, argv := range [][]string{
+		{"git", "-C", source, "-c", "protocol.file.allow=always", "submodule", "add", submoduleSource, "library"},
+		{"git", "-C", source, "commit", "-qm", "add the library submodule"},
+	} {
+		command := exec.Command(argv[0], argv[1:]...)
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", argv, err, data)
+		}
+	}
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: source},
+			Initialize: &domain.InitializeSpec{Command: []string{"sh", "-c",
+				"git -c protocol.file.allow=always submodule update --init && exclude=\"$(git rev-parse --git-path info/exclude)\" && mkdir -p \"$(dirname \"$exclude\")\" && echo .ignored-local > \"$exclude\" && echo local > .ignored-local"}},
+		}},
+	}
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir})
+	queued, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment, err := service.PrepareQueued(queued[0].ID, queued[0].QueueToken)
+	if err != nil {
+		t.Fatalf("PrepareQueued() with a submodule-initializing initialization: %v", err)
+	}
+	if environment.Status != domain.EnvironmentReady {
+		t.Fatalf("Prepared Environment status = %q, want %q", environment.Status, domain.EnvironmentReady)
+	}
+}
+
+func TestPreparedInitializationRejectsTrackedChangesAndAMovedHead(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	for _, test := range []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "tracked change", command: "echo changed > README.md", want: "tracked or nonignored changes"},
+		{name: "moved HEAD", command: "git reset -q --hard HEAD~1", want: "moved prepared repository"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := filepath.Join(t.TempDir(), "source")
+			initCreateTestRepository(t, source)
+			command := exec.Command("git", "-C", source, "commit", "-q", "--allow-empty", "-m", "second")
+			if data, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("git commit: %v\n%s", err, data)
+			}
+			template := domain.Template{
+				Version: domain.TemplateVersion,
+				Name:    "example",
+				Repositories: []domain.RepositorySpec{{
+					Name:       "app",
+					Clone:      domain.CloneSpec{URL: source},
+					Initialize: &domain.InitializeSpec{Command: []string{"sh", "-c", test.command}},
+				}},
+			}
+			service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir()})
+			queued, err := service.TopUpPool(template.Name, template, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.PrepareQueued(queued[0].ID, queued[0].QueueToken); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("PrepareQueued() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
