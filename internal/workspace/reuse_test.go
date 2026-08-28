@@ -858,10 +858,22 @@ func TestReleaseRunsTheAfterReleaseFinalizedHook(t *testing.T) {
 	socket := fmt.Sprintf("twt-release-hook-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	var refilled []string
-	service := NewService(Options{
+	var options Options
+	options = Options{
 		StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket,
-		AfterReleaseFinalized: func(templateName string) { refilled = append(refilled, templateName) },
-	})
+		// The hook takes the mutation lock, like the real pool refill. The
+		// service must run it with no lock held.
+		AfterReleaseFinalized: func(templateName string) {
+			lock, err := store.AcquireMutationLock(options.StateDir)
+			if err != nil {
+				t.Errorf("AfterReleaseFinalized ran with the mutation lock held: %v", err)
+				return
+			}
+			_ = lock.Release()
+			refilled = append(refilled, templateName)
+		},
+	}
+	service := NewService(options)
 
 	workspace, err := service.Create("hook", template.Name, template)
 	if err != nil {

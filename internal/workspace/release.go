@@ -108,6 +108,12 @@ func (s *Service) inspectReleaseState(workspace domain.Workspace) (ReleasePlan, 
 // Release archives a Workspace and returns its physical worktrees to its
 // Prepared Environment. It keeps the Workspace branches and logical state.
 func (s *Service) Release(reference, currentPane string, opts ReleaseOptions) (ArchiveResult, error) {
+	result, err := s.release(reference, currentPane, opts)
+	s.dispatchReleaseRefills()
+	return result, err
+}
+
+func (s *Service) release(reference, currentPane string, opts ReleaseOptions) (ArchiveResult, error) {
 	workspace, _, err := s.validateArchive(reference, currentPane)
 	if err != nil {
 		return ArchiveResult{}, err
@@ -245,10 +251,25 @@ func (s *Service) finalizeReleasedEnvironment(workspace domain.Workspace, enviro
 	if err := s.environments.Save(*environment); err != nil {
 		return released, err
 	}
-	if s.options.AfterReleaseFinalized != nil {
-		s.options.AfterReleaseFinalized(workspace.TemplateName)
-	}
+	// The caller holds locks here, and the refill hook takes the mutation
+	// lock itself. Queue the notification; the public entry points dispatch
+	// it after they release their locks.
+	s.pendingReleaseRefills = append(s.pendingReleaseRefills, workspace.TemplateName)
 	return released, nil
+}
+
+// dispatchReleaseRefills runs the AfterReleaseFinalized hook for each
+// finalized release. Call it with no lock held: the hook tops up the
+// Prepared Environment pool, which takes the mutation lock.
+func (s *Service) dispatchReleaseRefills() {
+	pending := s.pendingReleaseRefills
+	s.pendingReleaseRefills = nil
+	if s.options.AfterReleaseFinalized == nil {
+		return
+	}
+	for _, templateName := range pending {
+		s.options.AfterReleaseFinalized(templateName)
+	}
 }
 
 func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[string]repositoryReleaseState) error {
@@ -418,6 +439,12 @@ func (s *Service) openReleasedWorkspace(workspace domain.Workspace) (domain.Work
 // session stops. It never makes an Environment ready while an owned session
 // can still change its worktrees.
 func (s *Service) Reconcile() error {
+	err := s.reconcile()
+	s.dispatchReleaseRefills()
+	return err
+}
+
+func (s *Service) reconcile() error {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return err

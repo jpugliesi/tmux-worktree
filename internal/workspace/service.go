@@ -37,6 +37,11 @@ type Service struct {
 	environments store.EnvironmentStore
 	snapshots    store.SnapshotStore
 	now          func() time.Time
+	// pendingReleaseRefills holds one Workspace Template name for each
+	// finalized release whose AfterReleaseFinalized hook has not run yet.
+	// The hook takes the mutation lock, so it cannot run inside the locked
+	// release and reconcile sections.
+	pendingReleaseRefills []string
 }
 
 func NewService(options Options) *Service {
