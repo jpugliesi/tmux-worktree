@@ -80,7 +80,7 @@ func newStorageCleanCommand(options Options) *cobra.Command {
 // cleanStorage plans, and with apply set removes, the unused twt-owned data.
 // Both the storage clean command and apply use it.
 func cleanStorage(command *cobra.Command, options Options, apply bool) error {
-	templates, err := currentTemplateDigests(command, options.ConfigDir)
+	templates, err := currentTemplateDigests(command, options.templateStore())
 	if err != nil {
 		return err
 	}
@@ -130,11 +130,12 @@ func cleanStorage(command *cobra.Command, options Options, apply bool) error {
 	return err
 }
 
-// currentTemplateDigests reads the digests of the current Workspace Templates. A
-// Workspace Template that twt cannot load gives a warning, and twt keeps its
-// Prepared Environments.
-func currentTemplateDigests(command *cobra.Command, configDir string) (workspaceservice.TemplateDigests, error) {
-	catalog, warnings, err := store.LoadTemplateCatalog(configDir)
+// currentTemplateDigests reads the digests of the current Workspace Templates
+// from the resolved template store, shared twt home included. A Workspace
+// Template that twt cannot load gives a warning, and twt keeps its Prepared
+// Environments.
+func currentTemplateDigests(command *cobra.Command, templates store.TemplateStore) (workspaceservice.TemplateDigests, error) {
+	catalog, warnings, err := store.CatalogFromStore(templates)
 	if err != nil {
 		return workspaceservice.TemplateDigests{}, err
 	}

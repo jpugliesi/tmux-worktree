@@ -576,3 +576,39 @@ func TestStorageCleanRemovesOrphanAgentRecords(t *testing.T) {
 		t.Fatalf("Agent Session records after cleanup = %+v", remaining)
 	}
 }
+
+// A Workspace Template that lives only in the shared twt home must keep its
+// Prepared Environments: the maintenance catalog reads the resolved store,
+// not only the config dir.
+func TestStorageCleanKeepsEnvironmentsOfASharedHomeTemplate(t *testing.T) {
+	options := maintenanceOptions(t)
+	options.Home = filepath.Join(t.TempDir(), "home")
+	template := maintenanceTemplate("shared-example", 0)
+	data, err := store.EncodeTemplate(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(options.Home, "templates", template.Name+".yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ready := saveEnvironmentRecord(t, options, "sharedready0000000000000000000ab", domain.EnvironmentReady, template, 512, nil)
+
+	text, _, err := runCLI(t, options, "storage", "clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "Nothing to clean.\n" {
+		t.Fatalf("storage clean plans removal of a shared-home template environment:\n%s", text)
+	}
+	encoded, _, err := runCLI(t, options, "environments", "list", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(encoded, ready.ID) || strings.Contains(encoded, "obsolete") {
+		t.Fatalf("environments list marks the shared-home environment obsolete: %s", encoded)
+	}
+}

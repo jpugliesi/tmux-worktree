@@ -131,6 +131,15 @@ func (s *Service) WithTemplateStore(templates store.TemplateStore) *Service {
 	return s
 }
 
+// templateStore returns the injected resolved template store, or a config-dir
+// store when the caller injected none.
+func (s *Service) templateStore() store.TemplateStore {
+	if s.templates != nil {
+		return *s.templates
+	}
+	return store.NewTemplateStore(s.configDir)
+}
+
 func (s *Service) StorageStatus() (StorageStatus, error) {
 	var warnings []string
 	measure := func(root string) int64 {
@@ -228,7 +237,7 @@ func (s *Service) EnvironmentReport() ([]EnvironmentInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, _, err := store.LoadTemplateCatalog(s.configDir)
+	catalog, _, err := store.CatalogFromStore(s.templateStore())
 	if err != nil {
 		return nil, err
 	}
@@ -308,10 +317,7 @@ func (s *Service) Doctor() DoctorReport {
 	report := DoctorReport{Healthy: true, Checks: []Check{}}
 	report.addCommand("git")
 	report.addCommand("tmux")
-	templates := store.NewTemplateStore(s.configDir)
-	if s.templates != nil {
-		templates = *s.templates
-	}
+	templates := s.templateStore()
 	names, err := templates.List()
 	if err != nil {
 		report.addFailure("templates", err.Error())

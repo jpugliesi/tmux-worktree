@@ -77,11 +77,18 @@ func (c TemplateCatalog) Disposition(templateName, digest string) TemplateDispos
 	return TemplateObsolete
 }
 
-// LoadTemplateCatalog reads each Workspace Template and returns its digests.
-// The second return value holds one warning for each Workspace Template that
-// twt cannot load; the catalog marks those entries as Unreadable.
+// LoadTemplateCatalog reads each Workspace Template of the config dir and
+// returns its digests. Callers with a shared twt home must use CatalogFromStore
+// with the resolved store, so shared templates keep their Prepared Environments.
 func LoadTemplateCatalog(configDir string) (TemplateCatalog, []string, error) {
-	templates := NewTemplateStore(configDir)
+	return CatalogFromStore(NewTemplateStore(configDir))
+}
+
+// CatalogFromStore reads each Workspace Template of one resolved store and
+// returns its digests. The second return value holds one warning for each
+// Workspace Template that twt cannot load; the catalog marks those entries as
+// Unreadable.
+func CatalogFromStore(templates TemplateStore) (TemplateCatalog, []string, error) {
 	names, err := templates.List()
 	if err != nil {
 		return nil, nil, err
