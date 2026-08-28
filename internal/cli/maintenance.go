@@ -23,10 +23,9 @@ func newStorageCommand(options Options) *cobra.Command {
 	service := options.maintenanceService()
 	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt storage"})
 	get := &cobra.Command{
-		Use:     "get",
-		Aliases: []string{"show"},
-		Short:   "Get Workspace and repository storage use",
-		Args:    noArgs,
+		Use:   "get",
+		Short: "Get Workspace and repository storage use",
+		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			result, err := service.StorageStatus()
 			if err != nil {

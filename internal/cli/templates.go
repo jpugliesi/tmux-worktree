@@ -339,10 +339,9 @@ func newTemplatesListCommand(templateStore store.TemplateStore) *cobra.Command {
 
 func newTemplatesShowCommand(templateStore store.TemplateStore) *cobra.Command {
 	command := &cobra.Command{
-		Use:     "get NAME",
-		Aliases: []string{"show"},
-		Short:   "Get a Workspace Template",
-		Args:    exactArgs("NAME"),
+		Use:   "get NAME",
+		Short: "Get a Workspace Template",
+		Args:  exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			template, err := templateStore.Load(args[0])
 			if err != nil {

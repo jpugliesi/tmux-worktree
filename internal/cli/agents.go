@@ -252,10 +252,9 @@ func workspaceAgentOutputs(agents *agentservice.Service, workspace domain.Worksp
 func newAgentsShowCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
 	var workspaceReference string
 	command := &cobra.Command{
-		Use:     "get AGENT_ID",
-		Aliases: []string{"show"},
-		Short:   "Get one Agent Session and each liveness check",
-		Args:    exactArgs("AGENT_ID"),
+		Use:   "get AGENT_ID",
+		Short: "Get one Agent Session and each liveness check",
+		Args:  exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
 			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {

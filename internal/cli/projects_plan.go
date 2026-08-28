@@ -77,10 +77,9 @@ func currentPlanProject(command *cobra.Command, options Options) (string, error)
 
 func newProjectsPlanShowCommand(options Options) *cobra.Command {
 	command := &cobra.Command{
-		Use:     "get PROJECT",
-		Aliases: []string{"show"},
-		Short:   "Get the plan document of a Project",
-		Args:    exactArgs("PROJECT"),
+		Use:   "get PROJECT",
+		Short: "Get the plan document of a Project",
+		Args:  exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
