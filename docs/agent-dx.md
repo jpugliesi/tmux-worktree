@@ -24,7 +24,8 @@ move a tmux client or need a terminal. The axis's 3 asks for raw payloads as a f
 mutation; the exclusions are deliberate, so the score stays at 2. The
 `tickets create` wizard (title, Project picker, `$EDITOR`) and the
 `projects create` wizard (name, `$EDITOR` plan, Workspace confirm) are
-TTY-only, as are the editor paths of `tickets plan` and `projects plan`.
+TTY-only, as are the editor paths of `tickets plan`, `tickets plan edit`,
+and `projects plan`.
 Agents pass DESCRIPTION, `-`, or `projects create NAME`. `--project` never
 creates a Project.
 

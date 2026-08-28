@@ -206,6 +206,22 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 	if !strings.Contains(showJSON, `## Plan`) || !strings.Contains(showJSON, "Do the thing.") {
 		t.Fatalf("show after plan = %s", showJSON)
 	}
+	editJSON, _, err := executeCollectingInput(t, options,
+		strings.NewReader("Revised through plan edit.\n"),
+		"tickets", "plan", "edit", "fix-auth", "-", "--output", "json")
+	if err != nil {
+		t.Fatalf("tickets plan edit: %v\n%s", err, editJSON)
+	}
+	if !strings.Contains(editJSON, `"operation":"tickets.plan"`) || !strings.Contains(editJSON, `"status":"applied"`) {
+		t.Fatalf("plan edit JSON = %s", editJSON)
+	}
+	showJSON, _, err = executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(showJSON, "Revised through plan edit.") {
+		t.Fatalf("show after plan edit = %s", showJSON)
+	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.plan","ticket":{"reference":"fix-auth","plan":"Revised."}}`),
 		"apply", "-", "--dry-run", "--output", "json")
@@ -400,6 +416,24 @@ func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
 	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Do it better.") || strings.Contains(showJSON, "Do the thing.") {
 		t.Fatalf("show after editor plan = %s err %v", showJSON, err)
+	}
+
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(seed), "Do it better.") {
+			return fmt.Errorf("plan edit draft is not the current plan: %q", seed)
+		}
+		return os.WriteFile(path, []byte("1. Do it from plan edit.\n"), 0o644)
+	}
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "edit", "fix-auth"); err != nil {
+		t.Fatal(err)
+	}
+	showJSON, _, err = executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "Do it from plan edit.") {
+		t.Fatalf("show after tickets plan edit = %s err %v", showJSON, err)
 	}
 }
 

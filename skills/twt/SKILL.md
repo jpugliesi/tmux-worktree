@@ -101,8 +101,8 @@ An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
 applies to `twt templates edit`, `twt tickets plan` without `-`,
-`twt projects plan` without `-`, `twt projects plan edit` without
-`-`, `twt agents focus`, `twt agents open`, and
+`twt tickets plan edit` without `-`, `twt projects plan` without `-`,
+`twt projects plan edit` without `-`, `twt agents focus`, `twt agents open`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
@@ -669,9 +669,9 @@ printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET - --as CLAIMANT --output js
 ```
 
 An agent always passes `-`. Without `-` in an interactive
-terminal, `twt tickets plan TICKET` opens VISUAL or EDITOR on a draft of
-the current ## Plan section. A claimed Ticket requires the matching
-`--as` claimant.
+terminal, `twt tickets plan TICKET` and `twt tickets plan edit TICKET`
+open VISUAL or EDITOR on a draft of the current ## Plan section. A claimed
+Ticket requires the matching `--as` claimant.
 
 A Ticket plan carries a hard approval gate. The human approves with:
 

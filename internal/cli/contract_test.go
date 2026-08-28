@@ -162,6 +162,7 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt tickets ask":            {"ticket", "-"},
 		"twt tickets answer":         {"ticket", "-"},
 		"twt tickets plan":           {"ticket", "-"},
+		"twt tickets plan edit":      {"ticket", "-"},
 		"twt tickets approve":        {"ticket", "-"},
 		"twt agents send":            {"agent_id", "-"},
 		"twt apply":                  {"-"},

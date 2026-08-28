@@ -129,7 +129,15 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 			t.Fatalf("decode JSON error for %v: %v\n%s", jsonArgs, decodeErr, jsonStderr.String())
 		}
 		wantHelp := "twt " + strings.Join(group, " ") + " --help"
-		if result.Error.Code != "invalid_usage" || result.Error.HelpCommand != wantHelp {
+		switch {
+		case result.Error.Code == "invalid_usage":
+			if result.Error.HelpCommand != wantHelp {
+				t.Fatalf("JSON error for %v = %+v, want helpCommand %q", jsonArgs, result.Error, wantHelp)
+			}
+		case target.Runnable() && result.Error.Code == "not_found":
+			// A runnable group can take a resource argument, so the extra
+			// token is a lookup rather than an unknown subcommand.
+		default:
 			t.Fatalf("JSON error for %v = %+v, want code invalid_usage and helpCommand %q", jsonArgs, result.Error, wantHelp)
 		}
 	}
