@@ -54,7 +54,10 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 		return fmt.Errorf("prepare temporary cache path: %w", err)
 	}
 	defer os.RemoveAll(temporary)
-	args := []string{"clone", "--bare", "--filter=blob:none"}
+	args := []string{"clone", "--bare"}
+	if spec.Clone.Filter != "" {
+		args = append(args, "--filter="+spec.Clone.Filter)
+	}
 	args = append(args, spec.Clone.URL, temporary)
 	if err := run("", "git", args...); err != nil {
 		return fmt.Errorf("clone repository %q: %w", spec.Name, err)
@@ -190,13 +193,60 @@ func defaultBranch(cachePath string, spec domain.RepositorySpec) (string, error)
 }
 
 // refreshCache resolves the default branch of the cache and refreshes it
-// from origin.
+// from origin. It then runs cache maintenance, because a partial clone gains
+// one lazy-fetch pack per checkout, and hundreds of packs make every later
+// Git command slow.
 func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 	branch, err := defaultBranch(cachePath, spec)
 	if err != nil {
 		return err
 	}
-	return fetchOrigin(cachePath, branch)
+	if err := fetchOrigin(cachePath, branch); err != nil {
+		return err
+	}
+	// Maintenance is best effort: a failed repack must not block Workspace
+	// preparation, and the next refresh retries it.
+	maintainCache(cachePath)
+	return nil
+}
+
+// maintainCachePackLimit is the pack count that triggers an incremental
+// repack of one Repository Cache.
+const maintainCachePackLimit = 32
+
+// staleTemporaryPackAge is the age at which an interrupted fetch pack
+// (objects/pack/tmp_pack_*) counts as garbage.
+const staleTemporaryPackAge = time.Hour
+
+// maintainCache keeps one shared Repository Cache fast. It removes stale
+// temporary packs from interrupted fetches, keeps the commit-graph current,
+// and consolidates lazy-fetch packs when the pack count passes the limit.
+func maintainCache(cachePath string) {
+	sweepStaleTemporaryPacks(cachePath, time.Now())
+	tasks := []string{"commit-graph"}
+	if packs, err := filepath.Glob(filepath.Join(cachePath, "objects", "pack", "*.pack")); err == nil && len(packs) > maintainCachePackLimit {
+		tasks = append(tasks, "incremental-repack")
+	}
+	for _, task := range tasks {
+		_ = run(cachePath, "git", "maintenance", "run", "--quiet", "--task="+task)
+	}
+}
+
+// sweepStaleTemporaryPacks removes objects/pack/tmp_pack_* files that are
+// older than staleTemporaryPackAge. An interrupted lazy fetch leaves such a
+// file behind, and Git never removes it in a repository without auto gc.
+func sweepStaleTemporaryPacks(cachePath string, now time.Time) {
+	entries, err := filepath.Glob(filepath.Join(cachePath, "objects", "pack", "tmp_pack_*"))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		info, err := os.Stat(entry)
+		if err != nil || now.Sub(info.ModTime()) < staleTemporaryPackAge {
+			continue
+		}
+		_ = os.Remove(entry)
+	}
 }
 
 // fetchOrigin refreshes one branch of the cache from origin. Repository

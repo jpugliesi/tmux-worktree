@@ -170,6 +170,11 @@ type RecycleSpec struct {
 type CloneSpec struct {
 	URL   string `yaml:"url" json:"url"`
 	Depth int    `yaml:"depth,omitempty" json:"depth,omitempty"`
+	// Filter is the partial-clone filter of the shared Repository Cache, for
+	// example "blob:none". An empty value clones the full object set. A full
+	// clone avoids lazy blob fetches during checkouts, so it is the right
+	// choice when Workspaces check out most of the repository.
+	Filter string `yaml:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // SessionSpec declares one command that twt runs each time it creates the
@@ -227,6 +232,9 @@ func (t Template) Validate() error {
 		}
 		if repository.Clone.Depth < 0 {
 			return fmt.Errorf("repository %q has a negative clone depth", repository.Name)
+		}
+		if err := validateCloneFilter(repository.Clone.Filter); err != nil {
+			return fmt.Errorf("repository %q clone filter: %w", repository.Name, err)
 		}
 		if _, exists := repository.Remotes["origin"]; exists {
 			return fmt.Errorf("repository %q cannot declare origin as an extra remote", repository.Name)
@@ -345,6 +353,18 @@ func validateBranchPattern(pattern string) error {
 	sample := RenderBranchPattern(pattern, "", "sample", "0123abcd")
 	if err := ValidateBranchName(sample); err != nil {
 		return fmt.Errorf("branch_pattern %q renders the invalid branch name %q: %w", pattern, sample, err)
+	}
+	return nil
+}
+
+// validateCloneFilter checks one declared clone filter. The value goes to
+// 'git clone --filter=' verbatim, so it must be one token without spaces.
+func validateCloneFilter(filter string) error {
+	if filter == "" {
+		return nil
+	}
+	if strings.ContainsAny(filter, " \t\n") || strings.HasPrefix(filter, "-") {
+		return fmt.Errorf("filter %q is not a valid Git object filter", filter)
 	}
 	return nil
 }

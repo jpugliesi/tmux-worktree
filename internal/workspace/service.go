@@ -24,6 +24,11 @@ type Options struct {
 	// is saved and after the mutation lock is released. The CLI uses it to
 	// start the background pool refill.
 	AfterClaimReserved func()
+	// AfterReleaseFinalized runs after a released Prepared Environment is
+	// saved as ready again. The CLI uses it to top up the pool, which
+	// replaces environments that failed or no longer match the Workspace
+	// Template.
+	AfterReleaseFinalized func(templateName string)
 }
 
 type Service struct {

@@ -245,6 +245,9 @@ func (s *Service) finalizeReleasedEnvironment(workspace domain.Workspace, enviro
 	if err := s.environments.Save(*environment); err != nil {
 		return released, err
 	}
+	if s.options.AfterReleaseFinalized != nil {
+		s.options.AfterReleaseFinalized(workspace.TemplateName)
+	}
 	return released, nil
 }
 

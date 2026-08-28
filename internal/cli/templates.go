@@ -570,6 +570,7 @@ func newTemplateRepositoriesCommand(options Options, templateStore store.Templat
 
 func newTemplateRepositoriesAddCommand(options Options, templateStore store.TemplateStore) *cobra.Command {
 	var depth int
+	var filter string
 	var remotes []string
 	var defaultBranch string
 	var windowName string
@@ -595,8 +596,9 @@ func newTemplateRepositoriesAddCommand(options Options, templateStore store.Temp
 			return addRepositoryToTemplate(command, options, args[0], domain.RepositorySpec{
 				Name: args[1],
 				Clone: domain.CloneSpec{
-					URL:   args[2],
-					Depth: depth,
+					URL:    args[2],
+					Depth:  depth,
+					Filter: filter,
 				},
 				Remotes:       extraRemotes,
 				DefaultBranch: defaultBranch,
@@ -606,6 +608,7 @@ func newTemplateRepositoriesAddCommand(options Options, templateStore store.Temp
 	}
 	command.Flags().IntVar(&depth, "depth", 0, "Deprecated; Repository Caches always keep full history")
 	_ = command.Flags().MarkDeprecated("depth", "Repository Caches always keep full history")
+	command.Flags().StringVar(&filter, "filter", "", "Set a partial-clone filter for the Repository Cache, for example blob:none")
 	command.Flags().StringArrayVar(&remotes, "remote", nil, "Add an extra remote as name=url")
 	command.Flags().StringVar(&defaultBranch, "default-branch", "", "Set the default branch")
 	command.Flags().StringVar(&windowName, "window-name", "", "Set the tmux window name")

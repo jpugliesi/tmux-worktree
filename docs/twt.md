@@ -131,6 +131,24 @@ Repository Caches keep full commit history. This rule lets every Workspace
 branch retain a merge base when the default branch advances. twt accepts the
 old repository `depth` field for compatibility, but ignores it.
 
+The clone `filter` field sets a partial-clone filter for the shared
+Repository Cache, for example `filter: blob:none`. The default is no filter:
+the cache clones the full object set. Prefer the default when Workspaces
+check out most of the repository. A partial clone downloads less at clone
+time, but every checkout lazy-fetches the blobs that it needs.
+
+```yaml
+repositories:
+  - name: everysphere
+    clone:
+      url: https://origin.cursor.com/anysphere/everysphere.git
+      filter: blob:none
+```
+
+twt maintains each Repository Cache when it refreshes it: it removes stale
+temporary packs from interrupted fetches, updates the commit-graph, and
+consolidates packs when the cache holds more than 32 pack files.
+
 `branch_pattern` sets the default Workspace branch name of the Workspace
 Template, for example `branch_pattern: "{prefix}dev/{name}"`. See
 [Workspace branch names](#workspace-branch-names).

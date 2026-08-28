@@ -836,3 +836,44 @@ func TestOpenDoesNotRaceAnActiveRelease(t *testing.T) {
 		t.Fatalf("restored Workspace = %+v", opened)
 	}
 }
+
+// A finished release reports its Workspace Template, so the CLI can top up
+// the Prepared Environment pool.
+func TestReleaseRunsTheAfterReleaseFinalizedHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-release-hook-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	var refilled []string
+	service := NewService(Options{
+		StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket,
+		AfterReleaseFinalized: func(templateName string) { refilled = append(refilled, templateName) },
+	})
+
+	workspace, err := service.Create("hook", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refilled) != 0 {
+		t.Fatalf("the hook ran before the release: %v", refilled)
+	}
+	if _, err := service.Release(workspace.ID, "", ReleaseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(refilled) != 1 || refilled[0] != "example" {
+		t.Fatalf("AfterReleaseFinalized calls = %v, want one call with \"example\"", refilled)
+	}
+}

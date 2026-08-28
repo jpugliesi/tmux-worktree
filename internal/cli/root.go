@@ -77,7 +77,27 @@ func (o Options) workspaceService() *workspaceservice.Service {
 
 // workspaceServiceOptions builds the base Workspace service configuration.
 func (o Options) workspaceServiceOptions() workspaceservice.Options {
-	return workspaceservice.Options{StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket}
+	return workspaceservice.Options{
+		StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket,
+		AfterReleaseFinalized: o.startReleaseRefill,
+	}
+}
+
+// startReleaseRefill tops up the Prepared Environment pool after a release.
+// The released environment returns to the pool by itself, so the refill only
+// replaces environments that failed or no longer match the Workspace
+// Template. It is best effort: a refill failure must not fail the release.
+func (o Options) startReleaseRefill(templateName string) {
+	if strings.TrimSpace(templateName) == "" {
+		return
+	}
+	template, err := o.templateStore().Load(templateName)
+	if err != nil {
+		return
+	}
+	if err := startPreparationRefill(o, templateName, template); err != nil && o.Stderr != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "Warning: the next Prepared Environment was not started: %v\n", err)
+	}
 }
 
 // agentService builds the Agent Session service for these Options.

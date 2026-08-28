@@ -1,11 +1,16 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
 func gitTestRepository(t *testing.T) string {
@@ -131,5 +136,71 @@ func TestBranchPublishedReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
 	}
 	if published || !unknown {
 		t.Fatalf("branchPublished() = published %v, unknown %v; want unpublished, unknown", published, unknown)
+	}
+}
+
+// The clone filter of the Template controls the shared Repository Cache. An
+// empty filter clones the full object set, so checkouts never lazy-fetch.
+func TestEnsureCacheHonorsTheTemplateCloneFilter(t *testing.T) {
+	source := gitTestRepository(t)
+	for _, test := range []struct {
+		name   string
+		filter string
+	}{
+		{name: "full clone without a filter", filter: ""},
+		{name: "partial clone with a filter", filter: "blob:none"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir()})
+			spec := domain.RepositorySpec{Name: "app", Clone: domain.CloneSpec{URL: source, Filter: test.filter}}
+			cachePath := service.cachePath(spec.Name, spec.Clone.URL)
+			if err := service.ensureCache(spec, cachePath); err != nil {
+				t.Fatalf("ensureCache() error = %v", err)
+			}
+			command := exec.Command("git", "config", "--get", "remote.origin.partialclonefilter")
+			command.Dir = cachePath
+			data, err := command.CombinedOutput()
+			got := strings.TrimSpace(string(data))
+			if test.filter == "" {
+				if err == nil {
+					t.Fatalf("full clone has partial clone filter %q", got)
+				}
+				return
+			}
+			if err != nil || got != test.filter {
+				t.Fatalf("partial clone filter = %q, %v; want %q", got, err, test.filter)
+			}
+		})
+	}
+}
+
+// An interrupted lazy fetch leaves a temporary pack behind, and nothing else
+// removes it in a repository without auto gc.
+func TestSweepStaleTemporaryPacksRemovesOnlyOldPacks(t *testing.T) {
+	cachePath := t.TempDir()
+	packDirectory := filepath.Join(cachePath, "objects", "pack")
+	if err := os.MkdirAll(packDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(packDirectory, "tmp_pack_stale")
+	fresh := filepath.Join(packDirectory, "tmp_pack_fresh")
+	keep := filepath.Join(packDirectory, "pack-keep.pack")
+	for _, path := range []string{stale, fresh, keep} {
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * staleTemporaryPackAge)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	sweepStaleTemporaryPacks(cachePath, time.Now())
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the sweep kept the stale temporary pack: %v", err)
+	}
+	for _, path := range []string{fresh, keep} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("the sweep removed %q: %v", path, err)
+		}
 	}
 }

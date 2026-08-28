@@ -175,6 +175,25 @@ func TestTemplatePoolDepth(t *testing.T) {
 	}
 }
 
+func TestTemplateValidatesTheCloneFilter(t *testing.T) {
+	template := Template{
+		Version: TemplateVersion, Name: "example",
+		Repositories: []RepositorySpec{{Name: "app", Clone: CloneSpec{URL: "https://example.com/app.git"}}},
+	}
+	for _, filter := range []string{"", "blob:none", "tree:0", "blob:limit=1m"} {
+		template.Repositories[0].Clone.Filter = filter
+		if err := template.Validate(); err != nil {
+			t.Fatalf("Validate() with clone filter %q error = %v", filter, err)
+		}
+	}
+	for _, filter := range []string{"blob none", "--upload-pack=evil", "a\nb"} {
+		template.Repositories[0].Clone.Filter = filter
+		if err := template.Validate(); err == nil || !strings.Contains(err.Error(), "clone filter") {
+			t.Fatalf("Validate() with clone filter %q error = %v", filter, err)
+		}
+	}
+}
+
 func TestTemplateValidatesLocalDispatchDefaults(t *testing.T) {
 	template := Template{
 		Version: TemplateVersion,
