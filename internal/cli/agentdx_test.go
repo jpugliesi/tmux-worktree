@@ -55,23 +55,23 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	foundNext := false
 	foundArchive := false
 	for _, command := range schema.Commands {
-		if command.Path == "twt tickets plan" || command.Path == "twt tickets plan edit" {
+		if command.Path == "twt tickets plan" {
 			foundStdin := false
 			for _, flag := range command.Flags {
 				if flag.Name == "stdin" {
-					t.Fatalf("%s must not declare a stdin flag; pass - as the optional argument", command.Path)
+					t.Fatal("tickets plan must not declare a stdin flag; pass - as the optional argument")
 				}
 			}
 			for _, argument := range command.Arguments {
 				if argument.Name == "-" {
 					foundStdin = true
 					if argument.Required {
-						t.Fatalf("%s must not require -; the editor path is for a terminal", command.Path)
+						t.Fatal("tickets plan must not require -; the editor path is for a terminal")
 					}
 				}
 			}
 			if !foundStdin {
-				t.Fatalf("%s must declare optional argument -", command.Path)
+				t.Fatal("tickets plan must declare optional argument -")
 			}
 		}
 		if command.Path == "twt next" {

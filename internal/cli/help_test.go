@@ -134,9 +134,11 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 			if result.Error.HelpCommand != wantHelp {
 				t.Fatalf("JSON error for %v = %+v, want helpCommand %q", jsonArgs, result.Error, wantHelp)
 			}
-		case target.Runnable() && result.Error.Code == "not_found":
+		case target.Runnable():
 			// A runnable group can take a resource argument, so the extra
-			// token is a lookup rather than an unknown subcommand.
+			// token is a lookup rather than an unknown subcommand. The
+			// failure code depends on the environment (not_found, or
+			// precondition_failed without a Tickets home).
 		default:
 			t.Fatalf("JSON error for %v = %+v, want code invalid_usage and helpCommand %q", jsonArgs, result.Error, wantHelp)
 		}

@@ -206,22 +206,6 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 	if !strings.Contains(showJSON, `## Plan`) || !strings.Contains(showJSON, "Do the thing.") {
 		t.Fatalf("show after plan = %s", showJSON)
 	}
-	editJSON, _, err := executeCollectingInput(t, options,
-		strings.NewReader("Revised through plan edit.\n"),
-		"tickets", "plan", "edit", "fix-auth", "-", "--output", "json")
-	if err != nil {
-		t.Fatalf("tickets plan edit: %v\n%s", err, editJSON)
-	}
-	if !strings.Contains(editJSON, `"operation":"tickets.plan"`) || !strings.Contains(editJSON, `"status":"applied"`) {
-		t.Fatalf("plan edit JSON = %s", editJSON)
-	}
-	showJSON, _, err = executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(showJSON, "Revised through plan edit.") {
-		t.Fatalf("show after plan edit = %s", showJSON)
-	}
 	applyJSON, _, err := executeCollectingInput(t, options,
 		strings.NewReader(`{"operation":"tickets.plan","ticket":{"reference":"fix-auth","plan":"Revised."}}`),
 		"apply", "-", "--dry-run", "--output", "json")
@@ -289,17 +273,36 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A missing plan is not_found with the init hint, before any editor opens.
+	// A missing Project is not_found before any editor opens.
 	options.OpenEditor = func(string) error {
-		return fmt.Errorf("the editor must not open for a missing plan")
+		return fmt.Errorf("the editor must not open for a missing Project")
 	}
-	_, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	_, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "missing")
 	if err == nil || clierr.CodeOf(err) != clierr.NotFound {
-		t.Fatalf("edit of a missing plan = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("plan of a missing Project = %v (code %q)", err, clierr.CodeOf(err))
 	}
 
-	if _, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core"); err != nil {
-		t.Fatal(err)
+	// A missing plan.md opens a blank editor. The save creates the file.
+	options.OpenEditor = func(path string) error {
+		seed, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(seed)) != "" {
+			return fmt.Errorf("the draft is not empty: %q", seed)
+		}
+		return os.WriteFile(path, []byte("# core Plan\n\nFrom a blank editor.\n"), 0o644)
+	}
+	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "core")
+	if err != nil {
+		t.Fatalf("blank plan editor: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
+		t.Fatalf("blank plan editor stdout = %q", stdout)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if err != nil || !strings.Contains(showJSON, "From a blank editor.") {
+		t.Fatalf("plan show after blank editor = %s err %v", showJSON, err)
 	}
 
 	// Without a configured editor the command refuses with invalid_usage.
@@ -323,14 +326,14 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 		}
 		return os.WriteFile(path, []byte("# core Plan\n\nEdited in the editor.\n"), 0o644)
 	}
-	stdout, _, err := executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	stdout, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
 	if err != nil {
 		t.Fatalf("editor edit: %v\n%s", err, stdout)
 	}
 	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
 		t.Fatalf("editor edit stdout = %q", stdout)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Edited in the editor.") {
 		t.Fatalf("plan show after editor edit = %s err %v", showJSON, err)
 	}
@@ -416,24 +419,6 @@ func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
 	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Do it better.") || strings.Contains(showJSON, "Do the thing.") {
 		t.Fatalf("show after editor plan = %s err %v", showJSON, err)
-	}
-
-	options.OpenEditor = func(path string) error {
-		seed, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if !strings.Contains(string(seed), "Do it better.") {
-			return fmt.Errorf("plan edit draft is not the current plan: %q", seed)
-		}
-		return os.WriteFile(path, []byte("1. Do it from plan edit.\n"), 0o644)
-	}
-	if _, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "edit", "fix-auth"); err != nil {
-		t.Fatal(err)
-	}
-	showJSON, _, err = executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
-	if err != nil || !strings.Contains(showJSON, "Do it from plan edit.") {
-		t.Fatalf("show after tickets plan edit = %s err %v", showJSON, err)
 	}
 }
 

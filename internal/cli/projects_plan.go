@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
 )
@@ -17,27 +18,34 @@ type projectPlanOutput struct {
 
 func newProjectsPlanCommand(options Options) *cobra.Command {
 	plan := &cobra.Command{
-		Use:   "plan [-]",
+		Use:   "plan [PROJECT] [-]",
 		Short: "Manage the plan document of a Project",
+		Args:  optionalResourceThenStdin("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
-			fromStdin := false
+			name, fromStdin := "", false
 			switch {
 			case len(args) == 0:
 			case len(args) == 1 && isStdinToken(args[0]):
 				fromStdin = true
+			case len(args) == 1:
+				name = args[0]
 			default:
-				if suggestions := command.SuggestionsFor(args[0]); len(suggestions) > 0 {
-					return invalidUsage(command, "twt does not know the command %q; did you mean %q?", args[0], suggestions[0])
-				}
-				return invalidUsage(command, "twt does not know the command %q", args[0])
+				name = args[0]
+				fromStdin = true
 			}
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			name, err := currentPlanProject(command, options)
-			if err != nil {
-				return err
+			if name == "" {
+				name, err = currentPlanProject(command, options)
+				if err != nil {
+					return err
+				}
+			} else if suggestions := command.SuggestionsFor(name); len(suggestions) > 0 {
+				if _, projErr := service.Project(name); projErr != nil {
+					return invalidUsage(command, "twt does not know the command %q; did you mean %q?", name, suggestions[0])
+				}
 			}
 			return runProjectPlanEdit(command, options, service, name, fromStdin)
 		},
@@ -45,7 +53,8 @@ func newProjectsPlanCommand(options Options) *cobra.Command {
 	if plan.SuggestionsMinimumDistance <= 0 {
 		plan.SuggestionsMinimumDistance = 2
 	}
-	setArguments(plan, stdinTokenArgument(false))
+	setArguments(plan, optionalArgument("project", "the current Project when absent"), stdinTokenArgument(false))
+	plan.ValidArgsFunction = ticketProjectNameCompletion(options)
 	plan.AddCommand(newProjectsPlanShowCommand(options))
 	plan.AddCommand(newProjectsPlanEditCommand(options))
 	plan.AddCommand(newProjectsPlanInitCommand(options))
@@ -62,7 +71,7 @@ func currentPlanProject(command *cobra.Command, options Options) (string, error)
 	}
 	if !scope.Set || scope.Project == "" {
 		return "", invalidUsageWithHint(command,
-			"Set TWT_PROJECT, run this from a Workspace with a Project, or pass a Project to 'twt projects plan edit PROJECT'.",
+			"Set TWT_PROJECT, run this from a Workspace with a Project, or pass a Project to 'twt projects plan PROJECT'.",
 			"no Project is in scope")
 	}
 	return scope.Project, nil
@@ -114,8 +123,8 @@ func newProjectsPlanEditCommand(options Options) *cobra.Command {
 }
 
 // runProjectPlanEdit replaces the plan document of one Project. With
-// - it is an upsert. Without - it opens VISUAL or EDITOR on a draft of
-// the existing plan.
+// - it is an upsert. Without - it opens VISUAL or EDITOR. A missing plan
+// opens a blank draft. The write creates plan.md when it is missing.
 func runProjectPlanEdit(command *cobra.Command, options Options, service ticketservice.Store, name string, fromStdin bool) error {
 	if fromStdin {
 		content, err := readTicketStdin(command)
@@ -130,16 +139,32 @@ func runProjectPlanEdit(command *cobra.Command, options Options, service tickets
 		return invalidUsageWithHint(command, "Pass - to read the plan content from standard input.",
 			"%s has no terminal", command.CommandPath())
 	}
-	current, err := service.ProjectPlan(name)
+	seed, err := projectPlanEditorSeed(service, name)
 	if err != nil {
 		return err
 	}
-	content, err := readPlanDraftInEditor(command, options, current.Content,
+	content, err := readPlanDraftInEditor(command, options, seed,
 		"Write the plan and save the file, or pass -.")
 	if err != nil {
 		return err
 	}
 	return editProjectPlan(command, service, name, content)
+}
+
+// projectPlanEditorSeed returns the current plan text, or an empty draft
+// when the Project exists and has no plan.md.
+func projectPlanEditorSeed(service ticketservice.Store, name string) (string, error) {
+	if _, err := service.Project(name); err != nil {
+		return "", err
+	}
+	current, err := service.ProjectPlan(name)
+	if err == nil {
+		return current.Content, nil
+	}
+	if clierr.CodeOf(err) != clierr.NotFound {
+		return "", err
+	}
+	return "", nil
 }
 
 // readPlanDraftInEditor opens VISUAL or EDITOR on a draft copy of the plan

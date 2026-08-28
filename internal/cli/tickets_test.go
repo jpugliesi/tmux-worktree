@@ -1462,7 +1462,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
 		`"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
-		`"twt tickets doctor"`, `"twt tickets repair"`, `"twt tickets plan"`, `"twt tickets plan edit"`,
+		`"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`,
 		`"twt projects list"`, `"twt projects show"`,
 	} {

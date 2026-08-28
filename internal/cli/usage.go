@@ -122,6 +122,25 @@ func requireResourceThenStdin(resource string) cobra.PositionalArgs {
 	}
 }
 
+// optionalResourceThenStdin accepts [RESOURCE] [-]. An absent RESOURCE uses
+// the current context. A lone - reads standard input for the current resource.
+func optionalResourceThenStdin(resource string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) > 2 {
+			return invalidUsage(command, "unexpected argument %q; expected [%s] [-]", args[2], resource)
+		}
+		if len(args) == 2 {
+			if isStdinToken(args[0]) {
+				return unexpectedStdinToken(command, args[1])
+			}
+			if !isStdinToken(args[1]) {
+				return unexpectedStdinToken(command, args[1])
+			}
+		}
+		return nil
+	}
+}
+
 // optionalStdinAfter requires RESOURCE and accepts an optional trailing "-".
 func optionalStdinAfter(resource string) cobra.PositionalArgs {
 	return func(command *cobra.Command, args []string) error {

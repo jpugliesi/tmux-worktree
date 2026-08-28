@@ -15,45 +15,21 @@ func newTicketsPlanCommand(options Options) *cobra.Command {
 		Short: "Replace the ## Plan section of a Ticket",
 		Args:  optionalStdinAfter("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
-			return runTicketsPlan(command, options, args[0], len(args) == 2, as)
-		},
-	}
-	if command.SuggestionsMinimumDistance <= 0 {
-		command.SuggestionsMinimumDistance = 2
-	}
-	command.Flags().StringVar(&as, "as", "", "Set the claimant name of a claimed Ticket")
-	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(false))
-	command.ValidArgsFunction = ticketSlugCompletion(options)
-	command.AddCommand(newTicketsPlanEditCommand(options))
-	return command
-}
-
-func newTicketsPlanEditCommand(options Options) *cobra.Command {
-	var as string
-	command := &cobra.Command{
-		Use:   "edit TICKET [-]",
-		Short: "Replace the ## Plan section of a Ticket",
-		Args:  optionalStdinAfter("TICKET"),
-		RunE: func(command *cobra.Command, args []string) error {
-			return runTicketsPlan(command, options, args[0], len(args) == 2, as)
+			service, err := options.ticketService()
+			if err != nil {
+				return err
+			}
+			text, err := readTicketPlanText(command, options, service, args[0], len(args) == 2)
+			if err != nil {
+				return err
+			}
+			return planTicket(command, service, args[0], as, text)
 		},
 	}
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name of a claimed Ticket")
 	setArguments(command, requiredArgument("ticket"), stdinTokenArgument(false))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
-}
-
-func runTicketsPlan(command *cobra.Command, options Options, ref string, fromStdin bool, as string) error {
-	service, err := options.ticketService()
-	if err != nil {
-		return err
-	}
-	text, err := readTicketPlanText(command, options, service, ref, fromStdin)
-	if err != nil {
-		return err
-	}
-	return planTicket(command, service, ref, as, text)
 }
 
 // readTicketPlanText reads the plan from standard input or from VISUAL or

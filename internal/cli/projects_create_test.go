@@ -113,7 +113,7 @@ func TestProjectsCreateWizardRejectsAnExistingProject(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.AlreadyExists {
 		t.Fatalf("existing Project = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if !strings.Contains(clierr.HintOf(err), "projects plan edit") {
+	if !strings.Contains(clierr.HintOf(err), "projects plan") {
 		t.Fatalf("existing Project hint = %q", clierr.HintOf(err))
 	}
 	if readTicketFile(t, filepath.Join(home, "change-monitor", "plan.md")) != "# keep me\n" {

@@ -101,8 +101,8 @@ An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
 applies to `twt templates edit`, `twt tickets plan` without `-`,
-`twt tickets plan edit` without `-`, `twt projects plan` without `-`,
-`twt projects plan edit` without `-`, `twt agents focus`, `twt agents open`, and
+`twt projects plan` without `-`, `twt projects plan edit` without
+`-`, `twt agents focus`, `twt agents open`, and
 `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
@@ -648,17 +648,17 @@ mirrors it. Read and write it only through twt, so git sync fires:
 ```sh
 twt projects plan show PROJECT --output json
 twt projects plan init PROJECT --output json
-printf '%s' "$PLAN" | twt projects plan edit PROJECT - --output json
+twt projects plan PROJECT
+printf '%s' "$PLAN" | twt projects plan PROJECT - --output json
 twt projects plan path PROJECT
 ```
 
-`plan edit -` is an upsert: it creates plan.md when missing. An agent
-always passes `-`. Without `-` in an interactive terminal,
-`twt projects plan` opens VISUAL or EDITOR on the current Project plan, and
-`plan edit PROJECT` opens the named Project. The current Project comes from
-TWT_PROJECT, then the current Workspace Project. `plan.md` and
-`index.md` are reserved names; they are never Tickets, and the slugs `plan`
-and `index` are rejected at create.
+`twt projects plan PROJECT` opens VISUAL or EDITOR on that Project plan. A
+missing plan.md opens a blank file. The save creates the file. An agent
+always passes `-`. `plan edit PROJECT -` is the same write. Without a
+PROJECT, the current Project comes from TWT_PROJECT, then the current
+Workspace Project. `plan.md` and `index.md` are reserved names; they are
+never Tickets, and the slugs `plan` and `index` are rejected at create.
 
 A Ticket carries its own plan in a `## Plan` body section. A planning agent
 writes a decision-complete plan there before implementation; the write
@@ -669,9 +669,9 @@ printf '%s' "$TICKET_PLAN" | twt tickets plan TICKET - --as CLAIMANT --output js
 ```
 
 An agent always passes `-`. Without `-` in an interactive
-terminal, `twt tickets plan TICKET` and `twt tickets plan edit TICKET`
-open VISUAL or EDITOR on a draft of the current ## Plan section. A claimed
-Ticket requires the matching `--as` claimant.
+terminal, `twt tickets plan TICKET` opens VISUAL or EDITOR on a draft of
+the current ## Plan section. A claimed Ticket requires the matching
+`--as` claimant.
 
 A Ticket plan carries a hard approval gate. The human approves with:
 

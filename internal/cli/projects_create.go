@@ -38,7 +38,7 @@ func runProjectsCreate(command *cobra.Command, options Options, service ticketse
 		if _, err := service.Project(name); err == nil {
 			return clierr.WithHint(
 				clierr.New(clierr.AlreadyExists, "Project %q already exists", name),
-				"Edit its plan with 'twt projects plan edit %s'.", name)
+				"Edit its plan with 'twt projects plan %s'.", name)
 		} else if clierr.CodeOf(err) != clierr.NotFound {
 			return err
 		}
