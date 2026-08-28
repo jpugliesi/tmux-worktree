@@ -81,14 +81,22 @@ func TestGroupCommandsRejectUnknownSubcommands(t *testing.T) {
 		return cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir(), Stdout: stdout, Stderr: stderr})
 	}
 	for _, group := range groups {
-		var helpStdout, helpStderr bytes.Buffer
-		bare := newCommand(&helpStdout, &helpStderr)
-		bare.SetArgs(forceTextOutput(group))
-		if err := bare.Execute(); err != nil {
-			t.Fatalf("%v without a subcommand failed: %v", group, err)
+		// A runnable group (for example "tickets plan") does work without a
+		// subcommand, so only a plain group must show help.
+		target, _, err := root.Find(group)
+		if err != nil {
+			t.Fatalf("find group %v: %v", group, err)
 		}
-		if !strings.Contains(helpStdout.String(), "Available Commands") {
-			t.Fatalf("%v without a subcommand did not show help:\n%s", group, helpStdout.String())
+		if target.RunE == nil && target.Run == nil {
+			var helpStdout, helpStderr bytes.Buffer
+			bare := newCommand(&helpStdout, &helpStderr)
+			bare.SetArgs(forceTextOutput(group))
+			if err := bare.Execute(); err != nil {
+				t.Fatalf("%v without a subcommand failed: %v", group, err)
+			}
+			if !strings.Contains(helpStdout.String(), "Available Commands") {
+				t.Fatalf("%v without a subcommand did not show help:\n%s", group, helpStdout.String())
+			}
 		}
 
 		args := append(append([]string(nil), group...), "definitely-not-a-command")
