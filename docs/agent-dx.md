@@ -22,9 +22,11 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 `agents register --pane current`) have no apply operation by design — they
 move a tmux client or need a terminal. The axis's 3 asks for raw payloads as a first-class peer on every
 mutation; the exclusions are deliberate, so the score stays at 2. The
-`tickets create` wizard (title, Project picker, `$EDITOR`) and the editor
-paths of `tickets plan` and `projects plan` are TTY-only. Agents pass
-DESCRIPTION or `-`. `--project` never creates a Project.
+`tickets create` wizard (title, Project picker, `$EDITOR`) and the
+`projects create` wizard (name, `$EDITOR` plan, Workspace confirm) are
+TTY-only, as are the editor paths of `tickets plan` and `projects plan`.
+Agents pass DESCRIPTION, `-`, or `projects create NAME`. `--project` never
+creates a Project.
 
 **Context discipline: pagination is offset-based.** There is no cursor. At
 personal-vault and per-machine scale, offset windows are stable enough; a

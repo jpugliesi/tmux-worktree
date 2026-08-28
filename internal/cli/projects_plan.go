@@ -134,7 +134,8 @@ func runProjectPlanEdit(command *cobra.Command, options Options, service tickets
 	if err != nil {
 		return err
 	}
-	content, err := readPlanDraftInEditor(command, options, current.Content)
+	content, err := readPlanDraftInEditor(command, options, current.Content,
+		"Write the plan and save the file, or pass -.")
 	if err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func runProjectPlanEdit(command *cobra.Command, options Options, service tickets
 // readPlanDraftInEditor opens VISUAL or EDITOR on a draft copy of the plan
 // and returns the saved text. The store file itself changes only through
 // the matching write, so git sync sees every edit.
-func readPlanDraftInEditor(command *cobra.Command, options Options, seed string) (string, error) {
+func readPlanDraftInEditor(command *cobra.Command, options Options, seed, emptyHint string) (string, error) {
 	temp, err := os.CreateTemp("", "twt-plan-*.md")
 	if err != nil {
 		return "", fmt.Errorf("create the plan draft file: %w", err)
@@ -166,7 +167,7 @@ func readPlanDraftInEditor(command *cobra.Command, options Options, seed string)
 		return "", fmt.Errorf("read the plan draft file: %w", err)
 	}
 	if strings.TrimSpace(string(data)) == "" {
-		return "", invalidUsageWithHint(command, "Write the plan and save the file, or pass -.",
+		return "", invalidUsageWithHint(command, emptyHint,
 			"the editor saved an empty plan")
 	}
 	return string(data), nil

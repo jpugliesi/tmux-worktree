@@ -67,19 +67,23 @@ func newProjectsCommand(options Options) *cobra.Command {
 func newProjectsCreateCommand(options Options) *cobra.Command {
 	var templateName string
 	command := &cobra.Command{
-		Use:   "create NAME",
+		Use:   "create [NAME]",
 		Short: "Create a Project directory",
-		Args:  exactArgs("NAME"),
+		Args:  optionalArg("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
 				return err
 			}
-			return createProject(command, options, service, args[0], templateName)
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			}
+			return runProjectsCreate(command, options, service, name, templateName)
 		},
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Save the Workspace Template for this Project")
-	setArguments(command, requiredArgument("name"))
+	setArguments(command, optionalArgument("name", "the prompt asks for it when stdin is a terminal and output is text"))
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	return command
 }

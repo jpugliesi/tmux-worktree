@@ -32,7 +32,7 @@ func TestCreateSchemaMarksNameOptional(t *testing.T) {
 	}
 	found := map[string]bool{}
 	for _, command := range schema.Commands {
-		if command.Path != "twt create" && command.Path != "twt workspaces create" {
+		if command.Path != "twt create" && command.Path != "twt workspaces create" && command.Path != "twt projects create" {
 			continue
 		}
 		found[command.Path] = true
@@ -43,7 +43,7 @@ func TestCreateSchemaMarksNameOptional(t *testing.T) {
 			t.Fatalf("%s schema name condition = %q", command.Path, command.Arguments[0].Condition)
 		}
 	}
-	if !found["twt create"] || !found["twt workspaces create"] {
+	if !found["twt create"] || !found["twt workspaces create"] || !found["twt projects create"] {
 		t.Fatalf("create schema coverage = %v", found)
 	}
 }

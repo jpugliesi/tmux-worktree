@@ -70,6 +70,9 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    twt projects plan init myfeature
    ```
 
+   At a terminal, `twt projects create` with no NAME asks for the name. It
+   then opens an empty editor for the plan and asks whether to start a Workspace.
+
 3. Write the plan, then break it into tickets with dependency edges:
 
    ```sh

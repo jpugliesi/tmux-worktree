@@ -76,7 +76,10 @@ unmarked `closed` directory or overwrite notes.
 
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing. Project ticket counts include
-active and closed Tickets.
+active and closed Tickets. With no NAME in an interactive terminal, twt
+asks for a Project name, then opens `$VISUAL` or `$EDITOR` on an empty file
+for the plan. After the plan save, twt asks whether to start a Workspace.
+A pipe or `--output json` requires NAME.
 
 `twt projects close NAME` sets `twt_closed: true` in the Project `index.md`.
 The Project keeps its directory, `index.md`, `plan.md`, and Ticket history.
@@ -216,7 +219,7 @@ twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET -
 twt tickets doctor
 twt tickets repair
-twt projects create NAME
+twt projects create [NAME]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
@@ -620,6 +623,9 @@ Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 - `twt tickets create` with no args in a terminal asks for a title and a
   Project, then opens the editor on an empty description. The same command in
   a pipe exits 2 with a hint.
+- `twt projects create` with no args in a terminal asks for a Project name,
+  opens the editor on an empty plan file, and asks whether to start a Workspace.
+  The same command in a pipe exits 2 with a hint.
 - `twt tickets list --ready --output json` returns only unblocked,
   unclaimed, `ready-for-agent` tickets.
 - `twt schema` includes the new commands and apply operations.

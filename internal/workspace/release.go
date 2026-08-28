@@ -623,12 +623,18 @@ func inspectRepositoryRelease(repository domain.WorkspaceRepository) (repository
 	hash := sha256.New()
 	hash.Write(status)
 	hash.Write([]byte{0})
-	for _, args := range [][]string{
-		{"rev-parse", "HEAD"},
-		{"diff", "--binary"},
-		{"diff", "--cached", "--binary"},
-		{"submodule", "status", "--recursive"},
-	} {
+	// An empty status proves that the diffs are empty and that no untracked
+	// file exists, so a clean worktree needs only the HEAD commit. This keeps
+	// the fingerprint of a large clean worktree at one Git scan.
+	commands := [][]string{{"rev-parse", "HEAD"}}
+	if state.dirty {
+		commands = append(commands,
+			[]string{"diff", "--binary"},
+			[]string{"diff", "--cached", "--binary"},
+			[]string{"submodule", "status", "--recursive"},
+		)
+	}
+	for _, args := range commands {
 		data, err := gitBytes(repository.Path, args...)
 		if err != nil {
 			return state, fmt.Errorf("fingerprint repository %q: %w", repository.Name, err)
@@ -636,9 +642,12 @@ func inspectRepositoryRelease(repository domain.WorkspaceRepository) (repository
 		hash.Write(data)
 		hash.Write([]byte{0})
 	}
-	untracked, err := gitBytes(repository.Path, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
-		return state, fmt.Errorf("list untracked files in repository %q: %w", repository.Name, err)
+	var untracked []byte
+	if state.dirty {
+		untracked, err = gitBytes(repository.Path, "ls-files", "--others", "--exclude-standard", "-z")
+		if err != nil {
+			return state, fmt.Errorf("list untracked files in repository %q: %w", repository.Name, err)
+		}
 	}
 	paths := strings.Split(strings.TrimRight(string(untracked), "\x00"), "\x00")
 	sort.Strings(paths)

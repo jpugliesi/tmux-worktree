@@ -131,14 +131,17 @@ copying does not confirm that another program received the text.
 
 An interactive path opens only for a person at a terminal:
 
-- `twt templates edit`, `twt tickets home`, and the
-  create wizard of `twt tickets create` start `VISUAL` or `EDITOR` only when
-  standard input is a terminal. The create wizard also asks for a title and
-  a Project on that terminal. With a pipe, each one reports `invalid_usage`
-  with the non-interactive form in the hint. The tickets commands also
-  require a terminal on standard output, and they reject the null device.
-  `--project` never creates a Project. A new Project from the wizard is created
-  only after confirm, and only for a name that passes resource-name rules.
+- `twt templates edit`, `twt tickets home`, the
+  create wizard of `twt tickets create`, and the create wizard of
+  `twt projects create` start `VISUAL` or `EDITOR` only when
+  standard input is a terminal. The tickets create wizard also asks for a title and
+  a Project on that terminal. The projects create wizard asks for a Project
+  name, then a plan, then whether to start a Workspace. With a pipe, each one
+  reports `invalid_usage` with the non-interactive form in the hint. The
+  tickets commands also require a terminal on standard output, and they
+  reject the null device. `--project` never creates a Project. A new Project
+  from the tickets wizard is created only after confirm, and only for a name
+  that passes resource-name rules.
 - `twt create` and `twt workspaces create` ask for a Workspace name only when
   `NAME` is absent, standard input is a terminal, standard output is a
   terminal, and output is text. A pipe or `--output json` reports

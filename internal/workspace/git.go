@@ -456,26 +456,16 @@ func branchPublished(cachePath, branch string) (published bool, unknown bool, er
 // branchOnRemoteRefs reports whether a remote-tracking ref in the local cache
 // already contains the branch. Only refs/remotes/* count as published: a
 // local sibling branch can never vouch for the commits. It does not read the
-// remote.
+// remote. One negated rev-list answers reachability in a single traversal: a
+// monorepo cache tracks thousands of remote branches, so a walk per ref does
+// not scale.
 func branchOnRemoteRefs(cachePath, branch string) (bool, error) {
 	branchRef := "refs/heads/" + branch
-	refs, err := output(cachePath, "git", "for-each-ref", "--format=%(refname)", "refs/remotes")
+	missing, err := output(cachePath, "git", "rev-list", "-1", branchRef, "--not", "--remotes")
 	if err != nil {
-		return false, fmt.Errorf("list refs for branch %q: %w", branch, err)
+		return false, fmt.Errorf("compare branch %q with the remote-tracking refs: %w", branch, err)
 	}
-	for _, ref := range strings.Split(refs, "\n") {
-		if ref == "" {
-			continue
-		}
-		contained, err := isAncestor(cachePath, branchRef, ref)
-		if err != nil {
-			return false, fmt.Errorf("compare branch %q with %q: %w", branch, ref, err)
-		}
-		if contained {
-			return true, nil
-		}
-	}
-	return false, nil
+	return strings.TrimSpace(missing) == "", nil
 }
 
 // commitExists reports whether the commit is in the local cache.

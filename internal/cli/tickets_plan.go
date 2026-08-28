@@ -46,7 +46,8 @@ func readTicketPlanText(command *cobra.Command, options Options, service tickets
 	if err != nil {
 		return "", err
 	}
-	return readPlanDraftInEditor(command, options, ticketservice.PlanSection(shown.Body))
+	return readPlanDraftInEditor(command, options, ticketservice.PlanSection(shown.Body),
+		"Write the plan and save the file, or pass -.")
 }
 
 // planTicket replaces the Plan section. Both the tickets plan command and

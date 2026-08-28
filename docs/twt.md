@@ -798,15 +798,14 @@ Removal applies no action while one Removal Blocker stays. These codes exist:
 | `inside_session` | The command runs inside the tmux session of the Workspace. |
 | `unsafe_sessions` | Another tmux session claims the Workspace ID. |
 | `uncommitted_changes` | A worktree has changes that are not committed. |
-| `unpublished_branch` | The Workspace branch has commits that are not on a remote-tracking ref and not on the remote. |
-| `unpublished_unknown` | twt cannot prove that the branch is published. |
 | `protected_branch` | The record names the default branch, or no branch. |
 | `invalid_state` | The Workspace record does not match the layout that twt owns. |
 | `unsafe_snapshot` | The Transcript Snapshot directory is not twt-owned. |
 | `unexpected_item` | The Workspace root contains an item that twt does not own. |
 
-`--force` accepts the `unpublished_branch` cause. Correct the
-other causes, then run the command again.
+Removal deletes the Workspace branches, unpublished commits included. It
+never reads the remote. Correct the blocker causes, then run the command
+again.
 
 A Workspace that stops in the middle of removal keeps the `removing` status. To
 return it to the archived status, run:
@@ -917,7 +916,7 @@ twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [-
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET -
-twt projects create NAME [--template TEMPLATE]
+twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
@@ -929,7 +928,10 @@ twt projects show NAME
 never overwrites an existing note. `twt tickets home` opens that directory
 in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
-`index.md` only when that file is missing.
+`index.md` only when that file is missing. With no NAME in an interactive
+terminal, twt asks for a Project name, then opens `$VISUAL` or `$EDITOR` on
+an empty file for the plan. After the plan save, twt asks whether to start a Workspace.
+A script must pass NAME.
 `twt projects close NAME` keeps the directory and marks the Project closed.
 When open Tickets remain, a terminal asks before it sets them to `wontfix`.
 A script must pass `--force` for the same change.
@@ -1095,6 +1097,9 @@ twt projects list --output json
 twt projects show change-monitor --output json
 twt projects close change-monitor --force --output json
 ```
+
+A person at a terminal can omit NAME. twt then asks for the Project name,
+opens the editor on an empty plan file, and asks whether to start a Workspace.
 
 A Project keeps its Workspace Template reference. The Template supplies the
 repository set and the dispatch defaults for its Sessions.

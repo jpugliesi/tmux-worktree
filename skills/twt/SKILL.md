@@ -142,8 +142,11 @@ A normal `twt next` cleans the current Workspace in the caller pane. It then
 stops the complete current session. Tmux selects another session or detaches
 the client. Attach to the new Workspace if tmux detaches the client.
 A person at a terminal can omit `NAME` on `twt create`. twt then asks for
-it. For agent work, use `twt create` and `twt workspaces archive` with
-explicit names, dry-runs, and JSON output. Do not omit `NAME`.
+it. A person can also omit `NAME` on `twt projects create`. twt then asks
+for the Project name. It opens VISUAL or EDITOR on an empty file for the
+plan. It then asks whether to start a Workspace. For agent work, use `twt create`,
+`twt projects create NAME`, and `twt workspaces archive` with explicit
+names, dry-runs, and JSON output. Do not omit `NAME`.
 
 To attach twt to a tmux session that a person made by hand, adopt it:
 
@@ -328,7 +331,9 @@ and the CLI owns every mutation. This tracker is the backlog for this user.
 Do not create Linear, GitHub, or Origin issues for this user's tickets unless
 the user asks for one.
 
-A Project is a durable group of Tickets. Create it with `twt projects create`.
+A Project is a durable group of Tickets. Create it with `twt projects create NAME`.
+A person at a terminal can omit `NAME`. twt then asks for the name. It opens
+VISUAL or EDITOR on an empty file for the plan. It then asks whether to start a Workspace.
 A person closes it with `twt projects close PROJECT`. A close with open Tickets
 needs confirmation or `--force`. Close sets those Tickets to `wontfix` and
 clears their claims and Workspace links. It does not stop Workspaces or agents.
@@ -504,7 +509,7 @@ Follow these rules for every ticket command:
 6. Create a ticket with a DESCRIPTION argument or a lone `-` with `--title`. Do not rely on
    `$EDITOR`; that path only opens for a person at an interactive terminal.
    `--project` does not create a Project. Create the Project first with
-   `twt projects create NAME`.
+   `twt projects create NAME`. Do not omit `NAME` on `twt projects create`.
 7. Claim a ticket before starting work. Close it with
    `twt tickets close TICKET` when the work ships.
 8. Set a dependency with `--blocked-by` or apply `ticket.blockedBy`. Each

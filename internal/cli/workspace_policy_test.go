@@ -119,7 +119,7 @@ func TestWorkspacesCreateRefusesConflictingSharedCacheRemote(t *testing.T) {
 	}
 }
 
-func TestWorkspacesRemoveRefusesUnpublishedCommits(t *testing.T) {
+func TestWorkspacesRemoveDeletesUnpublishedWorkWithoutForce(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -143,89 +143,7 @@ func TestWorkspacesRemoveRefusesUnpublishedCommits(t *testing.T) {
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
 	executeWithOptions(t, options, nil, "workspaces", "create", "unpublished", "--template", "policy", "--no-open")
-	entries, _ := os.ReadDir(filepath.Join(root, "data", "projects"))
-	checkout := filepath.Join(root, "data", "projects", entries[0].Name(), "app")
-	runCommand(t, checkout, "git", "config", "user.name", "twt test")
-	runCommand(t, checkout, "git", "config", "user.email", "test@example.com")
-	if err := os.WriteFile(filepath.Join(checkout, "new-work.txt"), []byte("important\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runCommand(t, checkout, "git", "add", "new-work.txt")
-	runCommand(t, checkout, "git", "commit", "-qm", "unpublished work")
-	executeWithOptions(t, options, nil, "workspaces", "archive", "unpublished")
-
-	blockedPlan := executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished")
-	if !strings.Contains(blockedPlan, "Blocked:") || !strings.Contains(blockedPlan, "not on the remote") || !strings.Contains(blockedPlan, "--force") {
-		t.Fatalf("unpublished removal plan = %q", blockedPlan)
-	}
-
-	var stdout, stderr bytes.Buffer
-	applyOptions := options
-	applyOptions.Stdout, applyOptions.Stderr = &stdout, &stderr
-	command := cli.New(applyOptions)
-	command.SetArgs(forceTextOutput([]string{"workspaces", "remove", "unpublished", "--apply"}))
-	err := command.Execute()
-	if err == nil || !strings.Contains(err.Error(), "not on the remote") {
-		t.Fatalf("unpublished removal error = %v", err)
-	}
 	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("unpublished")
-	if err != nil || workspace.Materialized {
-		t.Fatalf("blocked released Workspace = %+v, error = %v", workspace, err)
-	}
-	if content := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "show", workspace.Repositories[0].Branch+":new-work.txt"); content != "important" {
-		t.Fatalf("unpublished branch content = %q", content)
-	}
-
-	// The plan migrates the origin fetch refspec into the bare cache, so a
-	// push updates the origin tracking refs.
-	caches, err := os.ReadDir(filepath.Join(root, "data", "caches"))
-	if err != nil || len(caches) != 1 {
-		t.Fatalf("read repository caches: %v, %v", caches, err)
-	}
-	cache := filepath.Join(root, "data", "caches", caches[0].Name())
-	refspecs := runCommand(t, "", "git", "-C", cache, "config", "--get-all", "remote.origin.fetch")
-	if !strings.Contains(refspecs, "+refs/heads/*:refs/remotes/origin/*") {
-		t.Fatalf("cache origin fetch refspecs = %q", refspecs)
-	}
-
-	// After publication the plan is clean.
-	branch := workspace.Repositories[0].Branch
-	runCommand(t, "", "git", "-C", cache, "push", "-q", "origin", branch)
-	cleanPlan := executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished")
-	if strings.Contains(cleanPlan, "Blocked:") || !strings.Contains(cleanPlan, "Run again with --apply") {
-		t.Fatalf("published removal plan = %q", cleanPlan)
-	}
-	executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished", "--apply")
-	if _, err := os.Stat(checkout); err != nil {
-		t.Fatalf("published removal deleted the prepared worktree: %v", err)
-	}
-}
-
-func TestWorkspacesRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux is not installed")
-	}
-	t.Setenv("TMUX_PANE", "")
-
-	root := t.TempDir()
-	source := filepath.Join(root, "source")
-	initGitRepository(t, source)
-	configDir := filepath.Join(root, "config")
-	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	template := fmt.Sprintf("version: 1\nname: policy\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
-	if err := os.WriteFile(filepath.Join(configDir, "templates", "policy.yaml"), []byte(template), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
-	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
-	options := cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}
-	executeWithOptions(t, options, nil, "workspaces", "create", "offline", "--template", "policy", "--no-open")
-	workspace, err := store.NewWorkspaceStore(options.StateDir).Find("offline")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,30 +155,30 @@ func TestWorkspacesRemoveReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) 
 	}
 	runCommand(t, checkout, "git", "add", "new-work.txt")
 	runCommand(t, checkout, "git", "commit", "-qm", "unpublished work")
-	executeWithOptions(t, options, nil, "workspaces", "archive", "offline")
+	executeWithOptions(t, options, nil, "workspaces", "archive", "unpublished")
 
-	// The plan cannot read the remote: the origin URL points to a missing
-	// repository.
+	// Removal never requires branch publication and never reads the remote:
+	// the origin URL points to a missing repository.
 	runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "remote", "set-url", "origin", filepath.Join(root, "missing.git"))
-	planJSON := executeWithOptions(t, options, nil, "workspaces", "remove", "offline", "--output", "json")
-	var removal struct {
-		Blockers []struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"blockers"`
+	plan := executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished")
+	if strings.Contains(plan, "Blocked:") || !strings.Contains(plan, "Run again with --apply") {
+		t.Fatalf("unpublished removal plan = %q", plan)
 	}
-	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
-		t.Fatalf("decode removal plan JSON: %v\n%s", err, planJSON)
+
+	// The plan migrates the origin fetch refspec into the bare cache, so a
+	// push updates the origin tracking refs.
+	refspecs := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "config", "--get-all", "remote.origin.fetch")
+	if !strings.Contains(refspecs, "+refs/heads/*:refs/remotes/origin/*") {
+		t.Fatalf("cache origin fetch refspecs = %q", refspecs)
 	}
-	if len(removal.Blockers) != 1 || removal.Blockers[0].Code != "unpublished_unknown" || !strings.Contains(removal.Blockers[0].Message, "could not read the remote") {
-		t.Fatalf("unreachable-remote removal blockers = %+v", removal.Blockers)
+
+	executeWithOptions(t, options, nil, "workspaces", "remove", "unpublished", "--apply")
+	if _, err := store.NewWorkspaceStore(options.StateDir).Find("unpublished"); err == nil {
+		t.Fatal("removal kept the Workspace record")
 	}
-	released, err := store.NewWorkspaceStore(options.StateDir).Find("offline")
-	if err != nil || released.Materialized {
-		t.Fatalf("unreachable-remote released Workspace = %+v, error = %v", released, err)
-	}
-	if content := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "show", workspace.Repositories[0].Branch+":new-work.txt"); content != "important" {
-		t.Fatalf("unreachable-remote branch content = %q", content)
+	branches := runCommand(t, "", "git", "-C", workspace.Repositories[0].CachePath, "for-each-ref", "--format=%(refname)", "refs/heads/"+workspace.Repositories[0].Branch)
+	if strings.TrimSpace(branches) != "" {
+		t.Fatalf("removal kept the unpublished branch: %q", branches)
 	}
 }
 

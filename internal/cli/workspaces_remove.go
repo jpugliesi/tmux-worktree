@@ -47,7 +47,7 @@ func newWorkspacesRemoveCommand(service *workspaceservice.Service) *cobra.Comman
 				if cancel {
 					return invalidUsage(command, "do not use --all-archived together with --cancel")
 				}
-				return removeAllArchived(command, service, olderThan, apply, workspaceservice.RemovalOptions{AllowUnpublished: force})
+				return removeAllArchived(command, service, olderThan, apply, workspaceservice.RemovalOptions{AllowUnpublished: true})
 			}
 			if olderThan != "" {
 				return invalidUsage(command, "--older-than requires --all-archived")
@@ -73,11 +73,12 @@ func newWorkspacesRemoveCommand(service *workspaceservice.Service) *cobra.Comman
 				_, err = fmt.Fprintf(command.OutOrStdout(), "Removal of Workspace %q is canceled. The Workspace is archived.\n", workspace.Name)
 				return err
 			}
-			return runWorkspaceRemoval(command, service, reference, apply, workspaceservice.RemovalOptions{AllowUnpublished: force})
+			return runWorkspaceRemoval(command, service, reference, apply, workspaceservice.RemovalOptions{AllowUnpublished: true})
 		},
 	}
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the removal plan")
-	command.Flags().BoolVar(&force, "force", false, "Remove a branch with unpublished commits")
+	command.Flags().BoolVar(&force, "force", false, "Deprecated; removal never requires branch publication")
+	_ = command.Flags().MarkDeprecated("force", "removal never requires branch publication")
 	command.Flags().BoolVar(&cancel, "cancel", false, "Return a removing Workspace to the archived status")
 	command.Flags().BoolVar(&allArchived, "all-archived", false, "Plan or apply removal of all archived Workspaces")
 	command.Flags().StringVar(&olderThan, "older-than", "", "With --all-archived, select only Workspaces archived at least this long ago (for example 14d, 36h, or 30m)")

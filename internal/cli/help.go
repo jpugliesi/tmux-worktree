@@ -133,7 +133,7 @@ var commandHelp = map[string]helpContent{
 		long: "Adopt an existing tmux session as a Workspace. twt records the git repositories that the panes of the session sit in, and marks the session with the Workspace ID. twt did not create the directories of an adopted Workspace, and removal never deletes them: removal deletes only the twt state and releases the session marker.", example: "  twt workspaces adopt\n  twt workspaces adopt my-session --name fix-auth",
 	},
 	"twt workspaces remove": {
-		long: "Show a safe removal plan for an archived Workspace. Add --apply to remove its saved branches and state. A released Workspace does not remove its ready Prepared Environment. Use --force to remove an unpublished branch. Use --all-archived with --older-than to select archived Workspaces.", example: "  twt workspaces archive fix-auth\n  twt workspaces remove fix-auth --apply\n  twt workspaces remove --all-archived --older-than 14d --apply",
+		long: "Show a removal plan for an archived Workspace. Add --apply to remove its saved branches and state. Removal deletes the Workspace branches, unpublished commits included, and never reads the remote. A released Workspace does not remove its ready Prepared Environment. Use --all-archived with --older-than to select archived Workspaces.", example: "  twt workspaces archive fix-auth\n  twt workspaces remove fix-auth --apply\n  twt workspaces remove --all-archived --older-than 14d --apply",
 	},
 	"twt agents register": {
 		long: "Register a resumable coding Agent Session with a Workspace. Put the resume command after --. twt infers the provider and the provider session ID from that command. Use --provider and --session to set them yourself.", example: "  twt agents register -- codex resume SESSION_ID\n  twt agents register --workspace fix-auth --label review -- grok --resume SESSION_ID",
@@ -274,7 +274,7 @@ var commandHelp = map[string]helpContent{
 		long: "Manage Projects. A Project is one directory under the Tickets home that groups Tickets and outlives any Workspace.", example: "  twt projects create change-monitor\n  twt projects list --output json",
 	},
 	"twt projects create": {
-		long: "Create one Project directory and write its index.md only when that file is missing.", example: "  twt projects create change-monitor",
+		long: "Create one Project directory and write its index.md only when that file is missing. With no NAME in an interactive terminal, twt asks for a Project name, then opens VISUAL or EDITOR on an empty file for the plan. After you save the plan, twt asks whether to start a Workspace. A script must pass NAME.", example: "  twt projects create\n  twt projects create change-monitor\n  twt projects create change-monitor --template everysphere --output json",
 	},
 	"twt projects close": {
 		long: "Close one Project. With no open Tickets, the command closes it immediately. At a text terminal, twt asks before it sets open Tickets to wontfix. A script must pass --force when open Tickets remain. Close clears each affected Ticket claim and Workspace link. It does not stop Workspaces or agents. It keeps the Project directory, index.md, and plan.md. Closed Projects do not appear in Project lists or completion.", example: "  twt projects close change-monitor\n  twt projects close change-monitor --force --output json",

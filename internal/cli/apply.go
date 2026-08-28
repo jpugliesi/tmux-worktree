@@ -756,7 +756,7 @@ func applyWorkspacesRemove(command *cobra.Command, options Options, request appl
 	if err != nil {
 		return err
 	}
-	return runWorkspaceRemoval(command, service, reference, payload.Apply, workspaceservice.RemovalOptions{AllowUnpublished: payload.Force})
+	return runWorkspaceRemoval(command, service, reference, payload.Apply, workspaceservice.RemovalOptions{AllowUnpublished: true})
 }
 
 func applyAgentsRegister(command *cobra.Command, options Options, request applyRequest) error {
