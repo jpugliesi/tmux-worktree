@@ -211,7 +211,7 @@ twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
-twt tickets show TICKET
+twt tickets get TICKET
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
@@ -223,7 +223,7 @@ twt projects create [NAME]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
-twt projects show NAME
+twt projects get NAME
 ```
 
 Register the group under Workflows in `internal/cli/root.go`. Declare
@@ -572,7 +572,7 @@ follow-up rewrites that file so publish and fetch go through `twt tickets`.
 ## Later work (not this slice)
 
 - Nested Projects
-- Field masks on `tickets show`
+- Field masks on `tickets get`
 
 ## Implementation
 

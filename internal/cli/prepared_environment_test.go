@@ -120,7 +120,7 @@ repositories:
 	if ready != 1 || claimed != 1 {
 		t.Fatalf("Prepared Environment pool has ready=%d claimed=%d, want 1 and 1", ready, claimed)
 	}
-	storageOutput := executeWithOptions(t, options, nil, "storage", "show")
+	storageOutput := executeWithOptions(t, options, nil, "storage", "get")
 	if !strings.Contains(storageOutput, "Prepared") || !strings.Contains(storageOutput, "1 ready") {
 		t.Fatalf("storage show does not show the ready Prepared Environment:\n%s", storageOutput)
 	}
@@ -287,11 +287,11 @@ func TestWorkspacesCreateRefreshesTheBaseBranchAndPath(t *testing.T) {
 	if _, _, err := executeCollectingOutput(t, options, "workspaces", "path", "fresh", "missing"); err == nil || !strings.Contains(err.Error(), "is not in Workspace") {
 		t.Fatalf("workspaces path with an unknown repository = %v", err)
 	}
-	showOutput := executeWithOptions(t, options, nil, "workspaces", "show", "fresh")
+	showOutput := executeWithOptions(t, options, nil, "workspaces", "get", "fresh")
 	if !strings.Contains(showOutput, "Root") || !strings.Contains(showOutput, fresh.Root) {
 		t.Fatalf("workspaces show has no Root line:\n%s", showOutput)
 	}
-	showJSON := executeWithOptions(t, options, nil, "workspaces", "show", "fresh", "--output", "json")
+	showJSON := executeWithOptions(t, options, nil, "workspaces", "get", "fresh", "--output", "json")
 	if !strings.Contains(showJSON, `"root":`) {
 		t.Fatalf("workspaces show JSON has no root field: %s", showJSON)
 	}

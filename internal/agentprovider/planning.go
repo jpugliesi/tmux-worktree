@@ -182,11 +182,11 @@ func ticketPlanningTask(tickets []string, claimant string) string {
 	}
 	lines := []string{first, "Read each Ticket before you make the plan:"}
 	for _, ticket := range tickets {
-		lines = append(lines, "twt tickets show "+ticket+" --output json")
+		lines = append(lines, "twt tickets get "+ticket+" --output json")
 	}
 	lines = append(lines,
 		"When the Ticket names a Project, also read the Project plan:",
-		"twt projects plan show PROJECT --output json",
+		"twt projects plan get PROJECT --output json",
 		"",
 		"Explore the repository read-only to ground the plan.",
 		"HARD RULE: plan only. Make no file edits, no commits, and no branches.",

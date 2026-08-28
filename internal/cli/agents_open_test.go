@@ -151,7 +151,7 @@ func TestAgentsOpenNumberedPickerReadsTheAgentNumber(t *testing.T) {
 
 func TestAgentsOpenPreviewWritesTheSameMarkdownAsTranscriptShow(t *testing.T) {
 	options, workspace, agentID := agentsOpenFixture(t)
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID)
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "get", agentID, "--workspace", workspace.ID)
 	preview := executeWithOptions(t, options, nil, "agents", "open", "--preview", agentID, "--workspace", workspace.ID)
 	if preview != shown {
 		t.Fatalf("open --preview markdown = %q, transcript show = %q", preview, shown)

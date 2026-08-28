@@ -60,9 +60,9 @@ func TestBuildTicketImplementationLaunches(t *testing.T) {
 			}
 			for _, want := range []string{
 				"Implement twt Ticket `fix-auth`.",
-				"twt tickets show fix-auth --output json",
+				"twt tickets get fix-auth --output json",
 				"Follow the Ticket's ## Plan section",
-				"twt projects plan show PROJECT --output json",
+				"twt projects plan get PROJECT --output json",
 				"AGENTS.md or CLAUDE.md",
 				"Definition of done",
 				"every acceptance criterion in the Ticket holds",

@@ -58,7 +58,7 @@ func TestBuildTicketPlanningLaunches(t *testing.T) {
 			if test.provider == "codex" && (containsArgument(launch.Start[:len(launch.Start)-1], "plan") || containsArgument(launch.Start[:len(launch.Start)-1], "read-only")) {
 				t.Fatalf("Codex launch claims unsupported plan or read-only mode: %v", launch.Start)
 			}
-			if !strings.Contains(prompt, "twt tickets show ticket-one --output json") {
+			if !strings.Contains(prompt, "twt tickets get ticket-one --output json") {
 				t.Fatalf("prompt does not tell the Agent to read the Ticket:\n%s", prompt)
 			}
 		})
@@ -97,7 +97,7 @@ func TestTicketPlanningPromptStartsWithInstructionsAndIncludesAllTickets(t *test
 		t.Fatalf("custom instructions are not first:\n%s", prompt)
 	}
 	for _, ticket := range []string{"ticket-one", "ticket-two"} {
-		if strings.Count(prompt, "twt tickets show "+ticket+" --output json") != 1 {
+		if strings.Count(prompt, "twt tickets get "+ticket+" --output json") != 1 {
 			t.Fatalf("prompt does not contain one read command for %s:\n%s", ticket, prompt)
 		}
 	}

@@ -39,7 +39,7 @@ func (s *Service) projectPlanPath(name string) (string, error) {
 }
 
 // ProjectPlan reads the plan document of one Project. A missing plan is
-// not_found with the init hint.
+// not_found with the write hint.
 func (s *Service) ProjectPlan(name string) (ProjectPlanResult, error) {
 	path, err := s.projectPlanPath(name)
 	if err != nil {
@@ -49,7 +49,7 @@ func (s *Service) ProjectPlan(name string) (ProjectPlanResult, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return ProjectPlanResult{}, clierr.WithHint(
 			clierr.New(clierr.NotFound, "Project %q has no plan.md", name),
-			"Run 'twt projects plan init %s', or pipe content to 'twt projects plan edit %s -'.", name, name)
+			"Write it with 'twt projects plan %s', or pipe content to 'twt projects plan %s -'.", name, name)
 	}
 	if err != nil {
 		return ProjectPlanResult{}, fmt.Errorf("read Project %q plan: %w", name, err)
@@ -83,22 +83,13 @@ func (s *Service) WriteProjectPlan(name, content string, dryRun bool) (ProjectPl
 			"Pass the plan content on stdin.")
 	}
 	return syncWrite(s, syncBestEffort, dryRun, func() string {
-		return fmt.Sprintf("twt: plan edit %s", name)
+		return fmt.Sprintf("twt: plan %s", name)
 	}, func() (ProjectPlanResult, error) {
-		return s.writeProjectPlanOnce(name, []byte(content), false, dryRun)
+		return s.writeProjectPlanOnce(name, []byte(content), dryRun)
 	})
 }
 
-// InitProjectPlan writes the plan scaffold. It refuses an existing plan.
-func (s *Service) InitProjectPlan(name string, dryRun bool) (ProjectPlanResult, error) {
-	return syncWrite(s, syncBestEffort, dryRun, func() string {
-		return fmt.Sprintf("twt: plan init %s", name)
-	}, func() (ProjectPlanResult, error) {
-		return s.writeProjectPlanOnce(name, projectPlanContent(name, s.today()), true, dryRun)
-	})
-}
-
-func (s *Service) writeProjectPlanOnce(name string, content []byte, initOnly, dryRun bool) (ProjectPlanResult, error) {
+func (s *Service) writeProjectPlanOnce(name string, content []byte, dryRun bool) (ProjectPlanResult, error) {
 	if _, err := s.activeProject(name); err != nil {
 		return ProjectPlanResult{}, err
 	}
@@ -112,11 +103,6 @@ func (s *Service) writeProjectPlanOnce(name string, content []byte, initOnly, dr
 	}
 	defer lock.Release()
 	existed := fileExists(path)
-	if initOnly && existed {
-		return ProjectPlanResult{}, clierr.WithHint(
-			clierr.New(clierr.PreconditionFailed, "Project %q already has plan.md", name),
-			"Edit it with 'twt projects plan edit %s -'.", name)
-	}
 	result := ProjectPlanResult{Project: name, Path: path, Created: !existed}
 	if dryRun {
 		return result, nil

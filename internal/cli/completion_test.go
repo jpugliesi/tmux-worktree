@@ -98,8 +98,8 @@ func TestAgentReferenceCompletionOffersRegisteredAndDiscoveredSessions(t *testin
 	// Every other command that takes an AGENT reference completes the same
 	// candidates.
 	for _, path := range [][]string{
-		{"agents", "resume"}, {"agents", "open"}, {"agents", "send"}, {"agents", "show"}, {"agents", "rm"},
-		{"agents", "transcript", "show"}, {"agents", "transcript", "snapshot"},
+		{"agents", "resume"}, {"agents", "open"}, {"agents", "send"}, {"agents", "get"}, {"agents", "rm"},
+		{"agents", "transcript", "get"}, {"agents", "transcript", "snapshot"},
 		{"agents", "transcript", "link"},
 	} {
 		// send and transcript link have a required flag, and cobra offers that
@@ -137,18 +137,18 @@ func TestAgentReferenceCompletionScopesToTheWorkspace(t *testing.T) {
 
 	// The current Workspace applies when --workspace stays at its default. A
 	// Workspace with discovered sessions only still completes them.
-	if candidates := completeArgs(t, options, "agents", "transcript", "show", ""); len(candidates) != 1 || candidates[0] != "codex-first\tdiscovered codex" {
+	if candidates := completeArgs(t, options, "agents", "transcript", "get", ""); len(candidates) != 1 || candidates[0] != "codex-first\tdiscovered codex" {
 		t.Fatalf("transcript show completion of the current Workspace = %q", candidates)
 	}
 
 	// A set --workspace flag selects that Workspace.
-	candidates := completeArgs(t, options, "agents", "transcript", "show", "--workspace", second.ID, "")
+	candidates := completeArgs(t, options, "agents", "transcript", "get", "--workspace", second.ID, "")
 	if len(candidates) != 1 || candidates[0] != "codex-second\tdiscovered codex" {
 		t.Fatalf("transcript show completion of --workspace %s = %q", second.ID, candidates)
 	}
 
 	// An unknown Workspace completes nothing, and reports no error.
-	if candidates := completeArgs(t, options, "agents", "show", "--workspace", "absent", ""); len(candidates) != 0 {
+	if candidates := completeArgs(t, options, "agents", "get", "--workspace", "absent", ""); len(candidates) != 0 {
 		t.Fatalf("agents show completion of an unknown Workspace = %q", candidates)
 	}
 
@@ -171,7 +171,7 @@ func TestAgentReferenceCompletionScopesToTheWorkspace(t *testing.T) {
 
 	// A --workspace flag that resolves to no Workspace completes nothing, also
 	// when Workspaces exist.
-	if candidates := completeArgs(t, options, "agents", "show", ""); len(candidates) != 0 {
+	if candidates := completeArgs(t, options, "agents", "get", ""); len(candidates) != 0 {
 		t.Fatalf("agents show completion outside a Workspace = %q", candidates)
 	}
 }

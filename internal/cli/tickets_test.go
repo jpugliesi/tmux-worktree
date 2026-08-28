@@ -975,7 +975,7 @@ func TestTicketsReferencesResolveThroughTheCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, reference := range []string{"[[fix-the-vfs-tools]]", "fix-the", "fix the vfs tools"} {
-		stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "show", reference, "--output", "json")
+		stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "get", reference, "--output", "json")
 		if err != nil {
 			t.Fatalf("show %q: %v", reference, err)
 		}
@@ -986,7 +986,7 @@ func TestTicketsReferencesResolveThroughTheCLI(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "fix the docs"); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-the")
+	_, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-the")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("ambiguous prefix = %v (code %q)", err, clierr.CodeOf(err))
 	}
@@ -1011,14 +1011,14 @@ func TestTicketsShowRendersOpenBlockersAndBody(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "blocked-work.md"), []byte(blocked), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "blocked-work")
+	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "blocked-work")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout, "missing-blocker (missing)") || !strings.Contains(stdout, "The body text.") {
 		t.Fatalf("show text = %s", stdout)
 	}
-	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "blocked-work", "--output", "json")
+	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "blocked-work", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1270,9 +1270,9 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := cli.New(options)
-	show := findCommand(command, "tickets", "show")
+	show := findCommand(command, "tickets", "get")
 	if show == nil || show.ValidArgsFunction == nil {
-		t.Fatal("twt tickets show has no argument completion")
+		t.Fatal("twt tickets get has no argument completion")
 	}
 	names, _ := show.ValidArgsFunction(show, nil, "")
 	if strings.Join(names, ",") != "fix-the-vfs-tools" {
@@ -1312,7 +1312,7 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	if strings.Join(names, ",") != "fix-the-vfs-tools" {
 		t.Fatalf("set --blocked-by completion = %v", names)
 	}
-	projectsShow := findCommand(command, "projects", "show")
+	projectsShow := findCommand(command, "projects", "get")
 	names, _ = projectsShow.ValidArgsFunction(projectsShow, nil, "")
 	if strings.Join(names, ",") != "change-monitor" {
 		t.Fatalf("Project completion = %v", names)
@@ -1321,7 +1321,7 @@ func TestTicketsCompletionsReadTheHome(t *testing.T) {
 	// Completions are silent when no Tickets home is set.
 	t.Setenv("TWT_TICKETS_HOME", "")
 	unset := cli.New(cli.Options{ConfigDir: t.TempDir(), StateDir: t.TempDir(), DataDir: t.TempDir()})
-	unsetShow := findCommand(unset, "tickets", "show")
+	unsetShow := findCommand(unset, "tickets", "get")
 	if names, _ = unsetShow.ValidArgsFunction(unsetShow, nil, ""); len(names) != 0 {
 		t.Fatalf("completion without a home = %v", names)
 	}
@@ -1365,7 +1365,7 @@ func TestTicketsProjectsCommands(t *testing.T) {
 		projects.Projects[0].Name != "change-monitor" || projects.Projects[0].Tickets != 1 {
 		t.Fatalf("projects list = %s", listOut)
 	}
-	showOut, _, err := executeCollectingInput(t, options, nil, "projects", "show", "change-monitor", "--output", "json")
+	showOut, _, err := executeCollectingInput(t, options, nil, "projects", "get", "change-monitor", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1389,7 +1389,7 @@ func TestProjectCommandsSaveWorkspaceTemplateReference(t *testing.T) {
 		t.Fatalf("projects create --template: %v", err)
 	}
 	show, _, err := executeCollectingInput(t, options, nil,
-		"projects", "show", "change-monitor", "--output", "json")
+		"projects", "get", "change-monitor", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1413,7 +1413,7 @@ func TestProjectCommandsSaveWorkspaceTemplateReference(t *testing.T) {
 		t.Fatalf("projects set: %v", err)
 	}
 	show, _, err = executeCollectingInput(t, options, nil,
-		"projects", "show", "change-monitor", "--output", "json")
+		"projects", "get", "change-monitor", "--output", "json")
 	if err != nil || !strings.Contains(show, `"templateName":"product-v2"`) {
 		t.Fatalf("projects show after set = %s, %v", show, err)
 	}
@@ -1459,12 +1459,12 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, command := range []string{
-		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets show"`,
+		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets get"`,
 		`"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
 		`"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`,
-		`"twt projects list"`, `"twt projects show"`,
+		`"twt projects list"`, `"twt projects get"`,
 	} {
 		if !strings.Contains(output, command) {
 			t.Fatalf("schema misses %s", command)

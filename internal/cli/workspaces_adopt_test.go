@@ -168,7 +168,7 @@ func TestWorkspacesAdoptWorksWithoutARepositoryAndDefaultsToThePaneSession(t *te
 			Adopted bool `json:"adopted"`
 		} `json:"workspace"`
 	}
-	shown := executeWithOptions(t, options, nil, "workspaces", "show", "scratchpad", "--output", "json")
+	shown := executeWithOptions(t, options, nil, "workspaces", "get", "scratchpad", "--output", "json")
 	if err := json.Unmarshal([]byte(shown), &decoded); err != nil {
 		t.Fatal(err)
 	}

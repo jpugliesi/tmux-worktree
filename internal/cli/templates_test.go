@@ -94,7 +94,7 @@ func TestTemplatesListAndShow(t *testing.T) {
 		t.Fatalf("templates list output = %q", output)
 	}
 
-	output, err = execute(t, root, "templates", "show", "alpha")
+	output, err = execute(t, root, "templates", "get", "alpha")
 	if err != nil {
 		t.Fatalf("templates show returned an error: %v", err)
 	}

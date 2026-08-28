@@ -140,7 +140,7 @@ func TestSkillsInstallDryRunWritesNothing(t *testing.T) {
 
 func TestSkillsShowPrintsTheStampedSkill(t *testing.T) {
 	root := t.TempDir()
-	text, err := execute(t, root, "skills", "show")
+	text, err := execute(t, root, "skills", "get")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestSkillsShowPrintsTheStampedSkill(t *testing.T) {
 		t.Fatalf("skills show lost the skill frontmatter:\n%s", firstLines(text))
 	}
 
-	output, err := execute(t, root, "skills", "show", "--output", "json")
+	output, err := execute(t, root, "skills", "get", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,7 +72,7 @@ Every WORKSPACE argument and every `--workspace` flag accepts the literal value
 or the current tmux pane.
 
 ```sh
-twt workspaces show current --output json
+twt workspaces get current --output json
 twt agents list --workspace current --output json
 ```
 
@@ -101,9 +101,8 @@ An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
 `twt switch`, `twt done`, and the tmux client move of an archive. The same rule
 applies to `twt templates edit`, `twt tickets plan` without `-`,
-`twt projects plan` without `-`, `twt projects plan edit` without
-`-`, `twt agents focus`, `twt agents open`, and
-`twt agents register --pane current`. Run those in a terminal.
+`twt projects plan` without `-`, `twt agents focus`, `twt agents open`,
+and `twt agents register --pane current`. Run those in a terminal.
 
 ## Work with Workspaces
 
@@ -162,7 +161,7 @@ the directories.
 If setup fails, inspect the Workspace and retry the saved Template snapshot:
 
 ```sh
-twt workspaces show WORKSPACE --output json
+twt workspaces get WORKSPACE --output json
 twt workspaces setup retry WORKSPACE --dry-run --output json
 twt workspaces setup retry WORKSPACE --output json
 ```
@@ -254,7 +253,7 @@ Feedback is valid only for a live pane that has the matching immutable
 Workspace ID. When `agents send` fails, read the liveness checks:
 
 ```sh
-twt agents show AGENT_ID --workspace WORKSPACE_ID --output json
+twt agents get AGENT_ID --workspace WORKSPACE_ID --output json
 ```
 
 `twt agents list` combines registered Agent Sessions with candidates that twt
@@ -311,7 +310,7 @@ twt agents transcript link AGENT_ID \
   --dry-run \
   --output json
 
-twt agents transcript show AGENT_ID \
+twt agents transcript get AGENT_ID \
   --workspace WORKSPACE_ID \
   --output json
 
@@ -370,8 +369,8 @@ Drive every Ticket through this arc. Each step names its verb; the sections
 below carry the details.
 
 1. **Orient.** Read the Ticket and its Project plan before any work:
-   `twt tickets show TICKET --output json`, then
-   `twt projects plan show PROJECT --output json` when the Ticket names a
+   `twt tickets get TICKET --output json`, then
+   `twt projects plan get PROJECT --output json` when the Ticket names a
    Project. The plan is the design context the Ticket implements.
 2. **Claim.** Hold the Ticket before you change anything:
    `twt tickets claim TICKET --as UNIQUE_NAME`. A dispatch claims for you.
@@ -422,7 +421,7 @@ A coordinator runs one wave and then stops:
 ```sh
 twt tickets sync --project PROJECT --dry-run --output json
 twt tickets sync --project PROJECT --output json
-twt projects show PROJECT --output json
+twt projects get PROJECT --output json
 twt tickets dispatch TICKET --dry-run --output json
 twt tickets dispatch TICKET --output json
 ```
@@ -432,7 +431,7 @@ twt tickets dispatch TICKET --output json
 `waiting_on_input` diagnostic is informational: the Ticket waits on the
 human, and it does not block capacity.
 
-`projects show` is the single coordinator read after sync. Act on its
+`projects get` is the single coordinator read after sync. Act on its
 sections in this order:
 
 1. `waitingOnYou`: surface each question to the human. Do not dispatch these
@@ -523,7 +522,7 @@ Follow these rules for every ticket command:
    `--all-projects` lists every Project even when a Workspace Project is
    set. A plain `twt tickets list` hides `done` and `wontfix` tickets. Pass
    `--all` to include them. A coordinator reads one Project with
-   `twt projects show PROJECT --output json`. That envelope includes `ready`,
+   `twt projects get PROJECT --output json`. That envelope includes `ready`,
    `inFlight`, and `workspaces`. `twt context --output json` includes the
    linked Tickets and the ready queue for the current Workspace Project.
    Use `twt tickets queue --project PROJECT --limit N --output json` to read
@@ -534,8 +533,8 @@ Follow these rules for every ticket command:
 twt tickets list --ready --output json --limit 20
 twt tickets list --claimed --output json --limit 20
 twt tickets list --all --output json --limit 20
-twt tickets show TICKET --output json
-twt projects show PROJECT --output json
+twt tickets get TICKET --output json
+twt projects get PROJECT --output json
 twt workspaces list --project PROJECT --status active --output json
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
@@ -560,7 +559,7 @@ Ask parks the Ticket on `needs-info`, keeps the claim, and records the
 question under `## Questions`. The agent then ends its turn with the final
 line `WAITING FOR ANSWER` and does not guess, poll, or work around the
 question. The board surfaces these Tickets: `twt tickets list --needs-input`
-and the `waitingOnYou` list of `twt projects show`.
+and the `waitingOnYou` list of `twt projects get`.
 
 The human answers with:
 
@@ -599,7 +598,7 @@ twt tickets tree --project PROJECT --output json
 twt tickets tree --project PROJECT --all --no-fetch
 ```
 
-The board is `twt projects show PROJECT`. The text form prints the sections
+The board is `twt projects get PROJECT`. The text form prints the sections
 WAITING ON YOU, IN PROGRESS (with the newest dispatch Session per Ticket),
 IN REVIEW (with PR badges and an `all PRs merged; close it` marker), READY,
 BLOCKED, and DONE, plus a freshness footer. The JSON form adds
@@ -607,7 +606,7 @@ BLOCKED, and DONE, plus a freshness footer. The JSON form adds
 `prStates`, and `storeAsOf`. `storeAsOf` is the last successful exchange
 with the tickets remote on this machine; sessions come from the last sync,
 never from a live probe. Reads stay offline-fast by default. Pass `--fresh`
-on `tickets list`, `tickets tree`, or `projects show` to sync the store
+on `tickets list`, `tickets tree`, or `projects get` to sync the store
 before the read (a sync failure degrades to a warning), or run
 `twt tickets sync` first when session liveness matters too.
 
@@ -646,19 +645,18 @@ top-level design that the human and the PM agent iterate; the Ticket DAG
 mirrors it. Read and write it only through twt, so git sync fires:
 
 ```sh
-twt projects plan show PROJECT --output json
-twt projects plan init PROJECT --output json
+twt projects plan get PROJECT --output json
 twt projects plan PROJECT
 printf '%s' "$PLAN" | twt projects plan PROJECT - --output json
 twt projects plan path PROJECT
 ```
 
 `twt projects plan PROJECT` opens VISUAL or EDITOR on that Project plan. A
-missing plan.md opens a blank file. The save creates the file. An agent
-always passes `-`. `plan edit PROJECT -` is the same write. Without a
-PROJECT, the current Project comes from TWT_PROJECT, then the current
-Workspace Project. `plan.md` and `index.md` are reserved names; they are
-never Tickets, and the slugs `plan` and `index` are rejected at create.
+missing plan.md opens a blank file. The save creates the file. There is no
+required plan structure. An agent always passes `-`. Without a PROJECT, the
+current Project comes from TWT_PROJECT, then the current Workspace Project.
+`plan.md` and `index.md` are reserved names; they are never Tickets, and the
+slugs `plan` and `index` are rejected at create.
 
 A Ticket carries its own plan in a `## Plan` body section. A planning agent
 writes a decision-complete plan there before implementation; the write
@@ -694,12 +692,12 @@ promotes the Ticket to `ready-for-agent` and unclaims it.
 
 This is the PM contract: divide a large design into a Ticket DAG and drive
 it across agents. The Tickets are the DAG source of truth; plan.md mirrors
-them. Make every change through twt verbs first, then one `plan edit`.
+them. Make every change through twt verbs first, then one `projects plan`.
 
-1. Bootstrap: `twt projects create NAME --template TEMPLATE`, then
-   `twt projects plan init NAME`.
+1. Bootstrap: `twt projects create NAME --template TEMPLATE`, then write
+   the plan with `twt projects plan NAME`.
 2. Iterate plan.md with the human until the decisions close. Every edit
-   goes through `plan edit -`, never on disk.
+   goes through `projects plan -`, never on disk.
 3. Emit the DAG leaves-first: `tickets create -` with
    `--status needs-triage` and `--blocked-by` edges. Promote a Ticket to
    `ready-for-agent` when its spec is firm. Plain `-` bodies land
@@ -712,7 +710,7 @@ them. Make every change through twt verbs first, then one `plan edit`.
    The planning agent writes the plan into the Ticket, asks for approval,
    and waits; the implementation dispatch of a planned Ticket is gated on
    `twt tickets approve`.
-6. Monitor with the board (`twt projects show NAME`). Answer WAITING ON
+6. Monitor with the board (`twt projects get NAME`). Answer WAITING ON
    YOU items with `tickets answer` or `tickets approve`. Close each
    in-review Ticket the board marks all-merged; the close unblocks its
    dependents.
@@ -721,7 +719,7 @@ them. Make every change through twt verbs first, then one `plan edit`.
    with `tickets set --blocked-by` - the flag REPLACES the whole list, so
    pass every remaining blocker; (c) `tickets set PARENT --status wontfix`;
    (d) verify with `queue` (no cycles, expected ready set); (e) mirror the
-   change into plan.md with one `plan edit`.
+   change into plan.md with one `projects plan`.
 8. Close the Project when no more work is valid. Run
    `twt projects close NAME --force --output json` if open Tickets remain.
 

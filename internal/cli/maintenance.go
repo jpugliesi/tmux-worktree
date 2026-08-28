@@ -22,10 +22,11 @@ type doctorOutput struct {
 func newStorageCommand(options Options) *cobra.Command {
 	service := options.maintenanceService()
 	storage := groupCommand(&cobra.Command{Use: "storage", Short: "Inspect twt storage"})
-	show := &cobra.Command{
-		Use:   "show",
-		Short: "Show Workspace and repository storage use",
-		Args:  noArgs,
+	get := &cobra.Command{
+		Use:     "get",
+		Aliases: []string{"show"},
+		Short:   "Get Workspace and repository storage use",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			result, err := service.StorageStatus()
 			if err != nil {
@@ -52,8 +53,8 @@ func newStorageCommand(options Options) *cobra.Command {
 			})
 		},
 	}
-	addFieldsFlag(show, maintenance.StorageStatus{})
-	storage.AddCommand(show, newStorageCleanCommand(options))
+	addFieldsFlag(get, maintenance.StorageStatus{})
+	storage.AddCommand(get, newStorageCleanCommand(options))
 	return storage
 }
 

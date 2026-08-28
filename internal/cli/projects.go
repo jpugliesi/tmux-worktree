@@ -197,9 +197,10 @@ func newProjectsListCommand(options Options) *cobra.Command {
 func newProjectsShowCommand(options Options) *cobra.Command {
 	var noFetch, fresh bool
 	command := &cobra.Command{
-		Use:   "show NAME",
-		Short: "Show a Project",
-		Args:  exactArgs("NAME"),
+		Use:     "get NAME",
+		Aliases: []string{"show"},
+		Short:   "Get a Project",
+		Args:    exactArgs("NAME"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {

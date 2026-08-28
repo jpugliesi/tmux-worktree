@@ -67,7 +67,7 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    #                                 an Obsidian vault folder works)
    twt tickets init
    twt projects create myfeature --template myproject
-   twt projects plan init myfeature
+   twt projects plan myfeature
    ```
 
    At a terminal, `twt projects create` with no NAME asks for the name. It
@@ -76,7 +76,7 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
 3. Write the plan, then break it into tickets with dependency edges:
 
    ```sh
-   printf '%s' "$PLAN" | twt projects plan edit myfeature -
+   printf '%s' "$PLAN" | twt projects plan myfeature -
    twt tickets create "Add the API" --project myfeature --status ready-for-agent
    twt tickets create "Add the UI" --project myfeature --status ready-for-agent \
      --blocked-by add-the-api
@@ -87,7 +87,7 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    ```sh
    twt tickets dispatch add-the-api        # claims the ticket, starts an agent in tmux
    twt tickets tree --project myfeature    # the dependency DAG with PR badges
-twt projects show myfeature             # the board
+twt projects get myfeature             # the board
 twt projects close myfeature            # close the Project when work ends
    ```
 
@@ -97,7 +97,7 @@ twt projects close myfeature            # close the Project when work ends
 Everything that needs you appears on the board under WAITING ON YOU:
 
 ```sh
-twt projects show myfeature
+twt projects get myfeature
 printf '%s' "Use OAuth." | twt tickets answer some-ticket -   # answer an agent's question
 twt tickets approve some-ticket                                     # approve a plan for implementation
 twt tickets close some-ticket                                       # merged means done; unblocks dependents
@@ -116,7 +116,7 @@ one wave and stops:
 
 ```sh
 twt tickets sync --project myfeature --output json   # store + session reconcile
-twt projects show myfeature --output json            # the single coordinator read
+twt projects get myfeature --output json            # the single coordinator read
 # close tickets whose PRs are all merged, surface questions, then:
 twt tickets dispatch NEXT_READY_TICKET
 ```
@@ -155,7 +155,7 @@ the workflow. Two patterns work well:
 needs you — plans awaiting approval, open questions, tickets whose pull
 requests are all merged — together with the command to run. On your word it
 executes the store-side writes itself (`answer`, `approve`, `close`,
-`plan edit`). Dispatch and tmux actions happen on your workstation, where a
+`projects plan`). Dispatch and tmux actions happen on your workstation, where a
 resident coordinator session reacts to the store changes; the bot never
 needs access to that machine.
 

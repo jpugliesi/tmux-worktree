@@ -165,7 +165,7 @@ twt templates path everysphere
 twt templates edit everysphere
 twt templates validate everysphere
 twt templates list
-twt templates show everysphere --output json
+twt templates get everysphere --output json
 ```
 
 `templates path` prints one bare path. `templates edit` starts `$VISUAL` or
@@ -443,7 +443,7 @@ twt create fix-logout \
 ```sh
 twt workspaces list
 twt workspaces list --project change-monitor --status active
-twt workspaces show fix-auth
+twt workspaces get fix-auth
 twt workspaces current
 twt workspaces path fix-auth everysphere
 twt workspaces open fix-auth
@@ -460,7 +460,7 @@ session and stop it after cleanup.
 
 The text list shows an aligned table with the Workspace name, Workspace Template,
 status, and age, in that order. The list does not read disk sizes, so it stays
-fast; use `twt storage show` for disk space:
+fast; use `twt storage get` for disk space:
 
 ```text
 NAME      TEMPLATE     STATUS  AGE
@@ -474,7 +474,7 @@ Each command that takes a WORKSPACE argument also accepts the literal value
 value, or the current tmux pane:
 
 ```sh
-twt workspaces show current --output json
+twt workspaces get current --output json
 twt workspaces archive current
 twt workspaces setup retry current
 twt done current
@@ -538,7 +538,7 @@ List, inspect, pick, focus, resume, or send feedback:
 
 ```sh
 twt agents list --workspace current
-twt agents show AGENT_ID --workspace current
+twt agents get AGENT_ID --workspace current
 twt agents open
 twt agents focus AGENT_ID
 twt agents resume AGENT_ID
@@ -585,7 +585,7 @@ summary line. Text output writes a warning to standard error. The Neovim
 picker stops and shows the diagnostic, so it does not silently omit live
 agents.
 
-`agents show` gives each liveness check with its result. For an adopted
+`agents get` gives each liveness check with its result. For an adopted
 shell-hosted process, twt checks the saved process ID, process start time,
 provider, pane marker, and current input target. Focus can work while the
 Agent uses a child tool. Send requires the Agent input target to be current.
@@ -629,7 +629,7 @@ twt agents list --workspace current --output json
 twt agents resume AGENT_ID --output json
 printf '%s' "$REVIEW_TEXT" | \
   twt agents send AGENT_ID - --workspace WORKSPACE_ID --output json
-twt agents transcript show AGENT_ID --workspace WORKSPACE_ID --output json
+twt agents transcript get AGENT_ID --workspace WORKSPACE_ID --output json
 twt agents transcript snapshot AGENT_ID --workspace WORKSPACE_ID --output json
 ```
 
@@ -758,11 +758,11 @@ text output. For JSON output, run `archive` from a different session.
 Inspect disk use:
 
 ```sh
-twt storage show
-twt storage show --output json
+twt storage get
+twt storage get --output json
 ```
 
-`storage show` reports the total size, the shared repository caches, active
+`storage get` reports the total size, the shared repository caches, active
 Workspace data, archived Workspace data, the number of worktrees, unclaimed
 Prepared Environment data with a count for each status, and Transcript
 Snapshot data.
@@ -827,7 +827,7 @@ twt workspaces remove --all-archived --older-than 14d --apply
 ```
 
 Workspace removal keeps the shared repository cache. This makes later Workspace
-creation fast. `storage show` includes these caches. Automatic cache removal
+creation fast. `storage get` includes these caches. Automatic cache removal
 is not in this preview.
 
 Inspect the Prepared Environment pool:
@@ -836,7 +836,7 @@ Inspect the Prepared Environment pool:
 twt environments list
 twt environments list --size
 twt environments list --limit 10 --output json
-twt environments show ENVIRONMENT_ID --output json
+twt environments get ENVIRONMENT_ID --output json
 ```
 
 The text list groups the Prepared Environments by Workspace Template. Each line
@@ -844,7 +844,7 @@ shows the short ID, status, age, and the most useful value for that status: the
 base commit, the preparation log of a failed environment, or the Workspace that
 claims it. Use `--size` to calculate and show Prepared Environment storage. The
 size scan can take time on a large worktree. It does not scan roots that are
-reserved for a Workspace. `environments show` accepts a unique ID prefix and
+reserved for a Workspace. `environments get` accepts a unique ID prefix and
 adds the preparation steps.
 
 Full JSON and NDJSON output calculates the size of each Environment in the
@@ -912,7 +912,7 @@ twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
-twt tickets show TICKET
+twt tickets get TICKET
 twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]
@@ -923,7 +923,7 @@ twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
-twt projects show NAME
+twt projects get NAME
 ```
 
 `twt tickets init` creates Tickets home if it is missing, and writes
@@ -1052,11 +1052,11 @@ its Workspace. `tickets start` uses the same claim flow for one or more
 Tickets. It keeps the current Workspace active. Use `twt next TICKET` when
 the current Workspace must be archived. Without `TICKET`, and when standard
 input is a terminal, it shows the same Ticket picker. fzf shows a preview of
-`twt tickets show` for the highlighted Ticket. A numbered list is used when
+`twt tickets get` for the highlighted Ticket. A numbered list is used when
 fzf is not installed. A script must pass `TICKET`. All Tickets must be open
 and belong to one Project. The Workspace name is `--name`, or the first
 Ticket slug. The Workspace record carries the Project and Ticket slugs, and
-`twt workspaces show` reports them. On success, twt appends a start comment
+`twt workspaces get` reports them. On success, twt appends a start comment
 to each Ticket. A create failure keeps the claims, and the error tells how
 to retry the setup. The picker and switching forms are interactive and refuse
 `--output json`. The form with explicit Tickets and `--detached` accepts JSON.
@@ -1067,7 +1067,7 @@ has no apply operation.
 `ticketAgent` config selects `codex`, `claude`, `cursor`, or `grok`. Effort is
 `small`, `medium`, `large`, or `xlarge`; the default is `large`. Custom
 instructions come before the generated request. The request tells the Agent to
-read each Ticket with `twt tickets show`. Claude, Cursor, and Grok start in
+read each Ticket with `twt tickets get`. Claude, Cursor, and Grok start in
 their plan mode. Codex receives the planning request in its normal mode because
 its CLI has no supported plan-mode start flag.
 
@@ -1097,7 +1097,7 @@ ticket frontmatter, not `workspace:`.
 twt projects create change-monitor --template everysphere --output json
 twt projects set change-monitor --template everysphere --output json
 twt projects list --output json
-twt projects show change-monitor --output json
+twt projects get change-monitor --output json
 twt projects close change-monitor --force --output json
 ```
 
@@ -1112,7 +1112,7 @@ open Ticket to `wontfix`. It also clears the Ticket claim and Workspace link.
 It does not stop Workspaces or agents. Default Project lists and completion
 omit the closed Project.
 
-`projects show` is the coordinator board. JSON includes `ready` Tickets,
+`projects get` is the coordinator board. JSON includes `ready` Tickets,
 `inFlight` (claimed) Tickets, and Workspaces linked to the Project.
 `create --ticket` and `tickets start` stamp `workspaceId` on each Ticket.
 `tickets list --claimed` lists in-flight Tickets. `context` includes the
@@ -1141,7 +1141,7 @@ Run one coordinator wave in this order:
 ```sh
 twt tickets sync --project change-monitor --dry-run --output json
 twt tickets sync --project change-monitor --output json
-twt projects show change-monitor --output json
+twt projects get change-monitor --output json
 twt tickets dispatch factory-api --dry-run --output json
 twt tickets dispatch factory-api --output json
 ```
@@ -1219,7 +1219,7 @@ Use `--dir DIR` for a custom skill tree, and `--dry-run` to see the plan:
 
 ```sh
 twt skills install --dir ./skills --dry-run --output json
-twt skills show
+twt skills get
 ```
 
 Run `twt skills install` again after a `twt` upgrade. `twt doctor` compares

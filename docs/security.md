@@ -83,7 +83,7 @@ coding agent. `twt` treats that text as data:
   sequences, C0 and C1 control characters, and DEL. It keeps line feeds,
   tabs, and all printable text, including emoji. A carriage return becomes
   one line feed.
-- `twt agents transcript show` and `twt agents transcript snapshot` mark the
+- `twt agents transcript get` and `twt agents transcript snapshot` mark the
   JSON payload with `"untrusted": true`.
 - `twt agents open --preview` returns sanitized Agent Preview markdown. It
   uses a verified transcript when one is available. A live-pane preview reads
@@ -151,7 +151,7 @@ An interactive path opens only for a person at a terminal:
   the same intention for a script. `--all-active` never attaches.
 
 - `twt tickets start` without `TICKET` shows the Ticket picker only when
-  standard input is a terminal. fzf previews `twt tickets show` text. A pipe
+  standard input is a terminal. fzf previews `twt tickets get` text. A pipe
   or `--output json` reports `invalid_usage` and requires `TICKET`.
 - `twt tickets claim` and `twt tickets unclaim` never default the claimant
   outside a terminal: a non-interactive call must pass `--as NAME`, so two

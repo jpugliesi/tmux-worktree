@@ -24,25 +24,22 @@ func TestProjectPlanLifecycle(t *testing.T) {
 	if _, err := service.ProjectPlan("core"); clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("missing plan error = %v, want not_found", err)
 	}
-	created, err := service.InitProjectPlan("core", false)
+	created, err := service.WriteProjectPlan("core", "# core Plan\n\nShip it.\n", false)
 	if err != nil {
-		t.Fatalf("init: %v", err)
+		t.Fatalf("write: %v", err)
 	}
 	if !created.Created {
-		t.Fatal("init did not report creation")
-	}
-	if _, err := service.InitProjectPlan("core", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
-		t.Fatalf("second init error = %v, want precondition_failed", err)
+		t.Fatal("write did not report creation")
 	}
 	shown, err := service.ProjectPlan("core")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(shown.Content, "# core Plan") || !strings.Contains(shown.Content, "## Ticket DAG") {
-		t.Fatalf("scaffold content:\n%s", shown.Content)
+	if !strings.Contains(shown.Content, "# core Plan") || !strings.Contains(shown.Content, "Ship it.") {
+		t.Fatalf("plan content:\n%s", shown.Content)
 	}
 	if _, err := service.WriteProjectPlan("core", "# core Plan\n\nRevised.\n", false); err != nil {
-		t.Fatalf("edit: %v", err)
+		t.Fatalf("rewrite: %v", err)
 	}
 	shown, err = service.ProjectPlan("core")
 	if err != nil {
@@ -77,9 +74,9 @@ func TestProjectInfoReportsThePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	if project.HasPlan {
-		t.Fatal("HasPlan true before init")
+		t.Fatal("HasPlan true before write")
 	}
-	if _, err := service.InitProjectPlan("core", false); err != nil {
+	if _, err := service.WriteProjectPlan("core", "# core Plan\n\nShip it.\n", false); err != nil {
 		t.Fatal(err)
 	}
 	project, err = service.Project("core")
@@ -92,11 +89,11 @@ func TestProjectInfoReportsThePlan(t *testing.T) {
 	if project.Tickets != 0 {
 		t.Fatalf("plan.md counted as a ticket: %d", project.Tickets)
 	}
-	// Dry-run init writes nothing.
+	// Dry-run write creates nothing.
 	if _, err := service.CreateProject("other", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.InitProjectPlan("other", true); err != nil {
+	if _, err := service.WriteProjectPlan("other", "# Other\n", true); err != nil {
 		t.Fatal(err)
 	}
 	other, err := service.Project("other")
@@ -104,6 +101,6 @@ func TestProjectInfoReportsThePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	if other.HasPlan {
-		t.Fatal("dry-run init created plan.md")
+		t.Fatal("dry-run write created plan.md")
 	}
 }

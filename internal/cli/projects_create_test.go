@@ -166,7 +166,7 @@ func TestProjectsCreateWizardDryRunWritesNothing(t *testing.T) {
 	if !strings.Contains(stdout, "projects.create: valid") {
 		t.Fatalf("dry-run stdout = %q", stdout)
 	}
-	if !strings.Contains(stdout, "projects.plan.edit: valid") {
+	if !strings.Contains(stdout, "projects.plan: valid") {
 		t.Fatalf("dry-run did not preview the plan write: %q", stdout)
 	}
 	after := homeFiles(t, home)

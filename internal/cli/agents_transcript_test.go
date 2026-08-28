@@ -72,7 +72,7 @@ func TestAgentTranscriptUsesExplicitProviderSessionAndWorkspace(t *testing.T) {
 		t.Fatalf("agents list = %+v", listed)
 	}
 
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID, "--output", "json")
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "get", agentID, "--workspace", workspace.ID, "--output", "json")
 	if strings.Contains(shown, transcriptPath) {
 		t.Fatalf("transcript JSON exposes its source path: %s", shown)
 	}
@@ -333,13 +333,13 @@ func TestAgentsDiscoverAdoptsProviderSessionsAndShowsLivenessChecks(t *testing.T
 	if codexAgent.Provider != "codex" {
 		codexAgent = stored[1]
 	}
-	shown := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--workspace", workspace.ID)
+	shown := executeWithOptions(t, options, nil, "agents", "get", codexAgent.ID, "--workspace", workspace.ID)
 	for _, want := range []string{"Provider", "codex", "Provider session", "codex-one", "workspace pane", "fail", "current command", "fail (advisory)", "Can read transcript", "yes"} {
 		if !strings.Contains(shown, want) {
 			t.Fatalf("agents show text = %q, want %q", shown, want)
 		}
 	}
-	showJSON := executeWithOptions(t, options, nil, "agents", "show", codexAgent.ID, "--workspace", workspace.ID, "--output", "json")
+	showJSON := executeWithOptions(t, options, nil, "agents", "get", codexAgent.ID, "--workspace", workspace.ID, "--output", "json")
 	if strings.Contains(showJSON, home) {
 		t.Fatalf("agents show JSON exposes a provider path: %s", showJSON)
 	}
@@ -459,7 +459,7 @@ func TestAgentTranscriptShowLinksTheOnlyNewProviderSession(t *testing.T) {
 	writeTestLines(t, filepath.Join(home, ".codex", "sessions", "rollout-late-session.jsonl"), `{"type":"session_meta","payload":{"id":"late-session","cwd":`+quoteJSON(t, repository)+`}}
 {"type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"Late question"}]}}
 `)
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", agentID, "--workspace", workspace.ID, "--output", "json")
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "get", agentID, "--workspace", workspace.ID, "--output", "json")
 	if !strings.Contains(shown, "Late question") {
 		t.Fatalf("transcript show after the lazy link = %s", shown)
 	}

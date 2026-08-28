@@ -161,7 +161,7 @@ func pickOpenAgent(command *cobra.Command, options Options, agents *agentservice
 
 // realAgentPick selects one picker line with fzf when it is installed, or
 // with a numbered list on the terminal. The fzf preview writes the same
-// markdown as `twt agents transcript show`.
+// markdown as `twt agents transcript get`.
 func realAgentPick(workspaceID string) func(*cobra.Command, []string) (int, error) {
 	return func(command *cobra.Command, lines []string) (int, error) {
 		return pickLine(command, lines, pickOptions{

@@ -210,7 +210,7 @@ func TestTicketsStartHelpExplainsThePicker(t *testing.T) {
 	}
 	for _, want := range []string{
 		"interactive Ticket picker",
-		"twt tickets show",
+		"twt tickets get",
 		"twt tickets start",
 		"keeps the current Workspace active",
 		"twt next TICKET",

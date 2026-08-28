@@ -56,8 +56,6 @@ func newProjectsPlanCommand(options Options) *cobra.Command {
 	setArguments(plan, optionalArgument("project", "the current Project when absent"), stdinTokenArgument(false))
 	plan.ValidArgsFunction = ticketProjectNameCompletion(options)
 	plan.AddCommand(newProjectsPlanShowCommand(options))
-	plan.AddCommand(newProjectsPlanEditCommand(options))
-	plan.AddCommand(newProjectsPlanInitCommand(options))
 	plan.AddCommand(newProjectsPlanPathCommand(options))
 	return plan
 }
@@ -79,9 +77,10 @@ func currentPlanProject(command *cobra.Command, options Options) (string, error)
 
 func newProjectsPlanShowCommand(options Options) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "show PROJECT",
-		Short: "Show the plan document of a Project",
-		Args:  exactArgs("PROJECT"),
+		Use:     "get PROJECT",
+		Aliases: []string{"show"},
+		Short:   "Get the plan document of a Project",
+		Args:    exactArgs("PROJECT"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
@@ -101,24 +100,6 @@ func newProjectsPlanShowCommand(options Options) *cobra.Command {
 	setArguments(command, requiredArgument("project"))
 	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	addFieldsFlag(command, projectPlanOutput{})
-	return command
-}
-
-func newProjectsPlanEditCommand(options Options) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "edit PROJECT [-]",
-		Short: "Replace the plan document of a Project",
-		Args:  optionalStdinAfter("PROJECT"),
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			return runProjectPlanEdit(command, options, service, args[0], len(args) == 2)
-		},
-	}
-	setArguments(command, requiredArgument("project"), stdinTokenArgument(false))
-	command.ValidArgsFunction = ticketProjectNameCompletion(options)
 	return command
 }
 
@@ -198,10 +179,10 @@ func readPlanDraftInEditor(command *cobra.Command, options Options, seed, emptyH
 	return string(data), nil
 }
 
-// editProjectPlan replaces the plan document. Both the projects plan edit
-// command and apply use it.
+// editProjectPlan replaces the plan document. Both twt projects plan and
+// apply use it.
 func editProjectPlan(command *cobra.Command, service ticketservice.Store, name, content string) error {
-	return runMutation(command, "projects.plan.edit",
+	return runMutation(command, "projects.plan",
 		func() (string, string, error) {
 			result, err := service.WriteProjectPlan(name, content, true)
 			return result.Project, result.Path, err
@@ -214,36 +195,6 @@ func editProjectPlan(command *cobra.Command, service ticketservice.Store, name, 
 			_, err := fmt.Fprintf(out, "Wrote the plan of Project %q\n", id)
 			return err
 		})
-}
-
-func newProjectsPlanInitCommand(options Options) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "init PROJECT",
-		Short: "Create the plan document scaffold of a Project",
-		Args:  exactArgs("PROJECT"),
-		RunE: func(command *cobra.Command, args []string) error {
-			service, err := options.ticketService()
-			if err != nil {
-				return err
-			}
-			return runMutation(command, "projects.plan.init",
-				func() (string, string, error) {
-					result, err := service.InitProjectPlan(args[0], true)
-					return result.Project, result.Path, err
-				},
-				func() (string, string, error) {
-					result, err := service.InitProjectPlan(args[0], false)
-					return result.Project, result.Path, err
-				},
-				func(out io.Writer, id, _ string) error {
-					_, err := fmt.Fprintf(out, "Created plan.md for Project %q\n", id)
-					return err
-				})
-		},
-	}
-	setArguments(command, requiredArgument("project"))
-	command.ValidArgsFunction = ticketProjectNameCompletion(options)
-	return command
 }
 
 func newProjectsPlanPathCommand(options Options) *cobra.Command {

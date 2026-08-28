@@ -10,7 +10,7 @@ import (
 // Project hub index, and the ticket create template. Init and CreateProject write
 // each of them only when the target file is missing.
 //
-//go:embed scaffold/root-index.md scaffold/project-index.md scaffold/ticket.md scaffold/project-plan.md
+//go:embed scaffold/root-index.md scaffold/project-index.md scaffold/ticket.md
 var scaffoldFS embed.FS
 
 func scaffoldAsset(name string) string {
@@ -42,12 +42,4 @@ func projectIndexContent(name, created string) []byte {
 // ticketTemplateContent returns the create template note.
 func ticketTemplateContent() []byte {
 	return []byte(scaffoldAsset("ticket.md"))
-}
-
-// projectPlanContent renders the plan.md scaffold of one Project.
-func projectPlanContent(name, created string) []byte {
-	content := scaffoldAsset("project-plan.md")
-	content = strings.ReplaceAll(content, "{{TITLE}}", name)
-	content = strings.ReplaceAll(content, "{{CREATED}}", created)
-	return []byte(content)
 }

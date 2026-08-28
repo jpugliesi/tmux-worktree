@@ -157,7 +157,7 @@ func writePrepareLog(t *testing.T, stateDir, environmentID string) string {
 
 func TestStorageShowReplacesStorageStatus(t *testing.T) {
 	options := maintenanceOptions(t)
-	if _, _, err := runCLI(t, options, "storage", "show"); err != nil {
+	if _, _, err := runCLI(t, options, "storage", "get"); err != nil {
 		t.Fatalf("storage show: %v", err)
 	}
 	_, _, err := runCLI(t, options, "storage", "status")
@@ -174,7 +174,7 @@ func TestStorageShowSeparatesActiveAndArchivedWorkspaces(t *testing.T) {
 	saveWorkspaceRecord(t, options, "active-id", "active-workspace", domain.WorkspaceActive, 4096)
 	saveWorkspaceRecord(t, options, "archived-id", "archived-workspace", domain.WorkspaceArchived, 2048)
 
-	text, _, err := runCLI(t, options, "storage", "show")
+	text, _, err := runCLI(t, options, "storage", "get")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestStorageShowSeparatesActiveAndArchivedWorkspaces(t *testing.T) {
 		}
 	}
 
-	encoded, _, err := runCLI(t, options, "storage", "show", "--output", "json")
+	encoded, _, err := runCLI(t, options, "storage", "get", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestEnvironmentsShowAcceptsAnIDPrefix(t *testing.T) {
 	writeTemplateFile(t, options.ConfigDir, template)
 	environment := saveEnvironmentRecord(t, options, "showable00000000000000000000000ab", domain.EnvironmentReady, template, 1024, nil)
 
-	text, _, err := runCLI(t, options, "environments", "show", environment.ID[:8])
+	text, _, err := runCLI(t, options, "environments", "get", environment.ID[:8])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestEnvironmentsShowAcceptsAnIDPrefix(t *testing.T) {
 		}
 	}
 
-	encoded, _, err := runCLI(t, options, "environments", "show", environment.ID, "--output", "json")
+	encoded, _, err := runCLI(t, options, "environments", "get", environment.ID, "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestEnvironmentsShowAcceptsAnIDPrefix(t *testing.T) {
 		t.Fatalf("environment JSON = %s", encoded)
 	}
 
-	_, _, err = runCLI(t, options, "environments", "show", "nothing")
+	_, _, err = runCLI(t, options, "environments", "get", "nothing")
 	if err == nil {
 		t.Fatal("environments show with an unknown ID did not fail")
 	}

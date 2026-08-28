@@ -296,7 +296,7 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := cli.New(cli.Options{ConfigDir: filepath.Join(root, "config"), StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), Stdout: &stdout, Stderr: &stderr})
-	command.SetArgs(forceTextOutput([]string{"templates", "show", "missing", "--output", "json"}))
+	command.SetArgs(forceTextOutput([]string{"templates", "get", "missing", "--output", "json"}))
 	commandErr := command.Execute()
 	if commandErr == nil {
 		t.Fatal("missing template did not return an error")
@@ -319,7 +319,7 @@ func TestJSONErrorsAndListLimitsAreMachineReadable(t *testing.T) {
 func TestErrorCodesMapToExitCodes(t *testing.T) {
 	root := t.TempDir()
 
-	_, err := execute(t, root, "templates", "show", "nope", "--output", "json")
+	_, err := execute(t, root, "templates", "get", "nope", "--output", "json")
 	if err == nil {
 		t.Fatal("missing template did not return an error")
 	}

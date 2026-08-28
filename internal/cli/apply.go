@@ -416,10 +416,10 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.force", Type: "boolean", Required: true, Condition: "acknowledges that the Workspace and its agent keep running"},
 		}}, applyTicketsAbandon},
 		{applyOperationSchema{Operation: "tickets.repair", Payload: "", Fields: []requestFieldSchema{}}, applyTicketsRepair},
-		{applyOperationSchema{Operation: "projects.plan.edit", Payload: "project", Fields: []requestFieldSchema{
+		{applyOperationSchema{Operation: "projects.plan", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.plan", Type: "string", Required: true, Condition: "replaces the whole plan.md; creates it when missing"},
-		}}, applyProjectsPlanEdit},
+		}}, applyProjectsPlan},
 		{applyOperationSchema{Operation: "projects.create", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.template", Type: "string", Required: false},
@@ -959,13 +959,13 @@ type projectPlanApplyRequest struct {
 	Plan string `json:"plan"`
 }
 
-func applyProjectsPlanEdit(command *cobra.Command, options Options, request applyRequest) error {
+func applyProjectsPlan(command *cobra.Command, options Options, request applyRequest) error {
 	var payload projectPlanApplyRequest
-	if err := decodeApplyPayload("projects.plan.edit", "project", request.Project, &payload); err != nil {
+	if err := decodeApplyPayload("projects.plan", "project", request.Project, &payload); err != nil {
 		return err
 	}
 	if payload.Name == "" || payload.Plan == "" {
-		return fmt.Errorf("project.name and project.plan are required for projects.plan.edit")
+		return fmt.Errorf("project.name and project.plan are required for projects.plan")
 	}
 	service, err := options.ticketService()
 	if err != nil {

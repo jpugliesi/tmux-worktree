@@ -107,17 +107,17 @@ func TestTicketsStartClaimsCreatesLinksAndComments(t *testing.T) {
 	if !strings.Contains(content, "twt_workspace_id: "+workspace.ID) {
 		t.Fatalf("ticket has no Workspace stamp:\n%s", content)
 	}
-	showTicket := executeWithOptions(t, options, nil, "tickets", "show", "fix-auth-tokens", "--output", "json")
+	showTicket := executeWithOptions(t, options, nil, "tickets", "get", "fix-auth-tokens", "--output", "json")
 	if !strings.Contains(showTicket, `"workspaceId":"`+workspace.ID+`"`) {
 		t.Fatalf("tickets show JSON has no workspaceId: %s", showTicket)
 	}
 
 	// workspaces show reports the link in text and JSON.
-	show := executeWithOptions(t, options, nil, "workspaces", "show", "fix-auth-tokens")
+	show := executeWithOptions(t, options, nil, "workspaces", "get", "fix-auth-tokens")
 	if !strings.Contains(show, "Ticket") || !strings.Contains(show, "fix-auth-tokens") {
 		t.Fatalf("workspaces show has no Ticket line: %q", show)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "workspaces", "show", "fix-auth-tokens", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "workspaces", "get", "fix-auth-tokens", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, `"tickets":["fix-auth-tokens"]`) {
 		t.Fatalf("workspaces show JSON has no tickets field: %q error=%v", showJSON, err)
 	}
@@ -191,7 +191,7 @@ func TestTicketsStartWithAgentDetachedWritesOneJSONResult(t *testing.T) {
 		t.Fatalf("generated declaration = %+v", declared)
 	}
 	prompt := declared.Start[len(declared.Start)-1]
-	if !strings.HasPrefix(prompt, "Read CONTEXT.md first.\n\n") || !strings.Contains(prompt, "twt tickets show fix-auth-tokens --output json") {
+	if !strings.HasPrefix(prompt, "Read CONTEXT.md first.\n\n") || !strings.Contains(prompt, "twt tickets get fix-auth-tokens --output json") {
 		t.Fatalf("generated prompt = %q", prompt)
 	}
 	if strings.Contains(strings.Join(declared.Resume, " "), "fix-auth-tokens") {
@@ -311,7 +311,7 @@ func TestProjectsShowReportsTheCoordinatorBoard(t *testing.T) {
 	executeWithOptions(t, options, nil, "tickets", "create", "Started work", "--project", "core", "--status", "ready-for-agent")
 	executeWithOptions(t, options, nil, "tickets", "start", "started-work", "--as", "tester")
 
-	output := executeWithOptions(t, options, nil, "projects", "show", "core", "--output", "json")
+	output := executeWithOptions(t, options, nil, "projects", "get", "core", "--output", "json")
 	if !strings.Contains(output, `"slug":"ready-work"`) {
 		t.Fatalf("ready Ticket missing from Project board: %s", output)
 	}

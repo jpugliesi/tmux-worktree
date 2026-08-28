@@ -62,7 +62,7 @@ func TestProjectsShowRendersTheBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	board, _, err := executeCollectingInput(t, options, nil, "projects", "show", "core")
+	board, _, err := executeCollectingInput(t, options, nil, "projects", "get", "core")
 	if err != nil {
 		t.Fatalf("projects show: %v\n%s", err, board)
 	}
@@ -88,7 +88,7 @@ func TestProjectsShowRendersTheBoard(t *testing.T) {
 	}
 
 	boardJSON, _, err := executeCollectingInput(t, options, nil,
-		"projects", "show", "core", "--no-fetch", "--output", "json")
+		"projects", "get", "core", "--no-fetch", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}

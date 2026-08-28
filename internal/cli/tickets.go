@@ -409,9 +409,10 @@ func ticketDisplayState(ticket domain.Ticket) string {
 
 func newTicketsShowCommand(options Options) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "show TICKET",
-		Short: "Show a Ticket and its body",
-		Args:  exactArgs("TICKET"),
+		Use:     "get TICKET",
+		Aliases: []string{"show"},
+		Short:   "Get a Ticket and its body",
+		Args:    exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {

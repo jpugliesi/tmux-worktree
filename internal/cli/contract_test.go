@@ -154,7 +154,7 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt templates edit":         {"name"},
 		"twt templates repos remove": {"template", "repo"},
 		"twt tickets create":         {"description"},
-		"twt tickets show":           {"ticket"},
+		"twt tickets get":           {"ticket"},
 		"twt tickets set":            {"ticket"},
 		"twt tickets claim":          {"ticket"},
 		"twt tickets unclaim":        {"ticket"},
@@ -166,9 +166,8 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt agents send":            {"agent_id", "-"},
 		"twt apply":                  {"-"},
 		"twt projects plan":          {"project", "-"},
-		"twt projects plan edit":     {"project", "-"},
 		"twt projects create":        {"name"},
-		"twt projects show":          {"name"},
+		"twt projects get":          {"name"},
 	}
 	for path, names := range want {
 		if strings.Join(arguments[path], ",") != strings.Join(names, ",") {
@@ -193,7 +192,7 @@ func TestWorkspaceReadOutputsUseEnvelopesAndTotals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	show := executeWithOptions(t, options, nil, "workspaces", "show", "alpha", "--output", "json")
+	show := executeWithOptions(t, options, nil, "workspaces", "get", "alpha", "--output", "json")
 	var showResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Workspace     struct {
@@ -243,7 +242,7 @@ func TestCurrentSentinelWorksForWorkspaceArguments(t *testing.T) {
 	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
 	t.Setenv("TMUX_PANE", "")
 
-	show := executeWithOptions(t, options, nil, "workspaces", "show", "current", "--output", "json")
+	show := executeWithOptions(t, options, nil, "workspaces", "get", "current", "--output", "json")
 	if !strings.Contains(show, `"id":"workspace-current-id"`) {
 		t.Fatalf("workspaces show current = %s", show)
 	}
@@ -255,7 +254,7 @@ func TestCurrentSentinelWorksForWorkspaceArguments(t *testing.T) {
 	if !strings.Contains(retry, `"status":"valid"`) {
 		t.Fatalf("workspaces setup retry current --dry-run = %s", retry)
 	}
-	if _, _, err := executeCollectingOutput(t, options, "workspaces", "show", "no-such-workspace"); err == nil || clierr.CodeOf(err) != clierr.NotFound {
+	if _, _, err := executeCollectingOutput(t, options, "workspaces", "get", "no-such-workspace"); err == nil || clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("workspaces show for an unknown Workspace = %v", err)
 	}
 }
@@ -407,9 +406,9 @@ func TestCompletionFunctionsListStoredNames(t *testing.T) {
 	}
 	command := cli.New(options)
 
-	templateShow := findCommand(command, "templates", "show")
+	templateShow := findCommand(command, "templates", "get")
 	if templateShow == nil || templateShow.ValidArgsFunction == nil {
-		t.Fatal("twt templates show has no argument completion")
+		t.Fatal("twt templates get has no argument completion")
 	}
 	names, _ := templateShow.ValidArgsFunction(templateShow, nil, "")
 	if strings.Join(names, ",") != "alpha,zebra" {
@@ -424,7 +423,7 @@ func TestCompletionFunctionsListStoredNames(t *testing.T) {
 		t.Fatalf("template completion after the first argument = %v", names)
 	}
 
-	workspacesShow := findCommand(command, "workspaces", "show")
+	workspacesShow := findCommand(command, "workspaces", "get")
 	names, _ = workspacesShow.ValidArgsFunction(workspacesShow, nil, "")
 	if strings.Join(names, ",") != "current,fix-auth" {
 		t.Fatalf("Workspace completion = %v", names)
@@ -480,7 +479,7 @@ func TestCompletionFunctionsListStoredNames(t *testing.T) {
 
 	// A store read failure returns no candidate.
 	broken := cli.New(cli.Options{ConfigDir: filepath.Join(root, "missing"), StateDir: filepath.Join(root, "missing"), DataDir: filepath.Join(root, "missing")})
-	brokenShow := findCommand(broken, "templates", "show")
+	brokenShow := findCommand(broken, "templates", "get")
 	if names, _ = brokenShow.ValidArgsFunction(brokenShow, nil, ""); len(names) != 0 {
 		t.Fatalf("completion without a config directory = %v", names)
 	}

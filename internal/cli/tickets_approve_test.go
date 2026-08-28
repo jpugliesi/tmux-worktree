@@ -38,7 +38,7 @@ func TestTicketsApproveGatesAndAnswers(t *testing.T) {
 		!strings.Contains(approveJSON, `"relay"`) {
 		t.Fatalf("approve JSON = %s", approveJSON)
 	}
-	showJSON := run("", "tickets", "show", "fix-auth", "--output", "json")
+	showJSON := run("", "tickets", "get", "fix-auth", "--output", "json")
 	for _, want := range []string{
 		`"planApprovedBy":"john"`, `"status":"ready-for-agent"`, "Plan approved.", "Ship it.",
 	} {
@@ -49,7 +49,7 @@ func TestTicketsApproveGatesAndAnswers(t *testing.T) {
 
 	// A plan rewrite clears the approval; the apply op re-approves.
 	run("1. Use SAML instead.", "tickets", "plan", "fix-auth", "-", "--as", "twt-local-01234567")
-	showJSON = run("", "tickets", "show", "fix-auth", "--output", "json")
+	showJSON = run("", "tickets", "get", "fix-auth", "--output", "json")
 	if strings.Contains(showJSON, "planApprovedBy") {
 		t.Fatalf("plan rewrite kept the approval:\n%s", showJSON)
 	}
@@ -58,7 +58,7 @@ func TestTicketsApproveGatesAndAnswers(t *testing.T) {
 	if !strings.Contains(applyJSON, `"status":"applied"`) {
 		t.Fatalf("apply approve = %s", applyJSON)
 	}
-	showJSON = run("", "tickets", "show", "fix-auth", "--output", "json")
+	showJSON = run("", "tickets", "get", "fix-auth", "--output", "json")
 	if !strings.Contains(showJSON, `"planApprovedBy":"john"`) {
 		t.Fatalf("apply approve did not stamp:\n%s", showJSON)
 	}

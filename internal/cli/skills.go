@@ -80,9 +80,10 @@ func newSkillsInstallCommand() *cobra.Command {
 
 func newSkillsShowCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show",
-		Short: "Show the twt agent skill of this build",
-		Args:  noArgs,
+		Use:     "get",
+		Aliases: []string{"show"},
+		Short:   "Get the twt agent skill of this build",
+		Args:    noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			content := skillasset.Stamped(version.Version)
 			if WantsJSON(command) {

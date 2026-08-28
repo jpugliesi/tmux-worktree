@@ -224,7 +224,7 @@ func ticketStartPreviewCommand() string {
 	if err != nil {
 		executable = os.Args[0]
 	}
-	return fmt.Sprintf("%s tickets show --output text %s", shellQuote(executable), "'{1}'")
+	return fmt.Sprintf("%s tickets get --output text %s", shellQuote(executable), "'{1}'")
 }
 
 // refuseJSONQuickCreate refuses --output json before the quick-create flow

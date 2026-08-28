@@ -1112,7 +1112,7 @@ func TestContextStorageAndDoctorProvideStableJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	storageOutput := executeWithOptions(t, options, nil, "storage", "show", "--output", "json")
+	storageOutput := executeWithOptions(t, options, nil, "storage", "get", "--output", "json")
 	var storageResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Storage       struct {

@@ -86,7 +86,7 @@ func runProjectsCreate(command *cobra.Command, options Options, service ticketse
 // reports valid without requiring the Project to exist on disk.
 func writeWizardProjectPlan(command *cobra.Command, service ticketservice.Store, name, plan string) error {
 	if isDryRun(command) {
-		return writeMutation(command, "projects.plan.edit", statusValid, name, name)
+		return writeMutation(command, "projects.plan", statusValid, name, name)
 	}
 	return editProjectPlan(command, service, name, plan)
 }

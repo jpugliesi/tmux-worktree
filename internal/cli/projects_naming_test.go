@@ -19,7 +19,7 @@ func TestProjectsCommandOwnsDurableTicketProjects(t *testing.T) {
 	}
 
 	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth", "--project", "core")
-	shown := executeWithOptions(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	shown := executeWithOptions(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	var result struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Ticket        struct {
@@ -33,7 +33,7 @@ func TestProjectsCommandOwnsDurableTicketProjects(t *testing.T) {
 		t.Fatalf("Ticket Project = %#v", result)
 	}
 
-	project := executeWithOptions(t, options, nil, "projects", "show", "core", "--output", "json")
+	project := executeWithOptions(t, options, nil, "projects", "get", "core", "--output", "json")
 	var projectResult struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Project       struct {

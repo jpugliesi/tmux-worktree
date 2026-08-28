@@ -203,7 +203,7 @@ func TestAgentsListShowsDiscoveredSessionsAndUsesExplicitAdoption(t *testing.T) 
 	}
 
 	// An ambiguous session ID prefix reports the candidates.
-	_, _, err = executeRaw(t, options, "agents", "transcript", "show", "codex-", "--workspace", workspace.ID)
+	_, _, err = executeRaw(t, options, "agents", "transcript", "get", "codex-", "--workspace", workspace.ID)
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("ambiguous discovered prefix error = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestAgentsListShowsDiscoveredSessionsAndUsesExplicitAdoption(t *testing.T) 
 	}
 
 	// Transcript show is read-only, also for one unique provider session.
-	shown := executeWithOptions(t, options, nil, "agents", "transcript", "show", "codex-o", "--workspace", workspace.ID, "--output", "json")
+	shown := executeWithOptions(t, options, nil, "agents", "transcript", "get", "codex-o", "--workspace", workspace.ID, "--output", "json")
 	if !strings.Contains(shown, "Codex question") {
 		t.Fatalf("transcript show of a discovered session = %s", shown)
 	}

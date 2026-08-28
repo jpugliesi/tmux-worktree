@@ -112,9 +112,10 @@ func newEnvironmentsListCommand(service environmentReportService) *cobra.Command
 
 func newEnvironmentsShowCommand(service environmentReportService) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "show ENVIRONMENT_ID",
-		Short: "Show a Prepared Environment",
-		Args:  exactArgs("ENVIRONMENT_ID"),
+		Use:     "get ENVIRONMENT_ID",
+		Aliases: []string{"show"},
+		Short:   "Get a Prepared Environment",
+		Args:    exactArgs("ENVIRONMENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
 			measureSize, err := environmentOutputMeasuresSize(command, true)
 			if err != nil {

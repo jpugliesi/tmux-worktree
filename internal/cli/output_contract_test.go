@@ -135,7 +135,7 @@ func TestNDJSONListsOneObjectPerLine(t *testing.T) {
 	}
 
 	// Commands that are not list commands refuse ndjson.
-	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "ndjson")
+	_, _, err = executeRaw(t, options, "workspaces", "get", "workspace-0", "--output", "ndjson")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "ndjson") {
 		t.Fatalf("workspaces show --output ndjson = %v", err)
 	}
@@ -145,7 +145,7 @@ func TestFieldsMasksReadOutputs(t *testing.T) {
 	options := outputTestOptions(t)
 	seedOutputWorkspaces(t, options, 2)
 
-	show, _, err := executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "json", "--fields", "id,name")
+	show, _, err := executeRaw(t, options, "workspaces", "get", "workspace-0", "--output", "json", "--fields", "id,name")
 	if err != nil {
 		t.Fatalf("workspaces show --fields: %v", err)
 	}
@@ -186,13 +186,13 @@ func TestFieldsMasksReadOutputs(t *testing.T) {
 	}
 
 	// An unknown field name reports the valid names.
-	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "json", "--fields", "bogus")
+	_, _, err = executeRaw(t, options, "workspaces", "get", "workspace-0", "--output", "json", "--fields", "bogus")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "valid fields") || !strings.Contains(err.Error(), "name") {
 		t.Fatalf("workspaces show --fields bogus = %v", err)
 	}
 
 	// Text output does not support --fields.
-	_, _, err = executeRaw(t, options, "workspaces", "show", "workspace-0", "--output", "text", "--fields", "id")
+	_, _, err = executeRaw(t, options, "workspaces", "get", "workspace-0", "--output", "text", "--fields", "id")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "use --fields with --output json") {
 		t.Fatalf("workspaces show --output text --fields = %v", err)
 	}

@@ -125,7 +125,7 @@ func TestTicketsCompleteRecordsPullRequestsAndReleasesTheClaim(t *testing.T) {
 	if !strings.Contains(completeJSON, `"operation":"tickets.complete"`) || !strings.Contains(completeJSON, `"status":"applied"`) {
 		t.Fatalf("complete JSON = %s", completeJSON)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestTicketsPlanReplacesThePlanSection(t *testing.T) {
 	if !strings.Contains(planJSON, `"operation":"tickets.plan"`) || !strings.Contains(planJSON, `"status":"applied"`) {
 		t.Fatalf("plan JSON = %s", planJSON)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,20 +225,16 @@ func TestProjectsPlanCommands(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core"); err != nil {
 		t.Fatal(err)
 	}
-	initJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core", "--output", "json")
-	if err != nil {
-		t.Fatalf("plan init: %v\n%s", err, initJSON)
-	}
-	if !strings.Contains(initJSON, `"operation":"projects.plan.init"`) || !strings.Contains(initJSON, `"status":"applied"`) {
-		t.Fatalf("plan init JSON = %s", initJSON)
-	}
 	editJSON, _, err := executeCollectingInput(t, options,
-		strings.NewReader("# core Plan\n\n## Goals\n\nShip it.\n"),
-		"projects", "plan", "edit", "core", "-", "--output", "json")
+		strings.NewReader("# core Plan\n\nShip it.\n"),
+		"projects", "plan", "core", "-", "--output", "json")
 	if err != nil {
-		t.Fatalf("plan edit: %v\n%s", err, editJSON)
+		t.Fatalf("plan write: %v\n%s", err, editJSON)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	if !strings.Contains(editJSON, `"operation":"projects.plan"`) || !strings.Contains(editJSON, `"status":"applied"`) {
+		t.Fatalf("plan write JSON = %s", editJSON)
+	}
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "get", "core", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +245,7 @@ func TestProjectsPlanCommands(t *testing.T) {
 	if err != nil || !strings.Contains(pathOut, "core/plan.md") {
 		t.Fatalf("plan path = %q err %v", pathOut, err)
 	}
-	projectJSON, _, err := executeCollectingInput(t, options, nil, "projects", "show", "core", "--output", "json")
+	projectJSON, _, err := executeCollectingInput(t, options, nil, "projects", "get", "core", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,10 +253,10 @@ func TestProjectsPlanCommands(t *testing.T) {
 		t.Fatalf("projects show lacks plan fields:\n%s", projectJSON)
 	}
 	applyJSON, _, err := executeCollectingInput(t, options,
-		strings.NewReader(`{"operation":"projects.plan.edit","project":{"name":"core","plan":"# core Plan\n\nvia apply\n"}}`),
+		strings.NewReader(`{"operation":"projects.plan","project":{"name":"core","plan":"# core Plan\n\nvia apply\n"}}`),
 		"apply", "-", "--output", "json")
 	if err != nil || !strings.Contains(applyJSON, `"status":"applied"`) {
-		t.Fatalf("apply plan edit = %s err %v", applyJSON, err)
+		t.Fatalf("apply plan = %s err %v", applyJSON, err)
 	}
 }
 
@@ -300,7 +296,7 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
 		t.Fatalf("blank plan editor stdout = %q", stdout)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "get", "core", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "From a blank editor.") {
 		t.Fatalf("plan show after blank editor = %s err %v", showJSON, err)
 	}
@@ -309,9 +305,9 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 	options.OpenEditor = nil
-	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "core")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("edit without an editor = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("plan without an editor = %v (code %q)", err, clierr.CodeOf(err))
 	}
 
 	// The editor gets a draft seeded with the current plan, and the saved
@@ -326,14 +322,14 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 		}
 		return os.WriteFile(path, []byte("# core Plan\n\nEdited in the editor.\n"), 0o644)
 	}
-	stdout, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	stdout, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "core")
 	if err != nil {
-		t.Fatalf("editor edit: %v\n%s", err, stdout)
+		t.Fatalf("editor write: %v\n%s", err, stdout)
 	}
 	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
 		t.Fatalf("editor edit stdout = %q", stdout)
 	}
-	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "get", "core", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Edited in the editor.") {
 		t.Fatalf("plan show after editor edit = %s err %v", showJSON, err)
 	}
@@ -342,11 +338,11 @@ func TestProjectsPlanEditOpensTheEditorInATerminal(t *testing.T) {
 	options.OpenEditor = func(path string) error {
 		return os.WriteFile(path, []byte(" \n"), 0o644)
 	}
-	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "edit", "core")
+	_, _, err = executeCollectingInput(t, options, strings.NewReader(""), "projects", "plan", "core")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("empty editor save = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	showJSON, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "get", "core", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Edited in the editor.") {
 		t.Fatalf("plan content after the empty save = %s err %v", showJSON, err)
 	}
@@ -416,7 +412,7 @@ func TestTicketsPlanOpensTheEditorInATerminal(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, strings.NewReader(""), "tickets", "plan", "fix-auth"); err != nil {
 		t.Fatal(err)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Do it better.") || strings.Contains(showJSON, "Do the thing.") {
 		t.Fatalf("show after editor plan = %s err %v", showJSON, err)
 	}
@@ -430,7 +426,9 @@ func TestProjectsPlanOpensTheEditorForTheCurrentProject(t *testing.T) {
 	if _, _, err := executeCollectingInput(t, options, nil, "projects", "create", "core"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "init", "core"); err != nil {
+	if _, _, err := executeCollectingInput(t, options,
+		strings.NewReader("# core Plan\n\nSeed.\n"),
+		"projects", "plan", "core", "-"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -460,7 +458,7 @@ func TestProjectsPlanOpensTheEditorForTheCurrentProject(t *testing.T) {
 	if !strings.Contains(stdout, `Wrote the plan of Project "core"`) {
 		t.Fatalf("projects plan stdout = %q", stdout)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "show", "core", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "projects", "plan", "get", "core", "--output", "json")
 	if err != nil || !strings.Contains(showJSON, "Edited from projects plan.") {
 		t.Fatalf("plan show after projects plan = %s err %v", showJSON, err)
 	}
@@ -471,13 +469,13 @@ func TestProjectsPlanOpensTheEditorForTheCurrentProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("projects plan -: %v\n%s", err, editJSON)
 	}
-	if !strings.Contains(editJSON, `"operation":"projects.plan.edit"`) || !strings.Contains(editJSON, `"status":"applied"`) {
+	if !strings.Contains(editJSON, `"operation":"projects.plan"`) || !strings.Contains(editJSON, `"status":"applied"`) {
 		t.Fatalf("projects plan - JSON = %s", editJSON)
 	}
 
-	_, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "not-a-command")
+	_, _, err = executeCollectingInput(t, options, nil, "projects", "plan", "gett")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("unknown plan subcommand = %v (code %q)", err, clierr.CodeOf(err))
+		t.Fatalf("plan subcommand typo = %v (code %q)", err, clierr.CodeOf(err))
 	}
 }
 
@@ -520,7 +518,7 @@ func TestTicketsAskAndAnswerRoundTrip(t *testing.T) {
 	if !strings.Contains(answerJSON, `"operation":"tickets.answer"`) || !strings.Contains(answerJSON, `"delivered":false`) {
 		t.Fatalf("answer JSON = %s (stderr %s)", answerJSON, answerStderr)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +551,7 @@ func TestTicketsPRAddAndRemove(t *testing.T) {
 	if !strings.Contains(addJSON, `"operation":"tickets.pr.add"`) || !strings.Contains(addJSON, `"status":"applied"`) {
 		t.Fatalf("pr add JSON = %s", addJSON)
 	}
-	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "show", "fix-auth", "--output", "json")
+	showJSON, _, err := executeCollectingInput(t, options, nil, "tickets", "get", "fix-auth", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}

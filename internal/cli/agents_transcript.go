@@ -168,9 +168,10 @@ func linkAgentTranscript(command *cobra.Command, agents *agentservice.Service, w
 func newAgentTranscriptShowCommand(agents *agentservice.Service, workspaces *workspaceservice.Service, stateDir string) *cobra.Command {
 	var workspaceReference string
 	command := &cobra.Command{
-		Use:   "show AGENT_ID",
-		Short: "Read a linked Agent Session transcript",
-		Args:  exactArgs("AGENT_ID"),
+		Use:     "get AGENT_ID",
+		Aliases: []string{"show"},
+		Short:   "Read a linked Agent Session transcript",
+		Args:    exactArgs("AGENT_ID"),
 		RunE: func(command *cobra.Command, args []string) error {
 			workspace, err := resolveWorkspace(workspaces, workspaceReference)
 			if err != nil {
