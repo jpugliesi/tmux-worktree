@@ -454,6 +454,9 @@ twt workspaces open --all-active --no-attach
 also claims an unowned session whose name matches the Workspace, so a
 tmux-resurrect restore after a reboot does not create a second session.
 `--all-active` repairs every active Workspace and attaches no client.
+`twt done` and `twt archive` make the same repair: from inside an unowned
+session whose name matches the saved Workspace session, they adopt the
+session and stop it after cleanup.
 
 The text list shows an aligned table with the Workspace name, Workspace Template,
 status, and age, in that order. The list does not read disk sizes, so it stays

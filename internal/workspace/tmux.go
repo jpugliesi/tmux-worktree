@@ -414,3 +414,33 @@ func (s *Service) stopPreparedSession(sessionID string) error {
 	}
 	return nil
 }
+
+// AdoptUnownedSession claims one live tmux session for the Workspace when
+// the session carries no owner and uses the saved Workspace session name. A
+// tmux restore (for example tmux-resurrect) recreates sessions without the
+// @twt_workspace_id option, and this repairs the mark from the Workspace
+// record. It reports whether sessionID now belongs to the Workspace.
+func (s *Service) AdoptUnownedSession(workspaceID, sessionID string) (bool, error) {
+	workspace, err := s.store.Find(workspaceID)
+	if err != nil {
+		return false, err
+	}
+	name := workspace.TmuxSession
+	if name == "" {
+		name = sessionName(workspace.TemplateName, workspace.Name)
+	}
+	foundID, ownerID, exists, err := s.findSession(workspace.ID, name)
+	if err != nil || !exists || foundID != sessionID {
+		return false, err
+	}
+	if ownerID == workspace.ID {
+		return true, nil
+	}
+	if ownerID != "" {
+		return false, nil
+	}
+	if err := s.claimSession(sessionID, workspace.ID); err != nil {
+		return false, err
+	}
+	return true, nil
+}

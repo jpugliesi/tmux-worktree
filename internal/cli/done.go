@@ -270,5 +270,12 @@ func insideOwnedSession(options Options, service *workspaceservice.Service, work
 		return false
 	}
 	owned, err := service.OwnedSessionID(workspaceID)
-	return err == nil && owned == sessionID
+	if err == nil && owned == sessionID {
+		return true
+	}
+	// A tmux restore clears the session owner option. Adopt the session back
+	// when it is unowned and uses the saved Workspace session name, so done
+	// and archive still stop it.
+	adopted, adoptErr := service.AdoptUnownedSession(workspaceID, sessionID)
+	return adoptErr == nil && adopted
 }

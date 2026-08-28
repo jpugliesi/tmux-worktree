@@ -285,3 +285,36 @@ func TestWorkspaceRemovalRefusesIgnoredSubmoduleChanges(t *testing.T) {
 		})
 	}
 }
+
+// A tmux restore (for example tmux-resurrect) recreates a Workspace session
+// without the owner option. Done adopts the session back through the saved
+// session name, then stops it as usual.
+func TestDoneInsideARestoredUnownedSessionStopsIt(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "restored", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "landing", "--template", "example", "--no-open")
+
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	restored, err := workspaceStore.Find("restored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the restore: the session keeps its name and loses the owner.
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "set-option", "-t", restored.TmuxSession, "@twt_workspace_id", "")
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "="+restored.TmuxSession, "-F", "#{pane_id}")
+	attachControlClient(t, options.TmuxSocket, restored.TmuxSession)
+	t.Setenv("TMUX_PANE", sourcePane)
+
+	output := executeWithOptions(t, options, nil, "done", restored.ID)
+	if !strings.Contains(output, "Finished Workspace \"restored\"") {
+		t.Fatalf("done output = %q", output)
+	}
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "="+restored.TmuxSession).Run(); err == nil {
+		t.Fatal("done kept the restored unowned tmux session")
+	}
+	released, err := workspaceStore.Find(restored.ID)
+	if err != nil || released.Status != domain.WorkspaceArchived {
+		t.Fatalf("done Workspace = %+v, error = %v", released, err)
+	}
+}
