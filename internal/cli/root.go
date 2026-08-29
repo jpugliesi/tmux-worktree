@@ -406,7 +406,9 @@ repository, and a set of resumable coding Agent Sessions.`,
 	skillsCommand.GroupID = "automation"
 	apply := newApplyCommand(options)
 	apply.GroupID = "automation"
-	root.AddCommand(templates, workspaces, projects, create, next, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply)
+	daemon := newDaemonCommand(options)
+	daemon.GroupID = "automation"
+	root.AddCommand(templates, workspaces, projects, create, next, switchCommand, archive, done, agents, tickets, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply, daemon)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

@@ -34,6 +34,18 @@ var commandHelp = map[string]helpContent{
 	"twt agents": {
 		long: "Register and control coding Agent Sessions that belong to a Workspace. Feedback delivery works only for a verified, directly started Agent process.", example: "  twt agents list --workspace current\n  twt agents open\n  twt agents resume AGENT_ID",
 	},
+	"twt daemon": {
+		long: "Manage the background pool refresh daemon. The daemon is a launchd agent that runs 'twt daemon run' on an interval, so ready Prepared Environments stay near the tip of the default branch and warm claims start recent work.", example: "  twt daemon install\n  twt daemon run",
+	},
+	"twt daemon install": {
+		long: "Install or replace the launchd agent that refreshes the Prepared Environment pools. The agent runs 'twt daemon run' every --interval (default 10m) and logs to the twt state directory. The plist bakes the current twt executable path, the resolved twt directories, and PATH, because launchd starts jobs with a minimal environment.", example: "  twt daemon install\n  twt daemon install --interval 15m",
+	},
+	"twt daemon uninstall": {
+		long: "Unload and remove the launchd agent that refreshes the Prepared Environment pools.", example: "  twt daemon uninstall",
+	},
+	"twt daemon run": {
+		long: "Run one pool refresh pass: for every Workspace Template with repositories, refresh each ready Prepared Environment and top the pool up to pool_depth. One failed Workspace Template does not stop the others. The launchd agent runs this command; run it yourself for an immediate refresh.", example: "  twt daemon run\n  twt daemon run --output json",
+	},
 	"twt storage": {
 		long: "Inspect the disk space used by twt Workspaces, worktrees, and shared repository caches.", example: "  twt storage get",
 	},

@@ -216,6 +216,22 @@ about a pool with no ready environment.
 A Workspace later claims the complete Prepared Environment. The normal claim
 does not fetch, clone, add a worktree, or run repository initialization.
 
+Ready Prepared Environments age while they wait in the pool. Install the pool
+refresh daemon to keep them near the tip of the default branch:
+
+```sh
+twt daemon install
+twt daemon install --interval 15m
+twt daemon run
+twt daemon uninstall
+```
+
+`daemon install` writes a launchd agent that runs `twt daemon run` on the
+interval (default 10 minutes). One pass refreshes each ready Prepared
+Environment of every Workspace Template and tops each pool up to
+`pool_depth`. The agent logs to `daemon.log` in the twt state directory.
+The daemon supports only macOS launchd.
+
 Repository initialization runs before a Workspace name exists. It receives
 `TWT_ENVIRONMENT_ID`, `TWT_ENVIRONMENT_ROOT`, `TWT_TEMPLATE_NAME`,
 `TWT_REPOSITORY_NAME`, and `TWT_REPOSITORY_PATH`. Use Workspace initialization
