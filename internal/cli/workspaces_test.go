@@ -933,7 +933,6 @@ func TestWorkspacesRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"blockers"`
 		Plan struct {
-			Bytes   int64 `json:"bytes"`
 			Actions []struct {
 				Kind   string `json:"kind"`
 				Target string `json:"target"`
@@ -946,9 +945,8 @@ func TestWorkspacesRemovePlansThenAppliesCleanRemoval(t *testing.T) {
 	if err := json.Unmarshal([]byte(planJSON), &removal); err != nil {
 		t.Fatalf("decode removal plan JSON: %v\n%s", err, planJSON)
 	}
-	// A plan does not measure the Workspace size; only an applied removal and
-	// the bulk plan report bytes.
-	if removal.SchemaVersion != 2 || removal.Applied || removal.Plan.Bytes != 0 {
+	// Removal never measures the Workspace size: the walk made large plans slow.
+	if removal.SchemaVersion != 2 || removal.Applied {
 		t.Fatalf("removal plan JSON metadata = %+v", removal)
 	}
 	if len(removal.Blockers) != 0 || len(removal.Plan.Blockers) != 0 {
@@ -1295,7 +1293,7 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	}
 
 	plan := executeWithOptions(t, options, nil, "workspaces", "remove", "--all-archived", "--older-than", "14d")
-	for _, want := range []string{"Workspace \"old-clean\": age 20d, size ", "Workspace \"old-dirty\": age 16d, size ", "Blocked:", "uncommitted changes", "Run again with --apply"} {
+	for _, want := range []string{"Workspace \"old-clean\": age 20d", "Workspace \"old-dirty\": age 16d", "Blocked:", "uncommitted changes", "Run again with --apply"} {
 		if !strings.Contains(plan, want) {
 			t.Fatalf("bulk removal plan does not contain %q: %s", want, plan)
 		}
@@ -1332,7 +1330,7 @@ func TestWorkspacesRemoveAllArchivedSelectsByAgeAndSkipsBlocked(t *testing.T) {
 	}
 
 	applied := executeWithOptions(t, options, nil, "workspaces", "remove", "--all-archived", "--older-than", "14d", "--apply")
-	if !strings.Contains(applied, "Removed 1 Workspaces (") || !strings.Contains(applied, "Skipped 1 blocked Workspaces.") {
+	if !strings.Contains(applied, "Removed 1 Workspaces.") || !strings.Contains(applied, "Skipped 1 blocked Workspaces.") {
 		t.Fatalf("bulk removal apply output = %q", applied)
 	}
 	if _, err := os.Stat(roots["old-clean"]); err != nil {

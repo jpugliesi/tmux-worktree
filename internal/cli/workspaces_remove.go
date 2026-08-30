@@ -40,6 +40,12 @@ func newWorkspacesRemoveCommand(service *workspaceservice.Service) *cobra.Comman
 			if apply && isDryRun(command) {
 				return invalidUsage(command, "do not use --dry-run together with --apply; remove one of the two flags")
 			}
+			// Finalize pending releases first: a Workspace whose source tmux
+			// session stopped stays materialized until a reconcile, and its
+			// removal plan is blocked until then.
+			if err := service.Reconcile(); err != nil {
+				return err
+			}
 			if allArchived {
 				if len(args) != 0 {
 					return invalidUsage(command, "do not use --all-archived together with a WORKSPACE argument")
@@ -179,7 +185,6 @@ func removeAllArchived(command *cobra.Command, service *workspaceservice.Service
 		return err
 	}
 	removed, skipped := 0, 0
-	var reclaimed int64
 	if apply {
 		for index := range plans {
 			if len(plans[index].Blockers) > 0 {
@@ -197,7 +202,6 @@ func removeAllArchived(command *cobra.Command, service *workspaceservice.Service
 			}
 			plans[index] = plan
 			removed++
-			reclaimed += plan.Bytes
 		}
 	}
 	if WantsJSON(command) {
@@ -214,7 +218,7 @@ func removeAllArchived(command *cobra.Command, service *workspaceservice.Service
 		if plan.ArchivedAt != nil {
 			planAge = formatAge(now.Sub(*plan.ArchivedAt))
 		}
-		if _, err := fmt.Fprintf(out, "Workspace %q: age %s, size %s\n", plan.WorkspaceName, planAge, formatBytes(plan.Bytes)); err != nil {
+		if _, err := fmt.Fprintf(out, "Workspace %q: age %s\n", plan.WorkspaceName, planAge); err != nil {
 			return err
 		}
 		if err := printRemovalBlockers(out, plan.Blockers, "  "); err != nil {
@@ -222,7 +226,7 @@ func removeAllArchived(command *cobra.Command, service *workspaceservice.Service
 		}
 	}
 	if apply {
-		_, err := fmt.Fprintf(out, "Removed %d Workspaces (%s). Skipped %d blocked Workspaces.\n", removed, formatBytes(reclaimed), skipped)
+		_, err := fmt.Fprintf(out, "Removed %d Workspaces. Skipped %d blocked Workspaces.\n", removed, skipped)
 		return err
 	}
 	_, err = fmt.Fprintln(out, "Run again with --apply to remove the Workspaces that are not blocked.")

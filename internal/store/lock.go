@@ -108,9 +108,17 @@ type MutationLock struct {
 	file *os.File
 }
 
-// AcquireMutationLock gets the global mutation lock without waiting.
+// mutationLockPatience is the time a command waits for the mutation lock
+// before it fails. The background daemon holds the lock in short sections,
+// so a brief wait absorbs a collision instead of failing an interactive
+// command.
+const mutationLockPatience = 15 * time.Second
+
+// AcquireMutationLock gets the global mutation lock. It waits briefly, so a
+// short hold by another process (for example the pool refresh daemon) does
+// not fail the command.
 func AcquireMutationLock(stateDir string) (*MutationLock, error) {
-	return acquireMutationLock(stateDir, false, 0)
+	return acquireMutationLock(stateDir, false, mutationLockPatience)
 }
 
 // AcquireMutationLockBlocking waits for the mutation lock without a limit.

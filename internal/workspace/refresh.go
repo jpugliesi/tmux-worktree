@@ -34,23 +34,22 @@ func (s *Service) RefreshReadyEnvironments(template domain.Template) ([]domain.P
 
 // RefreshPreparedEnvironment fetches each default branch and updates one
 // ready physical worktree before a claim.
+//
+// The refresh holds the mutation lock only for the two status flips, never
+// across the fetch and the initialization: a long hold blocks every
+// interactive command while the daemon refreshes. Between the flips the
+// environment is preparing under the held environment lock, so a claim
+// skips it, and an interrupted refresh becomes an abandoned preparation
+// that the next pool top-up requeues.
 func (s *Service) RefreshPreparedEnvironment(environmentID string) (domain.PreparedEnvironment, error) {
-	mutationLock, err := store.AcquireMutationLock(s.options.StateDir)
-	if err != nil {
-		return domain.PreparedEnvironment{}, err
-	}
-	defer mutationLock.Release()
 	lock, err := store.AcquireEnvironmentLockBlocking(s.options.StateDir, environmentID)
 	if err != nil {
 		return domain.PreparedEnvironment{}, err
 	}
 	defer lock.Release()
-	environment, err := s.environments.Find(environmentID)
+	environment, err := s.markEnvironmentRefreshing(environmentID)
 	if err != nil {
 		return environment, err
-	}
-	if environment.Status != domain.EnvironmentReady {
-		return environment, fmt.Errorf("Prepared Environment %q has status %q; refresh requires %q", environment.ID, environment.Status, domain.EnvironmentReady)
 	}
 	changed := map[string]bool{}
 	for index := range environment.Repositories {
@@ -93,8 +92,33 @@ func (s *Service) RefreshPreparedEnvironment(environmentID string) (domain.Prepa
 		}
 	}
 	now := s.now()
+	environment.Status = domain.EnvironmentReady
 	environment.ReadyAt = &now
 	environment.UpdatedAt = now
+	if err := s.environments.Save(environment); err != nil {
+		return environment, err
+	}
+	return environment, nil
+}
+
+// markEnvironmentRefreshing flips one ready Prepared Environment to
+// preparing under the mutation lock, so no claim reserves it while the
+// refresh changes its worktrees. The caller holds the environment lock.
+func (s *Service) markEnvironmentRefreshing(environmentID string) (domain.PreparedEnvironment, error) {
+	mutationLock, err := store.AcquireMutationLock(s.options.StateDir)
+	if err != nil {
+		return domain.PreparedEnvironment{}, err
+	}
+	defer mutationLock.Release()
+	environment, err := s.environments.Find(environmentID)
+	if err != nil {
+		return environment, err
+	}
+	if environment.Status != domain.EnvironmentReady {
+		return environment, fmt.Errorf("Prepared Environment %q has status %q; refresh requires %q", environment.ID, environment.Status, domain.EnvironmentReady)
+	}
+	environment.Status = domain.EnvironmentPreparing
+	environment.UpdatedAt = s.now()
 	if err := s.environments.Save(environment); err != nil {
 		return environment, err
 	}

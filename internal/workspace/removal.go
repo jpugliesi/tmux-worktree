@@ -21,7 +21,6 @@ type RemovalPlan struct {
 	Worktrees     []string         `json:"worktrees"`
 	TmuxSession   string           `json:"tmuxSession"`
 	StateRecords  int              `json:"stateRecords"`
-	Bytes         int64            `json:"bytes,omitempty"`
 	Actions       []RemovalAction  `json:"actions"`
 	Blockers      []RemovalBlocker `json:"blockers"`
 }
@@ -286,12 +285,6 @@ func (s *Service) Remove(reference, currentPane string, opts RemovalOptions) (Re
 	if len(plan.Blockers) > 0 {
 		return plan, removalRefusal(p.Name, plan.Blockers)
 	}
-	if !p.Adopted && p.Materialized && p.Root != "" {
-		// Measure the Workspace root just before removal. The size feeds the
-		// reclaimed-space summary; a plan without removal does not pay for
-		// the walk. An adopted Workspace reclaims no space.
-		plan.Bytes, _ = store.DirectoryBytes(p.Root)
-	}
 	if p.Status != domain.WorkspaceRemoving {
 		p.Status = domain.WorkspaceRemoving
 		p.UpdatedAt = s.now()
@@ -426,11 +419,6 @@ func (s *Service) BulkRemovalPlans(olderThan time.Duration, opts RemovalOptions)
 		plan, err := s.PlanRemoval(p.ID, "", opts)
 		if err != nil {
 			return nil, err
-		}
-		// The bulk plan shows the size of each selected Workspace. An adopted
-		// Workspace reclaims no space.
-		if !p.Adopted && p.Materialized && p.Root != "" {
-			plan.Bytes, _ = store.DirectoryBytes(p.Root)
 		}
 		plans = append(plans, plan)
 	}
