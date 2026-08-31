@@ -1,229 +1,260 @@
 # twt
 
-**twt** turns a folder of Markdown tickets into an orchestration layer for
-coding agents. You describe a project as a plan, break the plan into a
-dependency graph of tickets, and dispatch autonomous agents to implement
-them — in tmux workspaces on your own machine. The tickets live in a plain
-git repository, so every machine (and every agent, and every bot) that can
-run `git push` is a full read/write client. There is no server.
+twt is a personal Markdown backlog and a local agent runner. You write
+Tickets. You dispatch coding agents into tmux Workspaces on this machine.
+The CLI owns every write. There is no server.
 
-What that gives you:
+A person at a terminal uses text. An agent uses `--output json`. Both use
+the same commands.
 
-- **A backlog you own.** Tickets are Markdown files with YAML frontmatter in
-  a directory you choose (an Obsidian vault works well). Every mutation goes
-  through the CLI, so agents and humans share one safe write path.
-- **Safe concurrency across machines.** A ticket claim is a git push: the
-  push is the compare-and-swap, so two agents on two machines cannot both
-  win the same ticket.
-- **A planning loop with a human gate.** Planning agents write a plan into
-  the ticket and ask for your approval; implementation dispatch refuses a
-  planned ticket you have not approved.
-- **Visibility.** A dependency tree and a project board with live pull
-  request state show exactly what is in progress, in review, blocked, or
-  waiting on you.
-- **tmux workspaces.** Each dispatched agent runs in its own tmux session
-  with prepared git worktrees. Attach at any time and steer.
+## You and the agent
 
-## How it works
+You decide the work. The agent does the work. twt is the ledger.
 
-Six nouns cover the model:
+| You | The agent |
+|---|---|
+| Create a Project and write the plan | Read the Ticket and the Project plan |
+| Split the plan into Tickets | Claim the Ticket |
+| Approve a Ticket plan | Write the Ticket plan and ask you |
+| Answer questions on the board | Implement, attach each pull request, complete |
+| Close a Ticket when every pull request merges | Stop and wait when a decision is missing |
+
+Do not edit Ticket files by hand. Do not ask an agent to do that either.
+Every mutation goes through `twt tickets` or `twt apply`.
+
+## Language
 
 | Noun | Meaning |
 |---|---|
-| **Ticket** | One Markdown file: status, priority, `blocked_by` edges, pull requests, claim. |
-| **Project** | A directory of tickets plus an optional `plan.md` design document. |
-| **Claimant** | Who holds a ticket (`--as NAME`); one worker per ticket, enforced by git push. |
-| **Template** | A reusable YAML spec: repositories, tmux layout, dispatch defaults. |
-| **Workspace** | One change-focused environment: git worktrees + a tmux session. |
-| **Agent Session** | One coding-agent run inside a workspace. |
+| Ticket | One Markdown file. Status, blockers, claim, pull requests. |
+| Project | A directory of Tickets plus an optional `plan.md`. |
+| Claimant | Who holds a Ticket (`--as NAME`). One worker per Ticket. |
+| Workspace Template | Reusable YAML. Repositories, tmux layout, dispatch defaults. |
+| Workspace | One change. Git worktrees plus one tmux session. |
+| Agent Session | One coding-agent run inside a Workspace. |
 
-A ticket moves through a small state machine: `ready` (unclaimed, unblocked)
-→ claimed (`in-progress`) → `in-review` (pull requests attached) → `done`
-(closing a ticket unblocks its dependents). An agent that needs a decision
-parks its ticket on `needs-input` and waits for your answer. A ticket with a
-`## Plan` section also carries an approval gate: it does not dispatch for
-implementation until you run `twt tickets approve`.
+A Ticket is pickable when it is `ready-for-agent`, unclaimed, and every
+blocker is `done` or `wontfix`. A Ticket with a `## Plan` section does not
+dispatch for implementation until you run `twt tickets approve`.
 
-## Quick start
+## Install
 
-Requires Go, git, and tmux.
+You need Go, git, tmux, and one agent CLI (`codex`, `claude`, `cursor`, or
+`grok`).
 
 ```sh
 go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
 ```
 
-1. Define a template for the repository you work on:
+`go install` writes `twt` to GOBIN (`$(go env GOPATH)/bin`, often
+`~/go/bin`). Put that directory on PATH. Do not put a checkout `bin/`
+ahead of it. If you do, `go install` updates a binary your shell never
+runs.
+
+```sh
+which twt
+twt skills install
+twt tickets init
+```
+
+`twt skills install` writes the agent operating contract into Cursor,
+Claude Code, and Codex. Run it again after every `twt` upgrade.
+`twt doctor` warns when an installed skill does not match the binary.
+
+Set the Tickets home in `~/.config/twt/config.yaml`. An Obsidian vault
+folder works.
+
+```yaml
+home: /path/to/your/twt-home
+ticketAgent:
+  provider: codex
+  effort: large
+```
+
+`home` holds `tickets/` and shared Workspace Templates. A tickets-only
+client can set `ticketsHome` instead. `twt config` shows every resolved
+setting.
+
+## Text and JSON
+
+Text is the default. A pipe stays text.
+
+```sh
+twt tickets ls
+twt tickets ls | grep factory
+twt projects get myfeature
+```
+
+An agent, a script, and Neovim pass `--output json` on every command.
+`--output ndjson` streams one object per line on a list command.
+
+```sh
+twt tickets list --ready --output json --limit 20
+twt schema
+```
+
+`--fields` and `--limit` keep a JSON read small. You do not need those
+flags at a terminal.
+
+## First project
+
+1. Create a Workspace Template for the repository the agent will edit.
 
    ```sh
    twt templates create myproject
    twt templates repos add myproject app git@github.com:you/app.git
    ```
 
-2. Create the tickets home and a project:
+2. Create a Project. At a terminal you can omit the name. twt asks for
+   it, opens an editor for the plan, and can start a Workspace.
 
    ```sh
-   # ~/.config/twt/config.yaml
-   # home: /path/to/your/twt-home   (tickets/ and templates/ live inside;
-   #                                 an Obsidian vault folder works)
-   twt tickets init
    twt projects create myfeature --template myproject
    twt projects plan myfeature
    ```
 
-   At a terminal, `twt projects create` with no NAME asks for the name. It
-   then opens an empty editor for the plan, shows a Workspace Template picker
-   when `--template` is absent, and asks whether to start a Workspace.
-
-3. Write the plan, then break it into tickets with dependency edges:
+3. Split the plan into Tickets. Create leaf Tickets first. A blocked Ticket stays
+   `ready-for-agent`. The queue hides it until the blocker closes.
 
    ```sh
-   printf '%s' "$PLAN" | twt projects plan myfeature -
    twt tickets create "Add the API" --project myfeature --status ready-for-agent
    twt tickets create "Add the UI" --project myfeature --status ready-for-agent \
      --blocked-by add-the-api
+   twt tickets tree --project myfeature
    ```
 
-4. Dispatch and watch:
+4. Dispatch. `--plan` starts a planning agent. Plain dispatch starts
+   implementation. Dispatch claims the Ticket, creates a Workspace, and
+   starts the agent in tmux.
 
    ```sh
-   twt tickets dispatch add-the-api        # claims the ticket, starts an agent in tmux
-   twt tickets tree --project myfeature    # the dependency DAG with PR badges
-twt projects get myfeature             # the board
-twt projects close myfeature            # close the Project when work ends
-twt projects remove myfeature --apply   # delete the Project so the name is free
+   twt tickets dispatch add-the-api --plan
+   twt tickets approve add-the-api
+   twt tickets dispatch add-the-api
    ```
 
-## The workflow
+5. Watch the board. Everything that needs you is under WAITING ON YOU.
 
-**Your loop.** You define projects, iterate the plan, and make decisions.
-Everything that needs you appears on the board under WAITING ON YOU:
+   ```sh
+   twt projects get myfeature
+   twt tickets tree --project myfeature
+   ```
+
+6. Attach when you want to steer. The Workspace tmux session is already
+   running.
+
+   ```sh
+   twt workspaces list --project myfeature
+   twt switch
+   twt agents list
+   ```
+
+## Your loop
+
+Read the board. Act on WAITING ON YOU first. Then close merged work.
+Then dispatch the next ready Ticket.
 
 ```sh
 twt projects get myfeature
-printf '%s' "Use OAuth." | twt tickets answer some-ticket -   # answer an agent's question
-twt tickets approve some-ticket                                     # approve a plan for implementation
-twt tickets close some-ticket                                       # merged means done; unblocks dependents
-```
-
-**The agent loop.** `twt tickets dispatch TICKET --plan` starts a planning
-agent: it explores the code, writes a plan into the ticket
-(`twt tickets plan`), asks you questions (`twt tickets ask`), and requests
-approval. Plain `twt tickets dispatch TICKET` starts an implementation
-agent: it implements the ticket, attaches each pull request as soon as it
-exists (`twt tickets pr add`), and finishes with `twt tickets complete`,
-which records the pull requests and hands the ticket to you for review.
-
-**The coordinator wave.** A resident agent session (or a cron, or you) runs
-one wave and stops:
-
-```sh
-twt tickets sync --project myfeature --output json   # store + session reconcile
-twt projects get myfeature --output json            # the single coordinator read
-# close tickets whose PRs are all merged, surface questions, then:
+printf '%s' "Use OAuth." | twt tickets answer some-ticket -
+twt tickets approve some-ticket
+twt tickets close some-ticket
 twt tickets dispatch NEXT_READY_TICKET
 ```
 
-**Stacked pull requests.** With `stacking: true` under the template's
-`local_dispatch`, a dependent ticket whose blocker is in review dispatches
-from the blocker's branch and opens its pull request as a stack member.
+Close a Ticket when every pull request is merged. The close unblocks
+dependents. Review feedback stays on the same Ticket. Re-claim it, fix
+the feedback, and complete again.
 
-## Workspaces and tmux
-
-The workspace layer also works on its own, without tickets:
+Close the Project when the work ends.
 
 ```sh
-twt create fix-auth --template myproject   # worktrees + tmux session
-twt next                                   # next workspace, archive the current one
-twt switch                                 # jump between workspace sessions
-twt done                                   # finish and return worktrees to the pool
+twt projects close myfeature
 ```
 
-Templates can declare tmux window layouts, initialization commands, and
-agent sessions to start. `twt templates prepare` keeps a warm pool of
-initialized worktrees. `twt done` keeps Workspace state and branches. It
-cleans the physical worktrees and then stops the complete tmux session.
-The `twt agents list/send/resume` commands control the coding agents inside a Workspace. Dispatch
-uses the same machinery. Providers: `codex`, `claude`, `cursor`, `grok`.
+## The agent loop
 
-## Drive it from any client (chat bots included)
+Install the skill on every machine that runs an agent. The skill tells
+the agent to use JSON, dry-run mutations, and `twt schema`.
 
-Any machine with a terminal is a full twt client: install the binary, clone
-the tickets repository, point `ticketsHome` at the clone, and set
-`ticketsSync.mode: git`. Git is the wire protocol; the push arbitrates
-claims. This is how a hosted bot (for example Grok Bot on its own VM) drives
-the workflow. Two patterns work well:
+A planning dispatch writes a `## Plan` section, asks you questions, and
+waits for `twt tickets approve`. An implementation dispatch refuses a
+planned Ticket you have not approved.
 
-**Concierge.** The bot syncs, reads the boards, and surfaces exactly what
-needs you — plans awaiting approval, open questions, tickets whose pull
-requests are all merged — together with the command to run. On your word it
-executes the store-side writes itself (`answer`, `approve`, `close`,
-`projects plan`). Dispatch and tmux actions happen on your workstation, where a
-resident coordinator session reacts to the store changes; the bot never
-needs access to that machine.
+The worker contract is one write at the end:
 
-**Bring your own executor.** The bot pulls ready work
-(`twt tickets queue --project X --output json`), claims it
-(`twt tickets claim TICKET --as bot-id`), runs the work with agents it can
-create natively — for example cloud coding agents, with the worker contract
-in their prompt — and reports back with `twt tickets pr add` and
-`twt tickets complete`. twt is the shared ledger; the executor is whatever
-the client has.
+```sh
+twt tickets complete TICKET --as CLAIMANT --pr URL --output json
+```
 
-## For agents and scripts
+That records the pull requests, releases the claim, and sets
+`ready-for-human`. A worker that cannot finish comments the blocker and
+runs `twt tickets unclaim`.
 
-twt is built agent-first:
+A coordinator, a cron, or you can run one wave and stop:
 
-- `twt skills install` writes the agent skill (the full operating contract)
-  into `~/.claude/skills`, `~/.cursor/skills`, and `~/.agents/skills`.
-- `twt schema` prints the machine-readable contract: every command,
-  argument, flag, `apply` operation, error code, and exit code.
-- Output is text by default. `--output json` is the structured form;
-  `--output ndjson` streams long lists; `--fields` and `--limit` keep
-  reads small.
-- Every mutation supports `--dry-run` (validate, change nothing), and
-  `twt apply -` accepts typed JSON payloads for every non-interactive
-  mutation — no flag translation.
-- Structured errors with stable codes and hints; exit codes 0/1/2/3.
+```sh
+twt tickets sync --project myfeature --output json
+twt projects get myfeature --output json
+```
 
-See [docs/agent-dx.md](docs/agent-dx.md) for the design scorecard,
-[docs/security.md](docs/security.md) for the threat model, and
-[docs/twt.md](docs/twt.md) for the full reference.
+Act on `waitingOnYou`, then `inReview` (close when every pull request is
+merged), then `ready` up to `capacity.available`. Do not poll in a tight
+loop.
 
-## Git setup for the tickets home
+## Workspaces without tickets
 
-The multi-machine workflow needs one git remote that every client can push
-to:
+The Workspace layer also works on its own.
 
-1. **Create a remote.** Any git host works: a private GitHub repository, a
-   repo on your own forge, or a bare repository on a server you can SSH to
-   (`git init --bare tickets.git`).
-2. **Clone it on each machine** and point twt at the clone. The full layout
-   is a twt home with `tickets/` and shared `templates/` inside, all synced
-   over the one remote:
+```sh
+twt create fix-auth --template myproject
+twt next
+twt switch
+twt done
+```
 
-   ```yaml
-   # ~/.config/twt/config.yaml
-   home: /home/you/twt-home   # or TWT_HOME; tickets/ and templates/ inside
-   ticketsSync:
-     mode: git        # or TWT_TICKETS_SYNC=git
-     remote: origin   # default
-   ```
+`twt templates prepare` keeps a warm pool of initialized worktrees.
+`twt done` returns those worktrees to the pool and keeps the Workspace
+record. Providers are `codex`, `claude`, `cursor`, and `grok`.
 
-   With `home` set, workspace templates you create sync to every executor
-   machine, while templates in `~/.config/twt/templates/` stay machine-local
-   and override shared ones by name. A tickets-only client can instead set
-   just `ticketsHome: /path/to/tickets`.
+## More than one machine
 
-3. **Use non-interactive credentials** (an SSH key or a git credential
-   helper). Claims happen inside twt commands, so the push must not prompt.
+Git is the wire. Set `ticketsSync.mode: git` so every Ticket write
+commits and pushes. A claim is a push. Two agents cannot both win the
+same Ticket.
 
-The semantics are simple: every ticket write commits and pushes. Claim-class
-writes (claim, complete, close) require the push — the push is the
-compare-and-swap, and a lost race returns a `locked` error, so the caller
-just picks other work. Other writes push best-effort and self-heal on the
-next successful sync. Reads never touch the network; run
-`twt tickets sync` (or pass `--fresh` to list/tree/show) to pull first when
-freshness matters.
+```yaml
+home: /home/you/twt-home
+ticketsSync:
+  mode: git
+  remote: origin
+```
+
+Use non-interactive git credentials. Claims run inside twt commands, so
+the push must not prompt.
+
+Two client shapes work.
+
+**Concierge.** A bot syncs, reads the board, and surfaces what needs you.
+It can run `answer`, `approve`, `close`, and `projects plan`. Dispatch
+stays on the workstation that has tmux.
+
+**Bring your own executor.** A bot claims ready work, runs its own
+agents, and reports with `twt tickets pr add` and `twt tickets complete`.
+twt is the ledger. The executor is whatever the client has.
+
+See [docs/twt.md](docs/twt.md) for the full git-sync rules.
+
+## Reference
+
+| Document | What it is |
+|---|---|
+| [docs/twt.md](docs/twt.md) | Command reference. Templates, Workspaces, tickets, dispatch, JSON. |
+| [docs/tickets.md](docs/tickets.md) | Ticket store contract. Files, frontmatter, claims. |
+| [docs/agent-dx.md](docs/agent-dx.md) | Why the CLI looks this way to agents. |
+| [docs/security.md](docs/security.md) | Threat model. The agent is not a trusted operator. |
+| `twt schema` | Live machine contract. Commands, flags, apply operations, errors. |
+| `twt skills get` | The skill this build embeds. |
 
 ## License
 

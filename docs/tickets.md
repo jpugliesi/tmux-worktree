@@ -1,16 +1,16 @@
 # twt tickets
 
-Design for a personal Markdown ticket tracker in `twt`. The files are the
-store. The CLI owns every mutation. Agents call `twt tickets`. They do not
-write ticket files by hand.
+The files are the store. The CLI owns every mutation. Agents call
+`twt tickets`. They do not write ticket files by hand.
 
-This document is the implementation specification for the current feature.
+Start at the [README](../README.md) to learn the human and agent loop. This
+file is the store contract: layout, frontmatter, claims, and JSON envelopes.
 
 ## Why this exists
 
 A person needs a backlog of future work for coding agents. That backlog must
-live as Obsidian notes. It must also have agent-first CLI DX: JSON output,
-dry-run, schema introspection, and no `$EDITOR` in a pipe.
+live as Obsidian notes. Agents need JSON output, dry-run, schema
+introspection, and no `$EDITOR` in a pipe. A person at a terminal gets text.
 
 The tracker is local. It is not Linear, GitHub Issues, or Origin issues.
 

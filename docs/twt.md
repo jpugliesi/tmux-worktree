@@ -1,19 +1,23 @@
-# twt preview
+# twt reference
 
-`twt` is the Go preview of the next tmux-worktree user experience. It uses a
-Workspace as the unit of work. A Workspace can contain one or more Git worktrees,
-one tmux session, one window for each repository, and a set of Agent Sessions.
+This is the command reference. Start at the [README](../README.md) if you
+want to learn the human and agent loop. Use this file for flags, layouts,
+and the JSON contract.
 
-The existing `twt` command continues to work. `twt` uses separate config,
-state, and data directories.
+A Workspace is the unit of work. It can hold one or more Git worktrees, one
+tmux session, one window for each repository, and a set of Agent Sessions.
+`twt` uses separate config, state, and data directories.
 
 ## Build
 
-Build and install the CLI:
+Install the CLI to GOBIN (`$(go env GOPATH)/bin`):
 
 ```sh
 go install ./cmd/twt
 ```
+
+Put GOBIN on PATH. Do not put a checkout `bin/` ahead of GOBIN. `go install`
+does not write that checkout file, and the shell will keep the old binary.
 
 To stamp the build with a version, set the version variable with `-ldflags`.
 The `twt --version` and `twt schema` commands show this value:

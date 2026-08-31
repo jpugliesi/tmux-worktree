@@ -1,9 +1,10 @@
 # Working on twt
 
 Context for coding agents (and humans) who change this repository. Read
-[CONTEXT.md](CONTEXT.md) for the domain language and [README.md](README.md)
-for what twt does. The docs under [docs/](docs/) are the reference;
-[docs/agent-dx.md](docs/agent-dx.md) is the design bar for the CLI surface.
+[CONTEXT.md](CONTEXT.md) for the domain language. Read [README.md](README.md)
+to learn how a person runs twt with agents. The docs under [docs/](docs/)
+are the reference. [docs/agent-dx.md](docs/agent-dx.md) is the design bar
+for the CLI surface.
 
 ## Build and test
 
