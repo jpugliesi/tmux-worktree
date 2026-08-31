@@ -22,8 +22,8 @@ the `apply` operations, all error codes, and all exit codes.
 
 ## Control the output
 
-`twt` writes JSON when standard output is not a terminal, so a piped command
-needs no flag. Set the format when the call must be exact:
+`twt` writes text by default. A pipe does not change the format. Set the
+format when the caller needs structured output:
 
 - `--output json` gives one JSON value.
 - `--output ndjson` gives one JSON object for each line. Use it on a list

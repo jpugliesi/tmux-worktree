@@ -85,7 +85,7 @@ func TestCreateWithoutNameRefusesJSON(t *testing.T) {
 	}
 }
 
-func TestCreateWithoutNameUsesTheJSONDefault(t *testing.T) {
+func TestCreateWithoutNameRefusesWithoutATerminal(t *testing.T) {
 	options := createNameTestOptions(t)
 	writeCreateNameTemplate(t, options.ConfigDir)
 	_, stderr, err := executeRaw(t, options, "create")
@@ -96,7 +96,7 @@ func TestCreateWithoutNameUsesTheJSONDefault(t *testing.T) {
 		t.Fatalf("create without NAME = %v", err)
 	}
 	if strings.Contains(stderr, "Workspace name:") {
-		t.Fatalf("create prompted when output defaulted to json: %q", stderr)
+		t.Fatalf("create prompted without a terminal: %q", stderr)
 	}
 }
 

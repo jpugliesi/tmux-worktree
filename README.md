@@ -177,8 +177,9 @@ twt is built agent-first:
   into `~/.claude/skills`, `~/.cursor/skills`, and `~/.agents/skills`.
 - `twt schema` prints the machine-readable contract: every command,
   argument, flag, `apply` operation, error code, and exit code.
-- Output is JSON whenever stdout is not a terminal; `--output ndjson`
-  streams long lists; `--fields` and `--limit` keep reads small.
+- Output is text by default. `--output json` is the structured form;
+  `--output ndjson` streams long lists; `--fields` and `--limit` keep
+  reads small.
 - Every mutation supports `--dry-run` (validate, change nothing), and
   `twt apply -` accepts typed JSON payloads for every non-interactive
   mutation — no flag translation.

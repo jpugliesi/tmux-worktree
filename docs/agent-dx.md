@@ -2,12 +2,12 @@
 
 The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 21. The first twt implementation scored 4/21. The agent-facing pass scored
-12/21. The contract pass scored 13/21. This branch scores **20/21**, which is
+12/21. The contract pass scored 13/21. This branch scores **19/21**, which is
 **Agent-first**. Every claim below was probed against the built binary.
 
 | Axis | First | Previous | Now | Current support |
 |---|---:|---:|---:|---|
-| Machine-readable output | 1 | 2 | 3 | JSON is the default when stdout is not a terminal; `--output ndjson` streams list elements one per line with a totalCount summary line; JSON errors carry a stable code, a hint, and a help command |
+| Machine-readable output | 1 | 3 | 2 | `--output json` is consistent across commands; `--output ndjson` streams list elements one per line with a totalCount summary line; JSON errors carry a stable code, a hint, and a help command. Text is the default, including on a pipe |
 | Raw payload input | 0 | 1 | 2 | 43 typed operations through `twt apply -` cover every non-interactive mutation; each shares one core with its flag command; interactive commands are excluded by design and the error says so |
 | Schema introspection | 0 | 3 | 3 | `twt schema` walks the live command tree: build version, per-command arguments, flag enums, required flags (every required flag is cobra-declared, so the schema never under-reports), `apply` request fields, error codes, exit codes |
 | Context window discipline | 0 | 1 | 3 | `--fields` masks on every read command with reflection-derived valid names, `--offset` with `--limit` on every list, `totalCount` and `truncated` in every response, NDJSON streaming, and skill guidance on all of it |
@@ -16,6 +16,11 @@ The scale is the Agent DX CLI Scale: seven axes, 0 to 3 each, for a total of
 | Agent knowledge packaging | 1 | 2 | 3 | The skill is embedded in the binary, version-stamped, and installed with `twt skills install` into the Cursor, Claude Code, and Codex trees; `twt doctor` warns when an installed copy is stale |
 
 ## Honest caveats per axis
+
+**Machine-readable output is 2.** Text is the default, including on a pipe.
+The axis's 3 asks for structured output as the default when stdout is not a
+terminal. twt keeps text so a person can pipe a list to grep. Agents and
+other programs pass `--output json` or `--output ndjson`.
 
 **Raw payload input stays at 2.** Interactive commands (`next`, `switch`,
 `done`, `templates edit`, `tickets home`, `agents focus`, `agents open`,

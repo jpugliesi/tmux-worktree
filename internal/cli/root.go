@@ -368,7 +368,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	root.SetFlagErrorFunc(func(command *cobra.Command, err error) error {
 		return invalidUsage(command, "%v", err)
 	})
-	root.PersistentFlags().String("output", "text", "Set all command output to text, json, or ndjson. Without a terminal the default is json")
+	root.PersistentFlags().String("output", "text", "Set all command output to text, json, or ndjson")
 	root.PersistentFlags().Bool("dry-run", false, "Validate and show a mutation without applying it")
 	setFlagEnum(root, "output", outputFormatNames...)
 	root.AddGroup(
@@ -426,15 +426,12 @@ func WantsJSON(command *cobra.Command) bool {
 }
 
 // resolvedOutputFormat resolves the --output value of one command run in one
-// place. When --output is not set and standard output is not a terminal, the
-// format is json. An explicit --output value always wins.
+// place. The default is text. An explicit --output value always wins. A pipe
+// does not change the format.
 func resolvedOutputFormat(command *cobra.Command) string {
 	flag := command.Flags().Lookup("output")
 	if flag == nil {
 		return outputText
-	}
-	if !flag.Changed && !terminalWriter(command.OutOrStdout()) {
-		return outputJSON
 	}
 	return flag.Value.String()
 }

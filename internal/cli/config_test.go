@@ -74,7 +74,7 @@ func settingByKey(t *testing.T, envelope configEnvelope, key string) configSetti
 func TestConfigCommandShowsDefaultsWithSources(t *testing.T) {
 	options := configTestOptions(t)
 
-	stdout, _, err := executeRaw(t, options, "config")
+	stdout, _, err := executeRaw(t, options, "config", "--output", "json")
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestConfigCommandFailsOnAnInvalidConfigFile(t *testing.T) {
 
 func mustConfigJSON(t *testing.T, options cli.Options) string {
 	t.Helper()
-	stdout, _, err := executeRaw(t, options, "config")
+	stdout, _, err := executeRaw(t, options, "config", "--output", "json")
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}

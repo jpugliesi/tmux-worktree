@@ -16,9 +16,8 @@ import (
 )
 
 // forceTextOutput puts "--output text" in the first position when the args do
-// not select an output format. The test harness runs without a terminal, so
-// twt would otherwise use the json default. Tests for the json default use
-// executeRaw instead.
+// not select an output format. The default is already text. The helper keeps
+// that choice explicit in tests that used to fight the old pipe-to-json rule.
 func forceTextOutput(args []string) []string {
 	for _, arg := range args {
 		if arg == "--output" || strings.HasPrefix(arg, "--output=") {
@@ -28,9 +27,8 @@ func forceTextOutput(args []string) []string {
 	return append([]string{"--output", "text"}, args...)
 }
 
-// executeRaw runs twt without the injected --output value, so the non-terminal
-// json default applies. It returns standard output, standard error, and the
-// command error.
+// executeRaw runs twt without an injected --output value. It returns standard
+// output, standard error, and the command error.
 func executeRaw(t *testing.T, options cli.Options, args ...string) (string, string, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
@@ -69,39 +67,42 @@ func seedOutputWorkspaces(t *testing.T, options cli.Options, count int) {
 	}
 }
 
-func TestOutputDefaultsToJSONWithoutTerminal(t *testing.T) {
+func TestOutputDefaultsToTextWithoutTerminal(t *testing.T) {
 	options := outputTestOptions(t)
 
-	// A pipe or buffer is not a terminal: the default output is json.
-	stdout, _, err := executeRaw(t, options, "templates", "list")
+	// A pipe or buffer is not a terminal: the default output stays text.
+	stdout, stderr, err := executeRaw(t, options, "templates", "list")
 	if err != nil {
 		t.Fatalf("templates list without --output: %v", err)
+	}
+	if strings.Contains(stdout, "schemaVersion") || !strings.Contains(stderr, "No Workspace Templates exist") {
+		t.Fatalf("templates list without --output stdout=%q stderr=%q", stdout, stderr)
+	}
+
+	// An explicit --output json always wins.
+	jsonOut, _, err := executeRaw(t, options, "templates", "list", "--output", "json")
+	if err != nil {
+		t.Fatalf("templates list --output json: %v", err)
 	}
 	var envelope struct {
 		SchemaVersion int `json:"schemaVersion"`
 		TotalCount    int `json:"totalCount"`
 	}
-	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
-		t.Fatalf("templates list without --output is not JSON: %v\n%s", err, stdout)
+	if err := json.Unmarshal([]byte(jsonOut), &envelope); err != nil {
+		t.Fatalf("templates list --output json is not JSON: %v\n%s", err, jsonOut)
 	}
 	if envelope.SchemaVersion != 2 {
-		t.Fatalf("templates list without --output = %s", stdout)
+		t.Fatalf("templates list --output json = %s", jsonOut)
 	}
 
-	// An explicit --output text always wins.
-	textOut, textErr, err := executeRaw(t, options, "templates", "list", "--output", "text")
-	if err != nil {
-		t.Fatalf("templates list --output text: %v", err)
-	}
-	if strings.Contains(textOut, "schemaVersion") || !strings.Contains(textErr, "No Workspace Templates exist") {
-		t.Fatalf("templates list --output text stdout=%q stderr=%q", textOut, textErr)
-	}
-
-	// An interactive command treats the implicit json default like an
-	// explicit --output json.
+	// An interactive command refuses only an explicit --output json.
 	_, _, err = executeRaw(t, options, "next", "some-workspace")
+	if err == nil || strings.Contains(err.Error(), "use 'twt create' for JSON automation") {
+		t.Fatalf("next without --output json = %v", err)
+	}
+	_, _, err = executeRaw(t, options, "next", "some-workspace", "--output", "json")
 	if err == nil || !strings.Contains(err.Error(), "use 'twt create' for JSON automation") {
-		t.Fatalf("next without a terminal = %v", err)
+		t.Fatalf("next --output json = %v", err)
 	}
 }
 

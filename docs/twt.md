@@ -1313,8 +1313,8 @@ Use `--limit` on `templates list`, `workspaces list`, `agents list`,
 `totalCount` value tells you how many results exist, and `truncated` tells you
 that the limit removed results.
 
-When you do not set `--output` and standard output is not a terminal, twt
-uses json; an explicit `--output` value always wins. List commands also
+When you do not set `--output`, twt writes text. An explicit `--output`
+value always wins. List commands also
 accept `--output ndjson`: one JSON object for each element on its own line,
 then one summary line with `totalCount` and `truncated`. Use `--offset N`
 with `--limit` to skip the first N sorted results. Use `--fields a,b,c` on

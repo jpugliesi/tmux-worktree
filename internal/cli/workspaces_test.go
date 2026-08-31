@@ -117,7 +117,7 @@ func TestWorkspacesRenameWithOneArgumentRenamesTheCurrentWorkspace(t *testing.T)
 		t.Fatalf("renamed Workspace = %+v, %v", got, err)
 	}
 
-	jsonOutput, _, err := executeRaw(t, options, "workspaces", "rename", "json-name")
+	jsonOutput, _, err := executeRaw(t, options, "workspaces", "rename", "json-name", "--output", "json")
 	if err != nil {
 		t.Fatalf("workspaces rename NAME JSON: %v", err)
 	}

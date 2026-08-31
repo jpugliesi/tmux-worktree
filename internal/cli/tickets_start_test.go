@@ -604,8 +604,12 @@ func TestTicketsStartWithoutTicketNeedsATerminal(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("tickets start without TICKET = %v (code %q)", err, clierr.CodeOf(err))
 	}
-	if !strings.Contains(err.Error(), "interactive text output") {
+	if !strings.Contains(err.Error(), "missing Ticket") {
 		t.Fatalf("tickets start without a terminal = %v", err)
+	}
+	_, _, err = executeRaw(t, options, "tickets", "start", "--output", "json")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "interactive text output") {
+		t.Fatalf("tickets start --output json without TICKET = %v", err)
 	}
 }
 
