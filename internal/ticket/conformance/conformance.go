@@ -28,6 +28,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"UnclaimGuardsTheClaimant", testUnclaimGuardsTheClaimant},
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
 		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
+		{"RemoveProjectFreesTheName", testRemoveProjectFreesTheName},
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
 		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
@@ -62,6 +63,46 @@ func testCloseProjectResolvesOpenTickets(t *testing.T, store ticketservice.Store
 	ticket, err := store.Resolve("open")
 	if err != nil || ticket.Status != domain.TicketWontfix {
 		t.Fatalf("closed Project Ticket = %+v, %v", ticket, err)
+	}
+}
+
+func testRemoveProjectFreesTheName(t *testing.T, store ticketservice.Store) {
+	if _, err := store.CreateProject("core", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "open", Slug: "open", Project: "core", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := store.PlanProjectRemoval("core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Project.Name != "core" || len(plan.Tickets) != 1 || plan.Tickets[0] != "open" {
+		t.Fatalf("removal plan = %+v", plan)
+	}
+	if _, err := store.Resolve("open"); err != nil {
+		t.Fatal(err)
+	}
+	dry, err := store.RemoveProject("core", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.Project.Name != "core" {
+		t.Fatalf("dry-run plan = %+v", dry)
+	}
+	if _, err := store.Resolve("open"); err != nil {
+		t.Fatal("dry-run remove deleted a Ticket")
+	}
+	if _, err := store.RemoveProject("core", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Project("core"); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("removed Project = %v, want not_found", err)
+	}
+	if _, err := store.CreateProject("core", false); err != nil {
+		t.Fatalf("recreate after remove: %v", err)
 	}
 }
 

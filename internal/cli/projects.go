@@ -57,6 +57,7 @@ func newProjectsCommand(options Options) *cobra.Command {
 	projects := groupCommand(&cobra.Command{Use: "projects", Short: "Manage Ticket Projects"})
 	projects.AddCommand(newProjectsCreateCommand(options))
 	projects.AddCommand(newProjectsCloseCommand(options))
+	projects.AddCommand(newProjectsRemoveCommand(options))
 	projects.AddCommand(newProjectsSetCommand(options))
 	projects.AddCommand(newProjectsListCommand(options))
 	projects.AddCommand(newProjectsShowCommand(options))

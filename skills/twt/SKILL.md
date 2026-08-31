@@ -155,9 +155,12 @@ A normal `twt next` cleans the current Workspace in the caller pane. It then
 stops the complete current session. Tmux selects another session or detaches
 the client. Attach to the new Workspace if tmux detaches the client.
 A person at a terminal can omit `NAME` on `twt create`. twt then asks for
-it. A person can also omit `NAME` on `twt projects create`. twt then asks
+it. Without `--template`, a person sees a Workspace Template picker when more
+than one Template exists. A script uses the last-used Template, or it
+passes `--template`. A person can also omit `NAME` on `twt projects create`. twt then asks
 for the Project name. It opens VISUAL or EDITOR on an empty file for the
-plan. It then asks whether to start a Workspace. For agent work, use `twt create`,
+plan. It then shows the Template picker when `--template` is absent. It then
+asks whether to start a Workspace. For agent work, use `twt create`,
 `twt projects create NAME`, and `twt workspaces archive` with explicit
 names, dry-runs, and JSON output. Do not omit `NAME`.
 
@@ -350,7 +353,10 @@ VISUAL or EDITOR on an empty file for the plan. It then asks whether to start a 
 A person closes it with `twt projects close PROJECT`. A close with open Tickets
 needs confirmation or `--force`. Close sets those Tickets to `wontfix` and
 clears their claims and Workspace links. It does not stop Workspaces or agents.
-Agents must use `--force`.
+Agents must use `--force`. To delete a Project so the name can be created
+again, run `twt projects remove NAME`, then `twt projects remove NAME --apply`.
+A Workspace that still names the Project blocks apply. Close keeps history.
+Remove deletes the Project.
 A Workspace is the temporary environment that works on one or more open
 Tickets from one Project. `twt tickets start TICKET...` claims the Tickets and
 starts one Workspace. It keeps the current Workspace active. Use `twt next`

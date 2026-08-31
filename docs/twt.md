@@ -938,6 +938,7 @@ twt tickets close TICKET [--as NAME]
 twt tickets comment TICKET -
 twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
+twt projects remove NAME [--apply]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects get [NAME]
@@ -957,11 +958,15 @@ in `$VISUAL` or `$EDITOR`. It is interactive and has no apply operation.
 `twt projects create NAME` creates the Project directory and writes
 `index.md` only when that file is missing. With no NAME in an interactive
 terminal, twt asks for a Project name, then opens `$VISUAL` or `$EDITOR` on
-an empty file for the plan. After the plan save, twt asks whether to start a Workspace.
-A script must pass NAME.
+an empty file for the plan. After the plan save, twt shows a Workspace Template
+picker when `--template` is absent and more than one Template exists. It then
+asks whether to start a Workspace. A script must pass NAME.
 `twt projects close NAME` keeps the directory and marks the Project closed.
 When open Tickets remain, a terminal asks before it sets them to `wontfix`.
 A script must pass `--force` for the same change.
+`twt projects remove NAME` prints a removal plan. `--apply` deletes the
+Project directory and its Ticket files so the name can be created again.
+A Workspace that still names the Project blocks apply.
 
 `twt tickets queue` reads one Ticket index snapshot. The Project comes from
 `--project`, then `TWT_PROJECT`, then the current Workspace Project. It

@@ -56,6 +56,22 @@ func runProjectsCreate(command *cobra.Command, options Options, service ticketse
 			return err
 		}
 		plan = content
+		if strings.TrimSpace(templateName) == "" {
+			names, listErr := options.templateStore().List()
+			if listErr != nil {
+				return listErr
+			}
+			if len(names) > 0 {
+				inferred, source, inferErr := inferTemplateName(command, options, options.templateStore())
+				if inferErr != nil {
+					return inferErr
+				}
+				templateName = inferred
+				if !WantsJSON(command) {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", templateName, source)
+				}
+			}
+		}
 		startWorkspace, err = confirmStartWorkspace(command)
 		if err != nil {
 			return err
@@ -126,19 +142,15 @@ func promptProjectWorkspaceName(command *cobra.Command, projectName string) (str
 }
 
 // startWorkspaceForNewProject creates one Workspace for a new Project. It
-// uses --template when set, otherwise it infers a Workspace Template.
+// uses the Template the wizard already selected, or infers one.
 func startWorkspaceForNewProject(command *cobra.Command, options Options, templateName, workspaceName string) error {
 	templateStore := options.templateStore()
-	selected := strings.TrimSpace(templateName)
-	if selected == "" {
-		inferred, source, err := inferTemplateName(command, options, templateStore)
-		if err != nil {
-			return err
-		}
-		selected = inferred
-		if !WantsJSON(command) {
-			_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", selected, source)
-		}
+	selected, source, err := resolveCreateTemplate(command, options, templateName, "")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(templateName) == "" && !WantsJSON(command) {
+		_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", selected, source)
 	}
 	template, err := templateStore.Load(selected)
 	if err != nil {

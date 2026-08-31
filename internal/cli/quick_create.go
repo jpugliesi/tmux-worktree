@@ -262,7 +262,7 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 		if known {
 			selected = current.TemplateName
 		} else {
-			inferred, source, err := inferTemplateName(command, options, templateStore)
+			inferred, source, err := resolveCreateTemplate(command, options, "", request.Project)
 			if err != nil {
 				return err
 			}

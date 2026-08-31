@@ -10,6 +10,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/spf13/cobra"
 )
 
 func TestCreateSchemaMarksNameOptional(t *testing.T) {
@@ -140,12 +141,49 @@ func createNameTestOptions(t *testing.T) cli.Options {
 
 func writeCreateNameTemplate(t *testing.T, configDir string) {
 	t.Helper()
+	writeNamedTemplate(t, configDir, "example")
+}
+
+func writeNamedTemplate(t *testing.T, configDir, name string) {
+	t.Helper()
 	dir := filepath.Join(configDir, "templates")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: https://example.com/app.git\n"
-	if err := os.WriteFile(filepath.Join(dir, "example.yaml"), []byte(content), 0o644); err != nil {
+	content := "version: 1\nname: " + name + "\nrepositories:\n  - name: app\n    clone:\n      url: https://example.com/app.git\n"
+	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreatePicksATemplateInATerminalWhenSeveralExist(t *testing.T) {
+	options := createNameTestOptions(t)
+	writeCreateNameTemplate(t, options.ConfigDir)
+	writeNamedTemplate(t, options.ConfigDir, "zeta")
+	if err := store.SaveLastTemplate(options.StateDir, "example"); err != nil {
+		t.Fatal(err)
+	}
+	options.PickTemplate = func(_ *cobra.Command, lines []string) (int, error) {
+		for index, line := range lines {
+			if line == "zeta" {
+				return index, nil
+			}
+		}
+		t.Fatalf("picker lines = %v", lines)
+		return 0, nil
+	}
+	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("prompted-workspace\n"),
+		"create", "--dry-run", "--no-open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "Template: zeta (selected)") {
+		t.Fatalf("create stderr = %q", stderr)
+	}
+	if strings.Contains(stderr, "last used") {
+		t.Fatalf("interactive create used last-used: %q", stderr)
+	}
+	if !strings.Contains(stdout, "workspaces.create: valid") {
+		t.Fatalf("create dry-run output = %q", stdout)
 	}
 }

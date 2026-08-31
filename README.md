@@ -71,7 +71,8 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    ```
 
    At a terminal, `twt projects create` with no NAME asks for the name. It
-   then opens an empty editor for the plan and asks whether to start a Workspace.
+   then opens an empty editor for the plan, shows a Workspace Template picker
+   when `--template` is absent, and asks whether to start a Workspace.
 
 3. Write the plan, then break it into tickets with dependency edges:
 
@@ -89,6 +90,7 @@ go install github.com/jpugliesi/tmux-worktree/cmd/twt@latest
    twt tickets tree --project myfeature    # the dependency DAG with PR badges
 twt projects get myfeature             # the board
 twt projects close myfeature            # close the Project when work ends
+twt projects remove myfeature --apply   # delete the Project so the name is free
    ```
 
 ## The workflow

@@ -78,13 +78,20 @@ unmarked `closed` directory or overwrite notes.
 `index.md` only when that file is missing. Project ticket counts include
 active and closed Tickets. With no NAME in an interactive terminal, twt
 asks for a Project name, then opens `$VISUAL` or `$EDITOR` on an empty file
-for the plan. After the plan save, twt asks whether to start a Workspace.
-A pipe or `--output json` requires NAME.
+for the plan. After the plan save, twt shows a Workspace Template picker
+when `--template` is absent and more than one Template exists. It then asks
+whether to start a Workspace. A pipe or `--output json` requires NAME.
 
 `twt projects close NAME` sets `twt_closed: true` in the Project `index.md`.
 The Project keeps its directory, `index.md`, `plan.md`, and Ticket history.
 Default Project lists and completion omit a closed Project. New work cannot
 use a closed Project.
+
+`twt projects remove NAME` prints a removal plan. `--apply` deletes the
+Project directory, `plan.md`, and every Ticket file for that Project,
+including `closed/NAME/`. After apply, `twt projects create NAME` succeeds.
+A Workspace that still names the Project is a blocker. Close keeps history.
+Remove deletes the Project.
 
 When no open Tickets remain, close needs no confirmation. At a text terminal,
 twt asks before it changes open Tickets to `wontfix`. A script must pass
@@ -221,6 +228,7 @@ twt tickets doctor
 twt tickets repair
 twt projects create [NAME]
 twt projects close NAME [--force]
+twt projects remove NAME [--apply]
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects get NAME
@@ -483,6 +491,7 @@ Ticket apply operations:
 - `tickets.comment`
 - `tickets.repair` (no payload)
 - `projects.create`
+- `projects.remove`
 
 `twt schema` must list every new command and these operations. Update
 `TestSchemaDescribesCommandsFlagsAndRawApplyOperations` with the new

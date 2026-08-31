@@ -1463,7 +1463,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		`"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
 		`"twt tickets doctor"`, `"twt tickets repair"`,
-		`"twt projects create"`,
+		`"twt projects create"`, `"twt projects remove"`,
 		`"twt projects list"`, `"twt projects get"`,
 	} {
 		if !strings.Contains(output, command) {
@@ -1473,7 +1473,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 	for _, operation := range []string{
 		`"tickets.create"`, `"tickets.set"`, `"tickets.claim"`, `"tickets.unclaim"`,
 		`"tickets.close"`, `"tickets.comment"`, `"tickets.dispatch"`,
-		`"tickets.repair"`, `"projects.create"`,
+		`"tickets.repair"`, `"projects.create"`, `"projects.remove"`,
 	} {
 		if !strings.Contains(output, operation) {
 			t.Fatalf("schema misses the apply operation %s", operation)

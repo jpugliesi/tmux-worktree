@@ -63,7 +63,10 @@ type Options struct {
 	// PickTicketProject selects one Project picker line. The result is "(none)",
 	// an existing Project name, or a typed new name. New installs the real fzf
 	// or numbered-list implementation when it is nil.
-	PickTicketProject     func(command *cobra.Command, lines []string) (string, error)
+	PickTicketProject func(command *cobra.Command, lines []string) (string, error)
+	// PickTemplate selects one Workspace Template name from the picker lines.
+	// New installs the real fzf or numbered-list implementation when it is nil.
+	PickTemplate          func(command *cobra.Command, lines []string) (int, error)
 	PreparationExecutable string
 	// PRResolvers replaces the live gh/origin PR-state resolvers. Tests use
 	// fakes; nil installs the real ones.
@@ -272,6 +275,9 @@ func withRealWorkflows(options Options) Options {
 	}
 	if options.PickTicketProject == nil {
 		options.PickTicketProject = realPickTicketProject
+	}
+	if options.PickTemplate == nil {
+		options.PickTemplate = realPickTemplate
 	}
 	if options.OpenEditor == nil {
 		options.OpenEditor = realOpenEditor(options)

@@ -203,8 +203,17 @@ func (s *Service) createProjectWithTemplateOnce(name, templateName string, dryRu
 	return s.projectInfo(home, name)
 }
 
-// Projects lists every Project directory sorted by name.
+// AllProjects lists every Project directory, including closed Projects.
+func (s *Service) AllProjects() ([]domain.Project, error) {
+	return s.listProjects(true)
+}
+
+// Projects lists every active Project directory sorted by name.
 func (s *Service) Projects() ([]domain.Project, error) {
+	return s.listProjects(false)
+}
+
+func (s *Service) listProjects(includeClosed bool) ([]domain.Project, error) {
 	home, err := s.home()
 	if err != nil {
 		return nil, err
@@ -229,7 +238,7 @@ func (s *Service) Projects() ([]domain.Project, error) {
 		if err != nil {
 			return nil, err
 		}
-		if project.Closed {
+		if project.Closed && !includeClosed {
 			continue
 		}
 		projects = append(projects, project)

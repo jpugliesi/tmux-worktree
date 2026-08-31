@@ -807,3 +807,31 @@ func TestContextDefaultsForProjectsGetAndWorkspacesGet(t *testing.T) {
 		t.Fatalf("projects get without a scope error = %v", err)
 	}
 }
+
+func TestTicketsStartUsesTheProjectTemplateOutsideAWorkspace(t *testing.T) {
+	options, _ := ticketsStartFixture(t)
+	writeNamedTemplate(t, options.ConfigDir, "zeta")
+	if err := store.SaveLastTemplate(options.StateDir, "example"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	options.PickTemplate = func(_ *cobra.Command, _ []string) (int, error) {
+		t.Fatal("project Template still opened the picker")
+		return 0, nil
+	}
+	executeWithOptions(t, options, nil, "tickets", "init")
+	executeWithOptions(t, options, nil, "projects", "create", "core", "--template", "zeta")
+	executeWithOptions(t, options, nil, "tickets", "create", "Fix auth tokens", "--project", "core")
+	_, stderr, err := executeCollectingInput(t, options, nil,
+		"tickets", "start", "fix-auth-tokens", "--as", "tester", "--detached", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "Template: zeta (project)") {
+		t.Fatalf("tickets start stderr = %q", stderr)
+	}
+	if strings.Contains(stderr, "last used") || strings.Contains(stderr, "selected") {
+		t.Fatalf("tickets start ignored the Project Template: %q", stderr)
+	}
+}

@@ -45,8 +45,8 @@ The recycle command is trusted Template code and can remove ignored files.
 
 ## Destructive actions are plans
 
-A destructive command builds a plan and shows it. `twt workspaces remove`
-and `twt storage clean` change nothing without `--apply`. A plan
+A destructive command builds a plan and shows it. `twt workspaces remove`,
+`twt projects remove`, and `twt storage clean` change nothing without `--apply`. A plan
 that cannot run safely returns typed blockers, each with a stable `code`,
 such as `not_archived`, `uncommitted_changes`, or `unpublished_branch`. An
 agent must read the blockers and correct the cause; it must not repeat the
@@ -136,7 +136,8 @@ An interactive path opens only for a person at a terminal:
   `twt projects create` start `VISUAL` or `EDITOR` only when
   standard input is a terminal. The tickets create wizard also asks for a title and
   a Project on that terminal. The projects create wizard asks for a Project
-  name, then a plan, then whether to start a Workspace. With a pipe, each one
+  name, then a plan, then a Workspace Template picker when more than one
+  Template exists, then whether to start a Workspace. With a pipe, each one
   reports `invalid_usage` with the non-interactive form in the hint. The
   tickets commands also require a terminal on standard output, and they
   reject the null device. `--project` never creates a Project. A new Project
@@ -144,8 +145,10 @@ An interactive path opens only for a person at a terminal:
   that passes resource-name rules.
 - `twt create` and `twt workspaces create` ask for a Workspace name only when
   `NAME` is absent, standard input is a terminal, standard output is a
-  terminal, and output is text. A pipe or `--output json` reports
-  `invalid_usage` and requires `NAME`.
+  terminal, and output is text. Without `--template` at that terminal, they
+  show a Workspace Template picker when more than one Template exists. A
+  script uses the last-used Template or passes `--template`. A pipe or
+  `--output json` reports `invalid_usage` and requires `NAME`.
 - `twt create` and `twt workspaces open` attach the tmux session only
   when standard output is a terminal. `--no-open` and `--no-attach` state
   the same intention for a script. `--all-active` never attaches.

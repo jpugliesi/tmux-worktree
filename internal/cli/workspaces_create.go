@@ -34,16 +34,12 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 				return err
 			}
 			templateStore := options.templateStore()
-			selected := strings.TrimSpace(templateName)
-			if selected == "" {
-				inferred, source, err := inferTemplateName(command, options, templateStore)
-				if err != nil {
-					return err
-				}
-				selected = inferred
-				if !WantsJSON(command) {
-					_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", selected, source)
-				}
+			selected, source, err := resolveCreateTemplate(command, options, templateName, project)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(templateName) == "" && !WantsJSON(command) {
+				_, _ = fmt.Fprintf(command.ErrOrStderr(), "Template: %s (%s)\n", selected, source)
 			}
 			template, err := templateStore.Load(selected)
 			if err != nil {
@@ -202,14 +198,26 @@ func createFailureError(workspace domain.Workspace, cause error) error {
 }
 
 // inferTemplateName selects a Workspace Template when --template is absent. It
-// returns the template name and a short source description.
+// returns the template name and a short source description. A person at a
+// text terminal picks when more than one Template exists. A script uses the
+// last-used record.
 func inferTemplateName(command *cobra.Command, options Options, templateStore store.TemplateStore) (string, string, error) {
 	names, err := templateStore.List()
 	if err != nil {
 		return "", "", err
 	}
+	if len(names) == 0 {
+		return "", "", invalidUsage(command, "no Workspace Templates exist; run 'twt templates create NAME' first")
+	}
 	if len(names) == 1 {
 		return names[0], "only template", nil
+	}
+	if canPromptWorkspaceName(command) {
+		selected, err := pickTemplateName(command, options, names)
+		if err != nil {
+			return "", "", err
+		}
+		return selected, "selected", nil
 	}
 	last, err := store.LoadLastTemplate(options.StateDir)
 	if err != nil {
@@ -222,8 +230,51 @@ func inferTemplateName(command *cobra.Command, options Options, templateStore st
 			}
 		}
 	}
-	if len(names) == 0 {
-		return "", "", invalidUsage(command, "no Workspace Templates exist; run 'twt templates create NAME' first")
-	}
 	return "", "", invalidUsage(command, "select a Workspace Template with --template TEMPLATE; available templates: %s", strings.Join(names, ", "))
+}
+
+// pickTemplateName shows the Workspace Template picker.
+func pickTemplateName(command *cobra.Command, options Options, names []string) (string, error) {
+	pick := options.PickTemplate
+	if pick == nil {
+		pick = realPickTemplate
+	}
+	index, err := pick(command, names)
+	if err != nil {
+		return "", err
+	}
+	if index < 0 || index >= len(names) {
+		return "", fmt.Errorf("the Workspace Template picker returned an invalid selection")
+	}
+	return names[index], nil
+}
+
+// realPickTemplate selects one picker line with fzf when fzf is installed, or
+// with a numbered list on the terminal.
+func realPickTemplate(command *cobra.Command, lines []string) (int, error) {
+	return pickLine(command, lines, pickOptions{
+		Noun:        "Workspace Template",
+		MissingHint: "select a Workspace Template with --template TEMPLATE",
+		FzfArgs:     []string{"--header", "Select a Workspace Template."},
+	})
+}
+
+// resolveCreateTemplate selects a Workspace Template for create. An explicit
+// name wins. Then a Project Template wins. Then inferTemplateName runs.
+func resolveCreateTemplate(command *cobra.Command, options Options, explicit, projectName string) (string, string, error) {
+	if selected := strings.TrimSpace(explicit); selected != "" {
+		return selected, "flag", nil
+	}
+	if strings.TrimSpace(projectName) != "" {
+		service, err := options.ticketService()
+		if err == nil {
+			project, projectErr := service.Project(projectName)
+			if projectErr == nil && strings.TrimSpace(project.TemplateName) != "" {
+				return project.TemplateName, "project", nil
+			}
+		} else if clierr.CodeOf(err) != clierr.PreconditionFailed && clierr.CodeOf(err) != clierr.NotFound {
+			return "", "", err
+		}
+	}
+	return inferTemplateName(command, options, options.templateStore())
 }

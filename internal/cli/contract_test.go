@@ -167,6 +167,7 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt apply":                  {"-"},
 		"twt projects plan":          {"project", "-"},
 		"twt projects create":        {"name"},
+		"twt projects remove":        {"name"},
 		"twt projects get":           {"name"},
 	}
 	for path, names := range want {

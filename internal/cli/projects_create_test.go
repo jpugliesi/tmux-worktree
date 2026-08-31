@@ -9,6 +9,7 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
+	"github.com/spf13/cobra"
 )
 
 // projectCreateWizardOptions seeds an interactive projects create: the editor
@@ -229,6 +230,71 @@ func TestProjectsCreateWizardStartsAWorkspaceOnConfirm(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(home, "change-monitor")); !os.IsNotExist(statErr) {
 		t.Fatalf("workspace dry-run wrote a Project: %v", statErr)
+	}
+}
+
+func TestProjectsCreateWizardPicksATemplateWhenSeveralExist(t *testing.T) {
+	options, home := projectCreateWizardOptions(t, "# change-monitor Plan\n\nPlan body.\n")
+	writeCreateNameTemplate(t, options.ConfigDir)
+	writeNamedTemplate(t, options.ConfigDir, "zeta")
+	picked := []string{}
+	options.PickTemplate = func(_ *cobra.Command, lines []string) (int, error) {
+		picked = append(picked, strings.Join(lines, ","))
+		for index, line := range lines {
+			if line == "zeta" {
+				return index, nil
+			}
+		}
+		return 0, nil
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := executeCollectingInput(t, options, strings.NewReader("change-monitor\nn\n"),
+		"projects", "create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(picked) != 1 || !strings.Contains(picked[0], "example") || !strings.Contains(picked[0], "zeta") {
+		t.Fatalf("picker lines = %v", picked)
+	}
+	if !strings.Contains(stderr, "Template: zeta (selected)") {
+		t.Fatalf("wizard stderr = %q", stderr)
+	}
+	if !strings.Contains(stdout, `Created Project "change-monitor"`) {
+		t.Fatalf("wizard stdout = %q", stdout)
+	}
+	shown := executeWithOptions(t, options, nil, "projects", "get", "change-monitor", "--output", "json")
+	if !strings.Contains(shown, `"templateName":"zeta"`) {
+		t.Fatalf("Project Template after picker = %s", shown)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, "change-monitor", "index.md")); statErr != nil {
+		t.Fatal(statErr)
+	}
+}
+
+func TestProjectsCreateWizardTemplateFlagSkipsThePicker(t *testing.T) {
+	options, _ := projectCreateWizardOptions(t, "# change-monitor Plan\n\nPlan body.\n")
+	writeCreateNameTemplate(t, options.ConfigDir)
+	writeNamedTemplate(t, options.ConfigDir, "zeta")
+	options.PickTemplate = func(_ *cobra.Command, _ []string) (int, error) {
+		t.Fatal(" --template still opened the picker")
+		return 0, nil
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := executeCollectingInput(t, options, strings.NewReader("change-monitor\nn\n"),
+		"projects", "create", "--template", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr, "Template:") {
+		t.Fatalf("flag still printed an inferred Template: %q", stderr)
+	}
+	shown := executeWithOptions(t, options, nil, "projects", "get", "change-monitor", "--output", "json")
+	if !strings.Contains(shown, `"templateName":"example"`) {
+		t.Fatalf("Project Template after --template = %s", shown)
 	}
 }
 
