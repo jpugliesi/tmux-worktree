@@ -465,6 +465,7 @@ twt workspaces current
 twt workspaces path fix-auth everysphere
 twt workspaces open fix-auth
 twt workspaces open --all-active --no-attach
+twt workspaces set current --project change-monitor
 ```
 
 `twt workspaces open` repairs a missing tmux session of an active Workspace. It
@@ -762,6 +763,15 @@ Workspace and the new name. Rename changes the display name and the owned
 tmux session name. The Workspace ID, paths, branches, Ticket links, and
 Agent Sessions stay unchanged.
 
+Set the Ticket Project on one Workspace. The Project must be active. When
+the Workspace links Tickets, every Ticket must already belong to that
+Project. twt does not move Tickets, checkouts, or Environments.
+
+```sh
+twt workspaces set current --project change-monitor
+twt workspaces set fix-auth --project change-monitor
+```
+
 Without arguments, a terminal shows the Workspace picker and asks for the new
 name.
 
@@ -939,6 +949,7 @@ twt tickets comment TICKET -
 twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
 twt projects remove NAME [--apply]
+twt projects rename NAME NEW_NAME
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects get [NAME]
@@ -967,6 +978,9 @@ A script must pass `--force` for the same change.
 `twt projects remove NAME` prints a removal plan. `--apply` deletes the
 Project directory and its Ticket files so the name can be created again.
 A Workspace that still names the Project blocks apply.
+`twt projects rename NAME NEW_NAME` moves the Project directory and its
+closed Ticket tree. It heals Ticket project frontmatter. It also retargets
+Workspaces that still name the old Project.
 
 `twt tickets queue` reads one Ticket index snapshot. The Project comes from
 `--project`, then `TWT_PROJECT`, then the current Workspace Project. It
@@ -1126,9 +1140,11 @@ ticket frontmatter, not `workspace:`.
 ```sh
 twt projects create change-monitor --template everysphere --output json
 twt projects set change-monitor --template everysphere --output json
+twt projects rename change-monitor monitor --output json
+twt workspaces set current --project monitor --output json
 twt projects list --output json
-twt projects get change-monitor --output json
-twt projects close change-monitor --force --output json
+twt projects get monitor --output json
+twt projects close monitor --force --output json
 ```
 
 A person at a terminal can omit NAME. twt then asks for the Project name,

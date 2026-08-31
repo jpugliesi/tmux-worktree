@@ -41,6 +41,7 @@ type Store interface {
 	RemoveProject(name string, dryRun bool) (ProjectRemovalPlan, error)
 	AllProjects() ([]domain.Project, error)
 	SetProjectTemplate(name, templateName string, dryRun bool) (domain.Project, error)
+	RenameProject(name, newName string, dryRun bool) (domain.Project, error)
 	WriteProjectPlan(name, content string, dryRun bool) (ProjectPlanResult, error)
 	Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, error)
 	Comment(ref, text string, dryRun bool) (domain.Ticket, error)

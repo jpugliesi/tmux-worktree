@@ -29,6 +29,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
 		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
 		{"RemoveProjectFreesTheName", testRemoveProjectFreesTheName},
+		{"RenameProjectMovesTickets", testRenameProjectMovesTickets},
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
 		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
@@ -103,6 +104,45 @@ func testRemoveProjectFreesTheName(t *testing.T, store ticketservice.Store) {
 	}
 	if _, err := store.CreateProject("core", false); err != nil {
 		t.Fatalf("recreate after remove: %v", err)
+	}
+}
+
+func testRenameProjectMovesTickets(t *testing.T, store ticketservice.Store) {
+	if _, err := store.CreateProject("old-name", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "open", Slug: "open", Project: "old-name", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	dry, err := store.RenameProject("old-name", "new-name", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.Name != "new-name" {
+		t.Fatalf("dry-run Project = %+v", dry)
+	}
+	ticket, err := store.Resolve("open")
+	if err != nil || ticket.Project != "old-name" {
+		t.Fatalf("dry-run moved a Ticket: %+v, %v", ticket, err)
+	}
+	if _, err := store.Project("old-name"); err != nil {
+		t.Fatal("dry-run removed the old Project")
+	}
+	project, err := store.RenameProject("old-name", "new-name", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "new-name" {
+		t.Fatalf("renamed Project = %+v", project)
+	}
+	if _, err := store.Project("old-name"); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("old Project = %v, want not_found", err)
+	}
+	moved, err := store.Resolve("open")
+	if err != nil || moved.Project != "new-name" {
+		t.Fatalf("Ticket after rename = %+v, %v", moved, err)
 	}
 }
 

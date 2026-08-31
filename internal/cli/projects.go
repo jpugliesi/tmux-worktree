@@ -58,6 +58,7 @@ func newProjectsCommand(options Options) *cobra.Command {
 	projects.AddCommand(newProjectsCreateCommand(options))
 	projects.AddCommand(newProjectsCloseCommand(options))
 	projects.AddCommand(newProjectsRemoveCommand(options))
+	projects.AddCommand(newProjectsRenameCommand(options))
 	projects.AddCommand(newProjectsSetCommand(options))
 	projects.AddCommand(newProjectsListCommand(options))
 	projects.AddCommand(newProjectsShowCommand(options))

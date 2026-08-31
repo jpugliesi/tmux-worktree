@@ -204,6 +204,14 @@ twt workspaces rename WORKSPACE NAME --dry-run --output json
 twt workspaces rename WORKSPACE NAME --output json
 ```
 
+Set the Ticket Project on one Workspace. The Project must be active. Linked
+Tickets must already belong to that Project.
+
+```sh
+twt workspaces set WORKSPACE --project PROJECT --dry-run --output json
+twt workspaces set WORKSPACE --project PROJECT --output json
+```
+
 Archive a completed Workspace from outside its tmux session. Archive stops live
 processes and returns the worktrees to the prepared pool. It keeps branches,
 Template snapshots, and Agent Session records. It refuses tracked and
@@ -353,8 +361,25 @@ VISUAL or EDITOR on an empty file for the plan. It then asks whether to start a 
 A person closes it with `twt projects close PROJECT`. A close with open Tickets
 needs confirmation or `--force`. Close sets those Tickets to `wontfix` and
 clears their claims and Workspace links. It does not stop Workspaces or agents.
-Agents must use `--force`. To delete a Project so the name can be created
-again, run `twt projects remove NAME`, then `twt projects remove NAME --apply`.
+Agents must use `--force`.
+
+Rename a Project to keep its Tickets and history:
+
+```sh
+twt projects rename OLD NEW --dry-run --output json
+twt projects rename OLD NEW --output json
+```
+
+Attach an existing Workspace to one active Project when its Tickets already
+belong to that Project, or when it has no Tickets:
+
+```sh
+twt workspaces set WORKSPACE --project PROJECT --dry-run --output json
+twt workspaces set WORKSPACE --project PROJECT --output json
+```
+
+To delete a Project so the name can be created again, run
+`twt projects remove NAME`, then `twt projects remove NAME --apply`.
 A Workspace that still names the Project blocks apply. Close keeps history.
 Remove deletes the Project.
 A Workspace is the temporary environment that works on one or more open

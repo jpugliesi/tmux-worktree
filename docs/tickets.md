@@ -93,6 +93,11 @@ including `closed/NAME/`. After apply, `twt projects create NAME` succeeds.
 A Workspace that still names the Project is a blocker. Close keeps history.
 Remove deletes the Project.
 
+`twt projects rename NAME NEW_NAME` moves the Project directory and its
+closed Ticket tree. It heals Ticket `project` frontmatter from the new path.
+It also retargets Workspaces that still name the old Project. The new name
+must be free and must not be reserved. Rename works on a closed Project.
+
 When no open Tickets remain, close needs no confirmation. At a text terminal,
 twt asks before it changes open Tickets to `wontfix`. A script must pass
 `--force`. Close also clears each affected claim and Workspace link.
@@ -229,6 +234,7 @@ twt tickets repair
 twt projects create [NAME]
 twt projects close NAME [--force]
 twt projects remove NAME [--apply]
+twt projects rename NAME NEW_NAME
 twt projects set NAME --template TEMPLATE
 twt projects list [--limit N]
 twt projects get NAME
@@ -492,6 +498,9 @@ Ticket apply operations:
 - `tickets.repair` (no payload)
 - `projects.create`
 - `projects.remove`
+- `projects.rename`
+- `projects.set`
+- `workspaces.set`
 
 `twt schema` must list every new command and these operations. Update
 `TestSchemaDescribesCommandsFlagsAndRawApplyOperations` with the new

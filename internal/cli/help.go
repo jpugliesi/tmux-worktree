@@ -126,6 +126,9 @@ var commandHelp = map[string]helpContent{
 	"twt workspaces rename": {
 		long: "Change the display name of a Workspace. twt also renames the owned tmux session to match. The Workspace ID, root, checkouts, branches, and Agent Sessions do not change. One NAME argument renames the current Workspace. Two arguments set the Workspace and the new name. Without arguments, twt shows the Workspace picker and asks for the new name.", example: "  twt workspaces rename auth-fix\n  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
 	},
+	"twt workspaces set": {
+		long: "Set the Ticket Project on one Workspace. The Project must be active. When the Workspace links Tickets, every Ticket must already belong to that Project. twt does not move Tickets, checkouts, or Environments.", example: "  twt workspaces set current --project change-monitor\n  twt workspaces set fix-auth --project change-monitor --dry-run --output json",
+	},
 	"twt workspaces current": {
 		long: "Find the Workspace for the current directory or tmux pane.", example: "  twt workspaces current",
 	},
@@ -284,6 +287,9 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt projects remove": {
 		long: "Show a removal plan for one Project. Add --apply to delete the Project directory, its plan, and its Ticket files, including closed Tickets under closed/NAME. After apply, the name can be created again. A Workspace that still names the Project is a blocker. Archive that Workspace, then run 'twt workspaces remove WORKSPACE --apply'. Close keeps history. Remove deletes the Project. Do not use --dry-run with --apply.", example: "  twt projects remove change-monitor\n  twt projects remove change-monitor --apply --output json",
+	},
+	"twt projects rename": {
+		long: "Rename one Project. twt moves the Project directory and its closed Ticket tree. It heals Ticket project frontmatter from the new path. It also retargets Workspaces that still name the old Project. The new name must be free and must not be reserved. Rename works on a closed Project.", example: "  twt projects rename old-name new-name\n  twt projects rename old-name new-name --dry-run --output json",
 	},
 	"twt projects close": {
 		long: "Close one Project. With no open Tickets, the command closes it immediately. At a text terminal, twt asks before it sets open Tickets to wontfix. A script must pass --force when open Tickets remain. Close clears each affected Ticket claim and Workspace link. It does not stop Workspaces or agents. It keeps the Project directory, index.md, and plan.md. Closed Projects do not appear in Project lists or completion.", example: "  twt projects close change-monitor\n  twt projects close change-monitor --force --output json",

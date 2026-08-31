@@ -91,6 +91,11 @@ type workspaceRenameRequest struct {
 	Name      string `json:"name"`
 }
 
+type workspaceSetRequest struct {
+	Reference string `json:"reference"`
+	Project   string `json:"project"`
+}
+
 // workspaceOpenRequest opens or repairs one Workspace tmux session. Apply never
 // attaches a tmux client, so noAttach must be true or absent.
 type workspaceOpenRequest struct {
@@ -191,6 +196,11 @@ type projectCreateApplyRequest struct {
 type projectSetApplyRequest struct {
 	Name     string `json:"name"`
 	Template string `json:"template"`
+}
+
+type projectRenameApplyRequest struct {
+	Name    string `json:"name"`
+	NewName string `json:"newName"`
 }
 
 type projectCloseApplyRequest struct {
@@ -298,6 +308,10 @@ func applyOperations() []applyOperation {
 			{Path: "workspace.reference", Type: "string", Required: true},
 			{Path: "workspace.name", Type: "string", Required: true},
 		}}, applyWorkspacesRename},
+		{applyOperationSchema{Operation: "workspaces.set", Payload: "workspace", Fields: []requestFieldSchema{
+			{Path: "workspace.reference", Type: "string", Required: true},
+			{Path: "workspace.project", Type: "string", Required: true, Condition: "an active Project; linked Tickets must already belong to it"},
+		}}, applyWorkspacesSet},
 		{applyOperationSchema{Operation: "workspaces.setup.retry", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
 		}}, applyWorkspacesSetupRetry},
@@ -441,6 +455,10 @@ func applyOperations() []applyOperation {
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.template", Type: "string", Required: true},
 		}}, applyTicketsProjectsSet},
+		{applyOperationSchema{Operation: "projects.rename", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+			{Path: "project.newName", Type: "string", Required: true},
+		}}, applyTicketsProjectsRename},
 	}
 }
 
@@ -734,6 +752,17 @@ func applyWorkspacesRename(command *cobra.Command, options Options, request appl
 		return err
 	}
 	return renameWorkspace(command, service, workspace.ID, workspace.Name, payload.Name)
+}
+
+func applyWorkspacesSet(command *cobra.Command, options Options, request applyRequest) error {
+	var payload workspaceSetRequest
+	if err := decodeApplyPayload("workspaces.set", "workspace", request.Workspace, &payload); err != nil {
+		return err
+	}
+	if payload.Reference == "" || payload.Project == "" {
+		return fmt.Errorf("workspace.reference and workspace.project are required for workspaces.set")
+	}
+	return setWorkspaceProject(command, options, options.workspaceService(), payload.Reference, payload.Project)
 }
 
 func applyWorkspacesArchive(command *cobra.Command, options Options, request applyRequest) error {
@@ -1226,4 +1255,19 @@ func applyTicketsProjectsSet(command *cobra.Command, options Options, request ap
 		return err
 	}
 	return setProjectTemplate(command, service, payload.Name, payload.Template)
+}
+
+func applyTicketsProjectsRename(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectRenameApplyRequest
+	if err := decodeApplyPayload("projects.rename", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.NewName == "" {
+		return fmt.Errorf("project.name and project.newName are required for projects.rename")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return renameProject(command, options, service, payload.Name, payload.NewName)
 }

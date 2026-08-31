@@ -30,10 +30,11 @@ var completableArguments = map[string]bool{
 // that decision. The key is the command path and the argument name.
 var freeTextArguments = map[string]bool{
 	// The Workspace, Workspace Template, and Project names of a create are new.
-	"twt create name":            true,
-	"twt workspaces create name": true,
-	"twt templates create name":  true,
-	"twt projects create name":   true,
+	"twt create name":              true,
+	"twt workspaces create name":   true,
+	"twt templates create name":    true,
+	"twt projects create name":     true,
+	"twt projects rename new_name": true,
 	// The repository name and URL of a repos add are new.
 	"twt templates repos add repo": true,
 	"twt templates repos add url":  true,
