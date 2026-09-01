@@ -47,7 +47,7 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &schema); err != nil {
 		t.Fatalf("decode schema: %v\n%s", err, output)
 	}
-	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 45 {
+	if schema.SchemaVersion != 2 || len(schema.Commands) == 0 || len(schema.ApplyOperations) != 48 {
 		t.Fatalf("schema is incomplete: %+v", schema)
 	}
 	foundCreate := false
@@ -192,6 +192,51 @@ func TestSchemaDescribesCommandsFlagsAndRawApplyOperations(t *testing.T) {
 	}
 	if !foundCreateBlockedBy || !foundSetBlockedBy {
 		t.Fatal("schema misses tickets.create or tickets.set blockedBy")
+	}
+
+	foundCreateLabels := false
+	foundSetLabels := false
+	foundSetAddLabels := false
+	foundSetRemoveLabels := false
+	for _, command := range schema.Commands {
+		if command.Path != "twt tickets create" && command.Path != "twt tickets set" && command.Path != "twt tickets list" {
+			continue
+		}
+		hasLabel := false
+		for _, flag := range command.Flags {
+			if flag.Name == "label" {
+				hasLabel = true
+				break
+			}
+		}
+		if !hasLabel {
+			t.Fatalf("%s schema misses --label: %+v", command.Path, command.Flags)
+		}
+	}
+	for _, operation := range schema.ApplyOperations {
+		if operation.Operation == "tickets.create" {
+			for _, field := range operation.Fields {
+				if field.Path == "ticket.labels" && field.Type == "array[string]" {
+					foundCreateLabels = true
+				}
+			}
+		}
+		if operation.Operation == "tickets.set" {
+			for _, field := range operation.Fields {
+				if field.Path == "ticket.labels" && field.Type == "array[string]" {
+					foundSetLabels = true
+				}
+				if field.Path == "ticket.addLabels" && field.Type == "array[string]" {
+					foundSetAddLabels = true
+				}
+				if field.Path == "ticket.removeLabels" && field.Type == "array[string]" {
+					foundSetRemoveLabels = true
+				}
+			}
+		}
+	}
+	if !foundCreateLabels || !foundSetLabels || !foundSetAddLabels || !foundSetRemoveLabels {
+		t.Fatal("schema misses tickets.create or tickets.set label fields")
 	}
 }
 

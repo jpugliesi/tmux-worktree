@@ -4,6 +4,7 @@ aliases:
   - <title>
 tags:
   - tickets
+labels: []
 status: needs-triage
 priority: 2
 project:

@@ -169,6 +169,9 @@ func TestSchemaSkipsHelpAndCompletionCommands(t *testing.T) {
 		"twt projects create":        {"name"},
 		"twt projects remove":        {"name"},
 		"twt projects get":           {"name"},
+		"twt labels add":             {"name"},
+		"twt labels remove":          {"name"},
+		"twt labels rename":          {"name", "new_name"},
 	}
 	for path, names := range want {
 		if strings.Join(arguments[path], ",") != strings.Join(names, ",") {

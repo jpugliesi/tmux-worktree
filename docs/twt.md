@@ -936,15 +936,19 @@ reports whether Tickets home is set, exists, and is writable.
 ```sh
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG]
-twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--limit N]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--label LABEL]
+twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--claimed] [--all] [--label LABEL] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets get TICKET
-twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
+twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG] [--label LABEL] [--add-label LABEL] [--remove-label LABEL]
+twt labels list [--all] [--limit N]
+twt labels add NAME --ticket TICKET
+twt labels remove NAME [--ticket TICKET]
+twt labels rename NAME NEW_NAME
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]
 twt tickets unclaim TICKET [--as NAME]
@@ -1003,12 +1007,14 @@ cycles. `--limit` cuts only `ready`. It does not cut the graph.
 
 The default status is `needs-triage`. `--dry-run` prints the file that would
 be written and writes nothing. `--project` never creates a Project. The
-interactive picker may create a Project after confirm.
+interactive picker may create a Project after confirm. `--label` writes
+`labels`. Repeat the flag. `--label` never creates a Project.
 
 ```sh
 twt tickets create "fix the vfs tools" --project change-monitor --dry-run --output json
 twt tickets create "fix the vfs tools" --project change-monitor --output json
 twt tickets create "follow-up work" --status ready-for-agent --blocked-by fix-the-vfs-tools --output json
+twt tickets create "spike the monitor" --label change-monitor --output json
 printf '%s' "$BODY" | twt tickets create - --title "Fix the vfs tools" --output json
 ```
 
@@ -1036,6 +1042,10 @@ one.
 The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
 Project. With no Project in scope, the list includes every Project.
 `--all-projects` lists every Project even when a Workspace Project is set.
+
+`--label` keeps Tickets that carry that label. Repeat the flag to require
+every named label. `--label` does not change Project scope. Pass
+`--all-projects` for a cross-Project label feed.
 
 A scoped text list is a simple table. A wide text table adds a `PROJECT`
 column. Ungrouped Tickets show `(none)` in that column. JSON and NDJSON
@@ -1087,11 +1097,39 @@ such as a `wontfix` resolution or a hand-off of open work:
 twt tickets set TICKET --status wontfix --output json
 twt tickets set TICKET --blocked-by other-ticket --output json
 twt tickets set TICKET --blocked-by "" --output json
+twt tickets set TICKET --add-label change-monitor --output json
+twt tickets set TICKET --project "" --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 
 `--blocked-by` replaces the whole blocker list. Pass an empty value to
 write `[]`. Apply uses `ticket.blockedBy` as an array of strings.
+
+`--label` replaces the whole label list. `--add-label` and `--remove-label`
+change the current list. An empty `--project` ungroups the Ticket. A label
+change does not move the file.
+
+### Labels
+
+A Label is a loose theme on a Ticket. A Ticket can have many Labels. A Label
+can appear on ungrouped Tickets and on Tickets in many Projects. A label
+uses lowercase letters, digits, and hyphens.
+
+`--label` never creates a Project. `twt labels` is the cross-Ticket command
+group. `list` derives unique names and Ticket counts. `add`, `remove`, and
+`rename` rewrite Ticket frontmatter and do not move files. There is no
+label registry.
+
+```sh
+twt labels list --output json
+twt labels add change-monitor --ticket spike-the-monitor --output json
+twt labels rename change-monitor monitor-theme --output json
+twt labels remove monitor-theme --output json
+twt tickets create "spike the monitor" --label change-monitor --output json
+twt tickets set spike-the-monitor --add-label dev-env --output json
+twt tickets list --label change-monitor -A --output json
+twt tickets set spike-the-monitor --project "" --output json
+```
 
 `twt next` with no name is the daily loop in a terminal. It opens a Ticket
 picker when open Tickets exist, then claims the selected Ticket and starts

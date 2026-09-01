@@ -24,7 +24,8 @@ can feed many Workspaces over time.
 |---|---|---|
 | **Tickets home** | Configured root directory of ticket Markdown files. Default personal value: `~/Vaults/spacexai/tickets/`. | Vault, issues dir |
 | **Project** | One directory under Tickets home, with `index.md`. Groups tickets. Outlives any checkout. | Board, workspace, epic folder |
-| **Ticket** | One Markdown file with YAML frontmatter. | Issue, task file, combined tickets note |
+| **Ticket** | One Markdown file with YAML frontmatter. A Ticket has zero or one Project and zero or more Labels. | Issue, task file, combined tickets note |
+| **Label** | A loose theme in the `labels` frontmatter list. It does not create a directory or a plan.md. | Project, tag, category, board |
 | **Topic note** | An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`. Not a Project. | Board |
 
 Do not put `workspace:` in ticket frontmatter. Use `project:` for the folder.
@@ -131,6 +132,8 @@ aliases:
   - Reconnect Change Monitor VFS tools
 tags:
   - tickets
+labels:
+  - change-monitor
 status: needs-triage
 priority: 2
 project: change-monitor
@@ -149,6 +152,10 @@ work. `twt tickets complete` and `twt tickets pr add` write it; do not edit
 it by hand.
 
 Ungrouped tickets omit `project` or leave it empty.
+
+`labels` holds loose themes. A Ticket can have many labels. A label does not
+move the file and does not create a Project. Obsidian `tags` stay vault-wide
+and still include `tickets`.
 
 `blocked_by` holds wiki-links, for example `["[[some-ticket]]"]`. Body links
 use the same form. Do not write a bare slug in prose.
@@ -216,15 +223,19 @@ Never open `$EDITOR` for an agent. The editor path is TTY-only.
 ```
 twt tickets init
 twt tickets home
-twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG]
-twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--limit N]
+twt tickets create [DESCRIPTION] [--project PROJECT] [--title TITLE] [--slug SLUG] [--status STATUS] [--blocked-by SLUG] [--label LABEL]
+twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready] [--label LABEL] [--limit N]
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets get TICKET
-twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]
+twt tickets set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG] [--label LABEL] [--add-label LABEL] [--remove-label LABEL]
+twt labels list [--all] [--limit N]
+twt labels add NAME --ticket TICKET
+twt labels remove NAME [--ticket TICKET]
+twt labels rename NAME NEW_NAME
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
 twt tickets close TICKET [--as NAME]
@@ -357,6 +368,9 @@ that keeps atomic-write temp files out of every commit.
 | `-` | Read the body from stdin. Require `--title`. Never open the wizard. |
 
 Default status is `needs-triage`. `--status ready-for-agent` is allowed.
+`--label` writes `labels`. Repeat the flag. `--label` never creates a
+Project. A label uses lowercase letters, digits, and hyphens.
+
 `--blocked-by` writes `blocked_by` as wiki-links. Repeat the flag. Each
 value may be a slug or `[[slug]]`. An empty list is the default. A Ticket
 cannot list itself. A missing blocker stays allowed. `--ready` treats a
@@ -378,12 +392,23 @@ still requires an existing Project.
 
 ### `tickets set`
 
-`set` changes `status`, `priority`, `project`, or `blocked_by`. Pass at
-least one flag.
+`set` changes `status`, `priority`, `project`, `blocked_by`, or `labels`.
+Pass at least one flag.
 
 `--blocked-by` replaces the whole blocker list. Pass an empty value to
 write `[]`. Apply uses `ticket.blockedBy` as an array of strings. An empty
 array clears the list.
+
+`--label` replaces the whole label list. Pass an empty value to write `[]`.
+`--add-label` and `--remove-label` change the current list. Do not mix
+`--label` with `--add-label` or `--remove-label`. Apply uses
+`ticket.labels`, `ticket.addLabels`, and `ticket.removeLabels`. An empty
+`ticket.labels` array clears the list. A label change does not move the
+file.
+
+An empty `--project` ungroups the Ticket. Apply uses `ticket.project` as an
+empty string. Ungroup moves `PROJECT/SLUG.md` to `SLUG.md`, or
+`closed/PROJECT/SLUG.md` to `closed/SLUG.md`.
 
 ### Ticket moves
 
@@ -416,6 +441,23 @@ only one.
 The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
 Project. With no Project in scope, the list includes every Project.
 `--all-projects` lists every Project even when a Workspace Project is set.
+
+`--label` keeps Tickets that carry that label. Repeat the flag to require
+every named label. `--label` does not change Project scope. Pass
+`--all-projects` for a cross-Project label feed.
+
+### Labels
+
+A Label is a loose theme. A Ticket can have many Labels. A Label can appear
+on ungrouped Tickets and on Tickets in many Projects. `--label` never
+creates a Project. A label change does not move the file.
+
+`twt labels list` derives unique names and Ticket counts from the same
+files. `twt labels add NAME --ticket TICKET` writes the label on those
+Tickets. `twt labels remove NAME` removes it from every Ticket that
+carries it. `twt labels rename NAME NEW_NAME` rewrites the name on every
+Ticket that carries it. There is no label registry. An empty `--project`
+on `tickets set` ungroups the Ticket.
 
 A scoped text list is a simple table. A wide text table adds a `PROJECT`
 column. JSON and NDJSON stay a flat array in the sort order above.
@@ -501,6 +543,9 @@ Ticket apply operations:
 - `projects.rename`
 - `projects.set`
 - `workspaces.set`
+- `labels.add`
+- `labels.remove`
+- `labels.rename`
 
 `twt schema` must list every new command and these operations. Update
 `TestSchemaDescribesCommandsFlagsAndRawApplyOperations` with the new
@@ -512,6 +557,11 @@ TTY path, so it has no OS-username default.
 `tickets.create` and `tickets.set` accept `ticket.blockedBy` as an array of
 slugs or wiki-links. An empty array on `tickets.set` clears the list.
 
+`tickets.create` and `tickets.set` accept `ticket.labels`. `tickets.set`
+also accepts `ticket.addLabels` and `ticket.removeLabels`. An empty
+`ticket.labels` array clears the list. An empty `ticket.project` ungroups
+the Ticket.
+
 ### JSON envelopes
 
 ```json
@@ -522,8 +572,8 @@ slugs or wiki-links. An empty array on `tickets.set` clears the list.
 ```
 
 A ticket object includes `slug`, `title`, `status`, `priority`, `project`,
-`path`, `claimedBy`, `blockedBy`, `workspaceId`, `created`, `updated`.
-`workspaceId` is omitted when empty. `show` also includes `body`.
+`labels`, `path`, `claimedBy`, `blockedBy`, `workspaceId`, `created`,
+`updated`. `workspaceId` is omitted when empty. `show` also includes `body`.
 
 Mutation dry-run uses the existing mutation envelope: `schemaVersion`,
 `operation`, `status` (`valid` or `applied`), plus `id` as the slug.
@@ -628,6 +678,12 @@ Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 - `--ready` with `--status` returns `invalid_usage`
 - `create --blocked-by` and `set --blocked-by` write wiki-links
 - apply `ticket.blockedBy` creates or replaces the same list
+- `create --label` and `set --label` write `labels`
+- `set --add-label` and `set --remove-label` change the current list
+- apply `ticket.labels`, `ticket.addLabels`, and `ticket.removeLabels`
+- `set --project ""` ungroups a Ticket and keeps its labels
+- `tickets list --label` matches across Projects when `-A` is set
+- `labels list` derives unique labels from Ticket files
 - Wiki-link, prefix, and title resolve
 - `init` does not overwrite existing notes
 - JSON envelopes match the shapes above

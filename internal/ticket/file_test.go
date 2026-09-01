@@ -233,6 +233,7 @@ type fixture struct {
 	priority  string
 	claimedBy string
 	blocked   []string
+	labels    []string
 	aliases   []string
 	body      string
 }
@@ -250,6 +251,16 @@ func (f fixture) content() string {
 		b.WriteString("  - " + alias + "\n")
 	}
 	b.WriteString("tags:\n  - tickets\n")
+	if f.labels != nil {
+		if len(f.labels) == 0 {
+			b.WriteString("labels: []\n")
+		} else {
+			b.WriteString("labels:\n")
+			for _, label := range f.labels {
+				b.WriteString("  - " + label + "\n")
+			}
+		}
+	}
 	b.WriteString("status: " + f.status + "\n")
 	if f.priority != "" {
 		b.WriteString("priority: " + f.priority + "\n")

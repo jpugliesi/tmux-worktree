@@ -414,6 +414,8 @@ type CreateRequest struct {
 	// BlockedBy is the list of blocker slugs or wiki-links. Create writes
 	// them as wiki-links. An empty list writes blocked_by: [].
 	BlockedBy []string
+	// Labels is the initial loose-theme list. Create writes labels: [].
+	Labels []string
 	// EnsureProject creates Project when it is missing. The interactive create
 	// wizard sets this after confirm. --project and apply never set it.
 	EnsureProject bool
@@ -479,6 +481,10 @@ func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, erro
 	if err := rejectSelfBlock(slug, blockedBy); err != nil {
 		return CreateResult{}, err
 	}
+	labels, err := normalizeLabels(req.Labels)
+	if err != nil {
+		return CreateResult{}, err
+	}
 	ticket := domain.Ticket{
 		Slug:      slug,
 		Title:     title,
@@ -486,6 +492,7 @@ func (s *Service) createOnce(req CreateRequest, dryRun bool) (CreateResult, erro
 		Status:    status,
 		Priority:  priority,
 		Project:   req.Project,
+		Labels:    labels,
 		BlockedBy: blockedBy,
 		Created:   s.today(),
 		Updated:   s.today(),
@@ -578,6 +585,7 @@ func renderNewTicket(ticket domain.Ticket, body string) ([]byte, error) {
 	node.Style = yaml.DoubleQuotedStyle
 	setMapStringList(mapping, "aliases", []string{ticket.Title})
 	setMapStringList(mapping, "tags", []string{"tickets"})
+	setMapStringList(mapping, "labels", ticket.Labels)
 	setMapString(mapping, "status", string(ticket.Status))
 	setMapInt(mapping, "priority", ticket.Priority)
 	if ticket.Project == "" {
@@ -672,6 +680,110 @@ func normalizeBlockedBy(values []string) ([]string, error) {
 	return out, nil
 }
 
+// normalizeLabels trims, lowercases, and deduplicates label names. Empty
+// values drop out. An invalid label is invalid_usage.
+func normalizeLabels(values []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		label := strings.ToLower(strings.TrimSpace(value))
+		if label == "" {
+			continue
+		}
+		if !domain.ValidTicketLabel(label) {
+			return nil, clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "label %q is not valid", value),
+				"Use lowercase letters, digits, and hyphens.")
+		}
+		if seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	return out, nil
+}
+
+// canonicalizeLabels normalizes labels on read. Invalid names stay so a
+// mutation that does not touch labels does not rewrite them.
+func canonicalizeLabels(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		label := strings.ToLower(strings.TrimSpace(value))
+		if label == "" || seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	return out
+}
+
+// mergeLabels applies one set of label changes. --label replaces the list.
+// --add-label and --remove-label change the current list. The two styles
+// cannot mix. The same name cannot be added and removed in one write.
+func mergeLabels(current []string, req SetRequest) ([]string, error) {
+	if req.LabelsSet && (len(req.AddLabels) > 0 || len(req.RemoveLabels) > 0) {
+		return nil, clierr.WithHint(
+			clierr.New(clierr.InvalidUsage, "--label cannot mix with --add-label or --remove-label"),
+			"Replace the list with --label, or change it with --add-label and --remove-label.")
+	}
+	if req.LabelsSet {
+		return normalizeLabels(req.Labels)
+	}
+	add, err := normalizeLabels(req.AddLabels)
+	if err != nil {
+		return nil, err
+	}
+	remove, err := normalizeLabels(req.RemoveLabels)
+	if err != nil {
+		return nil, err
+	}
+	removed := map[string]bool{}
+	for _, label := range remove {
+		removed[label] = true
+	}
+	for _, label := range add {
+		if removed[label] {
+			return nil, clierr.WithHint(
+				clierr.New(clierr.InvalidUsage, "label %q is in both --add-label and --remove-label", label),
+				"Pass the label on one of the two flags.")
+		}
+	}
+	out := make([]string, 0, len(current)+len(add))
+	seen := map[string]bool{}
+	for _, label := range current {
+		if removed[label] || seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	for _, label := range add {
+		if seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	return out, nil
+}
+
+// ticketHasAllLabels reports whether ticketLabels contains every wanted label.
+func ticketHasAllLabels(ticketLabels, wanted []string) bool {
+	have := map[string]bool{}
+	for _, label := range ticketLabels {
+		have[label] = true
+	}
+	for _, label := range wanted {
+		if !have[label] {
+			return false
+		}
+	}
+	return true
+}
+
 // rejectSelfBlock refuses a Ticket that lists itself as a blocker.
 func rejectSelfBlock(slug string, blockers []string) error {
 	for _, blocker := range blockers {
@@ -697,6 +809,8 @@ type ListFilter struct {
 	// claimed and parked on needs-info by an ask.
 	NeedsInput bool
 	All        bool
+	// Labels selects Tickets that carry every named label (AND).
+	Labels []string
 }
 
 // closedStatus reports whether a status resolves a Ticket. The default list
@@ -728,6 +842,10 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 	if err != nil {
 		return nil, err
 	}
+	wantedLabels, err := normalizeLabels(filter.Labels)
+	if err != nil {
+		return nil, err
+	}
 	idx, err := buildIndex(home)
 	if err != nil {
 		return nil, err
@@ -751,6 +869,9 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 			continue
 		}
 		if filter.NeedsInput && (ticket.ClaimedBy == "" || ticket.Status != domain.TicketNeedsInfo) {
+			continue
+		}
+		if len(wantedLabels) > 0 && !ticketHasAllLabels(ticket.Labels, wantedLabels) {
 			continue
 		}
 		tickets = append(tickets, ticket)
@@ -856,6 +977,10 @@ type SetRequest struct {
 	ProjectSet   bool
 	BlockedBy    []string
 	BlockedBySet bool
+	Labels       []string
+	LabelsSet    bool
+	AddLabels    []string
+	RemoveLabels []string
 }
 
 // Set changes status, priority, Project, or blocked_by of one Ticket. A
@@ -870,13 +995,6 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 	if req.PrioritySet && (req.Priority < 0 || req.Priority > 4) {
 		return domain.Ticket{}, clierr.New(clierr.InvalidUsage, "priority %d is not in the range 0 to 4", req.Priority)
 	}
-	if req.ProjectSet {
-		if req.Project == "" {
-			return domain.Ticket{}, clierr.WithHint(
-				clierr.New(clierr.InvalidUsage, "the Project name is empty"),
-				"Pass a Project name.")
-		}
-	}
 	var blockedBy []string
 	if req.BlockedBySet {
 		var normalizeErr error
@@ -885,10 +1003,13 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 			return domain.Ticket{}, normalizeErr
 		}
 	}
+	if _, err := mergeLabels(nil, req); err != nil {
+		return domain.Ticket{}, err
+	}
 	return syncWrite(s, syncBestEffort, dryRun, func() string {
 		return fmt.Sprintf("twt: set %s", ref)
 	}, func() (domain.Ticket, error) {
-		if req.ProjectSet {
+		if req.ProjectSet && req.Project != "" {
 			projectLock, lockErr := store.AcquireNamedLock(s.options.StateDir, "project", req.Project)
 			if lockErr != nil {
 				return domain.Ticket{}, lockErr
@@ -915,6 +1036,13 @@ func (s *Service) Set(ref string, req SetRequest, dryRun bool) (domain.Ticket, e
 					return err
 				}
 				setMapBlockedBy(m.mapping, blockedBy)
+			}
+			if req.LabelsSet || len(req.AddLabels) > 0 || len(req.RemoveLabels) > 0 {
+				labels, err := mergeLabels(m.ticket.Labels, req)
+				if err != nil {
+					return err
+				}
+				setMapStringList(m.mapping, "labels", labels)
 			}
 			return nil
 		})
@@ -1415,6 +1543,7 @@ func decodeTicket(file *TicketFile, slug string) (domain.Ticket, error) {
 		}
 	}
 	ticket.BlockedBy = normalized
+	ticket.Labels = canonicalizeLabels(ticket.Labels)
 	return ticket, nil
 }
 

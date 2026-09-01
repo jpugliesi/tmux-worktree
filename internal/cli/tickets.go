@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -208,7 +209,7 @@ func newTicketsHomeCommand(options Options) *cobra.Command {
 
 func newTicketsCreateCommand(options Options) *cobra.Command {
 	var project, title, slug, status string
-	var blockedBy []string
+	var blockedBy, labels []string
 	command := &cobra.Command{
 		Use:   "create [DESCRIPTION...]",
 		Short: "Create a Ticket",
@@ -225,6 +226,7 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 				Status:    domain.TicketStatus(status),
 				Priority:  -1,
 				BlockedBy: blockedBy,
+				Labels:    labels,
 			}
 			switch {
 			case len(args) == 1 && isStdinToken(args[0]):
@@ -267,10 +269,12 @@ func newTicketsCreateCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&slug, "slug", "", "Set the file slug; empty derives it from the title")
 	command.Flags().StringVar(&status, "status", "", "Set the initial status; empty selects needs-triage")
 	command.Flags().StringArrayVar(&blockedBy, "blocked-by", nil, "Add a blocker slug or wiki-link; repeat for more blockers")
+	command.Flags().StringArrayVar(&labels, "label", nil, "Add a label; repeat for more labels")
 	setArguments(command, variadicArgument("description", false, "the body, or the literal \"-\" to read standard input; the first line becomes the title when --title is absent"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
 	_ = command.RegisterFlagCompletionFunc("blocked-by", ticketFlagCompletion(options))
+	registerLabelFlagCompletion(command, options, "label")
 	return command
 }
 
@@ -313,6 +317,7 @@ func createTicket(command *cobra.Command, service ticketservice.Store, request t
 
 func newTicketsListCommand(options Options) *cobra.Command {
 	var project, status string
+	var labels []string
 	var ready, claimed, needsInput, all, allProjects, fresh bool
 	var limit, offset int
 	command := &cobra.Command{
@@ -330,6 +335,10 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				return err
 			}
 			freshenTicketStore(command, service, fresh)
+			if command.Flags().Changed("label") && !hasNonEmptyLabel(labels) {
+				return invalidUsageWithHint(command, "Pass a label name on --label.",
+					"--label with no name matches nothing")
+			}
 			tickets, err := service.List(ticketservice.ListFilter{
 				Project:    scope.Project,
 				ProjectSet: scope.Set,
@@ -338,6 +347,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				Claimed:    claimed,
 				NeedsInput: needsInput,
 				All:        all,
+				Labels:     labels,
 			})
 			if err != nil {
 				return err
@@ -366,10 +376,12 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
 	command.Flags().BoolVar(&needsInput, "needs-input", false, "List only Tickets whose agent waits on the human")
 	command.Flags().BoolVar(&all, "all", false, "Include closed tickets")
+	command.Flags().StringArrayVar(&labels, "label", nil, "List Tickets that carry this label; repeat to require every named label")
 	addFreshFlag(command, &fresh)
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
+	registerLabelFlagCompletion(command, options, "label")
 	return command
 }
 
@@ -439,6 +451,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 				{"Status", string(ticket.Status)},
 				{"Priority", fmt.Sprintf("%d", ticket.Priority)},
 				{"Project", ticket.Project},
+				{"Labels", strings.Join(ticket.Labels, ", ")},
 				{"Path", ticket.Path},
 			}
 			if ticket.ClaimedBy != "" {
@@ -470,16 +483,24 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 
 func newTicketsSetCommand(options Options) *cobra.Command {
 	var status, project string
-	var blockedBy []string
+	var blockedBy, labels, addLabels, removeLabels []string
 	var priority int
 	command := &cobra.Command{
-		Use:   "set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG]",
+		Use:   "set TICKET [--status STATUS] [--priority N] [--project PROJECT] [--blocked-by SLUG] [--label LABEL] [--add-label LABEL] [--remove-label LABEL]",
 		Short: "Change Ticket fields",
 		Args:  exactArgs("TICKET"),
 		RunE: func(command *cobra.Command, args []string) error {
 			service, err := options.ticketService()
 			if err != nil {
 				return err
+			}
+			labelSet := command.Flags().Changed("label")
+			addSet := command.Flags().Changed("add-label")
+			removeSet := command.Flags().Changed("remove-label")
+			if labelSet && (addSet || removeSet) {
+				return invalidUsageWithHint(command,
+					"Replace the list with --label, or change it with --add-label and --remove-label.",
+					"--label cannot mix with --add-label or --remove-label")
 			}
 			request := ticketservice.SetRequest{
 				Status:       status,
@@ -490,21 +511,35 @@ func newTicketsSetCommand(options Options) *cobra.Command {
 				ProjectSet:   command.Flags().Changed("project"),
 				BlockedBy:    blockedBy,
 				BlockedBySet: command.Flags().Changed("blocked-by"),
+				Labels:       labels,
+				LabelsSet:    labelSet,
 			}
-			if !request.StatusSet && !request.PrioritySet && !request.ProjectSet && !request.BlockedBySet {
-				return invalidUsage(command, "pass at least one of --status, --priority, --project, or --blocked-by")
+			if addSet {
+				request.AddLabels = addLabels
+			}
+			if removeSet {
+				request.RemoveLabels = removeLabels
+			}
+			if !request.StatusSet && !request.PrioritySet && !request.ProjectSet && !request.BlockedBySet && !labelSet && !addSet && !removeSet {
+				return invalidUsage(command, "pass at least one of --status, --priority, --project, --blocked-by, --label, --add-label, or --remove-label")
 			}
 			return setTicket(command, service, args[0], request)
 		},
 	}
 	command.Flags().StringVar(&status, "status", "", "Set the status")
 	command.Flags().IntVar(&priority, "priority", 2, "Set the priority, 0 (highest) to 4 (lowest)")
-	command.Flags().StringVar(&project, "project", "", "Move the Ticket to this Project")
+	command.Flags().StringVar(&project, "project", "", "Move the Ticket to this Project; an empty value ungroups it")
 	command.Flags().StringArrayVar(&blockedBy, "blocked-by", nil, "Replace blockers with this slug or wiki-link; repeat for more; pass an empty value to clear")
+	command.Flags().StringArrayVar(&labels, "label", nil, "Replace labels with this name; repeat for more; pass an empty value to clear")
+	command.Flags().StringArrayVar(&addLabels, "add-label", nil, "Add a label without replacing the list; repeat for more")
+	command.Flags().StringArrayVar(&removeLabels, "remove-label", nil, "Remove a label; repeat for more")
 	setArguments(command, requiredArgument("ticket"))
 	setFlagEnum(command, "status", domain.TicketStatuses()...)
 	registerProjectFlagCompletion(command, options)
 	_ = command.RegisterFlagCompletionFunc("blocked-by", ticketFlagCompletion(options))
+	registerLabelFlagCompletion(command, options, "label")
+	registerLabelFlagCompletion(command, options, "add-label")
+	registerLabelFlagCompletion(command, options, "remove-label")
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
 }
@@ -867,4 +902,45 @@ func registerProjectFlagCompletion(command *cobra.Command, options Options) {
 	_ = command.RegisterFlagCompletionFunc("project", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return ticketProjectNames(options, toComplete), noFileCompletion
 	})
+}
+
+// registerLabelFlagCompletion completes one label flag from labels already
+// on Tickets.
+func registerLabelFlagCompletion(command *cobra.Command, options Options, flag string) {
+	_ = command.RegisterFlagCompletionFunc(flag, func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return ticketLabelNames(options, toComplete), noFileCompletion
+	})
+}
+
+func ticketLabelNames(options Options, toComplete string) []string {
+	service, err := options.ticketService()
+	if err != nil {
+		return nil
+	}
+	tickets, err := service.List(ticketservice.ListFilter{All: true})
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	names := make([]string, 0)
+	for _, ticket := range tickets {
+		for _, label := range ticket.Labels {
+			if seen[label] {
+				continue
+			}
+			seen[label] = true
+			names = append(names, label)
+		}
+	}
+	sort.Strings(names)
+	return matching(names, toComplete)
+}
+
+func hasNonEmptyLabel(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }

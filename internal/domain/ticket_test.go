@@ -78,6 +78,7 @@ func TestTicketValidate(t *testing.T) {
 		Status:   domain.TicketNeedsTriage,
 		Priority: 2,
 	}
+	valid.Labels = []string{"change-monitor", "dev-env"}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid ticket rejected: %v", err)
 	}
@@ -94,6 +95,11 @@ func TestTicketValidate(t *testing.T) {
 		{"slug leading hyphen", func(t *domain.Ticket) { t.Slug = "-fix" }},
 		{"slug empty", func(t *domain.Ticket) { t.Slug = "" }},
 		{"slug too long", func(t *domain.Ticket) { t.Slug = strings.Repeat("a", 61) }},
+		{"label uppercase", func(t *domain.Ticket) { t.Labels = []string{"Change-Monitor"} }},
+		{"label space", func(t *domain.Ticket) { t.Labels = []string{"change monitor"} }},
+		{"label empty", func(t *domain.Ticket) { t.Labels = []string{""} }},
+		{"label too long", func(t *domain.Ticket) { t.Labels = []string{strings.Repeat("a", 61)} }},
+		{"label repeated", func(t *domain.Ticket) { t.Labels = []string{"change-monitor", "change-monitor"} }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -103,5 +109,18 @@ func TestTicketValidate(t *testing.T) {
 				t.Fatal("Validate accepted an invalid ticket")
 			}
 		})
+	}
+}
+
+func TestValidTicketLabel(t *testing.T) {
+	for _, label := range []string{"change-monitor", "a", "dev-env", "origin-ui"} {
+		if !domain.ValidTicketLabel(label) {
+			t.Fatalf("label %q must be valid", label)
+		}
+	}
+	for _, label := range []string{"", "Change-Monitor", "change monitor", "-lead", strings.Repeat("a", 61)} {
+		if domain.ValidTicketLabel(label) {
+			t.Fatalf("label %q must not be valid", label)
+		}
 	}
 }

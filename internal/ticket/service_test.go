@@ -892,8 +892,12 @@ func TestSetValidation(t *testing.T) {
 	if _, err := service.Set("work", SetRequest{Priority: 5, PrioritySet: true}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("priority 5 = %v, want invalid_usage", err)
 	}
-	if _, err := service.Set("work", SetRequest{ProjectSet: true}, false); clierr.CodeOf(err) != clierr.InvalidUsage {
-		t.Fatalf("empty project = %v, want invalid_usage", err)
+	ungrouped, err := service.Set("work", SetRequest{ProjectSet: true}, false)
+	if err != nil {
+		t.Fatalf("empty project on an ungrouped Ticket: %v", err)
+	}
+	if ungrouped.Project != "" {
+		t.Fatalf("empty project left Project = %q", ungrouped.Project)
 	}
 	_, err = service.Set("work", SetRequest{Project: "nowhere", ProjectSet: true}, false)
 	if clierr.CodeOf(err) != clierr.NotFound {
@@ -1070,6 +1074,7 @@ aliases:
   - Fix the vfs tools
 tags:
   - tickets
+labels: []
 status: needs-triage
 priority: 2
 project: change-monitor

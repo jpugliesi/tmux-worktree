@@ -35,6 +35,8 @@ var freeTextArguments = map[string]bool{
 	"twt templates create name":    true,
 	"twt projects create name":     true,
 	"twt projects rename new_name": true,
+	"twt labels add name":          true,
+	"twt labels rename new_name":   true,
 	// The repository name and URL of a repos add are new.
 	"twt templates repos add repo": true,
 	"twt templates repos add url":  true,

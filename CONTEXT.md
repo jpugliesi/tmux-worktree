@@ -130,12 +130,20 @@ the conformance suite is the executable contract every backend must pass.
 _Avoid_: database, ticket file API
 
 **Ticket**:
-One Markdown file with YAML frontmatter. A Ticket belongs to one Project. A
-claim gives one worker exclusive work authority. A Ticket can link to one
-active Workspace and one active Local Dispatch Session; the Session's
-Workspace is the Ticket's active Workspace. Its directory defines
-its Project, including below the Closed Tickets directory.
+One Markdown file with YAML frontmatter. A Ticket belongs to zero or one
+Project. A Ticket can carry zero or more Labels. A claim gives one worker
+exclusive work authority. A Ticket can link to one active Workspace and one
+active Local Dispatch Session; the Session's Workspace is the Ticket's
+active Workspace. Its directory defines its Project, including below the
+Closed Tickets directory.
 _Avoid_: Issue, task file, combined tickets note
+
+**Label**:
+A loose theme on a Ticket, stored in the `labels` frontmatter list. A Label
+does not own a Ticket, create a directory, or carry a plan.md. A Ticket can
+have many Labels. A Label can appear on Tickets in many Projects and on
+ungrouped Tickets.
+_Avoid_: Project, tag, category, board
 
 **Topic note**:
 An Obsidian wiki-link to a knowledge note, such as `[[Change Monitor Agent]]`.

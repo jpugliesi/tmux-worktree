@@ -132,6 +132,7 @@ func TestTicketsCreateWritesAnObsidianNote(t *testing.T) {
 		"priority: 2",
 		"project: change-monitor",
 		"blocked_by: []",
+		"labels: []",
 		"# fix the vfs tools",
 		"## Comments",
 	} {
@@ -952,7 +953,7 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	want := "blockedBy,claimedBy,created,path,priority,project,slug,status,title,updated"
+	want := "blockedBy,claimedBy,created,labels,path,priority,project,slug,status,title,updated"
 	if strings.Join(keys, ",") != want {
 		t.Fatalf("ticket object keys = %v, want %s", keys, want)
 	}

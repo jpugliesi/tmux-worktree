@@ -172,7 +172,12 @@ func TestSkillsShowPrintsTheStampedSkill(t *testing.T) {
 
 func TestSkillDocumentsTicketBlockedBy(t *testing.T) {
 	content := skillasset.Canonical()
-	for _, want := range []string{"--blocked-by", "ticket.blockedBy", "tickets list --ready"} {
+	for _, want := range []string{
+		"--blocked-by", "ticket.blockedBy", "tickets list --ready",
+		"--label", "--add-label", "--remove-label",
+		"ticket.labels", "ticket.addLabels", "ticket.removeLabels",
+		"labels list", "labels add", "labels remove", "labels rename", "--label NAME -A",
+	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("canonical skill misses %q", want)
 		}

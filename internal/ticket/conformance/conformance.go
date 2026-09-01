@@ -4,6 +4,7 @@
 package conformance
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -30,6 +31,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
 		{"RemoveProjectFreesTheName", testRemoveProjectFreesTheName},
 		{"RenameProjectMovesTickets", testRenameProjectMovesTickets},
+		{"AddRemoveRenameLabels", testAddRemoveRenameLabels},
 		{"DryRunWritesNothing", testDryRunWritesNothing},
 		{"QueueReportsCycles", testQueueReportsCycles},
 		{"ApprovePlanLifecycle", testApprovePlanLifecycle},
@@ -143,6 +145,63 @@ func testRenameProjectMovesTickets(t *testing.T, store ticketservice.Store) {
 	moved, err := store.Resolve("open")
 	if err != nil || moved.Project != "new-name" {
 		t.Fatalf("Ticket after rename = %+v, %v", moved, err)
+	}
+}
+
+func testAddRemoveRenameLabels(t *testing.T, store ticketservice.Store) {
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "one", Slug: "one", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "two", Slug: "two", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	added, err := store.AddLabel("change-monitor", []string{"one", "two"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added.Name != "change-monitor" || len(added.Tickets) != 2 {
+		t.Fatalf("AddLabel = %+v", added)
+	}
+	one, err := store.Resolve("one")
+	if err != nil || strings.Join(one.Labels, ",") != "change-monitor" {
+		t.Fatalf("one after add = %+v, %v", one, err)
+	}
+	dry, err := store.RenameLabel("change-monitor", "monitor-theme", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.NewName != "monitor-theme" {
+		t.Fatalf("dry-run RenameLabel = %+v", dry)
+	}
+	one, err = store.Resolve("one")
+	if err != nil || strings.Join(one.Labels, ",") != "change-monitor" {
+		t.Fatalf("dry-run renamed a Ticket: %+v, %v", one, err)
+	}
+	renamed, err := store.RenameLabel("change-monitor", "monitor-theme", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "change-monitor" || renamed.NewName != "monitor-theme" {
+		t.Fatalf("RenameLabel = %+v", renamed)
+	}
+	one, err = store.Resolve("one")
+	if err != nil || strings.Join(one.Labels, ",") != "monitor-theme" {
+		t.Fatalf("one after rename = %+v, %v", one, err)
+	}
+	removed, err := store.RemoveLabel("monitor-theme", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed.Tickets) != 2 {
+		t.Fatalf("RemoveLabel = %+v", removed)
+	}
+	one, err = store.Resolve("one")
+	if err != nil || len(one.Labels) != 0 {
+		t.Fatalf("one after remove = %+v, %v", one, err)
 	}
 }
 

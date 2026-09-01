@@ -26,8 +26,9 @@ Every mutation goes through `twt tickets` or `twt apply`.
 
 | Noun | Meaning |
 |---|---|
-| Ticket | One Markdown file. Status, blockers, claim, pull requests. |
+| Ticket | One Markdown file. Status, blockers, labels, claim, pull requests. |
 | Project | A directory of Tickets plus an optional `plan.md`. |
+| Label | A loose theme on a Ticket. Not a Project. No `plan.md`. |
 | Claimant | Who holds a Ticket (`--as NAME`). One worker per Ticket. |
 | Workspace Template | Reusable YAML. Repositories, tmux layout, dispatch defaults. |
 | Workspace | One change. Git worktrees plus one tmux session. |
@@ -90,6 +91,8 @@ An agent, a script, and Neovim pass `--output json` on every command.
 
 ```sh
 twt tickets list --ready --output json --limit 20
+twt tickets list --label change-monitor -A --output json
+twt labels list --output json
 twt schema
 ```
 
@@ -120,7 +123,22 @@ flags at a terminal.
    twt tickets create "Add the API" --project myfeature --status ready-for-agent
    twt tickets create "Add the UI" --project myfeature --status ready-for-agent \
      --blocked-by add-the-api
+   twt tickets create "Spike the monitor" --label change-monitor
+   twt labels add change-monitor --ticket add-the-ui
+   twt tickets list --label change-monitor -A
+   twt labels list
+   twt labels rename change-monitor monitor-theme
+   twt labels remove monitor-theme --ticket spike-the-monitor
    twt tickets tree --project myfeature
+   ```
+
+   A Label is a loose theme. It does not need a Project. `twt labels add`,
+   `remove`, and `rename` rewrite Ticket frontmatter and do not move files.
+   `--label` never creates a Project. An empty `--project` removes the
+   Ticket from its Project:
+
+   ```sh
+   twt tickets set spike-the-monitor --project ""
    ```
 
 4. Dispatch. `--plan` starts a planning agent. Plain dispatch starts

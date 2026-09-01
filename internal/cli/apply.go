@@ -23,6 +23,7 @@ type applyRequest struct {
 	Storage   json.RawMessage `json:"storage,omitempty"`
 	Ticket    json.RawMessage `json:"ticket,omitempty"`
 	Project   json.RawMessage `json:"project,omitempty"`
+	Label     json.RawMessage `json:"label,omitempty"`
 }
 
 // templateNameRequest is the payload of each operation that only names a
@@ -124,16 +125,20 @@ type ticketCreateApplyRequest struct {
 	Status    string   `json:"status,omitempty"`
 	Priority  *int     `json:"priority,omitempty"`
 	BlockedBy []string `json:"blockedBy,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
 }
 
 // ticketSetApplyRequest uses pointers so apply can tell an absent field from
 // an empty value, the same as a flag presence check.
 type ticketSetApplyRequest struct {
-	Reference string    `json:"reference"`
-	Status    *string   `json:"status,omitempty"`
-	Priority  *int      `json:"priority,omitempty"`
-	Project   *string   `json:"project,omitempty"`
-	BlockedBy *[]string `json:"blockedBy,omitempty"`
+	Reference    string    `json:"reference"`
+	Status       *string   `json:"status,omitempty"`
+	Priority     *int      `json:"priority,omitempty"`
+	Project      *string   `json:"project,omitempty"`
+	BlockedBy    *[]string `json:"blockedBy,omitempty"`
+	Labels       *[]string `json:"labels,omitempty"`
+	AddLabels    *[]string `json:"addLabels,omitempty"`
+	RemoveLabels *[]string `json:"removeLabels,omitempty"`
 }
 
 // ticketEditApplyRequest replaces the body of one Ticket. Body is a pointer,
@@ -362,13 +367,17 @@ func applyOperations() []applyOperation {
 			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "absent selects needs-triage"},
 			{Path: "ticket.priority", Type: "integer", Required: false, Condition: "0 (highest) to 4 (lowest); absent selects 2"},
 			{Path: "ticket.blockedBy", Type: "array[string]", Required: false, Condition: "each value is a slug or wiki-link; absent writes an empty list"},
+			{Path: "ticket.labels", Type: "array[string]", Required: false, Condition: "absent writes an empty list; a label uses lowercase letters, digits, and hyphens"},
 		}}, applyTicketsCreate},
 		{applyOperationSchema{Operation: "tickets.set", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
-			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, ticket.project, or ticket.blockedBy"},
+			{Path: "ticket.status", Type: "string", Required: false, Enum: domain.TicketStatuses(), Condition: "set at least one of ticket.status, ticket.priority, ticket.project, ticket.blockedBy, ticket.labels, ticket.addLabels, or ticket.removeLabels"},
 			{Path: "ticket.priority", Type: "integer", Required: false},
-			{Path: "ticket.project", Type: "string", Required: false},
+			{Path: "ticket.project", Type: "string", Required: false, Condition: "an empty string ungroups the Ticket"},
 			{Path: "ticket.blockedBy", Type: "array[string]", Required: false, Condition: "replaces the blocker list; an empty array clears it"},
+			{Path: "ticket.labels", Type: "array[string]", Required: false, Condition: "replaces the label list; an empty array clears it; cannot mix with ticket.addLabels or ticket.removeLabels"},
+			{Path: "ticket.addLabels", Type: "array[string]", Required: false, Condition: "adds labels without replacing the list"},
+			{Path: "ticket.removeLabels", Type: "array[string]", Required: false, Condition: "removes labels without replacing the list"},
 		}}, applyTicketsSet},
 		{applyOperationSchema{Operation: "tickets.claim", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
@@ -459,6 +468,18 @@ func applyOperations() []applyOperation {
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.newName", Type: "string", Required: true},
 		}}, applyTicketsProjectsRename},
+		{applyOperationSchema{Operation: "labels.add", Payload: "label", Fields: []requestFieldSchema{
+			{Path: "label.name", Type: "string", Required: true},
+			{Path: "label.tickets", Type: "array[string]", Required: true, Condition: "Ticket slugs that receive the label"},
+		}}, applyLabelsAdd},
+		{applyOperationSchema{Operation: "labels.remove", Payload: "label", Fields: []requestFieldSchema{
+			{Path: "label.name", Type: "string", Required: true},
+			{Path: "label.tickets", Type: "array[string]", Required: false, Condition: "absent removes the label from every Ticket that carries it"},
+		}}, applyLabelsRemove},
+		{applyOperationSchema{Operation: "labels.rename", Payload: "label", Fields: []requestFieldSchema{
+			{Path: "label.name", Type: "string", Required: true},
+			{Path: "label.newName", Type: "string", Required: true},
+		}}, applyLabelsRename},
 	}
 }
 
@@ -915,6 +936,7 @@ func applyTicketsCreate(command *cobra.Command, options Options, request applyRe
 		Status:    domain.TicketStatus(payload.Status),
 		Priority:  priority,
 		BlockedBy: payload.BlockedBy,
+		Labels:    payload.Labels,
 	})
 }
 
@@ -939,8 +961,18 @@ func applyTicketsSet(command *cobra.Command, options Options, request applyReque
 	if payload.BlockedBy != nil {
 		setRequest.BlockedBy, setRequest.BlockedBySet = *payload.BlockedBy, true
 	}
-	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.ProjectSet && !setRequest.BlockedBySet {
-		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, ticket.project, or ticket.blockedBy")
+	if payload.Labels != nil {
+		setRequest.Labels, setRequest.LabelsSet = *payload.Labels, true
+	}
+	if payload.AddLabels != nil {
+		setRequest.AddLabels = *payload.AddLabels
+	}
+	if payload.RemoveLabels != nil {
+		setRequest.RemoveLabels = *payload.RemoveLabels
+	}
+	if !setRequest.StatusSet && !setRequest.PrioritySet && !setRequest.ProjectSet && !setRequest.BlockedBySet &&
+		!setRequest.LabelsSet && payload.AddLabels == nil && payload.RemoveLabels == nil {
+		return fmt.Errorf("tickets.set requires at least one of ticket.status, ticket.priority, ticket.project, ticket.blockedBy, ticket.labels, ticket.addLabels, or ticket.removeLabels")
 	}
 	service, err := options.ticketService()
 	if err != nil {
@@ -1270,4 +1302,88 @@ func applyTicketsProjectsRename(command *cobra.Command, options Options, request
 		return err
 	}
 	return renameProject(command, options, service, payload.Name, payload.NewName)
+}
+
+type labelApplyRequest struct {
+	Name    string   `json:"name"`
+	NewName string   `json:"newName,omitempty"`
+	Tickets []string `json:"tickets,omitempty"`
+}
+
+func applyLabelsAdd(command *cobra.Command, options Options, request applyRequest) error {
+	var payload labelApplyRequest
+	if err := decodeApplyPayload("labels.add", "label", request.Label, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("label.name is required for labels.add")
+	}
+	if len(payload.Tickets) == 0 {
+		return fmt.Errorf("label.tickets is required for labels.add")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return mutateLabel(command, "labels.add",
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.AddLabel(payload.Name, payload.Tickets, true)
+		},
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.AddLabel(payload.Name, payload.Tickets, false)
+		},
+		func(out io.Writer, result ticketservice.LabelChangeResult) error {
+			_, err := fmt.Fprintf(out, "Added label %q to %d Tickets\n", result.Name, len(result.Tickets))
+			return err
+		})
+}
+
+func applyLabelsRemove(command *cobra.Command, options Options, request applyRequest) error {
+	var payload labelApplyRequest
+	if err := decodeApplyPayload("labels.remove", "label", request.Label, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("label.name is required for labels.remove")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return mutateLabel(command, "labels.remove",
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.RemoveLabel(payload.Name, payload.Tickets, true)
+		},
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.RemoveLabel(payload.Name, payload.Tickets, false)
+		},
+		func(out io.Writer, result ticketservice.LabelChangeResult) error {
+			_, err := fmt.Fprintf(out, "Removed label %q from %d Tickets\n", result.Name, len(result.Tickets))
+			return err
+		})
+}
+
+func applyLabelsRename(command *cobra.Command, options Options, request applyRequest) error {
+	var payload labelApplyRequest
+	if err := decodeApplyPayload("labels.rename", "label", request.Label, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" || payload.NewName == "" {
+		return fmt.Errorf("label.name and label.newName are required for labels.rename")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return mutateLabel(command, "labels.rename",
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.RenameLabel(payload.Name, payload.NewName, true)
+		},
+		func() (ticketservice.LabelChangeResult, error) {
+			return service.RenameLabel(payload.Name, payload.NewName, false)
+		},
+		func(out io.Writer, result ticketservice.LabelChangeResult) error {
+			_, err := fmt.Fprintf(out, "Renamed label %q to %q on %d Tickets\n", result.Name, result.NewName, len(result.Tickets))
+			return err
+		})
 }

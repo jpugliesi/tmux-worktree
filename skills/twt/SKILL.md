@@ -1,6 +1,6 @@
 ---
 name: twt
-description: Manage twt Workspace Templates, Workspace creation and archive, repository worktrees, tmux windows, and Workspace Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt. Manage personal Markdown tickets through `twt tickets`. Use when creating, listing, claiming, updating, or setting blocked-by on tickets, projects, or a tickets home in an Obsidian vault.
+description: Manage twt Workspace Templates, Workspace creation and archive, repository worktrees, tmux windows, and Workspace Agent Sessions. Use for change-oriented development environments or coding-agent session control through twt. Manage personal Markdown tickets through `twt tickets`. Use when creating, listing, claiming, updating, labeling, or setting blocked-by on tickets, projects, or a tickets home in an Obsidian vault.
 ---
 
 # twt
@@ -356,6 +356,9 @@ Do not create Linear, GitHub, or Origin issues for this user's tickets unless
 the user asks for one.
 
 A Project is a durable group of Tickets. Create it with `twt projects create NAME`.
+A Label is a loose theme on a Ticket. It does not create a Project or a plan.md.
+A Ticket can have many Labels. A Label can appear on ungrouped Tickets and on
+Tickets in many Projects.
 A person at a terminal can omit `NAME`. twt then asks for the name. It opens
 VISUAL or EDITOR on an empty file for the plan. It then asks whether to start a Workspace.
 A person closes it with `twt projects close PROJECT`. A close with open Tickets
@@ -552,21 +555,28 @@ Follow these rules for every ticket command:
 5. Pass `--limit` on list commands.
 6. Create a ticket with a DESCRIPTION argument or a lone `-` with `--title`. Do not rely on
    `$EDITOR`; that path only opens for a person at an interactive terminal.
-   `--project` does not create a Project. Create the Project first with
-   `twt projects create NAME`. Do not omit `NAME` on `twt projects create`.
+   `--project` does not create a Project. `--label` does not create a
+   Project. A label is a loose theme, not ownership or a lifecycle. Create
+   the Project first with `twt projects create NAME`. Do not omit `NAME` on
+   `twt projects create`.
 7. Claim a ticket before starting work. Close it with
    `twt tickets close TICKET` when the work ships.
 8. Set a dependency with `--blocked-by` or apply `ticket.blockedBy`. Each
    value is a slug or `[[slug]]`. Repeat the flag for more blockers. An empty
    apply array clears the list. Keep a waiting ticket at `ready-for-agent`.
    `twt tickets list --ready` is the pickable queue, and it hides a ticket
-   whose blockers are still open.
+   whose blockers are still open. Set a label with `--label` or apply
+   `ticket.labels`. `--label` replaces the list. `--add-label` and
+   `--remove-label` change the current list. An empty `--project` ungroups
+   the Ticket. A label change does not move the file.
 9. List pickable work with `twt tickets list --ready --output json`. The
    list uses `--project`, then `TWT_PROJECT`, then the current Workspace
    Project. With no Project in scope, the list includes every Project.
    `--all-projects` lists every Project even when a Workspace Project is
    set. A plain `twt tickets list` hides `done` and `wontfix` tickets. Pass
-   `--all` to include them. A coordinator reads one Project with
+   `--all` to include them. `twt tickets list --label NAME -A` is the
+   cross-Project label feed. `twt labels list` derives unique labels from
+   Ticket files. A coordinator reads one Project with
    `twt projects get PROJECT --output json`. That envelope includes `ready`,
    `inFlight`, and `workspaces`. `twt context --output json` includes the
    linked Tickets and the ready queue for the current Workspace Project.
@@ -587,10 +597,55 @@ twt tickets create "follow-up work" --status ready-for-agent \
   --blocked-by fix-the-vfs-tools --dry-run --output json
 twt tickets create "follow-up work" --status ready-for-agent \
   --blocked-by fix-the-vfs-tools --output json
+twt tickets create "spike the monitor" --label change-monitor --dry-run --output json
+twt tickets create "spike the monitor" --label change-monitor --output json
 twt tickets set follow-up-work --blocked-by fix-the-vfs-tools --output json
+twt tickets set spike-the-monitor --add-label change-monitor --output json
+twt tickets set spike-the-monitor --project "" --output json
+twt tickets list --label change-monitor -A --output json
+twt labels list --output json
 printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"follow-up-work","blockedBy":[]}}' \
   | twt apply - --dry-run --output json
+printf '%s\n' '{"operation":"tickets.set","ticket":{"reference":"spike-the-monitor","addLabels":["change-monitor"]}}' \
+  | twt apply - --dry-run --output json
 ```
+
+### Labels
+
+A Label is a loose theme. It is not a Project. It has no `plan.md`. It does
+not own a Ticket or move its file. `--label` never creates a Project. Use
+`twt labels` for cross-Ticket add, list, remove, and rename. Those writes
+change frontmatter only.
+
+```sh
+twt labels list --output json
+twt labels add change-monitor --ticket TICKET --dry-run --output json
+twt labels add change-monitor --ticket TICKET --output json
+twt labels remove change-monitor --dry-run --output json
+twt labels remove change-monitor --output json
+twt labels rename change-monitor monitor-theme --dry-run --output json
+twt labels rename change-monitor monitor-theme --output json
+```
+
+- `twt labels add NAME --ticket TICKET` writes the label on those Tickets.
+  Repeat `--ticket`. Apply uses `labels.add` with `label.tickets`.
+- `twt labels remove NAME` removes the label from every Ticket that carries
+  it, including closed Tickets. `--ticket` limits the write. Apply uses
+  `labels.remove`.
+- `twt labels rename OLD NEW` rewrites the name on every Ticket that
+  carries it. Apply uses `labels.rename`.
+- `twt tickets create … --label NAME` writes the initial list. Repeat the flag.
+- `twt tickets set TICKET --label NAME` replaces the list. An empty value
+  clears it. Apply uses `ticket.labels`.
+- `twt tickets set TICKET --add-label NAME` and `--remove-label NAME` change
+  one Ticket. Apply uses `ticket.addLabels` and `ticket.removeLabels`.
+  Do not mix `--label` with `--add-label` or `--remove-label`.
+- An empty `--project` ungroups the Ticket and moves the file. Apply uses
+  `ticket.project` as an empty string.
+- `twt tickets list --label NAME -A` is the cross-Project feed. `--label`
+  does not change Project scope.
+- `twt labels list` derives unique names from Ticket files. There is no
+  label registry.
 
 ### Ask the human and answer
 
@@ -807,6 +862,10 @@ hand-off that leaves the ticket open:
 ```sh
 twt tickets set TICKET --status wontfix --output json
 twt tickets set TICKET --blocked-by other-ticket --output json
+twt tickets set TICKET --add-label change-monitor --output json
+twt tickets set TICKET --remove-label change-monitor --output json
+twt tickets set TICKET --label "" --output json
+twt tickets set TICKET --project "" --output json
 twt tickets unclaim TICKET --as codex-fix-auth --output json
 ```
 

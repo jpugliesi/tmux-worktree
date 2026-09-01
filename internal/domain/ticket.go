@@ -49,16 +49,19 @@ const TicketSlugMaxLength = 60
 // Ticket is one Markdown ticket file. The yaml tags name the frontmatter
 // keys. The json tags follow the twt JSON envelope.
 type Ticket struct {
-	Slug        string       `yaml:"-" json:"slug"`
-	Title       string       `yaml:"title" json:"title"`
-	Aliases     []string     `yaml:"aliases" json:"-"`
-	Status      TicketStatus `yaml:"status" json:"status"`
-	Priority    int          `yaml:"priority" json:"priority"`
-	Project     string       `yaml:"project" json:"project"`
-	BlockedBy   []string     `yaml:"blocked_by" json:"blockedBy"`
-	ClaimedBy   string       `yaml:"claimed_by" json:"claimedBy"`
-	ClaimedAt   string       `yaml:"claimed_at" json:"-"`
-	WorkspaceID string       `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
+	Slug     string       `yaml:"-" json:"slug"`
+	Title    string       `yaml:"title" json:"title"`
+	Aliases  []string     `yaml:"aliases" json:"-"`
+	Status   TicketStatus `yaml:"status" json:"status"`
+	Priority int          `yaml:"priority" json:"priority"`
+	Project  string       `yaml:"project" json:"project"`
+	// Labels are loose themes. They do not own a Ticket, move its file, or
+	// replace Project, status, or blocked_by.
+	Labels      []string `yaml:"labels" json:"labels"`
+	BlockedBy   []string `yaml:"blocked_by" json:"blockedBy"`
+	ClaimedBy   string   `yaml:"claimed_by" json:"claimedBy"`
+	ClaimedAt   string   `yaml:"claimed_at" json:"-"`
+	WorkspaceID string   `yaml:"twt_workspace_id" json:"workspaceId,omitempty"`
 	// AskStatus remembers the status a Ticket had before an agent parked it
 	// on needs-info with an ask. Answer restores and clears it.
 	AskStatus string `yaml:"twt_ask_status" json:"-"`
@@ -116,12 +119,34 @@ func (t Ticket) Validate() error {
 		}
 		return fmt.Errorf("ticket slug %q is invalid: use lowercase letters, digits, and hyphens", t.Slug)
 	}
+	seen := map[string]bool{}
+	for _, label := range t.Labels {
+		if !ValidTicketLabel(label) {
+			if len(label) > TicketLabelMaxLength {
+				return fmt.Errorf("ticket label %q is longer than %d characters", label, TicketLabelMaxLength)
+			}
+			return fmt.Errorf("ticket label %q is invalid: use lowercase letters, digits, and hyphens", label)
+		}
+		if seen[label] {
+			return fmt.Errorf("ticket label %q is repeated", label)
+		}
+		seen[label] = true
+	}
 	return nil
 }
 
 // ValidTicketSlug reports whether slug follows the Ticket slug rule.
 func ValidTicketSlug(slug string) bool {
 	return len(slug) <= TicketSlugMaxLength && ticketSlugPattern.MatchString(slug)
+}
+
+// TicketLabelMaxLength caps the length of one Ticket label.
+const TicketLabelMaxLength = TicketSlugMaxLength
+
+// ValidTicketLabel reports whether label follows the Ticket label rule. A
+// label uses the same characters as a Ticket slug.
+func ValidTicketLabel(label string) bool {
+	return len(label) <= TicketLabelMaxLength && ticketSlugPattern.MatchString(label)
 }
 
 // ReservedTicketSlug names slugs that would collide with the reserved
