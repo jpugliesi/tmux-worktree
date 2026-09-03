@@ -49,6 +49,18 @@ func TestTicketsCreateAndSetLabels(t *testing.T) {
 		t.Fatalf("list JSON missed labels: %s", listed)
 	}
 
+	textList, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "list", "--label", "change-monitor", "--all-projects")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(textList, "LABELS") {
+		t.Fatalf("text list missed LABELS:\n%s", textList)
+	}
+	if !strings.Contains(textList, "change-monitor,origin-ui") {
+		t.Fatalf("text list missed comma-separated labels:\n%s", textList)
+	}
+
 	both, _, err := executeCollectingInput(t, options, nil,
 		"tickets", "list", "--label", "change-monitor", "--label", "origin-ui", "--all-projects", "--output", "json")
 	if err != nil {

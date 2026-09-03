@@ -397,13 +397,13 @@ func newTicketsListCommand(options Options) *cobra.Command {
 // writeTicketList writes one Ticket table. A wide list includes a PROJECT
 // column. A scoped list is a simple table.
 func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool) error {
-	headers := []string{"SLUG", "STATUS", "CLAIMED_BY", "PRIORITY", "TITLE"}
+	headers := []string{"SLUG", "STATUS", "CLAIMED_BY", "PRIORITY", "LABELS", "TITLE"}
 	if includeProject {
 		headers = append([]string{"PROJECT"}, headers...)
 	}
 	rows := make([][]string, 0, len(tickets))
 	for _, ticket := range tickets {
-		row := []string{ticket.Slug, ticketDisplayState(ticket), ticket.ClaimedBy, fmt.Sprintf("%d", ticket.Priority), ticket.Title}
+		row := []string{ticket.Slug, ticketDisplayState(ticket), ticket.ClaimedBy, fmt.Sprintf("%d", ticket.Priority), ticketLabelsCell(ticket.Labels), ticket.Title}
 		if includeProject {
 			project := ticket.Project
 			if project == "" {
@@ -414,6 +414,10 @@ func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool
 		rows = append(rows, row)
 	}
 	return writeTable(out, headers, rows)
+}
+
+func ticketLabelsCell(labels []string) string {
+	return strings.Join(labels, ",")
 }
 
 // ticketDisplayState folds the claim and PR presence into the STATUS
@@ -460,7 +464,7 @@ func newTicketsShowCommand(options Options) *cobra.Command {
 				{"Status", string(ticket.Status)},
 				{"Priority", fmt.Sprintf("%d", ticket.Priority)},
 				{"Project", ticket.Project},
-				{"Labels", strings.Join(ticket.Labels, ", ")},
+				{"Labels", ticketLabelsCell(ticket.Labels)},
 				{"Path", ticket.Path},
 			}
 			if ticket.ClaimedBy != "" {

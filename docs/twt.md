@@ -1054,8 +1054,9 @@ every named label. `--label` does not change Project scope. Pass
 `--all-projects` for a cross-Project label feed.
 
 A scoped text list is a simple table. A wide text table adds a `PROJECT`
-column. Ungrouped Tickets show `(none)` in that column. JSON and NDJSON
-stay a flat array in the sort order above.
+column. Ungrouped Tickets show `(none)` in that column. The `LABELS`
+column lists labels as a comma-separated cell. JSON and NDJSON stay a
+flat array in the sort order above.
 
 ```sh
 twt tickets list --ready --output json --limit 20

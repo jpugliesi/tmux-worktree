@@ -464,7 +464,8 @@ Ticket that carries it. There is no label registry. An empty `--project`
 on `tickets set` ungroups the Ticket.
 
 A scoped text list is a simple table. A wide text table adds a `PROJECT`
-column. JSON and NDJSON stay a flat array in the sort order above.
+column. The `LABELS` column lists labels as a comma-separated cell.
+JSON and NDJSON stay a flat array in the sort order above.
 
 List results omit the body. `show` returns metadata plus body.
 

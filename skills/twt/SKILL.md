@@ -716,6 +716,7 @@ pull requests: `needs-input` (claimed, waiting on the human),
 `in-progress` (claimed), `in-review` (pull requests exist and the Ticket
 is `ready-for-human`, or every pull request is merged). Other rows show
 the stored status. `--status` matches that column or a stored status.
+The LABELS column lists labels as a comma-separated cell.
 Use `--status in-progress` to list claimed Tickets. JSON `status` stays
 the stored field. The tree and board still derive `ready` and `blocked`.
 
