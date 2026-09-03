@@ -707,8 +707,9 @@ worktrees to the prepared pool. It keeps the Workspace record, branches,
 Workspace Template snapshot, repository caches, and Agent Session records.
 
 Archive refuses tracked and nonignored changes. Use `--force` to discard them.
-The force option preserves ignored files. An active Git operation always blocks
-the release. Each repository recycle command runs before the worktree returns.
+Force detaches each worktree to its prepared base and runs `git clean -ffd`.
+It keeps ignored files. An active Git operation always blocks the release.
+Each repository recycle command runs before the worktree returns.
 
 To finish a Workspace and return its worktrees, use `done`:
 

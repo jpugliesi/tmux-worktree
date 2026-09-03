@@ -82,6 +82,74 @@ func TestReleaseRequiresForceAndPreservesIgnoredFiles(t *testing.T) {
 	}
 }
 
+func TestReleaseForceWipesAfterTheTreeChanges(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	if err := os.WriteFile(filepath.Join(source, ".gitignore"), []byte("secret.env\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(source, "git", "add", ".gitignore"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(source, "git", "commit", "-qm", "ignore local secret"); err != nil {
+		t.Fatal(err)
+	}
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-release-stale-force-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	workspace, err := service.Create("stale", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryPath := workspace.Repositories[0].Path
+	if err := os.WriteFile(filepath.Join(repositoryPath, "README.md"), []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.InspectRelease(workspace.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repositoryPath, "README.md"), []byte("second\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repositoryPath, "extra.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repositoryPath, "secret.env"), []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Release(workspace.ID, "", ReleaseOptions{Force: true, ExpectedFingerprint: plan.Fingerprint}); err != nil {
+		t.Fatalf("Release() with force after a later edit: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repositoryPath, "secret.env")); err != nil {
+		t.Fatalf("release removed an ignored file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repositoryPath, "extra.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("release kept a nonignored untracked file: %v", err)
+	}
+	if status := testGitOutput(t, repositoryPath, "status", "--porcelain", "--ignore-submodules=none"); status != "" {
+		t.Fatalf("released worktree is dirty: %q", status)
+	}
+	head := testGitOutput(t, repositoryPath, "rev-parse", "HEAD")
+	if head != workspace.Repositories[0].BaseCommit {
+		t.Fatalf("released HEAD = %q, want base %q", head, workspace.Repositories[0].BaseCommit)
+	}
+}
+
 func TestReleaseRunsTheRecycleCommandBeforeReuse(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -758,36 +826,6 @@ func TestReleaseFingerprintIncludesHeadAndWorkingTreeState(t *testing.T) {
 	staged := inspect()
 	if unstaged.fingerprint == staged.fingerprint {
 		t.Fatal("release fingerprint did not change when a change became staged")
-	}
-	if err := os.WriteFile(readme, []byte("worktree\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	firstIndex := inspect()
-	if err := os.WriteFile(readme, []byte("second index\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := run(repository, "git", "add", "README.md"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(readme, []byte("worktree\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	secondIndex := inspect()
-	if firstIndex.fingerprint == secondIndex.fingerprint {
-		t.Fatal("release fingerprint did not change with staged content")
-	}
-
-	untrackedPath := filepath.Join(repository, "untracked.txt")
-	if err := os.WriteFile(untrackedPath, []byte("first\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	firstUntracked := inspect()
-	if err := os.WriteFile(untrackedPath, []byte("second\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	secondUntracked := inspect()
-	if firstUntracked.fingerprint == secondUntracked.fingerprint {
-		t.Fatal("release fingerprint did not change with untracked file content")
 	}
 }
 

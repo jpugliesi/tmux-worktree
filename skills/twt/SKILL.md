@@ -215,7 +215,8 @@ twt workspaces set WORKSPACE --project PROJECT --output json
 Archive a completed Workspace from outside its tmux session. Archive stops live
 processes and returns the worktrees to the prepared pool. It keeps branches,
 Template snapshots, and Agent Session records. It refuses tracked and
-nonignored changes. Use `--force` only with user authority. Force preserves
+nonignored changes. Use `--force` only with user authority. Force detaches
+each worktree to its prepared base, runs `git clean -ffd`, and preserves
 ignored files. An active Git operation always blocks the release.
 
 ```sh

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -168,9 +167,6 @@ func (s *Service) releasePlan(workspace domain.Workspace, opts ReleaseOptions) (
 	if inspected.Dirty && !opts.Force {
 		return inspected, clierr.WithHint(clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name), "Save the changes or run the command with --force.")
 	}
-	if opts.ExpectedFingerprint != "" && opts.ExpectedFingerprint != inspected.Fingerprint {
-		return inspected, clierr.New(clierr.UnsafeState, "Workspace %q changed after release approval", workspace.Name)
-	}
 	return inspected, nil
 }
 
@@ -185,37 +181,25 @@ func (s *Service) cleanReleasedEnvironment(workspace domain.Workspace, plan Rele
 	if environment.Assignment.Generation != environment.Generation {
 		return environment, fmt.Errorf("Prepared Environment %q release generation changed", environment.ID)
 	}
-	current, states, err := s.inspectReleaseState(workspace)
-	if err != nil {
+	if err := s.refuseActiveGitOperations(workspace); err != nil {
 		return environment, err
 	}
-	if current.Fingerprint != plan.Fingerprint {
-		return environment, clierr.New(clierr.UnsafeState, "Workspace %q changed after release approval. Its worktrees stay assigned", workspace.Name)
-	}
-	if current.GitOperation != "" {
-		return environment, clierr.New(clierr.UnsafeState, "Workspace %q has active Git operation %q in repository %q", workspace.Name, current.GitOperation, current.GitRepository)
-	}
-	if current.Dirty {
-		if !opts.Force {
+	if !opts.Force {
+		current, err := s.inspectRelease(workspace)
+		if err != nil {
+			return environment, err
+		}
+		if current.GitOperation != "" {
+			return environment, clierr.New(clierr.UnsafeState, "Workspace %q has active Git operation %q in repository %q", workspace.Name, current.GitOperation, current.GitRepository)
+		}
+		if current.Dirty {
 			return environment, clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name)
 		}
-		for _, repository := range workspace.Repositories {
-			if err := cleanRepositoryForRelease(repository.Path); err != nil {
-				return environment, err
-			}
-		}
 	}
-	baselines := make(map[string]repositoryReleaseState, len(states))
-	for _, state := range states {
-		baselines[state.name] = state
-	}
-	if current.Dirty {
-		baselines = nil
-	}
-	if err := s.runRecycleHooks(workspace, baselines); err != nil {
+	if err := s.runRecycleHooks(workspace, opts.Force); err != nil {
 		return environment, err
 	}
-	if err := s.detachReleasedRepositories(workspace, &environment); err != nil {
+	if err := s.detachReleasedRepositories(workspace, &environment, opts.Force); err != nil {
 		return environment, err
 	}
 	if err := os.Remove(filepath.Join(workspace.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -272,7 +256,20 @@ func (s *Service) dispatchReleaseRefills() {
 	}
 }
 
-func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[string]repositoryReleaseState) error {
+func (s *Service) refuseActiveGitOperations(workspace domain.Workspace) error {
+	for _, repository := range workspace.Repositories {
+		operation, _, err := activeGitOperation(repository.Path)
+		if err != nil {
+			return err
+		}
+		if operation != "" {
+			return clierr.New(clierr.UnsafeState, "Workspace %q has active Git operation %q in repository %q", workspace.Name, operation, repository.Name)
+		}
+	}
+	return nil
+}
+
+func (s *Service) runRecycleHooks(workspace domain.Workspace, force bool) error {
 	for _, repository := range workspace.Repositories {
 		spec, _, err := repositoryFor(workspace, repository.Name)
 		if err != nil {
@@ -280,13 +277,6 @@ func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[stri
 		}
 		if spec.Recycle == nil || len(spec.Recycle.Command) == 0 {
 			continue
-		}
-		before, found := baselines[repository.Name]
-		if !found {
-			before, err = inspectRepositoryRelease(repository)
-			if err != nil {
-				return err
-			}
 		}
 		command := exec.Command(spec.Recycle.Command[0], spec.Recycle.Command[1:]...)
 		command.Dir = repository.Path
@@ -301,11 +291,14 @@ func (s *Service) runRecycleHooks(workspace domain.Workspace, baselines map[stri
 		if err != nil {
 			return fmt.Errorf("run recycle command for repository %q: %w: %s", repository.Name, err, strings.TrimSpace(string(output)))
 		}
+		if force {
+			continue
+		}
 		state, err := inspectRepositoryRelease(repository)
 		if err != nil {
 			return err
 		}
-		if state.gitOperation != "" || state.dirty || state.fingerprint != before.fingerprint {
+		if state.gitOperation != "" || state.dirty {
 			return clierr.New(clierr.UnsafeState, "recycle command left repository %q with tracked or nonignored changes", repository.Name)
 		}
 	}
@@ -371,7 +364,7 @@ func (s *Service) stopWorkspaceSessions(workspace domain.Workspace) error {
 	return nil
 }
 
-func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environment *domain.PreparedEnvironment) error {
+func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environment *domain.PreparedEnvironment, force bool) error {
 	for _, repository := range workspace.Repositories {
 		_, prepared, _, err := preparedRepositoryFor(*environment, repository.Name)
 		if err != nil {
@@ -382,8 +375,18 @@ func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environ
 			base = prepared.BaseCommit
 		}
 		if err := s.withCacheLock(repository.CachePath, func() error {
-			if err := run(repository.Path, "git", "switch", "--detach", base); err != nil {
+			args := []string{"switch", "--detach"}
+			if force {
+				args = append(args, "--discard-changes")
+			}
+			args = append(args, base)
+			if err := run(repository.Path, "git", args...); err != nil {
 				return fmt.Errorf("detach repository %q for reuse: %w", repository.Name, err)
+			}
+			if force {
+				if err := run(repository.Path, "git", "clean", "-ffd"); err != nil {
+					return fmt.Errorf("clean repository %q for reuse: %w", repository.Name, err)
+				}
 			}
 			return nil
 		}); err != nil {
@@ -647,63 +650,18 @@ func inspectRepositoryRelease(repository domain.WorkspaceRepository) (repository
 	state.gitOperation = operation
 	state.gitState = gitState
 
+	head, err := gitBytes(repository.Path, "rev-parse", "HEAD")
+	if err != nil {
+		return state, fmt.Errorf("fingerprint repository %q: %w", repository.Name, err)
+	}
 	hash := sha256.New()
 	hash.Write(status)
 	hash.Write([]byte{0})
-	// An empty status proves that the diffs are empty and that no untracked
-	// file exists, so a clean worktree needs only the HEAD commit. This keeps
-	// the fingerprint of a large clean worktree at one Git scan.
-	commands := [][]string{{"rev-parse", "HEAD"}}
-	if state.dirty {
-		commands = append(commands,
-			[]string{"diff", "--binary"},
-			[]string{"diff", "--cached", "--binary"},
-			[]string{"submodule", "status", "--recursive"},
-		)
-	}
-	for _, args := range commands {
-		data, err := gitBytes(repository.Path, args...)
-		if err != nil {
-			return state, fmt.Errorf("fingerprint repository %q: %w", repository.Name, err)
-		}
-		hash.Write(data)
-		hash.Write([]byte{0})
-	}
-	var untracked []byte
-	if state.dirty {
-		untracked, err = gitBytes(repository.Path, "ls-files", "--others", "--exclude-standard", "-z")
-		if err != nil {
-			return state, fmt.Errorf("list untracked files in repository %q: %w", repository.Name, err)
-		}
-	}
-	paths := strings.Split(strings.TrimRight(string(untracked), "\x00"), "\x00")
-	sort.Strings(paths)
-	for _, relative := range paths {
-		if relative == "" {
-			continue
-		}
-		path := filepath.Join(repository.Path, filepath.FromSlash(relative))
-		info, err := os.Lstat(path)
-		if err != nil {
-			return state, fmt.Errorf("fingerprint untracked path %q: %w", relative, err)
-		}
-		hash.Write([]byte(relative))
-		hash.Write([]byte{0})
-		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(path)
-			if err != nil {
-				return state, err
-			}
-			hash.Write([]byte(target))
-		} else if info.Mode().IsRegular() {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return state, err
-			}
-			hash.Write(data)
-		}
-		hash.Write([]byte{0})
-	}
+	hash.Write(head)
+	hash.Write([]byte{0})
+	hash.Write([]byte(operation))
+	hash.Write([]byte{0})
+	hash.Write([]byte(gitState))
 	state.fingerprint = hex.EncodeToString(hash.Sum(nil))
 	return state, nil
 }
@@ -807,21 +765,6 @@ func hashGitOperationPath(root string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func cleanRepositoryForRelease(path string) error {
-	commands := [][]string{
-		{"reset", "--hard"},
-		{"submodule", "foreach", "--recursive", "git reset --hard"},
-		{"clean", "-ffd"},
-		{"submodule", "foreach", "--recursive", "git clean -ffd"},
-	}
-	for _, args := range commands {
-		if err := run(path, "git", args...); err != nil {
-			return fmt.Errorf("clean repository %q for release: %w", path, err)
-		}
-	}
-	return nil
 }
 
 func gitBytes(directory string, args ...string) ([]byte, error) {
