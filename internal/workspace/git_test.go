@@ -204,3 +204,115 @@ func TestSweepStaleTemporaryPacksRemovesOnlyOldPacks(t *testing.T) {
 		}
 	}
 }
+
+// maintainCache must always pack the ref store. A cache that tracks a
+// monorepo gains one loose file for each remote branch, and then every Git
+// command that enumerates refs opens all of them.
+func TestMaintainCachePacksTheRefStore(t *testing.T) {
+	repository := gitTestRepository(t)
+	gitDirectory := testGit(t, repository, "rev-parse", "--absolute-git-dir")
+	for index := 0; index < 40; index++ {
+		testGit(t, repository, "update-ref", fmt.Sprintf("refs/remotes/origin/branch-%d", index), "HEAD")
+	}
+	if _, err := os.Stat(filepath.Join(gitDirectory, "packed-refs")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the test repository already has a packed ref store: %v", err)
+	}
+
+	maintainCache(repository)
+
+	if _, err := os.Stat(filepath.Join(gitDirectory, "packed-refs")); err != nil {
+		t.Fatalf("maintainCache left the ref store unpacked: %v", err)
+	}
+	loose := 0
+	_ = filepath.WalkDir(filepath.Join(gitDirectory, "refs"), func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			loose++
+		}
+		return nil
+	})
+	if loose != 0 {
+		t.Fatalf("maintainCache left %d loose refs, want zero", loose)
+	}
+}
+
+// Above RepackCeiling an incremental repack cannot make progress,
+// so twt writes the multi-pack lookup index instead.
+func TestMaintainCacheCommandsChooseThePackStrategy(t *testing.T) {
+	tests := []struct {
+		name  string
+		packs int
+		want  string
+	}{
+		{name: "compact", packs: maintainCachePackLimit, want: ""},
+		{name: "many packs", packs: maintainCachePackLimit + 1, want: "maintenance run --quiet --task=incremental-repack"},
+		{name: "at the repack limit", packs: RepackCeiling, want: "maintenance run --quiet --task=incremental-repack"},
+		{name: "past the repack limit", packs: RepackCeiling + 1, want: "multi-pack-index write"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			commands := maintainCacheCommands(test.packs)
+			always := []string{
+				"maintenance run --quiet --task=pack-refs",
+				"maintenance run --quiet --task=loose-objects",
+				"maintenance run --quiet --task=commit-graph",
+			}
+			if len(commands) < len(always) {
+				t.Fatalf("maintainCacheCommands(%d) = %v", test.packs, commands)
+			}
+			for index, want := range always {
+				if got := strings.Join(commands[index], " "); got != want {
+					t.Fatalf("command %d = %q, want %q", index, got, want)
+				}
+			}
+			extra := commands[len(always):]
+			if test.want == "" {
+				if len(extra) != 0 {
+					t.Fatalf("maintainCacheCommands(%d) added %v, want nothing", test.packs, extra)
+				}
+				return
+			}
+			if len(extra) != 1 || strings.Join(extra[0], " ") != test.want {
+				t.Fatalf("maintainCacheCommands(%d) added %v, want %q", test.packs, extra, test.want)
+			}
+		})
+	}
+}
+
+func TestTuneCheckoutPerformanceFollowsTheTrackedFileCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		threshold int
+		want      string
+	}{
+		{name: "small checkout", threshold: 100, want: ""},
+		{name: "large checkout", threshold: 2, want: "true"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := gitTestRepository(t)
+			for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+				if err := os.WriteFile(filepath.Join(repository, name), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			testGit(t, repository, "add", ".")
+			testGit(t, repository, "commit", "-q", "-m", "files")
+			original := largeCheckoutFileCount
+			largeCheckoutFileCount = test.threshold
+			t.Cleanup(func() { largeCheckoutFileCount = original })
+
+			tuneCheckoutPerformance(repository)
+
+			got, err := output(repository, "git", "config", "--get", "core.fsmonitor")
+			if test.want == "" {
+				if err == nil {
+					t.Fatalf("tuneCheckoutPerformance set core.fsmonitor = %q on a small checkout", got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("core.fsmonitor = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}

@@ -142,6 +142,7 @@ func (s *Service) ensureCheckoutLocked(p domain.Workspace, repositoryName string
 		if err != nil || branch != repository.Branch {
 			return fmt.Errorf("checkout path %q is on branch %q, expected %q", repository.Path, branch, repository.Branch)
 		}
+		tuneCheckoutPerformance(repository.Path)
 		return nil
 	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("inspect checkout path: %w", statErr)
@@ -166,6 +167,7 @@ func (s *Service) ensureCheckoutLocked(p domain.Workspace, repositoryName string
 	if err := run(repository.CachePath, "git", "worktree", "add", "-b", repository.Branch, repository.Path, startPoint); err != nil {
 		return fmt.Errorf("create checkout for repository %q: %w", repositoryName, err)
 	}
+	tuneCheckoutPerformance(repository.Path)
 	return nil
 }
 
@@ -192,15 +194,16 @@ func defaultBranch(cachePath string, spec domain.RepositorySpec) (string, error)
 	return branch, nil
 }
 
-// refreshCache resolves the default branch of the cache and refreshes it
-// from origin. It then runs cache maintenance, because a partial clone gains
-// one lazy-fetch pack per checkout, and hundreds of packs make every later
-// Git command slow.
+// refreshCache resolves the default branch of the cache, applies the
+// large-repository settings, and refreshes the branch from origin. It then
+// runs cache maintenance, because a partial clone gains one lazy-fetch pack
+// per checkout, and hundreds of packs make every later Git command slow.
 func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 	branch, err := defaultBranch(cachePath, spec)
 	if err != nil {
 		return err
 	}
+	tuneCachePerformance(cachePath)
 	if err := fetchOrigin(cachePath, branch); err != nil {
 		return err
 	}
@@ -214,22 +217,101 @@ func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 // repack of one Repository Cache.
 const maintainCachePackLimit = 32
 
+// RepackCeiling is the pack count above which an incremental repack stops
+// making progress, because one large base pack never enters the
+// batch. Measured on a 20 GiB monorepo cache: 219 packs stayed at 219 after a
+// 95-second incremental run, and the run added one more pack. A multi-pack
+// index keeps object lookup fast at that pack count, so twt writes one and
+// leaves the packs alone. A full repack costs tens of minutes and belongs to
+// a deliberate repair, not to Workspace preparation.
+const RepackCeiling = 128
+
 // staleTemporaryPackAge is the age at which an interrupted fetch pack
 // (objects/pack/tmp_pack_*) counts as garbage.
 const staleTemporaryPackAge = time.Hour
 
 // maintainCache keeps one shared Repository Cache fast. It removes stale
-// temporary packs from interrupted fetches, keeps the commit-graph current,
-// and consolidates lazy-fetch packs when the pack count passes the limit.
+// temporary packs from interrupted fetches, packs the ref store, folds loose
+// objects into a pack, keeps the commit-graph current, and consolidates
+// lazy-fetch packs when the pack count passes the limit.
+//
+// pack-refs is the task that matters most. A cache that tracks a monorepo
+// gains one loose file for each remote branch and tag, and then every Git
+// command that enumerates refs opens all of them. Measured on a cache with
+// 135,857 loose refs: "git for-each-ref --count=1" took 15.3 seconds before
+// pack-refs and 0.02 seconds after, and a single-branch fetch fell from 27
+// seconds to 4 seconds. Neither commit-graph nor incremental-repack touches
+// the ref store, so a cache without this task degrades without limit.
 func maintainCache(cachePath string) {
 	sweepStaleTemporaryPacks(cachePath, time.Now())
-	tasks := []string{"commit-graph"}
-	if packs, err := filepath.Glob(filepath.Join(cachePath, "objects", "pack", "*.pack")); err == nil && len(packs) > maintainCachePackLimit {
-		tasks = append(tasks, "incremental-repack")
+	packs, err := filepath.Glob(filepath.Join(cachePath, "objects", "pack", "*.pack"))
+	if err != nil {
+		packs = nil
 	}
-	for _, task := range tasks {
-		_ = run(cachePath, "git", "maintenance", "run", "--quiet", "--task="+task)
+	for _, command := range maintainCacheCommands(len(packs)) {
+		// Maintenance is best effort: a failed task must not block Workspace
+		// preparation, and the next refresh retries it. 'twt doctor' reports
+		// a cache that maintenance no longer keeps compact.
+		_ = run(cachePath, "git", command...)
 	}
+}
+
+// maintainCacheCommands returns the Git commands that keep one Repository
+// Cache with packs pack files fast. The first three always run: they are
+// cheap and they hold the ref store, the loose objects, and the commit-graph
+// in shape. The pack strategy then depends on the count.
+func maintainCacheCommands(packs int) [][]string {
+	commands := [][]string{
+		{"maintenance", "run", "--quiet", "--task=pack-refs"},
+		{"maintenance", "run", "--quiet", "--task=loose-objects"},
+		{"maintenance", "run", "--quiet", "--task=commit-graph"},
+	}
+	switch {
+	case packs > RepackCeiling:
+		commands = append(commands, []string{"multi-pack-index", "write"})
+	case packs > maintainCachePackLimit:
+		commands = append(commands, []string{"maintenance", "run", "--quiet", "--task=incremental-repack"})
+	}
+	return commands
+}
+
+// largeCheckoutFileCount is the tracked-file count above which twt turns on
+// the built-in file system monitor for a Checkout Lease. Below it the daemon
+// costs more than the directory scan that it replaces. Tests lower it.
+var largeCheckoutFileCount = 10000
+
+// tuneCachePerformance sets the large-repository Git settings on one shared
+// Repository Cache. Every Checkout Lease reads the config of the common
+// directory, so one write serves all of them. Index version 4 shrinks the
+// index, and the untracked cache removes a full directory scan from
+// "git status". It runs on every cache ensure, so it also migrates a cache
+// that an older twt created.
+func tuneCachePerformance(cachePath string) {
+	settings := [][2]string{
+		{"core.untrackedCache", "true"},
+		{"index.version", "4"},
+	}
+	for _, setting := range settings {
+		// Best effort: an old Git that rejects one setting must not block
+		// Workspace preparation.
+		_ = run(cachePath, "git", "config", setting[0], setting[1])
+	}
+}
+
+// tuneCheckoutPerformance turns on the built-in file system monitor for one
+// Checkout Lease that holds many files. "git status" then reads daemon events
+// instead of calling stat on every tracked file. Measured on a 150,194-file
+// monorepo checkout: 1.46 seconds before, 0.14 seconds after. A small
+// checkout keeps the daemon off.
+func tuneCheckoutPerformance(worktreePath string) {
+	files, err := output(worktreePath, "git", "ls-files")
+	if err != nil || files == "" {
+		return
+	}
+	if strings.Count(files, "\n")+1 < largeCheckoutFileCount {
+		return
+	}
+	_ = run(worktreePath, "git", "config", "core.fsmonitor", "true")
 }
 
 // sweepStaleTemporaryPacks removes objects/pack/tmp_pack_* files that are

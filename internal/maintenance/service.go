@@ -448,9 +448,34 @@ func (s *Service) checkPreparedPools(report *DoctorReport, templates store.Templ
 // past the limit means that maintenance does not keep up.
 const doctorCachePackLimit = 64
 
+// doctorCacheLooseRefLimit is the loose-ref count that makes doctor warn
+// about one Repository Cache. Every Git command that enumerates refs opens
+// each loose ref file, so a cache that tracks a monorepo turns slow long
+// before it looks large. Cache refresh packs the refs, so a cache past this
+// limit means that maintenance does not run.
+const doctorCacheLooseRefLimit = 1000
+
+// looseRefCount counts the loose ref files under one Git directory. It stops
+// at limit, because doctor only needs to know whether the cache passed it.
+func looseRefCount(gitDirectory string, limit int) int {
+	count := 0
+	stop := errors.New("loose ref limit reached")
+	_ = filepath.WalkDir(filepath.Join(gitDirectory, "refs"), func(_ string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		count++
+		if count >= limit {
+			return stop
+		}
+		return nil
+	})
+	return count
+}
+
 // checkRepositoryCaches warns about Repository Caches that slow every Git
-// command: too many pack files, or leftover temporary packs from interrupted
-// fetches.
+// command: too many pack files, an unpacked ref store, or leftover temporary
+// packs from interrupted fetches.
 func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 	cacheRoot := filepath.Join(s.dataDir, "caches")
 	entries, err := os.ReadDir(cacheRoot)
@@ -460,6 +485,11 @@ func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 	healthy := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
+			continue
+		}
+		// Only twt-owned caches count. The data directory can also hold
+		// unrelated directories, and a stray one must not read as compact.
+		if _, err := os.Stat(filepath.Join(cacheRoot, entry.Name(), "twt-ownership.json")); err != nil {
 			continue
 		}
 		packDirectory := filepath.Join(cacheRoot, entry.Name(), "objects", "pack")
@@ -474,15 +504,33 @@ func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 				garbageBytes += info.Size()
 			}
 		}
-		if len(packs) <= doctorCachePackLimit && garbageBytes == 0 {
+		loose := looseRefCount(filepath.Join(cacheRoot, entry.Name()), doctorCacheLooseRefLimit)
+		if len(packs) <= doctorCachePackLimit && garbageBytes == 0 && loose < doctorCacheLooseRefLimit {
 			healthy++
 			continue
 		}
-		message := fmt.Sprintf("Repository Cache %s holds %d pack files", entry.Name(), len(packs))
-		if garbageBytes > 0 {
-			message += fmt.Sprintf(" and %d MB of temporary pack garbage", garbageBytes/1_000_000)
+		var problems []string
+		if len(packs) > doctorCachePackLimit {
+			problems = append(problems, fmt.Sprintf("%d pack files", len(packs)))
 		}
-		report.addWarning("cache:"+entry.Name(), message+". The next cache refresh repairs it.")
+		if loose >= doctorCacheLooseRefLimit {
+			problems = append(problems, fmt.Sprintf("at least %d loose refs", loose))
+		}
+		if garbageBytes > 0 {
+			problems = append(problems, fmt.Sprintf("%d MB of temporary pack garbage", garbageBytes/1_000_000))
+		}
+		hint := "The next cache refresh repairs it."
+		if len(packs) > workspaceservice.RepackCeiling {
+			// Above the ceiling twt writes a multi-pack-index instead of
+			// repacking, so a refresh keeps lookup fast but never lowers the
+			// count. Only a full repack does, and it costs tens of minutes.
+			hint = fmt.Sprintf(
+				"Cache refresh keeps object lookup fast with a multi-pack-index, but it cannot lower this count. Run 'git -C %s repack -adk --write-midx' while the machine is idle.",
+				filepath.Join(cacheRoot, entry.Name()))
+		}
+		report.addWarning("cache:"+entry.Name(), fmt.Sprintf(
+			"Repository Cache %s holds %s. %s",
+			entry.Name(), strings.Join(problems, ", "), hint))
 	}
 	if healthy > 0 {
 		report.addPass("repository-caches", fmt.Sprintf("%d Repository Caches are compact", healthy))

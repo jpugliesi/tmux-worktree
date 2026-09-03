@@ -1,6 +1,7 @@
 package maintenance_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,16 @@ func newService(t *testing.T) *maintenance.Service {
 	t.Helper()
 	root := t.TempDir()
 	return maintenance.NewService(filepath.Join(root, "config"), filepath.Join(root, "state"), filepath.Join(root, "data"), "")
+}
+
+// markTwtCache writes the twt ownership marker that makes doctor treat one
+// directory as a Repository Cache.
+func markTwtCache(t *testing.T, cachePath string) {
+	t.Helper()
+	marker := filepath.Join(cachePath, "twt-ownership.json")
+	if err := os.WriteFile(marker, []byte(`{"owner":"twt","url":"https://example.com/app.git"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // findCheck returns the doctor check with one name, or nil.
@@ -115,6 +126,7 @@ func TestDoctorWarnsAboutABloatedRepositoryCache(t *testing.T) {
 	if err := os.MkdirAll(packDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	markTwtCache(t, filepath.Join(dataDir, "caches", "app-abc.git"))
 	for index := 0; index < 65; index++ {
 		name := filepath.Join(packDirectory, "pack-"+strings.Repeat("a", 3)+string(rune('a'+index%26))+string(rune('a'+index/26))+".pack")
 		if err := os.WriteFile(name, []byte("x"), 0o644); err != nil {
@@ -132,5 +144,55 @@ func TestDoctorWarnsAboutABloatedRepositoryCache(t *testing.T) {
 	}
 	if check.Status != "warn" || !strings.Contains(check.Message, "65 pack files") || !strings.Contains(check.Message, "2 MB") {
 		t.Fatalf("cache check = %+v", *check)
+	}
+}
+
+// A Repository Cache with an unpacked ref store slows every Git command that
+// enumerates refs, long before the cache looks large.
+func TestDoctorWarnsAboutAnUnpackedRefStore(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	refDirectory := filepath.Join(dataDir, "caches", "app-abc.git", "refs", "remotes", "origin")
+	if err := os.MkdirAll(refDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	markTwtCache(t, filepath.Join(dataDir, "caches", "app-abc.git"))
+	for index := 0; index < 1000; index++ {
+		name := filepath.Join(refDirectory, fmt.Sprintf("branch-%d", index))
+		if err := os.WriteFile(name, []byte(strings.Repeat("a", 40)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := maintenance.NewService(filepath.Join(root, "config"), filepath.Join(root, "state"), dataDir, "")
+
+	report := service.Doctor()
+
+	check := findCheck(report, "cache:app-abc.git")
+	if check == nil {
+		t.Fatalf("doctor has no cache check: %+v", report.Checks)
+	}
+	if check.Status != "warn" || !strings.Contains(check.Message, "loose refs") {
+		t.Fatalf("cache check = %+v, want a loose-ref warning", *check)
+	}
+}
+
+// A packed ref store must not raise the warning.
+func TestDoctorAcceptsAPackedRefStore(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	cache := filepath.Join(dataDir, "caches", "app-abc.git")
+	if err := os.MkdirAll(filepath.Join(cache, "refs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	markTwtCache(t, cache)
+	if err := os.WriteFile(filepath.Join(cache, "packed-refs"), []byte("# pack-refs with: peeled\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := maintenance.NewService(filepath.Join(root, "config"), filepath.Join(root, "state"), dataDir, "")
+
+	report := service.Doctor()
+
+	if check := findCheck(report, "cache:app-abc.git"); check != nil {
+		t.Fatalf("doctor warned about a compact cache: %+v", *check)
 	}
 }
