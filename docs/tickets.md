@@ -434,9 +434,13 @@ A Ticket matches `--ready` when all of these hold:
 
 Sort by `priority` ascending, then slug.
 
-`--status` is a raw status filter. It can still return blocked or claimed
-tickets. If both `--ready` and `--status` are set, exit 2 with a hint to use
-only one.
+`--status` matches the STATUS column or a stored status. The column shows
+`in-progress` for a claimed Ticket, `needs-input` when the agent waits on
+the human, and `in-review` when pull requests put the Ticket in review.
+Other rows show the stored status. `--status ready-for-agent` still
+returns claimed Tickets. `--status in-progress` returns the claimed
+Tickets that the table shows as in-progress. If both `--ready` and
+`--status` are set, exit 2 with a hint to use only one.
 
 The list uses `--project`, then `TWT_PROJECT`, then the current Workspace
 Project. With no Project in scope, the list includes every Project.

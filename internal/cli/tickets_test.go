@@ -964,6 +964,92 @@ func TestTicketsListReadyFiltersPickableWork(t *testing.T) {
 	}
 }
 
+func TestTicketsListStatusMatchesTheTableColumn(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "ready work", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "claimed work", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "claim", "claimed-work", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	slugs := func(args ...string) []string {
+		t.Helper()
+		stdout, _, err := executeCollectingInput(t, options, nil, append([]string{"tickets", "list", "--output", "json"}, args...)...)
+		if err != nil {
+			t.Fatalf("tickets list %v: %v", args, err)
+		}
+		var list struct {
+			Tickets []struct {
+				Slug string `json:"slug"`
+			} `json:"tickets"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &list); err != nil {
+			t.Fatalf("decode list: %v\n%s", err, stdout)
+		}
+		names := make([]string, 0, len(list.Tickets))
+		for _, ticket := range list.Tickets {
+			names = append(names, ticket.Slug)
+		}
+		sort.Strings(names)
+		return names
+	}
+
+	if got := strings.Join(slugs("--status", "in-progress"), ","); got != "claimed-work" {
+		t.Fatalf("--status in-progress = %q, want claimed-work", got)
+	}
+	if got := strings.Join(slugs("--status", "ready-for-agent"), ","); got != "claimed-work,ready-work" {
+		t.Fatalf("--status ready-for-agent = %q", got)
+	}
+
+	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "STATUS") {
+		t.Fatalf("text list header missing STATUS:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "STATE") {
+		t.Fatalf("text list still uses STATE:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "in-progress") {
+		t.Fatalf("text list missing in-progress:\n%s", stdout)
+	}
+
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("Need the schema version."),
+		"tickets", "ask", "claimed-work", "-", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(slugs("--status", "needs-input"), ","); got != "claimed-work" {
+		t.Fatalf("--status needs-input = %q", got)
+	}
+	if got := strings.Join(slugs("--status", "in-progress"), ","); got != "" {
+		t.Fatalf("--status in-progress after ask = %q, want empty", got)
+	}
+
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "review work", "--status", "ready-for-human"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "pr", "add", "review-work", "--pr", "https://github.com/acme/app/pull/1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(slugs("--status", "in-review"), ","); got != "review-work" {
+		t.Fatalf("--status in-review = %q", got)
+	}
+
+	_, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--status", "in-progress")
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
+		t.Fatalf("--ready with --status in-progress = %v (code %q)", err, clierr.CodeOf(err))
+	}
+}
+
 func TestTicketsReferencesResolveThroughTheCLI(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {

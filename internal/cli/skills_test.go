@@ -177,6 +177,7 @@ func TestSkillDocumentsTicketBlockedBy(t *testing.T) {
 		"--label", "--add-label", "--remove-label",
 		"ticket.labels", "ticket.addLabels", "ticket.removeLabels",
 		"labels list", "labels add", "labels remove", "labels rename", "--label NAME -A",
+		"--status in-progress", "STATUS column",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("canonical skill misses %q", want)

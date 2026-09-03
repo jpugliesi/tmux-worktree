@@ -1029,9 +1029,14 @@ blocker stays allowed. `--ready` treats that missing blocker as open.
 `wontfix`. `--all` includes those closed tickets. An explicit `--status`
 turns the default off, so `--status done` lists the closed tickets.
 
-`--status` is a raw status filter on one of the six statuses:
-`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
-`wontfix`, `done`. It can still return a blocked or claimed ticket.
+`--status` matches the STATUS column or a stored status. The six stored
+statuses are `needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`, and `done`. The column also shows derived
+values: `in-progress` (claimed), `needs-input` (claimed and waiting on
+the human), and `in-review` (pull requests in review).
+`--status ready-for-agent` still returns a claimed ticket.
+`--status in-progress` returns the claimed tickets that the table shows
+as in-progress.
 
 `--ready` is the pickable work queue, not a synonym of
 `--status ready-for-agent`. A ticket matches `--ready` only when its status

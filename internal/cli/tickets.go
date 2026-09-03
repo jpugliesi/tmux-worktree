@@ -339,10 +339,18 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				return invalidUsageWithHint(command, "Pass a label name on --label.",
 					"--label with no name matches nothing")
 			}
+			if ready && status != "" {
+				return invalidUsageWithHint(command, "Use --ready or --status, not both.",
+					"--ready and --status select different sets")
+			}
+			storeStatus := status
+			if ticketListDisplayStatus(status) {
+				storeStatus = ""
+			}
 			tickets, err := service.List(ticketservice.ListFilter{
 				Project:    scope.Project,
 				ProjectSet: scope.Set,
-				Status:     status,
+				Status:     storeStatus,
 				Ready:      ready,
 				Claimed:    claimed,
 				NeedsInput: needsInput,
@@ -352,6 +360,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			tickets = filterTicketsByListStatus(tickets, status)
 			tickets, total, truncated, err := applyWindow(tickets, offset, limit)
 			if err != nil {
 				return err
@@ -371,7 +380,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	}
 	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
 	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "List Tickets from every Project")
-	command.Flags().StringVar(&status, "status", "", "List one status")
+	command.Flags().StringVar(&status, "status", "", "List one stored status or the STATUS column value")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
 	command.Flags().BoolVar(&needsInput, "needs-input", false, "List only Tickets whose agent waits on the human")
@@ -379,7 +388,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 	command.Flags().StringArrayVar(&labels, "label", nil, "List Tickets that carry this label; repeat to require every named label")
 	addFreshFlag(command, &fresh)
 	addListReadFlags(command, &limit, &offset, domain.Ticket{})
-	setFlagEnum(command, "status", domain.TicketStatuses()...)
+	setFlagEnum(command, "status", ticketListStatusValues()...)
 	registerProjectFlagCompletion(command, options)
 	registerLabelFlagCompletion(command, options, "label")
 	return command
@@ -388,7 +397,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 // writeTicketList writes one Ticket table. A wide list includes a PROJECT
 // column. A scoped list is a simple table.
 func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool) error {
-	headers := []string{"SLUG", "STATE", "CLAIMED_BY", "PRIORITY", "TITLE"}
+	headers := []string{"SLUG", "STATUS", "CLAIMED_BY", "PRIORITY", "TITLE"}
 	if includeProject {
 		headers = append([]string{"PROJECT"}, headers...)
 	}
@@ -407,12 +416,12 @@ func writeTicketList(out io.Writer, tickets []domain.Ticket, includeProject bool
 	return writeTable(out, headers, rows)
 }
 
-// ticketDisplayState folds the claim and PR presence into the human table
-// state. It stays offline: in-review derives from URL presence and status
-// only; tree and board pass fetched states to deriveTicketState directly.
+// ticketDisplayState folds the claim and PR presence into the STATUS
+// column. It stays offline: in-review derives from URL presence and
+// status only. Tree and board pass fetched states to deriveTicketState.
 func ticketDisplayState(ticket domain.Ticket) string {
 	state := deriveTicketState(ticket.Status, ticket.ClaimedBy, ticket.PullRequests, nil, false)
-	if state == "blocked" {
+	if state == ticketStateBlocked {
 		// The flat list has no dependency snapshot; keep the raw status.
 		return string(ticket.Status)
 	}

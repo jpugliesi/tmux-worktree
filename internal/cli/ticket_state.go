@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,6 +29,56 @@ func freshenTicketStore(command *cobra.Command, service ticketservice.Store, fre
 	}
 }
 
+const (
+	ticketStateNeedsInput = "needs-input"
+	ticketStateInProgress = "in-progress"
+	ticketStateInReview   = "in-review"
+	ticketStateReady      = "ready"
+	ticketStateBlocked    = "blocked"
+)
+
+// ticketListStatusValues is the closed set for tickets list --status:
+// stored statuses plus the derived STATUS column values.
+func ticketListStatusValues() []string {
+	values := append([]string{}, domain.TicketStatuses()...)
+	values = append(values, ticketStateInProgress, ticketStateNeedsInput, ticketStateInReview)
+	sort.Strings(values)
+	return values
+}
+
+// ticketListDisplayStatus reports whether value is a derived list STATUS
+// that is not also a stored status.
+func ticketListDisplayStatus(value string) bool {
+	switch value {
+	case ticketStateInProgress, ticketStateNeedsInput, ticketStateInReview:
+		return true
+	}
+	return false
+}
+
+func ticketMatchesListStatus(ticket domain.Ticket, status string) bool {
+	if status == "" {
+		return true
+	}
+	if string(ticket.Status) == status {
+		return true
+	}
+	return ticketDisplayState(ticket) == status
+}
+
+func filterTicketsByListStatus(tickets []domain.Ticket, status string) []domain.Ticket {
+	if status == "" {
+		return tickets
+	}
+	matched := make([]domain.Ticket, 0, len(tickets))
+	for _, ticket := range tickets {
+		if ticketMatchesListStatus(ticket, status) {
+			matched = append(matched, ticket)
+		}
+	}
+	return matched
+}
+
 // deriveTicketState folds status, claim, PRs, and (when available) live PR
 // state into one display state. prStates may be nil: offline callers derive
 // in-review from URL presence and status only.
@@ -37,21 +88,21 @@ func deriveTicketState(status domain.TicketStatus, claimedBy string, prs []strin
 		return string(status)
 	}
 	if claimedBy != "" && status == domain.TicketNeedsInfo {
-		return "needs-input"
+		return ticketStateNeedsInput
 	}
 	if len(prs) > 0 {
 		if status == domain.TicketReadyForHuman || allMerged(prs, prStates) {
-			return "in-review"
+			return ticketStateInReview
 		}
 	}
 	if claimedBy != "" {
-		return "in-progress"
+		return ticketStateInProgress
 	}
 	if ready {
-		return "ready"
+		return ticketStateReady
 	}
 	if status == domain.TicketReadyForAgent {
-		return "blocked"
+		return ticketStateBlocked
 	}
 	return string(status)
 }

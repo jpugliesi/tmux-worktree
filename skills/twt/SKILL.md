@@ -711,11 +711,13 @@ on `tickets list`, `tickets tree`, or `projects get` to sync the store
 before the read (a sync failure degrades to a warning), or run
 `twt tickets sync` first when session liveness matters too.
 
-The state column of `twt tickets list` derives from status, claim, and pull
-requests: `needs-input` (claimed, waiting on the human), `in-progress`
-(claimed), `in-review` (pull requests exist and the Ticket is
-`ready-for-human`, or every pull request is merged), `ready`, `blocked`,
-`done`, `wontfix`.
+The STATUS column of `twt tickets list` derives from status, claim, and
+pull requests: `needs-input` (claimed, waiting on the human),
+`in-progress` (claimed), `in-review` (pull requests exist and the Ticket
+is `ready-for-human`, or every pull request is merged). Other rows show
+the stored status. `--status` matches that column or a stored status.
+Use `--status in-progress` to list claimed Tickets. JSON `status` stays
+the stored field. The tree and board still derive `ready` and `blocked`.
 
 ### Stack pull requests on origin
 
