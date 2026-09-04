@@ -16,9 +16,23 @@ import (
 
 type projectsListOutput struct {
 	SchemaVersion int              `json:"schemaVersion"`
-	Projects      []domain.Project `json:"projects"`
+	Projects      []projectListRow `json:"projects"`
 	TotalCount    int              `json:"totalCount"`
 	Truncated     bool             `json:"truncated,omitempty"`
+}
+
+// projectListRow is one Projects list row: the Project plus derived STATUS
+// and Ticket counts that match the board sections.
+type projectListRow struct {
+	domain.Project
+	Status   string `json:"status"`
+	Waiting  int    `json:"waiting"`
+	Progress int    `json:"progress"`
+	Review   int    `json:"review"`
+	Ready    int    `json:"ready"`
+	Blocked  int    `json:"blocked"`
+	Todo     int    `json:"todo"`
+	Done     int    `json:"done"`
 }
 
 type projectShowOutput struct {
@@ -157,6 +171,7 @@ func setProjectTemplate(command *cobra.Command, service ticketservice.Store, nam
 
 func newProjectsListCommand(options Options) *cobra.Command {
 	var limit, offset int
+	var all bool
 	command := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -167,33 +182,105 @@ func newProjectsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			projects, err := service.Projects()
+			var projects []domain.Project
+			if all {
+				projects, err = service.AllProjects()
+			} else {
+				projects, err = service.Projects()
+			}
 			if err != nil {
 				return err
 			}
-			projects, total, truncated, err := applyWindow(projects, offset, limit)
+			tickets, err := service.List(ticketservice.ListFilter{All: true})
+			if err != nil {
+				return err
+			}
+			ready, err := service.List(ticketservice.ListFilter{Ready: true})
+			if err != nil {
+				return err
+			}
+			rows := projectListRows(projects, tickets, ready)
+			rows, total, truncated, err := applyWindow(rows, offset, limit)
 			if err != nil {
 				return err
 			}
 			if format := resolvedOutputFormat(command); format != outputText {
 				if format == outputNDJSON {
-					return writeNDJSONList(command, projects, total, truncated)
+					return writeNDJSONList(command, rows, total, truncated)
 				}
-				return writeReadJSON(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: projects, TotalCount: total, Truncated: truncated}, "projects")
+				return writeReadJSON(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: rows, TotalCount: total, Truncated: truncated}, "projects")
 			}
 			if total == 0 {
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Projects exist. Run 'twt projects create NAME'.")
 				return err
 			}
-			rows := make([][]string, 0, len(projects))
-			for _, project := range projects {
-				rows = append(rows, []string{project.Name, fmt.Sprintf("%d", project.Tickets)})
+			table := make([][]string, 0, len(rows))
+			for _, row := range rows {
+				table = append(table, []string{
+					row.Name, row.Status,
+					fmt.Sprintf("%d", row.Tickets),
+					fmt.Sprintf("%d", row.Waiting),
+					fmt.Sprintf("%d", row.Progress),
+					fmt.Sprintf("%d", row.Review),
+					fmt.Sprintf("%d", row.Ready),
+					fmt.Sprintf("%d", row.Blocked),
+					fmt.Sprintf("%d", row.Todo),
+					fmt.Sprintf("%d", row.Done),
+				})
 			}
-			return writeTable(command.OutOrStdout(), []string{"NAME", "TICKETS"}, rows)
+			return writeTable(command.OutOrStdout(), []string{
+				"NAME", "STATUS", "TICKETS", "WAITING", "PROGRESS", "REVIEW", "READY", "BLOCKED", "TODO", "DONE",
+			}, table)
 		},
 	}
-	addListReadFlags(command, &limit, &offset, domain.Project{})
+	command.Flags().BoolVar(&all, "all", false, "Include closed Projects")
+	addListReadFlags(command, &limit, &offset, projectListRow{})
 	return command
+}
+
+func projectListStatus(project domain.Project) string {
+	if project.Closed {
+		return "closed"
+	}
+	return "active"
+}
+
+func projectListRows(projects []domain.Project, tickets []domain.Ticket, ready []domain.Ticket) []projectListRow {
+	readySlugs := make(map[string]bool, len(ready))
+	for _, ticket := range ready {
+		readySlugs[ticket.Slug] = true
+	}
+	byProject := make(map[string][]domain.Ticket)
+	for _, ticket := range tickets {
+		if ticket.Project == "" {
+			continue
+		}
+		byProject[ticket.Project] = append(byProject[ticket.Project], ticket)
+	}
+	rows := make([]projectListRow, 0, len(projects))
+	for _, project := range projects {
+		row := projectListRow{Project: project, Status: projectListStatus(project)}
+		for _, ticket := range byProject[project.Name] {
+			switch deriveTicketState(ticket.Status, ticket.ClaimedBy, ticket.PullRequests, nil, readySlugs[ticket.Slug]) {
+			case ticketStateNeedsInput:
+				row.Waiting++
+			case ticketStateInProgress:
+				row.Progress++
+			case ticketStateInReview:
+				row.Review++
+			case ticketStateReady:
+				row.Ready++
+			case ticketStateBlocked:
+				row.Blocked++
+			case string(domain.TicketDone), string(domain.TicketWontfix):
+				row.Done++
+			default:
+				row.Todo++
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func newProjectsShowCommand(options Options) *cobra.Command {

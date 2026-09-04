@@ -248,7 +248,7 @@ twt projects close NAME [--force]
 twt projects remove NAME [--apply]
 twt projects rename NAME NEW_NAME
 twt projects set NAME --template TEMPLATE
-twt projects list [--limit N]
+twt projects list [--all] [--limit N]
 twt projects get NAME
 ```
 
