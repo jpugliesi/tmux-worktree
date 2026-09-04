@@ -228,6 +228,7 @@ twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
+twt sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets get TICKET
@@ -432,7 +433,11 @@ A Ticket matches `--ready` when all of these hold:
 - `claimed_by` is empty
 - every `blocked_by` target has `status` `done` or `wontfix`
 
-Sort by `priority` ascending, then slug.
+The default list sorts by the STATUS column, most actionable first:
+`needs-input`, `in-progress`, `in-review`, `ready-for-human`,
+`ready-for-agent`, `needs-info`, `needs-triage`, then closed statuses.
+Tickets that share a STATUS sort by `priority` ascending, then slug.
+`--ready` rows share STATUS, so they sort by priority, then slug.
 
 `--status` matches the STATUS column or a stored status. The column shows
 `in-progress` for a claimed Ticket, `needs-input` when the agent waits on

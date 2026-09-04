@@ -468,8 +468,8 @@ pane exists. Otherwise, dispatch creates an Agent Session window.
 A coordinator runs one wave and then stops:
 
 ```sh
-twt tickets sync --project PROJECT --dry-run --output json
-twt tickets sync --project PROJECT --output json
+twt sync --project PROJECT --dry-run --output json
+twt sync --project PROJECT --output json
 twt projects get PROJECT --output json
 twt tickets dispatch TICKET --dry-run --output json
 twt tickets dispatch TICKET --output json
@@ -533,12 +533,13 @@ is the cross-machine compare-and-swap, and a lost race returns the normal
 commit locally and push best-effort; a warning means the change stays local
 until the next successful sync. `precondition_failed` on a claim means the
 remote was unreachable. Reads never touch git. `twt tickets sync` always
-reconciles the store with the remote first (its `store` JSON section);
-recover after offline work with:
+reconciles the store with the remote first (its `store` JSON section).
+`twt sync` is the short form of `twt tickets sync`. Recover after offline
+work with:
 
 ```sh
-twt tickets sync --dry-run --output json
-twt tickets sync --output json
+twt sync --dry-run --output json
+twt sync --output json
 ```
 
 `twt tickets doctor` includes a `sync` block with local-only findings such
@@ -716,7 +717,8 @@ pull requests: `needs-input` (claimed, waiting on the human),
 `in-progress` (claimed), `in-review` (pull requests exist and the Ticket
 is `ready-for-human`, or every pull request is merged). Other rows show
 the stored status. `--status` matches that column or a stored status.
-The LABELS column lists labels as a comma-separated cell.
+The list sorts by that column, most actionable first, then by priority,
+then by slug. The LABELS column lists labels as a comma-separated cell.
 Use `--status in-progress` to list claimed Tickets. JSON `status` stays
 the stored field. The tree and board still derive `ready` and `blocked`.
 

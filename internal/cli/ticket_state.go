@@ -79,6 +79,48 @@ func filterTicketsByListStatus(tickets []domain.Ticket, status string) []domain.
 	return matched
 }
 
+// sortTicketsByAction orders Tickets by the STATUS column, most actionable
+// first, then by priority, then by slug.
+func sortTicketsByAction(tickets []domain.Ticket) {
+	sort.SliceStable(tickets, func(i, j int) bool {
+		left, right := ticketActionRank(tickets[i]), ticketActionRank(tickets[j])
+		if left != right {
+			return left < right
+		}
+		if tickets[i].Priority != tickets[j].Priority {
+			return tickets[i].Priority < tickets[j].Priority
+		}
+		return tickets[i].Slug < tickets[j].Slug
+	})
+}
+
+func ticketActionRank(ticket domain.Ticket) int {
+	switch ticketDisplayState(ticket) {
+	case ticketStateNeedsInput:
+		return 0
+	case ticketStateInProgress:
+		return 1
+	case ticketStateInReview:
+		return 2
+	case string(domain.TicketReadyForHuman):
+		return 3
+	case ticketStateReady, string(domain.TicketReadyForAgent):
+		return 4
+	case string(domain.TicketNeedsInfo):
+		return 5
+	case string(domain.TicketNeedsTriage):
+		return 6
+	case ticketStateBlocked:
+		return 7
+	case string(domain.TicketDone):
+		return 8
+	case string(domain.TicketWontfix):
+		return 9
+	default:
+		return 10
+	}
+}
+
 // deriveTicketState folds status, claim, PRs, and (when available) live PR
 // state into one display state. prStates may be nil: offline callers derive
 // in-review from URL presence and status only.

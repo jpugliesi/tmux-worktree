@@ -361,6 +361,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				return err
 			}
 			tickets = filterTicketsByListStatus(tickets, status)
+			sortTicketsByAction(tickets)
 			tickets, total, truncated, err := applyWindow(tickets, offset, limit)
 			if err != nil {
 				return err

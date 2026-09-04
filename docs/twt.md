@@ -942,6 +942,7 @@ twt tickets list [--project PROJECT] [--all-projects] [--status STATUS] [--ready
 twt tickets queue [--project PROJECT] [--limit N]
 twt tickets dispatch TICKET [--plan] [--max-concurrency N]
 twt tickets sync --project PROJECT
+twt sync --project PROJECT
 twt tickets abandon SESSION --force
 twt tickets complete TICKET [--as NAME] [--status STATUS] [--pr URL]...
 twt tickets get TICKET

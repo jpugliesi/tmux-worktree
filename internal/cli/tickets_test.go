@@ -577,6 +577,24 @@ func TestTicketsClaimWithoutAsNeedsATerminal(t *testing.T) {
 	}
 }
 
+func TestTicketsSyncMatchesRootSync(t *testing.T) {
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	ticketsOut, _, err := executeCollectingInput(t, options, nil, "tickets", "sync", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootOut, _, err := executeCollectingInput(t, options, nil, "sync", "--dry-run", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticketsOut != rootOut {
+		t.Fatalf("sync output differs from tickets sync:\ntickets=%q\nsync=%q", ticketsOut, rootOut)
+	}
+}
+
 func TestTicketsLsMatchesList(t *testing.T) {
 	options, _ := ticketTestOptions(t)
 	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
@@ -1047,6 +1065,86 @@ func TestTicketsListStatusMatchesTheTableColumn(t *testing.T) {
 	_, _, err = executeCollectingInput(t, options, nil, "tickets", "list", "--ready", "--status", "in-progress")
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("--ready with --status in-progress = %v (code %q)", err, clierr.CodeOf(err))
+	}
+}
+
+func TestTicketsListSortsByActionableState(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, _ := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	creates := [][]string{
+		{"tickets", "create", "triage high"},
+		{"tickets", "create", "ready low", "--status", "ready-for-agent"},
+		{"tickets", "create", "claimed low", "--status", "ready-for-agent"},
+		{"tickets", "create", "claimed high", "--status", "ready-for-agent"},
+		{"tickets", "create", "review mid", "--status", "ready-for-human"},
+		{"tickets", "create", "human wait", "--status", "ready-for-human"},
+		{"tickets", "create", "ready high", "--status", "ready-for-agent"},
+	}
+	for _, args := range creates {
+		if _, _, err := executeCollectingInput(t, options, nil, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	priorities := []struct {
+		slug     string
+		priority string
+	}{
+		{"triage-high", "0"},
+		{"ready-low", "2"},
+		{"claimed-low", "3"},
+		{"claimed-high", "1"},
+		{"review-mid", "1"},
+		{"human-wait", "2"},
+		{"ready-high", "0"},
+	}
+	for _, item := range priorities {
+		if _, _, err := executeCollectingInput(t, options, nil, "tickets", "set", item.slug, "--priority", item.priority); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, slug := range []string{"claimed-low", "claimed-high"} {
+		if _, _, err := executeCollectingInput(t, options, nil, "tickets", "claim", slug, "--as", "agent-a"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("Need the schema version."),
+		"tickets", "ask", "claimed-low", "-", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "pr", "add", "review-mid", "--pr", "https://github.com/acme/app/pull/1"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "claimed-low,claimed-high,review-mid,human-wait,ready-high,ready-low,triage-high"
+	stdout, _, err := executeCollectingInput(t, options, nil, "tickets", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(ticketTableSlugs(t, stdout), ","); got != want {
+		t.Fatalf("text list slugs = %q, want %q\n%s", got, want, stdout)
+	}
+
+	jsonOut, _, err := executeCollectingInput(t, options, nil, "tickets", "list", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tickets []struct {
+			Slug string `json:"slug"`
+		} `json:"tickets"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &list); err != nil {
+		t.Fatalf("decode list: %v\n%s", err, jsonOut)
+	}
+	names := make([]string, 0, len(list.Tickets))
+	for _, ticket := range list.Tickets {
+		names = append(names, ticket.Slug)
+	}
+	if got := strings.Join(names, ","); got != want {
+		t.Fatalf("json list slugs = %q, want %q\n%s", got, want, jsonOut)
 	}
 }
 
@@ -1549,6 +1647,7 @@ func TestSchemaListsTicketCommandsAndApplyOperations(t *testing.T) {
 		`"twt tickets init"`, `"twt tickets home"`, `"twt tickets create"`, `"twt tickets list"`, `"twt tickets get"`,
 		`"twt tickets set"`, `"twt tickets claim"`, `"twt tickets unclaim"`,
 		`"twt tickets close"`, `"twt tickets comment"`, `"twt tickets queue"`, `"twt tickets dispatch"`,
+		`"twt tickets sync"`, `"twt sync"`,
 		`"twt tickets doctor"`, `"twt tickets repair"`,
 		`"twt projects create"`, `"twt projects remove"`, `"twt projects rename"`,
 		`"twt projects list"`, `"twt projects get"`,
