@@ -341,7 +341,7 @@ func TestCloseResolvesATicket(t *testing.T) {
 	writeFixture(t, theirs, fixture{title: "Theirs", status: "ready-for-agent", claimedBy: "agent-b"}.content())
 
 	// An unclaimed Ticket closes.
-	closed, err := service.Close("unclaimed", "agent-a", false)
+	closed, err := service.Close("unclaimed", "agent-a", false, false)
 	if err != nil {
 		t.Fatalf("Close on an unclaimed ticket: %v", err)
 	}
@@ -350,21 +350,33 @@ func TestCloseResolvesATicket(t *testing.T) {
 	}
 
 	// The claimant closes its own Ticket.
-	if _, err := service.Close("mine", "agent-a", false); err != nil {
+	if _, err := service.Close("mine", "agent-a", false, false); err != nil {
 		t.Fatalf("Close by the claimant: %v", err)
 	}
 
 	// Another claimant is locked out, and the file stays as it was.
 	before := readFile(t, theirs)
-	_, err = service.Close("theirs", "agent-a", false)
+	_, err = service.Close("theirs", "agent-a", false, false)
 	if clierr.CodeOf(err) != clierr.Locked {
 		t.Fatalf("Close by another claimant = %v, want locked", err)
 	}
 	if !strings.Contains(err.Error(), `claimed by "agent-b"`) {
 		t.Fatalf("locked message %q does not name the holder", err)
 	}
+	if hint := clierr.HintOf(err); hint != `Pass --as agent-b or --force.` {
+		t.Fatalf("locked close hint = %q", hint)
+	}
 	if readFile(t, theirs) != before {
 		t.Fatal("a locked-out close changed the file")
+	}
+
+	// Force closes a Ticket that another claimant holds.
+	forced, err := service.Close("theirs", "agent-a", true, false)
+	if err != nil {
+		t.Fatalf("force Close by another claimant: %v", err)
+	}
+	if forced.Status != domain.TicketDone || forced.ClaimedBy != "" {
+		t.Fatalf("force-closed ticket = %+v", forced)
 	}
 }
 
@@ -376,7 +388,7 @@ func TestCloseMovesTicketToTheClosedProjectTree(t *testing.T) {
 	source := filepath.Join(home, "core", "work.md")
 	writeFixture(t, source, fixture{title: "Work", status: "ready-for-agent", claimedBy: "agent-a"}.content())
 
-	closed, err := service.Close("work", "agent-a", false)
+	closed, err := service.Close("work", "agent-a", false, false)
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -458,7 +470,7 @@ func TestCloseDoesNotChangeEitherDuplicateDestination(t *testing.T) {
 	writeFixture(t, destination, fixture{title: "Existing", status: "done"}.content())
 	sourceBefore, destinationBefore := readFile(t, source), readFile(t, destination)
 
-	if _, err := service.Close("work", "agent-a", false); clierr.CodeOf(err) != clierr.UnsafeState {
+	if _, err := service.Close("work", "agent-a", false, false); clierr.CodeOf(err) != clierr.UnsafeState {
 		t.Fatalf("Close with a duplicate destination = %v, want unsafe_state", err)
 	}
 	if readFile(t, source) != sourceBefore || readFile(t, destination) != destinationBefore {
@@ -471,7 +483,7 @@ func TestCloseOverwritesAnUnknownStatus(t *testing.T) {
 	path := filepath.Join(home, "odd.md")
 	writeFixture(t, path, fixture{title: "Odd", status: "in-progress"}.content())
 
-	closed, err := service.Close("odd", "agent-a", false)
+	closed, err := service.Close("odd", "agent-a", false, false)
 	if err != nil {
 		t.Fatalf("Close on an unknown status: %v", err)
 	}
@@ -490,7 +502,7 @@ func TestCloseIsOneWriteThatKeepsLegacyKeys(t *testing.T) {
 		"claimed_by: agent-a\nclaimed_at: 2026-08-02\n", 1)
 	writeFixture(t, path, claimed)
 
-	closed, err := service.Close("tkt-cm-001", "agent-a", false)
+	closed, err := service.Close("tkt-cm-001", "agent-a", false, false)
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -530,7 +542,7 @@ func TestCloseDryRunWritesNothing(t *testing.T) {
 	writeFixture(t, path, fixture{title: "Work", status: "ready-for-agent", claimedBy: "agent-a"}.content())
 	before := readFile(t, path)
 
-	closed, err := service.Close("work", "agent-a", true)
+	closed, err := service.Close("work", "agent-a", false, true)
 	if err != nil {
 		t.Fatalf("dry-run Close: %v", err)
 	}
@@ -544,13 +556,19 @@ func TestCloseDryRunWritesNothing(t *testing.T) {
 		t.Fatal("a dry-run close created the closed directory")
 	}
 	// A dry run still runs every check.
-	if _, err := service.Close("work", "agent-b", true); clierr.CodeOf(err) != clierr.Locked {
+	if _, err := service.Close("work", "agent-b", false, true); clierr.CodeOf(err) != clierr.Locked {
 		t.Fatalf("dry-run Close by another claimant = %v, want locked", err)
 	}
-	if _, err := service.Close("missing", "agent-a", true); clierr.CodeOf(err) != clierr.NotFound {
+	if _, err := service.Close("work", "agent-b", true, true); err != nil {
+		t.Fatalf("dry-run force Close by another claimant: %v", err)
+	}
+	if readFile(t, path) != before {
+		t.Fatal("a dry-run force close changed the file")
+	}
+	if _, err := service.Close("missing", "agent-a", false, true); clierr.CodeOf(err) != clierr.NotFound {
 		t.Fatalf("dry-run Close on a missing ticket = %v, want not_found", err)
 	}
-	if _, err := service.Close("work", "", true); clierr.CodeOf(err) != clierr.InvalidUsage {
+	if _, err := service.Close("work", "", false, true); clierr.CodeOf(err) != clierr.InvalidUsage {
 		t.Fatalf("dry-run Close without a claimant = %v, want invalid_usage", err)
 	}
 }
@@ -631,7 +649,7 @@ func TestSetWorkspaceStampsAndClears(t *testing.T) {
 	if _, err := service.Claim("work", "agent-a", false); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
-	closed, err := service.Close("work", "agent-a", false)
+	closed, err := service.Close("work", "agent-a", false, false)
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1470,7 +1488,7 @@ func TestCloseRejectsASymbolicLinkClosedProjectDirectory(t *testing.T) {
 		t.Skipf("create symlink: %v", err)
 	}
 
-	_, err := service.Close("keep-inside-home", "test-agent", false)
+	_, err := service.Close("keep-inside-home", "test-agent", false, false)
 	if clierr.CodeOf(err) != clierr.UnsafeState {
 		t.Fatalf("Close() through a closed Project symlink = %v, want unsafe_state", err)
 	}

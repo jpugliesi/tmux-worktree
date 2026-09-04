@@ -28,6 +28,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CompleteWorkIsAtomicAndIdempotent", testCompleteWorkIsAtomicAndIdempotent},
 		{"UnclaimGuardsTheClaimant", testUnclaimGuardsTheClaimant},
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
+		{"CloseForceOverridesClaim", testCloseForceOverridesClaim},
 		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
 		{"RemoveProjectFreesTheName", testRemoveProjectFreesTheName},
 		{"RenameProjectMovesTickets", testRenameProjectMovesTickets},
@@ -253,7 +254,7 @@ func testClaimReadyRespectsBlockers(t *testing.T, store ticketservice.Store) {
 	if _, err := store.ClaimReady("dependent", "worker-a", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
 		t.Fatalf("blocked claim-ready error = %v, want precondition_failed", err)
 	}
-	if _, err := store.Close("blocker", "human", false); err != nil {
+	if _, err := store.Close("blocker", "human", false, false); err != nil {
 		t.Fatalf("close blocker: %v", err)
 	}
 	if _, err := store.ClaimReady("dependent", "worker-a", false); err != nil {
@@ -326,7 +327,7 @@ func testCloseUnblocksDependents(t *testing.T, store ticketservice.Store) {
 	if len(queue.Ready) != 1 || queue.Ready[0].Slug != "blocker" {
 		t.Fatalf("ready before close = %+v", queue.Ready)
 	}
-	if _, err := store.Close("blocker", "human", false); err != nil {
+	if _, err := store.Close("blocker", "human", false, false); err != nil {
 		t.Fatal(err)
 	}
 	queue, err = store.Queue("core", 0)
@@ -335,6 +336,23 @@ func testCloseUnblocksDependents(t *testing.T, store ticketservice.Store) {
 	}
 	if len(queue.Ready) != 1 || queue.Ready[0].Slug != "dependent" {
 		t.Fatalf("ready after close = %+v", queue.Ready)
+	}
+}
+
+func testCloseForceOverridesClaim(t *testing.T, store ticketservice.Store) {
+	mustCreate(t, store, "theirs")
+	if _, err := store.Claim("theirs", "worker-b", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Close("theirs", "worker-a", false, false); clierr.CodeOf(err) != clierr.Locked {
+		t.Fatalf("close without force = %v, want locked", err)
+	}
+	closed, err := store.Close("theirs", "worker-a", true, false)
+	if err != nil {
+		t.Fatalf("force close: %v", err)
+	}
+	if closed.Status != domain.TicketDone || closed.ClaimedBy != "" {
+		t.Fatalf("force-closed ticket = %+v", closed)
 	}
 }
 

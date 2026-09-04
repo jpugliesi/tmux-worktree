@@ -178,7 +178,7 @@ func closeDoneTicket(options Options, plan doneTicketPlan) error {
 	if err != nil {
 		return err
 	}
-	_, err = service.Close(plan.Slugs[0], plan.Claimant, false)
+	_, err = service.Close(plan.Slugs[0], plan.Claimant, false, false)
 	return err
 }
 

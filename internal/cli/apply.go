@@ -148,6 +148,12 @@ type ticketClaimApplyRequest struct {
 	As        string `json:"as"`
 }
 
+type ticketCloseApplyRequest struct {
+	Reference string `json:"reference"`
+	As        string `json:"as"`
+	Force     bool   `json:"force"`
+}
+
 type ticketCommentApplyRequest struct {
 	Reference string `json:"reference"`
 	Text      string `json:"text"`
@@ -396,6 +402,7 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "tickets.close", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
 			{Path: "ticket.as", Type: "string", Required: true, Condition: "apply is never a terminal, so the claimant has no default"},
+			{Path: "ticket.force", Type: "boolean", Required: false, Condition: "close even when a different claimant holds the Ticket"},
 		}}, applyTicketsClose},
 		{applyOperationSchema{Operation: "tickets.comment", Payload: "ticket", Fields: []requestFieldSchema{
 			{Path: "ticket.reference", Type: "string", Required: true},
@@ -1158,15 +1165,18 @@ func applyTicketsComplete(command *cobra.Command, options Options, request apply
 }
 
 func applyTicketsClose(command *cobra.Command, options Options, request applyRequest) error {
-	payload, err := decodeTicketClaimPayload("tickets.close", request.Ticket)
-	if err != nil {
+	var payload ticketCloseApplyRequest
+	if err := decodeApplyPayload("tickets.close", "ticket", request.Ticket, &payload); err != nil {
 		return err
+	}
+	if payload.Reference == "" || payload.As == "" {
+		return fmt.Errorf("ticket.reference and ticket.as are required for tickets.close")
 	}
 	service, err := options.ticketService()
 	if err != nil {
 		return err
 	}
-	return closeTicket(command, service, payload.Reference, payload.As)
+	return closeTicket(command, service, payload.Reference, payload.As, payload.Force)
 }
 
 func applyTicketsComment(command *cobra.Command, options Options, request applyRequest) error {

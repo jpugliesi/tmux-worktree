@@ -1291,10 +1291,10 @@ func (s *Service) Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, err
 }
 
 // Close resolves one Ticket in one write: the status becomes done and the
-// claim fields become null. The claim check matches Unclaim: an unclaimed
-// Ticket or the same claimant proceeds, and a different claimant gets
-// locked.
-func (s *Service) Close(ref, claimant string, dryRun bool) (domain.Ticket, error) {
+// claim fields become null. The claim check matches Unclaim unless force is
+// set: an unclaimed Ticket or the same claimant proceeds, and a different
+// claimant gets locked. Force closes that Ticket anyway.
+func (s *Service) Close(ref, claimant string, force, dryRun bool) (domain.Ticket, error) {
 	claimant, err := validClaimant(claimant)
 	if err != nil {
 		return domain.Ticket{}, err
@@ -1303,10 +1303,13 @@ func (s *Service) Close(ref, claimant string, dryRun bool) (domain.Ticket, error
 	// with --status: it overwrites an unrecognized legacy status instead of
 	// refusing the mutation.
 	return s.mutate(ref, dryRun, true, syncRequired, func() string {
+		if force {
+			return fmt.Sprintf("twt: close %s (as %s, force)", ref, claimant)
+		}
 		return fmt.Sprintf("twt: close %s (as %s)", ref, claimant)
 	}, func(m *mutation) error {
-		if current := m.ticket.ClaimedBy; current != "" && current != claimant {
-			return claimedByOther(m.ticket.Slug, current)
+		if current := m.ticket.ClaimedBy; !force && current != "" && current != claimant {
+			return claimedByOtherClose(m.ticket.Slug, current)
 		}
 		setMapString(m.mapping, "status", string(domain.TicketDone))
 		setMapNull(m.mapping, "claimed_by")
@@ -1598,6 +1601,12 @@ func claimedByOther(slug, current string) error {
 	return clierr.WithHint(
 		clierr.New(clierr.Locked, "ticket %q is claimed by %q", slug, current),
 		"Select a ticket from 'twt tickets list --ready'.")
+}
+
+func claimedByOtherClose(slug, current string) error {
+	return clierr.WithHint(
+		clierr.New(clierr.Locked, "ticket %q is claimed by %q", slug, current),
+		"Pass --as %s or --force.", current)
 }
 
 func projectMissing(name string) error {

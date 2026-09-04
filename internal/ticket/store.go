@@ -63,7 +63,7 @@ type Store interface {
 	CompleteClaim(ref, claimant string, status domain.TicketStatus, dryRun bool) (domain.Ticket, error)
 	CompleteWork(ref, claimant string, status domain.TicketStatus, pullRequests []string, dryRun bool) (domain.Ticket, error)
 	Unclaim(ref, claimant string, dryRun bool) (domain.Ticket, error)
-	Close(ref, claimant string, dryRun bool) (domain.Ticket, error)
+	Close(ref, claimant string, force, dryRun bool) (domain.Ticket, error)
 
 	// Maintenance.
 	Doctor() (TicketDoctorReport, error)

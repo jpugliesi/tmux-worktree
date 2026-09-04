@@ -954,7 +954,7 @@ twt labels rename NAME NEW_NAME
 twt tickets claim TICKET [--as NAME] [--workspace WORKSPACE]
 twt tickets start [TICKET...] [--name NAME] [--template TEMPLATE] [--as NAME] [--with-agent] [--detached]
 twt tickets unclaim TICKET [--as NAME]
-twt tickets close TICKET [--as NAME]
+twt tickets close TICKET [--as NAME] [--force]
 twt tickets comment TICKET -
 twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
@@ -1089,13 +1089,16 @@ Agent Session ID.
 
 `close` resolves shipped work in one write: it sets the status to `done` and
 clears `claimed_by` and `claimed_at`. It uses the same claimant resolution as
-`claim`, and a ticket that a different claimant holds returns `locked`.
+`claim`. A ticket that a different claimant holds returns `locked` unless you
+pass `--force`. Use `--force` only with user authority.
+
 Because `close` writes the status, it also resolves a ticket that carries an
 unrecognized legacy status:
 
 ```sh
 twt tickets claim TICKET --as codex-fix-auth --output json
 twt tickets close TICKET --as codex-fix-auth --output json
+twt tickets close TICKET --as human --force --output json
 ```
 
 Use `set --status` and `unclaim` when you need only one of the two changes,

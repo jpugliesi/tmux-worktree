@@ -846,11 +846,16 @@ twt tickets claim TICKET --as codex-fix-auth --output json
 ```
 
 Close finished work with one command. `close` sets the status to `done` and
-drops the claim in one write, and it uses the same claimant rules as `claim`:
+drops the claim in one write, and it uses the same claimant rules as `claim`.
+A Ticket that a different claimant holds returns `locked`. Pass `--as` as
+that holder, or `--force` with user authority. Agents must not use `--force`
+unless the user asked:
 
 ```sh
 twt tickets close TICKET --as codex-fix-auth --dry-run --output json
 twt tickets close TICKET --as codex-fix-auth --output json
+twt tickets close TICKET --as human --force --dry-run --output json
+twt tickets close TICKET --as human --force --output json
 ```
 
 A worker that ships code hands off with `complete` instead of `close`:

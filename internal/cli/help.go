@@ -244,7 +244,7 @@ var commandHelp = map[string]helpContent{
 		long: "Remove the claim on one Ticket. The claimant resolution is the same as claim, and only the current claimant can remove its claim. An unclaimed Ticket succeeds without a change.", example: "  twt tickets unclaim fix-the-vfs-tools --as codex-fix-auth",
 	},
 	"twt tickets close": {
-		long: "Resolve one Ticket in one write: the status becomes done and the claim fields become empty. The claimant resolution is the same as claim, and a Ticket that a different claimant holds returns the locked error. Use 'twt tickets set --status' and 'twt tickets unclaim' when you need only one of the two changes.", example: "  twt tickets close fix-the-vfs-tools --as codex-fix-auth\n  twt tickets close fix-the-vfs-tools --as codex-fix-auth --output json",
+		long: "Resolve one Ticket in one write: the status becomes done and the claim fields become empty. The claimant resolution is the same as claim. A Ticket that a different claimant holds returns the locked error unless you pass --force. Use --force only with user authority. Use 'twt tickets set --status' and 'twt tickets unclaim' when you need only one of the two changes.", example: "  twt tickets close fix-the-vfs-tools --as codex-fix-auth\n  twt tickets close fix-the-vfs-tools --as human --force\n  twt tickets close fix-the-vfs-tools --as codex-fix-auth --output json",
 	},
 	"twt tickets comment": {
 		long: "Append one comment from standard input under the '## Comments' heading of a Ticket. twt creates that heading when it is missing. Pass - after TICKET to read the comment from standard input.", example: "  printf '%s\\n' 'Shipped in PR 42.' | twt tickets comment fix-the-vfs-tools -",

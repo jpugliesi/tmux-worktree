@@ -753,6 +753,9 @@ func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
 	if err == nil || clierr.CodeOf(err) != clierr.Locked || !strings.Contains(err.Error(), "agent-a") {
 		t.Fatalf("close by another claimant = %v (code %q)", err, clierr.CodeOf(err))
 	}
+	if hint := clierr.HintOf(err); hint != "Pass --as agent-a or --force." {
+		t.Fatalf("close locked hint = %q", hint)
+	}
 
 	// The text run confirms the close.
 	stdout, _, err = executeCollectingInput(t, options, nil, "tickets", "close", "ship-it", "--as", "agent-a")
@@ -776,6 +779,34 @@ func TestTicketsCloseResolvesInOneCommand(t *testing.T) {
 	applied := decodeTicketMutation(t, stdout)
 	if applied.SchemaVersion != 2 || applied.Operation != "tickets.close" || applied.Status != "applied" || applied.ID != "ship-it" {
 		t.Fatalf("close envelope = %+v\n%s", applied, stdout)
+	}
+}
+
+func TestTicketsCloseForceOverridesClaim(t *testing.T) {
+	t.Setenv("TWT_CLAIMANT", "")
+	options, home := ticketTestOptions(t)
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "create", "ship it", "--status", "ready-for-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options, nil, "tickets", "claim", "ship-it", "--as", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, err := executeCollectingInput(t, options, nil,
+		"tickets", "close", "ship-it", "--as", "agent-b", "--force")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(stdout) != `Closed Ticket "ship-it"` {
+		t.Fatalf("force close text = %q", stdout)
+	}
+	content := readTicketFile(t, filepath.Join(home, "closed", "ship-it.md"))
+	if !strings.Contains(content, "status: done") || strings.Contains(content, "claimed_by: agent-a") ||
+		strings.Contains(content, "claimed_by: agent-b") {
+		t.Fatalf("force close result:\n%s", content)
 	}
 }
 
@@ -1788,6 +1819,34 @@ func TestApplySupportsTicketOperations(t *testing.T) {
 	closedContent := readTicketFile(t, filepath.Join(home, "closed", "close-via-apply.md"))
 	if !strings.Contains(closedContent, "status: done") || strings.Contains(closedContent, "claimed_by: apply-agent") {
 		t.Fatalf("apply close result:\n%s", closedContent)
+	}
+
+	// tickets.close with force closes a Ticket that another claimant holds.
+	if _, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.create","ticket":{"title":"force close via apply","status":"ready-for-agent"}}`),
+		"apply", "-", "--output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.claim","ticket":{"reference":"force-close-via-apply","as":"holder"}}`),
+		"apply", "-", "--output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"force-close-via-apply","as":"apply-agent"}}`),
+		"apply", "-", "--output", "json")
+	if err == nil || clierr.CodeOf(err) != clierr.Locked {
+		t.Fatalf("apply close without force = %v (code %q)", err, clierr.CodeOf(err))
+	}
+	stdout, _, err = executeCollectingInput(t, options,
+		strings.NewReader(`{"operation":"tickets.close","ticket":{"reference":"force-close-via-apply","as":"apply-agent","force":true}}`),
+		"apply", "-", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed := decodeTicketMutation(t, stdout); closed.Operation != "tickets.close" ||
+		closed.Status != "applied" || closed.ID != "force-close-via-apply" {
+		t.Fatalf("apply tickets.close force = %+v\n%s", closed, stdout)
 	}
 
 	// Strict payloads reject fields from other operations.

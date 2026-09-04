@@ -698,6 +698,7 @@ func completeTicketWork(command *cobra.Command, service ticketservice.Store, ref
 
 func newTicketsCloseCommand(options Options) *cobra.Command {
 	var as string
+	var force bool
 	command := &cobra.Command{
 		Use:   "close TICKET [--as NAME]",
 		Short: "Resolve a Ticket: set the status done and drop the claim",
@@ -711,10 +712,11 @@ func newTicketsCloseCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return closeTicket(command, service, args[0], claimant)
+			return closeTicket(command, service, args[0], claimant, force)
 		},
 	}
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
+	command.Flags().BoolVar(&force, "force", false, "Close even when a different claimant holds the Ticket")
 	setArguments(command, requiredArgument("ticket"))
 	command.ValidArgsFunction = ticketSlugCompletion(options)
 	return command
@@ -783,15 +785,15 @@ func unclaimTicket(command *cobra.Command, service ticketservice.Store, ref, cla
 }
 
 // closeTicket resolves one Ticket. Both the tickets close command and apply
-// use it.
-func closeTicket(command *cobra.Command, service ticketservice.Store, ref, claimant string) error {
+// use it. Force skips the current-claimant check.
+func closeTicket(command *cobra.Command, service ticketservice.Store, ref, claimant string, force bool) error {
 	return runMutation(command, "tickets.close",
 		func() (string, string, error) {
-			ticket, err := service.Close(ref, claimant, true)
+			ticket, err := service.Close(ref, claimant, force, true)
 			return ticket.Slug, ticket.Title, err
 		},
 		func() (string, string, error) {
-			ticket, err := service.Close(ref, claimant, false)
+			ticket, err := service.Close(ref, claimant, force, false)
 			return ticket.Slug, ticket.Title, err
 		},
 		func(out io.Writer, id, _ string) error {

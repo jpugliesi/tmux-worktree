@@ -239,7 +239,7 @@ twt labels remove NAME [--ticket TICKET]
 twt labels rename NAME NEW_NAME
 twt tickets claim TICKET [--as NAME]
 twt tickets unclaim TICKET [--as NAME]
-twt tickets close TICKET [--as NAME]
+twt tickets close TICKET [--as NAME] [--force]
 twt tickets comment TICKET -
 twt tickets doctor
 twt tickets repair
@@ -514,7 +514,8 @@ files live next to the destination and must not remain after success.
 gets `locked`. It then clears `claimed_by` and `claimed_at`.
 
 Resolve shipped work with `twt tickets close TICKET`. It sets `done` and
-removes the claim.
+removes the claim. A different claimant gets `locked` unless you pass
+`--force`. Use `--force` only with user authority.
 
 ### `tickets comment`
 
