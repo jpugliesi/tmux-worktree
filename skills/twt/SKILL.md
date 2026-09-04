@@ -578,11 +578,12 @@ Follow these rules for every ticket command:
    set. A plain `twt tickets list` hides `done` and `wontfix` tickets. Pass
    `--all` to include them. `twt tickets list --label NAME -A` is the
    cross-Project label feed. `twt labels list` derives unique labels from
-   Ticket files. `twt projects list` shows each Project status and Ticket
-   counts by board state. `--all` includes closed Projects. A coordinator
-   reads one Project with `twt projects get PROJECT --output json`. That
-   envelope includes `ready`, `inFlight`, and `workspaces`. `twt context --output json` includes the
-   linked Tickets and the ready queue for the current Workspace Project.
+   Ticket files. `twt projects list` shows each Project status and WORK as
+   open/total. `--all` includes closed Projects. A coordinator reads one
+   Project with `twt projects get PROJECT --output json`.
+   That envelope includes `ready`, `inFlight`, and `workspaces`.
+   `twt context --output json` includes the linked Tickets and the ready
+   queue for the current Workspace Project.
    Use `twt tickets queue --project PROJECT --limit N --output json` to read
    the complete dependency graph, cycle diagnostics, and up to N ready
    Tickets from one index snapshot.

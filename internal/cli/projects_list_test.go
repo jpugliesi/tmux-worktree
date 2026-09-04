@@ -42,7 +42,7 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, header := range []string{"NAME", "STATUS", "TICKETS", "WAITING", "PROGRESS", "REVIEW", "READY", "BLOCKED", "TODO", "DONE"} {
+	for _, header := range []string{"NAME", "STATUS", "WORK"} {
 		if !strings.Contains(text, header) {
 			t.Fatalf("text list missing %s:\n%s", header, text)
 		}
@@ -50,10 +50,10 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	if strings.Contains(text, "leftover") {
 		t.Fatalf("default list includes a closed Project:\n%s", text)
 	}
-	if got := strings.Join(projectTableRow(t, text, "core"), " "); got != "core active 7 1 1 1 1 1 1 1" {
+	if got := strings.Join(projectTableRow(t, text, "core"), " "); got != "core active 6/7" {
 		t.Fatalf("core row = %q\n%s", got, text)
 	}
-	if got := strings.Join(projectTableRow(t, text, "empty"), " "); got != "empty active 0 0 0 0 0 0 0 0" {
+	if got := strings.Join(projectTableRow(t, text, "empty"), " "); got != "empty active 0/0" {
 		t.Fatalf("empty row = %q\n%s", got, text)
 	}
 
@@ -67,6 +67,7 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 			Closed   bool   `json:"closed"`
 			Status   string `json:"status"`
 			Tickets  int    `json:"tickets"`
+			Open     int    `json:"open"`
 			Waiting  int    `json:"waiting"`
 			Progress int    `json:"progress"`
 			Review   int    `json:"review"`
@@ -84,8 +85,8 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	}
 	core := list.Projects[0]
 	if core.Name != "core" || core.Closed || core.Status != "active" ||
-		core.Tickets != 7 || core.Waiting != 1 || core.Progress != 1 || core.Review != 1 ||
-		core.Ready != 1 || core.Blocked != 1 || core.Todo != 1 || core.Done != 1 {
+		core.Tickets != 7 || core.Open != 6 || core.Waiting != 1 || core.Progress != 1 ||
+		core.Review != 1 || core.Ready != 1 || core.Blocked != 1 || core.Todo != 1 || core.Done != 1 {
 		t.Fatalf("core JSON = %+v\n%s", core, jsonOut)
 	}
 
@@ -93,7 +94,7 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(projectTableRow(t, allText, "leftover"), " "); got != "leftover closed 1 0 0 0 0 0 0 1" {
+	if got := strings.Join(projectTableRow(t, allText, "leftover"), " "); got != "leftover closed 0/1" {
 		t.Fatalf("closed row = %q\n%s", got, allText)
 	}
 }

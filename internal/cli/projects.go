@@ -22,10 +22,11 @@ type projectsListOutput struct {
 }
 
 // projectListRow is one Projects list row: the Project plus derived STATUS
-// and Ticket counts that match the board sections.
+// and Ticket counts. Open is every Ticket that is not done or wontfix.
 type projectListRow struct {
 	domain.Project
 	Status   string `json:"status"`
+	Open     int    `json:"open"`
 	Waiting  int    `json:"waiting"`
 	Progress int    `json:"progress"`
 	Review   int    `json:"review"`
@@ -217,20 +218,10 @@ func newProjectsListCommand(options Options) *cobra.Command {
 			table := make([][]string, 0, len(rows))
 			for _, row := range rows {
 				table = append(table, []string{
-					row.Name, row.Status,
-					fmt.Sprintf("%d", row.Tickets),
-					fmt.Sprintf("%d", row.Waiting),
-					fmt.Sprintf("%d", row.Progress),
-					fmt.Sprintf("%d", row.Review),
-					fmt.Sprintf("%d", row.Ready),
-					fmt.Sprintf("%d", row.Blocked),
-					fmt.Sprintf("%d", row.Todo),
-					fmt.Sprintf("%d", row.Done),
+					row.Name, row.Status, projectListWork(row),
 				})
 			}
-			return writeTable(command.OutOrStdout(), []string{
-				"NAME", "STATUS", "TICKETS", "WAITING", "PROGRESS", "REVIEW", "READY", "BLOCKED", "TODO", "DONE",
-			}, table)
+			return writeTable(command.OutOrStdout(), []string{"NAME", "STATUS", "WORK"}, table)
 		},
 	}
 	command.Flags().BoolVar(&all, "all", false, "Include closed Projects")
@@ -278,9 +269,14 @@ func projectListRows(projects []domain.Project, tickets []domain.Ticket, ready [
 				row.Todo++
 			}
 		}
+		row.Open = row.Waiting + row.Progress + row.Review + row.Ready + row.Blocked + row.Todo
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func projectListWork(row projectListRow) string {
+	return fmt.Sprintf("%d/%d", row.Open, row.Tickets)
 }
 
 func newProjectsShowCommand(options Options) *cobra.Command {
