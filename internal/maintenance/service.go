@@ -552,7 +552,7 @@ func (s *Service) addSessionGapChecks(report *DoctorReport) {
 		return
 	}
 	for _, gap := range gaps {
-		hint := "Run 'twt workspaces open --all-active --no-attach'."
+		hint := "Run 'twt workspaces sync'."
 		if gap.Code == workspaceservice.SessionGapArchivedLive {
 			hint = fmt.Sprintf("Run 'twt workspaces archive %s'.", gap.Workspace.Name)
 		}

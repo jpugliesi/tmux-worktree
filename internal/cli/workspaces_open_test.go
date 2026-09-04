@@ -100,6 +100,18 @@ func TestOpenAllActiveRepairsMissingSessions(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing required argument WORKSPACE") {
 		t.Fatalf("open without WORKSPACE = %v", err)
 	}
+
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "kill-session", "-t", "=example-alpha")
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "kill-session", "-t", "=example-beta")
+	syncOut := executeWithOptions(t, options, nil, "workspaces", "sync")
+	if !strings.Contains(syncOut, "Opened 2 active Workspaces:") {
+		t.Fatalf("workspaces sync output = %q", syncOut)
+	}
+	for _, name := range []string{"example-alpha", "example-beta"} {
+		if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "="+name).Run(); err != nil {
+			t.Fatalf("workspaces sync did not restore %s: %v", name, err)
+		}
+	}
 }
 
 func TestDoctorWarnsAboutAMissingWorkspaceSession(t *testing.T) {
@@ -111,7 +123,7 @@ func TestDoctorWarnsAboutAMissingWorkspaceSession(t *testing.T) {
 	if !strings.Contains(output, `"healthy":true`) {
 		t.Fatalf("doctor JSON is not healthy: %s", output)
 	}
-	if !strings.Contains(output, "no owned tmux session") || !strings.Contains(output, "workspaces open --all-active") {
+	if !strings.Contains(output, "no owned tmux session") || !strings.Contains(output, "workspaces sync") {
 		t.Fatalf("doctor JSON has no session warning: %s", output)
 	}
 

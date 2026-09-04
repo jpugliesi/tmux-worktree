@@ -139,7 +139,10 @@ var commandHelp = map[string]helpContent{
 		long: "Print the root path of a Workspace, or the checkout path of one repository in it. The output is one bare path for command substitution.", example: "  cd $(twt workspaces path fix-auth)\n  cd $(twt workspaces path fix-auth app)",
 	},
 	"twt workspaces open": {
-		long: "Open a Workspace tmux session. An archived Workspace claims matching prepared worktrees and restores its saved branches. Workspace Initialization runs again. twt claims an unowned tmux session with the expected name. It also repairs missing managed windows. --all-active repairs each active Workspace and attaches no client.", example: "  twt workspaces open fix-auth\n  twt workspaces open fix-auth --no-attach\n  twt workspaces open --all-active",
+		long: "Open a Workspace tmux session. An archived Workspace claims matching prepared worktrees and restores its saved branches. Workspace Initialization runs again. twt claims an unowned tmux session with the expected name. It also repairs missing managed windows. --all-active repairs each active Workspace and attaches no client. The short form of --all-active is 'twt workspaces sync'.", example: "  twt workspaces open fix-auth\n  twt workspaces open fix-auth --no-attach\n  twt workspaces open --all-active",
+	},
+	"twt workspaces sync": {
+		long: "Sync the tmux server with every active Workspace. twt claims an unowned session with the expected name, creates a missing session, and repairs missing managed windows. It attaches no client. Use this after a reboot or a tmux restore. This command is the short form of 'twt workspaces open --all-active --no-attach'.", example: "  twt workspaces sync\n  twt w sync --dry-run --output json\n  twt w sync --output json",
 	},
 	"twt workspaces archive": {
 		long: "Archive a Workspace and return its worktrees to the prepared pool. twt keeps its branches and logical state. Use --force to discard tracked and nonignored changes. twt preserves ignored files.", example: "  twt workspaces archive fix-auth\n  twt workspaces open fix-auth",
@@ -340,7 +343,7 @@ var commandHelp = map[string]helpContent{
 		long: "Get one Prepared Environment, its preparation steps, its base commit for each repository, and the Workspace that claims it. ENVIRONMENT_ID accepts a unique ID prefix.", example: "  twt environments get 1a2b3c4d\n  twt environments get ENVIRONMENT_ID --output json",
 	},
 	"twt doctor": {
-		long: "Check required tools, Workspace Templates, Workspace state, ownership markers, and tmux session drift. A missing or unowned session of an active Workspace is a warning. Repair it with 'twt workspaces open --all-active --no-attach'.", example: "  twt doctor\n  twt doctor --output json",
+		long: "Check required tools, Workspace Templates, Workspace state, ownership markers, and tmux session drift. A missing or unowned session of an active Workspace is a warning. Repair it with 'twt workspaces sync'.", example: "  twt doctor\n  twt doctor --output json",
 	},
 	"twt skills": {
 		long: "Install the twt agent skill that this build carries. The skill tells an agent how to call twt: JSON output, dry runs, limits, and untrusted transcript text.", example: "  twt skills install\n  twt skills get",

@@ -342,8 +342,8 @@ repository, and a set of resumable coding Agent Sessions.`,
   twt tickets start
 
   # Restore active Workspace sessions after tmux restarts.
-  twt workspaces open --all-active --dry-run
-  twt workspaces open --all-active`,
+  twt workspaces sync --dry-run
+  twt workspaces sync`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(command *cobra.Command, _ []string) error {

@@ -24,6 +24,7 @@ func newWorkspacesCommand(options Options) *cobra.Command {
 	workspaces.AddCommand(newWorkspacesCurrentCommand(service))
 	workspaces.AddCommand(newWorkspacesPathCommand(service))
 	workspaces.AddCommand(newWorkspacesOpenCommand(options, service))
+	workspaces.AddCommand(newWorkspacesSyncCommand(service))
 	workspaces.AddCommand(newWorkspacesArchiveCommand(options, service))
 	workspaces.AddCommand(newWorkspacesSetupCommand(service))
 	workspaces.AddCommand(newWorkspacesRemoveCommand(service))
@@ -275,6 +276,17 @@ func newWorkspacesOpenCommand(options Options, service *workspaceservice.Service
 	setArguments(command, optionalArgument("workspace", "required when --all-active is not set"))
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
+}
+
+func newWorkspacesSyncCommand(service *workspaceservice.Service) *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Sync tmux sessions with active Workspaces",
+		Args:  noArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return openAllActiveSessions(command, service)
+		},
+	}
 }
 
 type bulkOpenOutput struct {

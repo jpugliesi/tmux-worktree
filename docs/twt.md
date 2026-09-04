@@ -468,14 +468,15 @@ twt workspaces get fix-auth
 twt workspaces current
 twt workspaces path fix-auth everysphere
 twt workspaces open fix-auth
-twt workspaces open --all-active --no-attach
+twt workspaces sync
 twt workspaces set current --project change-monitor
 ```
 
 `twt workspaces open` repairs a missing tmux session of an active Workspace. It
 also claims an unowned session whose name matches the Workspace, so a
 tmux-resurrect restore after a reboot does not create a second session.
-`--all-active` repairs every active Workspace and attaches no client.
+`twt workspaces sync` repairs every active Workspace and attaches no client.
+`--all-active` is the long form of that command.
 `twt done` and `twt archive` make the same repair: from inside an unowned
 session whose name matches the saved Workspace session, they adopt the
 session and stop it after cleanup.
@@ -752,8 +753,8 @@ reboot:
 ```sh
 twt workspaces open fix-auth
 twt workspaces open fix-auth --no-attach
-twt workspaces open --all-active --dry-run --output json
-twt workspaces open --all-active
+twt workspaces sync --dry-run --output json
+twt workspaces sync
 ```
 
 Rename a Workspace when its purpose changes:

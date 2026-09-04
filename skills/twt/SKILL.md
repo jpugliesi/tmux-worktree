@@ -184,13 +184,14 @@ twt workspaces setup retry WORKSPACE --output json
 ```
 
 After a reboot, repair every active Workspace session. Do not use tmux-resurrect
-as the source of truth. `open` creates a missing session. Opening an archived
-Workspace claims prepared worktrees and restores its saved branches:
+as the source of truth. `twt workspaces sync` claims an unowned session with the
+expected name and creates a missing session. Opening an archived Workspace
+claims prepared worktrees and restores its saved branches:
 
 ```sh
 twt doctor --output json
-twt workspaces open --all-active --no-attach --dry-run --output json
-twt workspaces open --all-active --no-attach --output json
+twt workspaces sync --dry-run --output json
+twt workspaces sync --output json
 ```
 
 Rename a Workspace. One NAME argument uses the current Workspace. Two

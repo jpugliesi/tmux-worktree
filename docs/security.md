@@ -151,7 +151,7 @@ An interactive path opens only for a person at a terminal:
   `--output json` reports `invalid_usage` and requires `NAME`.
 - `twt create` and `twt workspaces open` attach the tmux session only
   when standard output is a terminal. `--no-open` and `--no-attach` state
-  the same intention for a script. `--all-active` never attaches.
+  the same intention for a script. `twt workspaces sync` never attaches.
 
 - `twt tickets start` without `TICKET` shows the Ticket picker only when
   standard input is a terminal. fzf previews `twt tickets get` text. A pipe

@@ -178,8 +178,8 @@ func TestRootHelpGroupsCommandsAndShowsAWorkingExample(t *testing.T) {
 		"twt tickets close fix-auth-tokens",
 		"twt done",
 		"Restore active Workspace sessions after tmux restarts.",
-		"twt workspaces open --all-active --dry-run",
-		"\n  twt workspaces open --all-active\n",
+		"twt workspaces sync --dry-run",
+		"\n  twt workspaces sync\n",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("root help does not contain %q:\n%s", want, output)
