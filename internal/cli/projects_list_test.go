@@ -50,7 +50,7 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	if strings.Contains(text, "leftover") {
 		t.Fatalf("default list includes a closed Project:\n%s", text)
 	}
-	if got := strings.Join(projectTableRow(t, text, "core"), " "); got != "core active 6/7" {
+	if got := strings.Join(projectTableRow(t, text, "core"), " "); got != "core active 2/6" {
 		t.Fatalf("core row = %q\n%s", got, text)
 	}
 	if got := strings.Join(projectTableRow(t, text, "empty"), " "); got != "empty active 0/0" {
@@ -94,7 +94,7 @@ func TestProjectsListShowsStatusAndTicketBreakdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(projectTableRow(t, allText, "leftover"), " "); got != "leftover closed 0/1" {
+	if got := strings.Join(projectTableRow(t, allText, "leftover"), " "); got != "leftover closed 0/0" {
 		t.Fatalf("closed row = %q\n%s", got, allText)
 	}
 }

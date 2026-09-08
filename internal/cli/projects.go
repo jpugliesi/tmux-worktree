@@ -23,6 +23,7 @@ type projectsListOutput struct {
 
 // projectListRow is one Projects list row: the Project plus derived STATUS
 // and Ticket counts. Open is every Ticket that is not done or wontfix.
+// Text WORK is in-progress plus todo over open.
 type projectListRow struct {
 	domain.Project
 	Status   string `json:"status"`
@@ -276,7 +277,7 @@ func projectListRows(projects []domain.Project, tickets []domain.Ticket, ready [
 }
 
 func projectListWork(row projectListRow) string {
-	return fmt.Sprintf("%d/%d", row.Open, row.Tickets)
+	return fmt.Sprintf("%d/%d", row.Progress+row.Todo, row.Open)
 }
 
 func newProjectsShowCommand(options Options) *cobra.Command {
