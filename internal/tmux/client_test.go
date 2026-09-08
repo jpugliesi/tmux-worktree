@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -404,5 +405,76 @@ func TestReleaseAgentPaneReportsAMarkerReadFailure(t *testing.T) {
 	}}
 	if err := client.ReleaseAgentPane("%1", "workspace-1", "agent-1"); err == nil || !strings.Contains(err.Error(), "marker") {
 		t.Fatalf("ReleaseAgentPane() error = %v", err)
+	}
+}
+
+func TestResetWindowPanesRespawnsOtherPanesAndLeavesTheCaller(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	var mu sync.Mutex
+	var calls [][]string
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		copied := append([]string{}, args...)
+		mu.Lock()
+		calls = append(calls, copied)
+		mu.Unlock()
+		if args[0] == "list-panes" {
+			if len(args) < 5 || args[1] != "-t" || args[2] != "%1" || args[3] != "-F" || args[4] != "#{pane_id}\t#{pane_current_path}" {
+				t.Fatalf("list-panes args = %q", args)
+			}
+			return "%1\t/work\n%2\t/work\n%3\t/other", nil
+		}
+		return "", nil
+	}}
+
+	panes, err := client.ResetWindowPanes("%1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(panes, ",") != "%1,%2,%3" {
+		t.Fatalf("panes = %v", panes)
+	}
+
+	respawned := map[string][]string{}
+	for _, call := range calls {
+		if call[0] == "list-panes" {
+			continue
+		}
+		wantPrefix := []string{"respawn-pane", "-k", "-c"}
+		if len(call) < 8 || !strings.HasPrefix(strings.Join(call, " "), strings.Join(wantPrefix, " ")) {
+			t.Fatalf("unexpected tmux call: %q", call)
+		}
+		if call[4] != "-t" || call[6] != "--" || call[7] != "/bin/zsh" || call[8] != "-i" {
+			t.Fatalf("respawn args = %q", call)
+		}
+		respawned[call[5]] = call
+	}
+	if _, caller := respawned["%1"]; caller || len(respawned) != 2 {
+		t.Fatalf("ResetWindowPanes respawned = %v, want panes 2 and 3 only", respawned)
+	}
+	if respawned["%2"][3] != "/work" || respawned["%3"][3] != "/other" {
+		t.Fatalf("respawn directories = %v", respawned)
+	}
+
+	if err := client.ResetPane("%1"); err != nil {
+		t.Fatal(err)
+	}
+	var caller []string
+	for _, call := range calls {
+		if call[0] == "respawn-pane" && len(call) > 5 && call[5] == "%1" {
+			caller = call
+		}
+	}
+	if len(caller) < 8 || caller[3] != "/work" || caller[7] != "/bin/zsh" {
+		t.Fatalf("ResetPane caller args = %q", caller)
+	}
+}
+
+func TestResetWindowPanesRequiresATarget(t *testing.T) {
+	client := Client{run: func(_ io.Reader, args ...string) (string, error) {
+		t.Fatalf("unexpected tmux call: %q", args)
+		return "", nil
+	}}
+	if _, err := client.ResetWindowPanes(""); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty target error = %v", err)
 	}
 }

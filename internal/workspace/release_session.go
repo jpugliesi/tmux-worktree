@@ -243,12 +243,11 @@ func (s *Service) preparedSessionPresent(sourceSessionID, workspaceID string) (b
 		return false, fmt.Errorf("inspect the source tmux session: %w", err)
 	}
 	for _, row := range rows {
-		if row.id == sourceSessionID && row.ownerID != workspaceID {
-			return false, clierr.New(clierr.UnsafeState, "tmux session %q no longer belongs to Workspace %q", sourceSessionID, workspaceID)
-		}
 		if row.ownerID == workspaceID {
 			return true, nil
 		}
 	}
+	// Ignore sourceSessionID when it now names a different Workspace.
+	// Tmux reuses session IDs after kill-session.
 	return false, nil
 }

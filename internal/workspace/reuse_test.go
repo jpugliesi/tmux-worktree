@@ -419,7 +419,7 @@ func TestPrepareReleaseFromPaneKeepsOnlyTheCallerUntilTheSessionStops(t *testing
 	}
 }
 
-func TestReconcileKeepsAnEnvironmentUnavailableWhenTheCallerChangesItAfterCleanup(t *testing.T) {
+func TestReconcileCleansLeftoverFilesAndReclaimsTheEnvironment(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -459,28 +459,33 @@ func TestReconcileKeepsAnEnvironmentUnavailableWhenTheCallerChangesItAfterCleanu
 	if err := service.StopPreparedRelease(prepared); err != nil {
 		t.Fatal(err)
 	}
-	err = service.Reconcile()
-	if err == nil || !strings.Contains(err.Error(), "changed after release cleanup") {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
-	if err != nil || environment.Status != domain.EnvironmentReleasing {
-		t.Fatalf("changed Environment = %+v, error = %v", environment, err)
-	}
-	workspace, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
-	if err != nil || !workspace.Materialized {
-		t.Fatalf("changed Workspace = %+v, error = %v", workspace, err)
-	}
-
-	if err := os.Remove(changedPath); err != nil {
-		t.Fatal(err)
+	var reports []string
+	service.options.Progress = func(message string) {
+		reports = append(reports, message)
 	}
 	if err := service.Reconcile(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Reconcile() error = %v", err)
 	}
-	environment, err = store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
-	if err != nil || environment.Status != domain.EnvironmentReady {
-		t.Fatalf("recovered Environment = %+v, error = %v", environment, err)
+	if _, err := os.Stat(changedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Reconcile() kept leftover file %s", changedPath)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(created.EnvironmentID)
+	if err != nil || environment.Status != domain.EnvironmentReady || environment.Assignment != nil {
+		t.Fatalf("reclaimed Environment = %+v, error = %v", environment, err)
+	}
+	workspace, err := store.NewWorkspaceStore(stateDir).Find(created.ID)
+	if err != nil || workspace.Materialized || workspace.EnvironmentID != "" {
+		t.Fatalf("released Workspace = %+v, error = %v", workspace, err)
+	}
+	if !strings.Contains(strings.Join(reports, "\n"), `Workspace "changed" left leftover files`) {
+		t.Fatalf("Reconcile() reports = %q, want a leftover cleanup message", reports)
+	}
+	next, err := service.Create("other", template.Name, template)
+	if err != nil {
+		t.Fatalf("Create() after reclaim: %v", err)
+	}
+	if next.Name != "other" || next.EnvironmentID != created.EnvironmentID {
+		t.Fatalf("Create() workspace = %+v, want reclaimed Environment %s", next, created.EnvironmentID)
 	}
 }
 

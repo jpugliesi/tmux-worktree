@@ -392,6 +392,8 @@ repository, and a set of resumable coding Agent Sessions.`,
 	archive.GroupID = "workflows"
 	done := newDoneCommand(options)
 	done.GroupID = "workflows"
+	reset := newResetCommand(options)
+	reset.GroupID = "workflows"
 	agents := newAgentsCommand(options)
 	agents.GroupID = "workflows"
 	tickets := newTicketsCommand(options)
@@ -418,7 +420,7 @@ repository, and a set of resumable coding Agent Sessions.`,
 	apply.GroupID = "automation"
 	daemon := newDaemonCommand(options)
 	daemon.GroupID = "automation"
-	root.AddCommand(templates, workspaces, projects, labels, create, next, switchCommand, archive, done, agents, tickets, syncCommand, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply, daemon)
+	root.AddCommand(templates, workspaces, projects, labels, create, next, switchCommand, archive, done, reset, agents, tickets, syncCommand, context, configCommand, environments, storage, doctor, schema, skillsCommand, apply, daemon)
 	root.SetHelpCommandGroupID("automation")
 	root.SetCompletionCommandGroupID("automation")
 	configureCommandHelp(root)

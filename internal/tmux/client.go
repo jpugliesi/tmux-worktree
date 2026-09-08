@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -295,6 +296,129 @@ func (c Client) CaptureVisible(pane, workspaceID string) (string, error) {
 		return "", fmt.Errorf("capture Agent Session pane: %w", err)
 	}
 	return text, nil
+}
+
+type paneReset struct {
+	id   string
+	path string
+}
+
+// ListWindowPanes returns every pane ID in the window that contains target.
+// target is a pane ID such as TMUX_PANE.
+func (c Client) ListWindowPanes(target string) ([]string, error) {
+	panes, err := c.listWindowPanes(target)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(panes))
+	for i, pane := range panes {
+		ids[i] = pane.id
+	}
+	return ids, nil
+}
+
+func (c Client) listWindowPanes(target string) ([]paneReset, error) {
+	if target == "" {
+		return nil, fmt.Errorf("the pane target is empty")
+	}
+	value, err := c.output(nil, "list-panes", "-t", target, "-F", "#{pane_id}\t#{pane_current_path}")
+	if err != nil {
+		return nil, fmt.Errorf("list window panes: %w", err)
+	}
+	if value == "" {
+		return nil, fmt.Errorf("the tmux window has no panes")
+	}
+	var panes []paneReset
+	for _, row := range strings.Split(value, "\n") {
+		id, path, _ := strings.Cut(row, "\t")
+		if id == "" {
+			continue
+		}
+		panes = append(panes, paneReset{id: id, path: path})
+	}
+	if len(panes) == 0 {
+		return nil, fmt.Errorf("the tmux window has no panes")
+	}
+	return panes, nil
+}
+
+// ResetWindowPanes kills the process in every pane of the window that contains
+// current, except current itself, and starts an interactive shell in that
+// pane's directory. The other panes reset at the same time. Reset the caller
+// pane last with ResetPane so this process can finish its output.
+func (c Client) ResetWindowPanes(current string) ([]string, error) {
+	panes, err := c.listWindowPanes(current)
+	if err != nil {
+		return nil, err
+	}
+	others := make([]paneReset, 0, len(panes))
+	for _, pane := range panes {
+		if pane.id != current {
+			others = append(others, pane)
+		}
+	}
+	if err := c.respawnPanes(others); err != nil {
+		return paneResetIDs(panes), err
+	}
+	return paneResetIDs(panes), nil
+}
+
+// ResetPane kills the process in one pane and starts an interactive shell in
+// that pane's directory.
+func (c Client) ResetPane(id string) error {
+	panes, err := c.listWindowPanes(id)
+	if err != nil {
+		return err
+	}
+	for _, pane := range panes {
+		if pane.id == id {
+			return c.respawnPane(pane)
+		}
+	}
+	return fmt.Errorf("pane %s is not in its window", id)
+}
+
+func paneResetIDs(panes []paneReset) []string {
+	ids := make([]string, len(panes))
+	for i, pane := range panes {
+		ids[i] = pane.id
+	}
+	return ids
+}
+
+func (c Client) respawnPanes(panes []paneReset) error {
+	if len(panes) == 0 {
+		return nil
+	}
+	errs := make(chan error, len(panes))
+	for _, pane := range panes {
+		go func(pane paneReset) {
+			errs <- c.respawnPane(pane)
+		}(pane)
+	}
+	var first error
+	for range panes {
+		if err := <-errs; err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func (c Client) respawnPane(pane paneReset) error {
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	args := []string{"respawn-pane", "-k"}
+	if pane.path != "" {
+		args = append(args, "-c", pane.path)
+	}
+	args = append(args, "-t", pane.id, "--", shell, "-i")
+	if _, err := c.output(nil, args...); err != nil {
+		return fmt.Errorf("respawn pane %s: %w", pane.id, err)
+	}
+	return nil
 }
 
 func (c Client) workspaceSession(workspace domain.Workspace) (string, error) {

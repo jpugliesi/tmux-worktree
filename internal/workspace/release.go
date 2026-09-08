@@ -24,6 +24,10 @@ type ReleaseOptions struct {
 	// Prevalidated means the CLI already inspected this fingerprint and
 	// approved the dirty-state policy. Service callers leave it false.
 	Prevalidated bool
+	// Recover discards leftover worktree changes after the source tmux
+	// session is gone. Reconcile sets it so an unused Environment returns
+	// to the ready pool.
+	Recover bool
 }
 
 // ReleasePlan describes the state that a release can discard.
@@ -181,10 +185,13 @@ func (s *Service) cleanReleasedEnvironment(workspace domain.Workspace, plan Rele
 	if environment.Assignment.Generation != environment.Generation {
 		return environment, fmt.Errorf("Prepared Environment %q release generation changed", environment.ID)
 	}
-	if err := s.refuseActiveGitOperations(workspace); err != nil {
-		return environment, err
+	force := opts.Force || opts.Recover
+	if !opts.Recover {
+		if err := s.refuseActiveGitOperations(workspace); err != nil {
+			return environment, err
+		}
 	}
-	if !opts.Force {
+	if !force {
 		current, err := s.inspectRelease(workspace)
 		if err != nil {
 			return environment, err
@@ -196,10 +203,10 @@ func (s *Service) cleanReleasedEnvironment(workspace domain.Workspace, plan Rele
 			return environment, clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name)
 		}
 	}
-	if err := s.runRecycleHooks(workspace, opts.Force); err != nil {
+	if err := s.runRecycleHooks(workspace, force); err != nil {
 		return environment, err
 	}
-	if err := s.detachReleasedRepositories(workspace, &environment, opts.Force); err != nil {
+	if err := s.detachReleasedRepositories(workspace, &environment, force); err != nil {
 		return environment, err
 	}
 	if err := os.Remove(filepath.Join(workspace.Root, ".twt-owned.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -440,7 +447,8 @@ func (s *Service) openReleasedWorkspace(workspace domain.Workspace) (domain.Work
 
 // Reconcile completes durable release transitions after the source tmux
 // session stops. It never makes an Environment ready while an owned session
-// can still change its worktrees.
+// can still change its worktrees. After that session is gone, leftover
+// files are cleaned and the Environment returns to the ready pool.
 func (s *Service) Reconcile() error {
 	err := s.reconcile()
 	s.dispatchReleaseRefills()
@@ -500,7 +508,12 @@ func (s *Service) reconcileReleasedEnvironment(environment domain.PreparedEnviro
 			return nil
 		}
 		if err := validateReleasedEnvironment(workspace, latest); err != nil {
-			return err
+			s.report("Workspace %q left leftover files. twt cleans Prepared Environment %s.", workspace.Name, latest.ID)
+			cleaned, cleanErr := s.cleanReleasedEnvironment(workspace, ReleasePlan{}, ReleaseOptions{Force: true, Recover: true})
+			if cleanErr != nil {
+				return cleanErr
+			}
+			latest = cleaned
 		}
 		if err := s.clearAgentPanes(workspace.ID); err != nil {
 			return err
@@ -516,8 +529,9 @@ func (s *Service) reconcileReleasedEnvironment(environment domain.PreparedEnviro
 	return s.environments.Save(latest)
 }
 
-// validateReleasedEnvironment confirms that no process changed a worktree
-// after cleanup and before the source tmux session stopped.
+// validateReleasedEnvironment confirms that the worktrees match the
+// prepared base after in-session cleanup. A failure means Reconcile must
+// clean again before it returns the Environment to the pool.
 func validateReleasedEnvironment(workspace domain.Workspace, environment domain.PreparedEnvironment) error {
 	if err := validateEnvironmentMarker(environment); err != nil {
 		return err
@@ -543,14 +557,24 @@ func validateReleasedEnvironment(workspace domain.Workspace, environment domain.
 		if base == "" {
 			base = prepared.BaseCommit
 		}
-		if operation != "" || len(status) != 0 || head != base {
-			return clierr.WithHint(
-				clierr.New(clierr.UnsafeState, "Workspace %q changed after release cleanup in repository %q. Prepared Environment %q stays unavailable", workspace.Name, repository.Name, environment.ID),
-				fmt.Sprintf("Run 'twt workspaces open %s' to inspect the Workspace.", workspace.ID),
-			)
+		if reason := releasedWorktreeChange(operation, status, head, base); reason != "" {
+			return clierr.New(clierr.UnsafeState, "Workspace %q %s in repository %q", workspace.Name, reason, repository.Name)
 		}
 	}
 	return nil
+}
+
+func releasedWorktreeChange(operation string, status []byte, head, base string) string {
+	switch {
+	case operation != "":
+		return fmt.Sprintf("has an in-progress git %s", operation)
+	case len(status) != 0:
+		return "has local changes"
+	case head != base:
+		return "HEAD is not the prepared commit"
+	default:
+		return ""
+	}
 }
 
 // restoreBoundWorkspace cancels an incomplete release when the user opens the

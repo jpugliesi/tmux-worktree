@@ -449,6 +449,17 @@ picker: it uses `fzf` when `fzf` is installed, or a numbered list. Inside
 tmux the client switches; outside tmux `twt` attaches. The command is
 interactive and refuses `--output json`.
 
+Reset hung panes in the current tmux window. `twt reset` kills the process in
+every pane and starts an interactive shell in that pane's directory. The other
+panes reset at the same time. The pane that runs the command resets last.
+Run it from a tmux pane:
+
+```sh
+twt reset
+twt reset --dry-run --output json
+twt reset --output json
+```
+
 The short commands are for a person in tmux. For a script or coding agent, use
 the explicit JSON commands:
 
@@ -745,7 +756,10 @@ The command does not create a worker window or a background process.
 
 If the command process stops with its tmux session, the Environment stays in
 the releasing state. `twt environments list` shows this state. The next claim
-completes the release after it confirms that the source session is gone.
+completes the release after it confirms that the source session is gone. If a
+worktree still has leftover files and that session is gone, twt cleans those
+files and returns the Prepared Environment to the ready pool. A session that
+is still present keeps the Environment out of the create pool.
 
 This flow uses text output. For JSON output, run `done` from a different
 session. A dry run validates the release and changes nothing.

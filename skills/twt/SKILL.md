@@ -106,7 +106,7 @@ payload shapes from `twt schema`; this skill does not repeat them.
 
 An interactive command has no apply operation by design: `twt next`, the
 picker and switching forms of `twt tickets start`, `twt tickets home`,
-`twt switch`, `twt done`, and the tmux client move of an archive. The same rule
+`twt switch`, `twt reset`, `twt done`, and the tmux client move of an archive. The same rule
 applies to `twt templates edit`, `twt tickets plan` without `-`,
 `twt projects plan` without `-`, `twt agents focus`, `twt agents open`,
 and `twt agents register --pane current`. Run those in a terminal.
@@ -149,6 +149,16 @@ Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
 `twt next` and `twt switch` are interactive commands for a person in tmux.
+`twt reset` restores every pane in the current tmux window. It kills the
+process in each pane and starts an interactive shell in that pane's
+directory. The other panes reset at the same time. The pane that runs the
+command resets last. Run it from a tmux pane.
+
+```sh
+twt reset --dry-run --output json
+twt reset --output json
+```
+
 Run `twt next` inside the tmux session of the current Workspace.
 `twt next` with no name opens a Ticket picker when open Tickets exist.
 A normal `twt next` cleans the current Workspace in the caller pane. It then
@@ -261,7 +271,10 @@ Inside the Workspace tmux session, `done` completes cleanup in the caller
 pane. It then stops the complete session. It does not create a worker window
 or a background process. Tmux selects another session or detaches the client.
 `twt environments list` shows a pending release as releasing. The next claim
-completes the release after the source session is gone.
+completes the release after the source session is gone. If a worktree still
+has leftover files and that session is gone, twt cleans those files and
+returns the Prepared Environment to the ready pool. A session that is still
+present keeps the Environment out of the create pool.
 
 ## Work with Agent Sessions
 
