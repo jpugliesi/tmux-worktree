@@ -94,6 +94,11 @@ func main() {
 		t.Fatal(err)
 	}
 	t.Setenv("TWT_WORKSPACE_ID", workspace.ID)
+	writeTestLines(t, filepath.Join(home, ".codex", "sessions", "rollout-codex-live.jsonl"),
+		`{"type":"session_meta","payload":{"id":"codex-live","cwd":`+quoteJSON(t, repository)+`}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Codex question"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Codex answer"}]}}
+`)
 
 	socket := fmt.Sprintf("twt-live-agents-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
@@ -161,7 +166,19 @@ func main() {
 		if err := json.Unmarshal([]byte(output), &preview); err != nil {
 			t.Fatalf("decode %s preview: %v\n%s", entry.Provider, err, output)
 		}
-		if preview.WorkspaceID != workspace.ID || preview.AgentID != entry.ID || preview.Source != "livePane" || !preview.Untrusted {
+		if preview.WorkspaceID != workspace.ID || preview.AgentID != entry.ID || !preview.Untrusted {
+			t.Fatalf("%s preview metadata = %+v", entry.Provider, preview)
+		}
+		if entry.Provider == "codex" {
+			if entry.ProviderSessionID != "codex-live" || !entry.Capabilities.CanReadTranscript || !entry.Capabilities.CanSnapshot {
+				t.Fatalf("live Codex capabilities = %+v session=%q", entry.Capabilities, entry.ProviderSessionID)
+			}
+			if preview.Source != "transcript" || !strings.Contains(preview.Markdown, "Codex question") {
+				t.Fatalf("Codex preview = %+v", preview)
+			}
+			continue
+		}
+		if preview.Source != "livePane" {
 			t.Fatalf("%s preview metadata = %+v", entry.Provider, preview)
 		}
 		if !strings.Contains(preview.Markdown, "Live pane preview") || !strings.Contains(preview.Markdown, "preview from") {

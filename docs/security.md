@@ -86,7 +86,9 @@ coding agent. `twt` treats that text as data:
 - `twt agents transcript get` and `twt agents transcript snapshot` mark the
   JSON payload with `"untrusted": true`.
 - `twt agents open --preview` returns sanitized Agent Preview markdown. It
-  uses a verified transcript when one is available. A live-pane preview reads
+  uses a verified transcript when one is available. A live Codex, Claude, or
+  Grok pane uses that transcript when twt can join it to a provider session.
+  A live-pane preview reads
   only the visible screen, has strict byte and line limits, and does not read
   scrollback. JSON marks both sources with `"untrusted": true`.
 - A snapshot Markdown file holds the same sanitized text, because that file

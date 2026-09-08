@@ -148,11 +148,13 @@ func (s *Service) Catalog(workspace domain.Workspace) (CatalogResult, error) {
 	}
 
 	home, homeErr := os.UserHomeDir()
+	var found []transcript.DiscoveredSession
 	if homeErr != nil {
 		result.Complete = false
 		result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("find home directory: %v", homeErr))
 	} else {
-		found, discoverErr := transcript.New(home, s.stateDir).Discover(workspace, transcript.DiscoverOptions{
+		var discoverErr error
+		found, discoverErr = transcript.New(home, s.stateDir).Discover(workspace, transcript.DiscoverOptions{
 			Linked: registered, IncludeLinked: true,
 		})
 		if discoverErr != nil {
@@ -178,8 +180,114 @@ func (s *Service) Catalog(workspace domain.Workspace) (CatalogResult, error) {
 		}
 	}
 
-	result.Entries = append(result.Entries, s.livePaneEntries(workspace, panes)...)
+	live := s.livePaneEntries(workspace, panes)
+	used := liveTranscriptKeys(result.Entries)
+	s.bindLiveTranscripts(workspace, result.Entries, found, used)
+	s.bindLiveTranscripts(workspace, live, found, used)
+	result.Entries = append(result.Entries, attachLivePanes(result.Entries, live)...)
 	return result, nil
+}
+
+func liveTranscriptKeys(entries []CatalogEntry) map[string]bool {
+	used := map[string]bool{}
+	for _, entry := range entries {
+		if entry.pane != nil && entry.ProviderSessionID != "" {
+			used[entry.Provider+"\x00"+entry.ProviderSessionID] = true
+		}
+	}
+	return used
+}
+
+func livePaneDirectory(entry CatalogEntry) string {
+	if entry.pane == nil {
+		return ""
+	}
+	return transcript.CanonicalDirectory(entry.pane.CurrentPath)
+}
+
+func livePanePlace(entry CatalogEntry) string {
+	return entry.Provider + "\x00" + entry.RepositoryName + "\x00" + livePaneDirectory(entry)
+}
+
+func livePaneCounts(entries []CatalogEntry) map[string]int {
+	counts := map[string]int{}
+	for _, entry := range entries {
+		if entry.pane == nil || !transcript.SupportsProvider(entry.Provider) {
+			continue
+		}
+		counts[livePanePlace(entry)]++
+	}
+	return counts
+}
+
+func (s *Service) bindLiveTranscripts(workspace domain.Workspace, entries []CatalogEntry, sessions []transcript.DiscoveredSession, used map[string]bool) {
+	if used == nil {
+		used = map[string]bool{}
+	}
+	for index := range entries {
+		entry := &entries[index]
+		if entry.pane != nil && entry.RepositoryName == "" {
+			entry.RepositoryName = workspaceRepository(workspace, entry.pane.CurrentPath)
+		}
+	}
+	counts := livePaneCounts(entries)
+	for index := range entries {
+		entry := &entries[index]
+		if entry.pane == nil || entry.process == nil || !transcript.SupportsProvider(entry.Provider) {
+			continue
+		}
+		if entry.ProviderSessionID != "" {
+			entry.CanPreview, entry.CanSnapshot = true, true
+			continue
+		}
+		session, ok := transcript.MatchLiveSession(sessions, entry.Provider, entry.RepositoryName, livePaneDirectory(*entry), parseProcessStart(entry.process.Started), used, counts[livePanePlace(*entry)] == 1)
+		if !ok {
+			continue
+		}
+		used[session.Provider+"\x00"+session.SessionID] = true
+		entry.ProviderSessionID = session.SessionID
+		entry.CanPreview, entry.CanSnapshot = true, true
+		if session.RepositoryName != "" {
+			entry.RepositoryName = session.RepositoryName
+		}
+		sessionCopy := session
+		entry.transcriptCandidate = &sessionCopy
+	}
+}
+
+func attachLivePanes(entries, live []CatalogEntry) []CatalogEntry {
+	leftover := make([]CatalogEntry, 0, len(live))
+	for _, pane := range live {
+		if pane.ProviderSessionID != "" {
+			if index := indexOfSession(entries, pane.Provider, pane.ProviderSessionID); index >= 0 {
+				attachLivePane(&entries[index], pane)
+				continue
+			}
+		}
+		leftover = append(leftover, pane)
+	}
+	return leftover
+}
+
+func attachLivePane(entry *CatalogEntry, live CatalogEntry) {
+	entry.Status, entry.Runtime = "live", "live"
+	entry.CanSend, entry.CanFocus, entry.CanPreview = true, true, true
+	if live.CanSnapshot {
+		entry.CanSnapshot = true
+	}
+	entry.pane, entry.process = live.pane, live.process
+	if entry.LastActivity.IsZero() || live.LastActivity.After(entry.LastActivity) {
+		entry.LastActivity = live.LastActivity
+	}
+}
+
+func indexOfSession(entries []CatalogEntry, provider, sessionID string) int {
+	for index, entry := range entries {
+		if entry.Provider == provider && entry.ProviderSessionID == sessionID {
+			return index
+		}
+	}
+	return -1
 }
 
 func (s *Service) livePaneEntries(workspace domain.Workspace, panes []tmuxclient.PaneObservation) []CatalogEntry {
@@ -401,13 +509,13 @@ func parseProcessStart(value string) time.Time {
 }
 
 func workspaceRepository(workspace domain.Workspace, directory string) string {
-	cleanDirectory, err := filepath.Abs(directory)
-	if err != nil {
+	cleanDirectory := transcript.CanonicalDirectory(directory)
+	if cleanDirectory == "" {
 		return ""
 	}
 	for _, repository := range workspace.Repositories {
-		root, rootErr := filepath.Abs(repository.Path)
-		if rootErr != nil {
+		root := transcript.CanonicalDirectory(repository.Path)
+		if root == "" {
 			continue
 		}
 		relative, relativeErr := filepath.Rel(root, cleanDirectory)

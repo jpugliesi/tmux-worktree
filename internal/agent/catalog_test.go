@@ -6,6 +6,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
+	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
 	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
@@ -25,6 +27,24 @@ func TestBoundedPanePreviewLimitsLinesAndTotalBytes(t *testing.T) {
 		if len(line) > maxPanePreviewLineBytes {
 			t.Fatalf("boundedPanePreview() returned a %d-byte line", len(line))
 		}
+	}
+}
+
+func TestBindLiveTranscriptsJoinsAPaneToTheSessionDirectory(t *testing.T) {
+	pane := tmuxclient.PaneObservation{ID: "%1", CurrentPath: "/work/app"}
+	process := tmuxclient.ProcessObservation{ID: 9, Started: "Tue Sep  8 09:45:00 2026"}
+	live := []CatalogEntry{{
+		Provider: "codex", Label: "codex", Status: "discovered", Registration: "discovered", Runtime: "live",
+		CanPreview: true, pane: &pane, process: &process,
+	}}
+	sessions := []transcript.DiscoveredSession{{
+		Provider: "codex", SessionID: "codex-live", Directory: "/work/app", RepositoryName: "app",
+	}}
+	(&Service{}).bindLiveTranscripts(domain.Workspace{
+		Repositories: []domain.WorkspaceRepository{{Name: "app", Path: "/work/app"}},
+	}, live, sessions, nil)
+	if live[0].ProviderSessionID != "codex-live" || !live[0].CanSnapshot || live[0].RepositoryName != "app" {
+		t.Fatalf("bindLiveTranscripts() = %+v", live[0])
 	}
 }
 

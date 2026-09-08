@@ -25,7 +25,7 @@ type providerDescriptor struct {
 	// discover reads the session ID and the repository name of one provider
 	// file. A file that twt cannot verify against the Workspace returns ok
 	// false. Discovery must not read the transcript body.
-	discover func(path string, workspace domain.Workspace) (sessionID, repositoryName string, ok bool)
+	discover func(path string, workspace domain.Workspace) discoveredFile
 }
 
 // providers is the one table of providers that support verifiable linked

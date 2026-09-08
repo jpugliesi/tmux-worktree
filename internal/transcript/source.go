@@ -109,13 +109,13 @@ func scanJSONLines(path string, limit int64, visit func(map[string]any) bool) er
 }
 
 func repositoryForDirectory(workspace domain.Workspace, directory string) string {
-	cleanDirectory, err := filepath.Abs(directory)
-	if err != nil {
+	cleanDirectory := CanonicalDirectory(directory)
+	if cleanDirectory == "" {
 		return ""
 	}
 	for _, repository := range workspace.Repositories {
-		root, err := filepath.Abs(repository.Path)
-		if err != nil {
+		root := CanonicalDirectory(repository.Path)
+		if root == "" {
 			continue
 		}
 		relative, err := filepath.Rel(root, cleanDirectory)
@@ -124,4 +124,22 @@ func repositoryForDirectory(workspace domain.Workspace, directory string) string
 		}
 	}
 	return ""
+}
+
+// CanonicalDirectory returns a stable absolute path. It resolves symbolic
+// links when the path exists, so a pane cwd and a provider session cwd can
+// match across /var and /private/var.
+func CanonicalDirectory(directory string) string {
+	if directory == "" {
+		return ""
+	}
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		absolute = filepath.Clean(directory)
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return absolute
+	}
+	return resolved
 }

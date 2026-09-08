@@ -16,23 +16,23 @@ func (s *Service) grokRoot() string { return filepath.Join(s.home, ".grok", "ses
 // discoverGrok reads the session ID and the repository name of one Grok
 // Build chat_history file. Other jsonl files in the same session directory
 // are not sessions.
-func discoverGrok(path string, workspace domain.Workspace) (string, string, bool) {
+func discoverGrok(path string, workspace domain.Workspace) discoveredFile {
 	sessionID, sessionDir, ok := grokSessionFromPath(path)
 	if !ok {
-		return "", "", false
+		return discoveredFile{}
 	}
 	cwd, id, err := grokSessionMeta(sessionDir)
 	if err != nil || (id != "" && id != sessionID) {
-		return "", "", false
+		return discoveredFile{}
 	}
 	if cwd == "" {
-		return "", "", false
+		return discoveredFile{}
 	}
 	name := repositoryForDirectory(workspace, cwd)
 	if name == "" {
-		return "", "", false
+		return discoveredFile{}
 	}
-	return sessionID, name, true
+	return discoveredFile{SessionID: sessionID, Directory: cwd, RepositoryName: name, OK: true}
 }
 
 func (s *Service) readGrok(sessionID string, workspace domain.Workspace) (Transcript, error) {

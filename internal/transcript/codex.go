@@ -3,6 +3,7 @@ package transcript
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -12,21 +13,25 @@ func (s *Service) codexRoot() string { return filepath.Join(s.home, ".codex", "s
 
 // discoverCodex reads the session ID and the repository name of one Codex
 // provider file for discovery.
-func discoverCodex(path string, workspace domain.Workspace) (string, string, bool) {
-	id, cwd := "", ""
+func discoverCodex(path string, workspace domain.Workspace) discoveredFile {
+	id, cwd, startedAt := "", "", time.Time{}
 	err := scanJSONLines(path, maxDiscoverScanBytes, func(line map[string]any) bool {
 		if stringValue(line["type"]) != "session_meta" {
 			return true
 		}
 		payload := mapValue(line["payload"])
-		id = stringValue(payload["id"])
+		id = firstString(payload["id"], payload["session_id"])
 		cwd = stringValue(payload["cwd"])
+		startedAt = parseCodexTime(firstString(payload["timestamp"], line["timestamp"]))
 		return false
 	})
 	if err != nil || ValidateSessionID(id) != nil {
-		return "", "", false
+		return discoveredFile{}
 	}
-	return id, repositoryForDirectory(workspace, cwd), true
+	return discoveredFile{
+		SessionID: id, Directory: cwd, RepositoryName: repositoryForDirectory(workspace, cwd),
+		StartedAt: startedAt, OK: true,
+	}
 }
 
 func (s *Service) readCodex(sessionID string, workspace domain.Workspace) (Transcript, error) {
@@ -71,6 +76,27 @@ func codexMetadata(lines []map[string]any) (string, string, error) {
 		id, cwd = lineID, lineCWD
 	}
 	return id, cwd, nil
+}
+
+func firstString(values ...any) string {
+	for _, value := range values {
+		if text := stringValue(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func parseCodexTime(value string) time.Time {
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 func codexEvents(lines []map[string]any) []event {

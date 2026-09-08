@@ -23,8 +23,18 @@ type DiscoveredSession struct {
 	Provider       string
 	SessionID      string
 	RepositoryName string
+	Directory      string
+	StartedAt      time.Time
 	LastActivity   time.Time
 	Path           string
+}
+
+type discoveredFile struct {
+	SessionID      string
+	Directory      string
+	RepositoryName string
+	StartedAt      time.Time
+	OK             bool
 }
 
 // DiscoverOptions selects and filters the discovered provider sessions.
@@ -119,13 +129,13 @@ func (s *Service) discoverProvider(provider string, workspace domain.Workspace, 
 // twt cannot verify is not an error: discovery drops it. Discovery reads
 // session metadata only.
 func readDiscovered(provider string, descriptor providerDescriptor, file transcriptFile, workspace domain.Workspace) (DiscoveredSession, bool) {
-	sessionID, repositoryName, ok := descriptor.discover(file.path, workspace)
-	if !ok || sessionID == "" || repositoryName == "" {
+	identity := descriptor.discover(file.path, workspace)
+	if !identity.OK || identity.SessionID == "" || identity.RepositoryName == "" {
 		return DiscoveredSession{}, false
 	}
 	return DiscoveredSession{
-		Provider: provider, SessionID: sessionID, RepositoryName: repositoryName,
-		LastActivity: file.modTime, Path: file.path,
+		Provider: provider, SessionID: identity.SessionID, RepositoryName: identity.RepositoryName,
+		Directory: identity.Directory, StartedAt: identity.StartedAt, LastActivity: file.modTime, Path: file.path,
 	}, true
 }
 

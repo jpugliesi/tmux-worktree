@@ -2,12 +2,14 @@ package agent
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	tmuxclient "github.com/jpugliesi/tmux-worktree/internal/tmux"
+	"github.com/jpugliesi/tmux-worktree/internal/transcript"
 )
 
 // AdoptLivePane registers a strongly identified provider process from the
@@ -84,6 +86,11 @@ func (s *Service) findLivePaneCandidate(workspace domain.Workspace, reference st
 		return CatalogEntry{}, false, err
 	}
 	entries := s.livePaneEntries(workspace, panes)
+	if home, homeErr := os.UserHomeDir(); homeErr == nil {
+		if found, discoverErr := transcript.New(home, s.stateDir).Discover(workspace, transcript.DiscoverOptions{}); discoverErr == nil {
+			s.bindLiveTranscripts(workspace, entries, found, liveTranscriptKeys(entries))
+		}
+	}
 	entry, err := findCatalogEntry(entries, reference)
 	if clierr.CodeOf(err) == clierr.NotFound {
 		return CatalogEntry{}, false, nil
@@ -98,7 +105,8 @@ func (s *Service) buildLivePaneSession(workspace domain.Workspace, entry Catalog
 	if entry.pane == nil || entry.process == nil {
 		return domain.AgentSession{}, clierr.New(clierr.PreconditionFailed, "the discovered Agent Session has no live provider process")
 	}
-	agent, err := newSession(workspace, entry.Provider, "", entry.pane.ID, "", nil, existing, s.now())
+	resume := transcript.ResumeCommand(entry.Provider, entry.ProviderSessionID)
+	agent, err := newSession(workspace, entry.Provider, "", entry.pane.ID, entry.ProviderSessionID, resume, existing, s.now())
 	if err != nil {
 		return domain.AgentSession{}, err
 	}

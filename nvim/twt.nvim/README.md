@@ -184,10 +184,12 @@ names, so each Agent Session keeps its own file. If an older `twt` returns no
 the files. Applied Workspace removal deletes them. Register a new Agent Session
 with `--session SESSION_ID`, or use `twt agents transcript link` for an
 existing record.
-Transcript loading supports Codex, Claude, and Grok. Cursor transcript loading
-stays off because its local records do not contain a safe, exact Workspace
-directory. The picker can still preview, select, focus, and send to a verified
-live Cursor Agent pane. Confirm opens that Agent Preview in a scratch buffer.
+Transcript loading supports Codex, Claude, and Grok. A live pane in those
+providers uses the provider session store when twt can join the pane to a
+session in the same repository. Cursor transcript loading stays off because
+its local records do not contain a safe, exact Workspace directory. The
+picker can still preview, select, focus, and send to a verified live Cursor
+Agent pane. Confirm opens that Agent Preview in a scratch buffer.
 
 Older preview versions used the Neovim state directory. twt cannot reliably
 find that path when `NVIM_APPNAME` changes. You can remove those old preview

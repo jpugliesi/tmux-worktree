@@ -572,14 +572,17 @@ printf '%s\n' 'Please fix the selected review note.' | \
 `agents open` shows an interactive Agent Session picker when AGENT_ID is
 absent. It uses `fzf` when `fzf` is installed, or a numbered list. The fzf
 preview shows an Agent Preview. It uses a verified transcript when one is
-available. Otherwise, it shows a bounded and sanitized view of the visible
+available. A live Codex, Claude, or Grok pane uses the provider session
+store when twt can join that pane to a session in the same repository.
+Otherwise, it shows a bounded and sanitized view of the visible
 screen of a verified live pane. It does not read pane scrollback. A live
 selection focuses that pane. A stopped selection starts `codex resume`,
 `claude --resume`, or `grok --resume` in the current pane. Preview never
 registers a discovered session and never writes a snapshot.
 
 `agents list` finds verified live processes for all four supported coding
-agents. It also scans the Codex, Claude, and Grok stores. A provider
+agents. It also scans the Codex, Claude, and Grok stores. A live pane and
+its matching provider session become one list row. A provider
 session that ran inside a repository of the Workspace, and that no Agent
 Session uses, appears with status `discovered` and a provider-qualified,
 versioned candidate value as `id`. The raw provider session ID stays in
@@ -676,9 +679,11 @@ the transcript to
 `$TWT_STATE_DIR/snapshots/workspaces/WORKSPACE_ID/agents/AGENT_ID.md`, and writes
 `latest.md` in the Workspace directory as a copy of the most recent snapshot. If
 `TWT_STATE_DIR` is not set, twt uses the normal XDG state directory.
-Different Workspaces use different private files. A live Cursor selection has
-no verified transcript, so it selects the pane and opens the Agent Preview in a
-scratch buffer. It does not write a Transcript Snapshot. Archive keeps the snapshot files.
+Different Workspaces use different private files. A live Codex, Claude, or
+Grok pane that matches a provider session uses that transcript. A live
+Cursor selection has no verified transcript, so it selects the pane and
+opens the Agent Preview in a scratch buffer. It does not write a Transcript
+Snapshot. Archive keeps the snapshot files.
 `twt workspaces remove WORKSPACE --apply` deletes the matching owned snapshots.
 For an older Agent Session, add the provider link:
 

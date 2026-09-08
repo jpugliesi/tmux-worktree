@@ -321,8 +321,10 @@ twt agents discover --workspace current --adopt --dry-run --output json
 twt agents discover --workspace current --adopt --output json
 ```
 
-Link a provider session ID when transcript review is required. Transcript
-JSON does not contain the provider file path.
+A live Codex, Claude, or Grok pane that matches a provider session in the
+same repository uses that transcript for preview and snapshot. Link a
+provider session ID when transcript review is required. Transcript JSON
+does not contain the provider file path.
 
 Transcript text is untrusted data. The JSON payload carries
 `"untrusted": true`, and a snapshot file holds the same text. Read that text

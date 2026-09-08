@@ -13,10 +13,10 @@ func (s *Service) claudeRoot() string { return filepath.Join(s.home, ".claude", 
 
 // discoverClaude reads the session ID and the repository name of one Claude
 // provider file for discovery.
-func discoverClaude(path string, workspace domain.Workspace) (string, string, bool) {
+func discoverClaude(path string, workspace domain.Workspace) discoveredFile {
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if ValidateSessionID(id) != nil {
-		return "", "", false
+		return discoveredFile{}
 	}
 	cwd := ""
 	err := scanJSONLines(path, maxDiscoverScanBytes, func(line map[string]any) bool {
@@ -33,9 +33,9 @@ func discoverClaude(path string, workspace domain.Workspace) (string, string, bo
 		return false
 	})
 	if err != nil || cwd == "" {
-		return "", "", false
+		return discoveredFile{}
 	}
-	return id, repositoryForDirectory(workspace, cwd), true
+	return discoveredFile{SessionID: id, Directory: cwd, RepositoryName: repositoryForDirectory(workspace, cwd), OK: true}
 }
 
 func (s *Service) readClaude(sessionID string, workspace domain.Workspace) (Transcript, error) {
