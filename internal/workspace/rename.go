@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -40,16 +42,43 @@ func (s *Service) Rename(reference, name string) (domain.Workspace, error) {
 	if hasSession || storedSession != "" {
 		storedSession = desiredSession
 	}
-	if workspace.Name == name && workspace.TmuxSession == storedSession {
-		return workspace, nil
+	if workspace.Name != name || workspace.TmuxSession != storedSession {
+		workspace.Name = name
+		workspace.TmuxSession = storedSession
+		workspace.UpdatedAt = s.now()
+		if err := s.store.Save(workspace); err != nil {
+			return domain.Workspace{}, err
+		}
 	}
-	workspace.Name = name
-	workspace.TmuxSession = storedSession
-	workspace.UpdatedAt = s.now()
-	if err := s.store.Save(workspace); err != nil {
+	if err := s.syncEnvironmentAssignmentWorkspace(workspace); err != nil {
 		return domain.Workspace{}, err
 	}
 	return workspace, nil
+}
+
+func (s *Service) syncEnvironmentAssignmentWorkspace(workspace domain.Workspace) error {
+	if workspace.EnvironmentID == "" {
+		return nil
+	}
+	environment, err := s.environments.Find(workspace.EnvironmentID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if environment.Assignment == nil || environment.Assignment.Workspace.ID != workspace.ID {
+		return nil
+	}
+	if environment.Assignment.Workspace.Name == workspace.Name &&
+		environment.Assignment.Workspace.TmuxSession == workspace.TmuxSession &&
+		environment.Assignment.Workspace.Status == workspace.Status &&
+		environment.Assignment.Workspace.UpdatedAt.Equal(workspace.UpdatedAt) {
+		return nil
+	}
+	environment.Assignment.Workspace = workspace
+	environment.UpdatedAt = workspace.UpdatedAt
+	return s.environments.Save(environment)
 }
 
 func (s *Service) validateRename(reference, name string) (domain.Workspace, error) {

@@ -787,8 +787,9 @@ twt workspaces rename fix-auth auth-fix
 
 One NAME argument renames the current Workspace. Two arguments set the
 Workspace and the new name. Rename changes the display name and the owned
-tmux session name. The Workspace ID, paths, branches, Ticket links, and
-Agent Sessions stay unchanged.
+tmux session name. It writes the new name on the Prepared Environment
+claim so the old name is free. The Workspace ID, paths, branches, Ticket
+links, and Agent Sessions stay unchanged.
 
 Set the Ticket Project on one Workspace. The Project must be active. When
 the Workspace links Tickets, every Ticket must already belong to that

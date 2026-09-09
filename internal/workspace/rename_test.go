@@ -70,6 +70,120 @@ func TestRenameAlignsStoredSessionWhenDisplayNameIsUnchanged(t *testing.T) {
 	}
 }
 
+func TestRenameUpdatesThePreparedEnvironmentAssignmentName(t *testing.T) {
+	stateDir := t.TempDir()
+	saveClaimedWorkspace(t, stateDir, "learn")
+	service := NewService(Options{StateDir: stateDir, TmuxSocket: "twt-rename-unit"})
+
+	got, err := service.Rename("learn", "agent-sdk-delete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "agent-sdk-delete" {
+		t.Fatalf("Rename() name = %q", got.Name)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find("environment-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment.Assignment == nil || environment.Assignment.Workspace.Name != "agent-sdk-delete" {
+		t.Fatalf("assignment Workspace = %+v", environment.Assignment)
+	}
+	if environment.Assignment.Workspace.TmuxSession != "example-agent-sdk-delete" {
+		t.Fatalf("assignment session = %q", environment.Assignment.Workspace.TmuxSession)
+	}
+	if err := service.requireWorkspaceNameAvailable("learn"); err != nil {
+		t.Fatalf("old name still reserved: %v", err)
+	}
+}
+
+func TestRenameHealsAStalePreparedEnvironmentAssignmentName(t *testing.T) {
+	stateDir := t.TempDir()
+	workspace, _ := saveClaimedWorkspace(t, stateDir, "learn")
+	workspace.Name = "agent-sdk-delete"
+	workspace.TmuxSession = "example-agent-sdk-delete"
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Options{StateDir: stateDir, TmuxSocket: "twt-rename-unit"})
+	if _, err := service.Rename("agent-sdk-delete", "agent-sdk-delete"); err != nil {
+		t.Fatal(err)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find("environment-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment.Assignment == nil || environment.Assignment.Workspace.Name != "agent-sdk-delete" {
+		t.Fatalf("assignment Workspace = %+v", environment.Assignment)
+	}
+}
+
+func TestRequireWorkspaceNameAvailableUsesTheLiveWorkspaceName(t *testing.T) {
+	stateDir := t.TempDir()
+	workspace, _ := saveClaimedWorkspace(t, stateDir, "learn")
+	workspace.Name = "agent-sdk-delete"
+	workspace.TmuxSession = "example-agent-sdk-delete"
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Options{StateDir: stateDir, TmuxSocket: "twt-rename-unit"})
+	if err := service.requireWorkspaceNameAvailable("learn"); err != nil {
+		t.Fatalf("stale assignment still reserves learn: %v", err)
+	}
+	if err := service.requireWorkspaceNameAvailable("agent-sdk-delete"); err == nil {
+		t.Fatal("live Workspace name is not reserved")
+	}
+}
+
+func saveClaimedWorkspace(t *testing.T, stateDir, name string) (domain.Workspace, domain.PreparedEnvironment) {
+	t.Helper()
+	now := time.Now().UTC()
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: "https://example.com/app.git"},
+		}},
+	}
+	digest, err := store.EnvironmentDigest(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "workspace-id", Name: name,
+		TemplateName: template.Name, TemplateSnapshot: template,
+		EnvironmentID: "environment-id", Status: domain.WorkspaceActive,
+		Root: "/tmp/" + name, TmuxSession: "example-" + name,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	environment := domain.PreparedEnvironment{
+		Version: domain.PreparedEnvironmentVersion, FormatVersion: domain.PreparationFormatVersion,
+		ID: "environment-id", TemplateName: template.Name, TemplateDigest: digest,
+		TemplateSnapshot: template, Status: domain.EnvironmentClaimed,
+		Root: workspace.Root, QueueToken: "queue-token", QueuedAt: now, Generation: 1,
+		Repositories: []domain.PreparedRepository{{
+			Name: "app", CachePath: "/tmp/cache.git",
+			Path: workspace.Root + "/app", BaseCommit: "base-commit",
+		}},
+		Steps: []domain.SetupStep{{
+			ID: "environment_root", Kind: domain.StepWorkspaceRoot, Status: domain.StepSucceeded,
+		}},
+		Assignment: &domain.EnvironmentAssignment{
+			Generation: 1, Kind: domain.EnvironmentAssignmentClaim, Phase: domain.EnvironmentAssignmentActive,
+			Workspace: workspace, ReservedAt: now,
+		},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.NewWorkspaceStore(stateDir).Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewEnvironmentStore(stateDir).Save(environment); err != nil {
+		t.Fatal(err)
+	}
+	return workspace, environment
+}
+
 func TestValidateRenameRejectsAnExistingName(t *testing.T) {
 	stateDir := t.TempDir()
 	workspaceStore := store.NewWorkspaceStore(stateDir)

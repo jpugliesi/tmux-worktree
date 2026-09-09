@@ -76,16 +76,7 @@ func (s *Service) ValidateCreate(name, templateName string, template domain.Temp
 	if len(template.Repositories) == 0 {
 		return fmt.Errorf("Workspace Template %q has no repositories", templateName)
 	}
-	workspaces, err := s.store.List()
-	if err != nil {
-		return err
-	}
-	for _, existing := range workspaces {
-		if existing.Name == name {
-			return clierr.New(clierr.AlreadyExists, "Workspace %q already exists", name)
-		}
-	}
-	return nil
+	return s.requireWorkspaceNameAvailable(name)
 }
 
 // ValidateCreateWithOptions also validates the branch selection, so a dry

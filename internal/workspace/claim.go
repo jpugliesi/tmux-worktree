@@ -285,7 +285,9 @@ func (s *Service) requireWorkspaceNameAvailable(name string) error {
 	if err != nil {
 		return err
 	}
+	byID := make(map[string]domain.Workspace, len(workspaces))
 	for _, workspace := range workspaces {
+		byID[workspace.ID] = workspace
 		if workspace.Name == name {
 			return clierr.New(clierr.AlreadyExists, "Workspace %q already exists", name)
 		}
@@ -295,7 +297,14 @@ func (s *Service) requireWorkspaceNameAvailable(name string) error {
 		return err
 	}
 	for _, environment := range environments {
-		if environment.Assignment != nil && environment.Assignment.Workspace.Name == name {
+		if environment.Assignment == nil {
+			continue
+		}
+		claimed := environment.Assignment.Workspace
+		if live, ok := byID[claimed.ID]; ok {
+			claimed = live
+		}
+		if claimed.Name == name {
 			return clierr.New(clierr.AlreadyExists, "Workspace %q is already reserved by a Prepared Environment claim", name)
 		}
 	}

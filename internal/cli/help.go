@@ -130,7 +130,7 @@ var commandHelp = map[string]helpContent{
 		long: "Get one Workspace by name or immutable ID. Without WORKSPACE, twt gets the current Workspace from the tmux pane or the working directory.", example: "  twt workspaces get\n  twt workspaces get fix-auth --output json",
 	},
 	"twt workspaces rename": {
-		long: "Change the display name of a Workspace. twt also renames the owned tmux session to match. The Workspace ID, root, checkouts, branches, and Agent Sessions do not change. One NAME argument renames the current Workspace. Two arguments set the Workspace and the new name. Without arguments, twt shows the Workspace picker and asks for the new name.", example: "  twt workspaces rename auth-fix\n  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
+		long: "Change the display name of a Workspace. twt also renames the owned tmux session to match. It writes the new name on the Prepared Environment claim so the old name is free. The Workspace ID, root, checkouts, branches, and Agent Sessions do not change. One NAME argument renames the current Workspace. Two arguments set the Workspace and the new name. Without arguments, twt shows the Workspace picker and asks for the new name.", example: "  twt workspaces rename auth-fix\n  twt workspaces rename fix-auth auth-fix\n  twt workspaces rename",
 	},
 	"twt workspaces set": {
 		long: "Set the Ticket Project on one Workspace. The Project must be active. When the Workspace links Tickets, every Ticket must already belong to that Project. twt does not move Tickets, checkouts, or Environments.", example: "  twt workspaces set current --project change-monitor\n  twt workspaces set fix-auth --project change-monitor --dry-run --output json",

@@ -208,7 +208,8 @@ twt workspaces sync --output json
 
 Rename a Workspace. One NAME argument uses the current Workspace. Two
 arguments set the Workspace and the new name. twt also renames the owned
-tmux session.
+tmux session. It writes the new name on the Prepared Environment claim so
+the old name is free.
 
 ```sh
 twt workspaces rename NAME --dry-run --output json
