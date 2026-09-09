@@ -30,6 +30,34 @@ func TestWriteTableAlignsColumnsUnderHeaders(t *testing.T) {
 	}
 }
 
+func TestFormatTableLinesAlignsColumns(t *testing.T) {
+	lines, err := formatTableLines([][]string{
+		{"dev-env", "", "active", "19d"},
+		{"core", "firetiger", "active", "9d"},
+		{"agent-sdk-delete", "everysphere", "active", "5d"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 3 {
+		t.Fatalf("lines = %#v", lines)
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "\t") {
+			t.Fatalf("picker line still contains a tab:\n%s", line)
+		}
+	}
+	statusAt := strings.Index(lines[1], "active")
+	if statusAt < 0 {
+		t.Fatalf("core line = %q", lines[1])
+	}
+	for _, line := range lines {
+		if got := strings.Index(line, "active"); got != statusAt {
+			t.Fatalf("STATUS column is not aligned:\n%s", strings.Join(lines, "\n"))
+		}
+	}
+}
+
 func TestWriteTableWritesNothingForNoRows(t *testing.T) {
 	var buf bytes.Buffer
 	if err := writeTable(&buf, []string{"KEY"}, nil); err != nil {

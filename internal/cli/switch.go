@@ -80,10 +80,14 @@ func pickSwitchWorkspace(command *cobra.Command, options Options, service *works
 	}
 	sortWorkspacesForDisplay(workspaces)
 	now := time.Now().UTC()
-	lines := make([]string, 0, len(workspaces))
+	rows := make([][]string, 0, len(workspaces))
 	for _, workspace := range workspaces {
 		age := formatAge(now.Sub(workspaceAgeReference(workspace)))
-		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%s", workspace.Name, workspace.TemplateName, workspace.Status, age))
+		rows = append(rows, []string{workspace.Name, workspace.TemplateName, string(workspace.Status), age})
+	}
+	lines, err := formatTableLines(rows)
+	if err != nil {
+		return domain.Workspace{}, err
 	}
 	index, err := options.SwitchPick(command, lines)
 	if err != nil {

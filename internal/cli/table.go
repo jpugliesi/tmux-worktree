@@ -39,6 +39,20 @@ func writeTable(out io.Writer, headers []string, rows [][]string) error {
 	return writer.Flush()
 }
 
+// formatTableLines returns space-aligned table rows with no header. The
+// picker uses this so fzf shows the same columns as writeTable.
+func formatTableLines(rows [][]string) ([]string, error) {
+	var buf strings.Builder
+	if err := writeTable(&buf, nil, rows); err != nil {
+		return nil, err
+	}
+	text := strings.TrimSuffix(buf.String(), "\n")
+	if text == "" {
+		return nil, nil
+	}
+	return strings.Split(text, "\n"), nil
+}
+
 func writeTableRow(writer *tabwriter.Writer, row []string) error {
 	_, err := fmt.Fprintln(writer, strings.Join(row, "\t"))
 	return err

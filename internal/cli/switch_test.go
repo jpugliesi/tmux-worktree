@@ -89,12 +89,11 @@ func TestSwitchPickerSortsActiveWorkspacesFirst(t *testing.T) {
 	if len(pickedLines) != 2 {
 		t.Fatalf("switch picker lines = %v", pickedLines)
 	}
-	wantPrefixes := []string{"new-active\texample\tactive\t", "old-active\texample\tactive\t"}
-	for index, want := range wantPrefixes {
-		if !strings.HasPrefix(pickedLines[index], want) {
-			t.Fatalf("switch picker line %d = %q, want prefix %q", index, pickedLines[index], want)
-		}
+	wantRows := [][]string{
+		{"new-active", "example", "active"},
+		{"old-active", "example", "active"},
 	}
+	assertSwitchPickerRows(t, pickedLines, wantRows)
 	if !strings.Contains(output, `switch the client to session "old-active"`) {
 		t.Fatalf("switch picker dry-run output = %q", output)
 	}
@@ -113,12 +112,12 @@ func TestSwitchPickerAllIncludesArchivedWorkspaces(t *testing.T) {
 	if len(pickedLines) != 3 {
 		t.Fatalf("switch --all picker lines = %v", pickedLines)
 	}
-	wantPrefixes := []string{"new-active\texample\tactive\t", "old-active\texample\tactive\t", "sleepy\texample\tarchived\t"}
-	for index, want := range wantPrefixes {
-		if !strings.HasPrefix(pickedLines[index], want) {
-			t.Fatalf("switch --all picker line %d = %q, want prefix %q", index, pickedLines[index], want)
-		}
+	wantRows := [][]string{
+		{"new-active", "example", "active"},
+		{"old-active", "example", "active"},
+		{"sleepy", "example", "archived"},
 	}
+	assertSwitchPickerRows(t, pickedLines, wantRows)
 	if !strings.Contains(output, `open archived Workspace "sleepy"`) {
 		t.Fatalf("switch --all picker dry-run output = %q", output)
 	}
@@ -179,5 +178,35 @@ func TestSwitchNumberedPickerReadsTheWorkspaceNumber(t *testing.T) {
 	err := badCommand.Execute()
 	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "between 1 and 2") {
 		t.Fatalf("numbered picker with an invalid number = %v", err)
+	}
+}
+
+func assertSwitchPickerRows(t *testing.T, lines []string, want [][]string) {
+	t.Helper()
+	if len(lines) != len(want) {
+		t.Fatalf("switch picker lines = %v", lines)
+	}
+	templateAt := -1
+	for index, row := range want {
+		line := lines[index]
+		if strings.Contains(line, "\t") {
+			t.Fatalf("switch picker line %d still contains a tab: %q", index, line)
+		}
+		fields := strings.Fields(line)
+		if len(fields) < len(row) {
+			t.Fatalf("switch picker line %d = %q, want fields %v", index, line, row)
+		}
+		for i, value := range row {
+			if fields[i] != value {
+				t.Fatalf("switch picker line %d = %q, want fields %v", index, line, row)
+			}
+		}
+		if at := strings.Index(line, row[1]); at < 0 {
+			t.Fatalf("switch picker line %d missing %q: %q", index, row[1], line)
+		} else if templateAt < 0 {
+			templateAt = at
+		} else if at != templateAt {
+			t.Fatalf("TEMPLATE column is not aligned:\n%s", strings.Join(lines, "\n"))
+		}
 	}
 }
