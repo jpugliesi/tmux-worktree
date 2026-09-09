@@ -23,7 +23,7 @@ var commandHelp = map[string]helpContent{
 		long: "Create the next Workspace from the latest saved version of the current Workspace Template. Run this command inside the current Workspace tmux session. twt checks the current Workspace, creates the new Workspace, and cleans the old Workspace. It then stops the old tmux session. Tmux can select another session or detach the client. Without a name, twt shows an interactive Ticket picker. Use --force to discard tracked and nonignored changes. Use --fresh to fetch before the new claim. Use twt create outside a current Workspace.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth --force",
 	},
 	"twt switch": {
-		long: "Switch the calling tmux client to a Workspace. twt claims prepared worktrees for a released Workspace. It then creates or repairs the tmux session. Without WORKSPACE, twt shows an interactive Workspace picker.", example: "  twt switch fix-auth\n  twt switch",
+		long: "Switch the calling tmux client to a Workspace. twt claims prepared worktrees for a released Workspace. It then creates or repairs the tmux session. Without WORKSPACE, twt shows an interactive Workspace picker. The picker lists active Workspaces. --all includes archived Workspaces.", example: "  twt switch fix-auth\n  twt switch\n  twt switch --all",
 	},
 	"twt archive": {
 		long: "Archive a Workspace and return its worktrees to the prepared pool. twt keeps its branches, Workspace Template snapshot, and Agent Session records. Use --force to discard tracked and nonignored changes. twt preserves ignored files.", example: "  twt archive\n  twt archive fix-auth --force",

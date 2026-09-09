@@ -441,11 +441,13 @@ Switch the tmux client to a different Workspace:
 ```sh
 twt switch fix-auth
 twt switch
+twt switch --all
 ```
 
 `twt switch` moves your tmux client to the session of the Workspace. An
 archived Workspace opens first. Without WORKSPACE, `twt` shows an interactive
-picker: it uses `fzf` when `fzf` is installed, or a numbered list. Inside
+picker: it uses `fzf` when `fzf` is installed, or a numbered list. The picker
+lists active Workspaces. `--all` includes archived Workspaces. Inside
 tmux the client switches; outside tmux `twt` attaches. The command is
 interactive and refuses `--output json`.
 

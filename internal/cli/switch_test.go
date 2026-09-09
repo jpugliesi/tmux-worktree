@@ -86,10 +86,10 @@ func TestSwitchPickerSortsActiveWorkspacesFirst(t *testing.T) {
 		return 1, nil
 	}
 	output := executeWithOptions(t, options, nil, "switch", "--dry-run")
-	if len(pickedLines) != 3 {
+	if len(pickedLines) != 2 {
 		t.Fatalf("switch picker lines = %v", pickedLines)
 	}
-	wantPrefixes := []string{"new-active\texample\tactive\t", "old-active\texample\tactive\t", "sleepy\texample\tarchived\t"}
+	wantPrefixes := []string{"new-active\texample\tactive\t", "old-active\texample\tactive\t"}
 	for index, want := range wantPrefixes {
 		if !strings.HasPrefix(pickedLines[index], want) {
 			t.Fatalf("switch picker line %d = %q, want prefix %q", index, pickedLines[index], want)
@@ -97,6 +97,55 @@ func TestSwitchPickerSortsActiveWorkspacesFirst(t *testing.T) {
 	}
 	if !strings.Contains(output, `switch the client to session "old-active"`) {
 		t.Fatalf("switch picker dry-run output = %q", output)
+	}
+}
+
+func TestSwitchPickerAllIncludesArchivedWorkspaces(t *testing.T) {
+	options := switchFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	var pickedLines []string
+	options.SwitchPick = func(_ *cobra.Command, lines []string) (int, error) {
+		pickedLines = append([]string(nil), lines...)
+		return 2, nil
+	}
+	output := executeWithOptions(t, options, nil, "switch", "--all", "--dry-run")
+	if len(pickedLines) != 3 {
+		t.Fatalf("switch --all picker lines = %v", pickedLines)
+	}
+	wantPrefixes := []string{"new-active\texample\tactive\t", "old-active\texample\tactive\t", "sleepy\texample\tarchived\t"}
+	for index, want := range wantPrefixes {
+		if !strings.HasPrefix(pickedLines[index], want) {
+			t.Fatalf("switch --all picker line %d = %q, want prefix %q", index, pickedLines[index], want)
+		}
+	}
+	if !strings.Contains(output, `open archived Workspace "sleepy"`) {
+		t.Fatalf("switch --all picker dry-run output = %q", output)
+	}
+}
+
+func TestSwitchPickerWithoutAllFailsWhenOnlyArchivedWorkspacesExist(t *testing.T) {
+	options := switchFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	for _, name := range []string{"old-active-id", "new-active-id"} {
+		workspace, err := workspaceStore.Find(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		workspace.Status = domain.WorkspaceArchived
+		if err := workspaceStore.Save(workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options.SwitchPick = func(_ *cobra.Command, lines []string) (int, error) {
+		t.Fatalf("picker ran with lines %v", lines)
+		return 0, nil
+	}
+	_, _, err := executeCollectingOutput(t, options, "switch", "--dry-run")
+	if err == nil || clierr.CodeOf(err) != clierr.NotFound || !strings.Contains(err.Error(), "twt switch --all") {
+		t.Fatalf("switch with only archived Workspaces = %v", err)
 	}
 }
 
@@ -109,15 +158,15 @@ func TestSwitchNumberedPickerReadsTheWorkspaceNumber(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	options.Stdout, options.Stderr = &stdout, &stderr
 	command := cli.New(options)
-	command.SetIn(strings.NewReader("3\n"))
+	command.SetIn(strings.NewReader("2\n"))
 	command.SetArgs(forceTextOutput([]string{"switch", "--dry-run"}))
 	if err := command.Execute(); err != nil {
 		t.Fatalf("switch with the numbered picker: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "1) new-active") || !strings.Contains(stderr.String(), "Workspace number: ") {
+	if !strings.Contains(stderr.String(), "1) new-active") || strings.Contains(stderr.String(), "sleepy") || !strings.Contains(stderr.String(), "Workspace number: ") {
 		t.Fatalf("numbered picker prompt = %q", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `open archived Workspace "sleepy"`) {
+	if !strings.Contains(stdout.String(), `switch the client to session "old-active"`) {
 		t.Fatalf("numbered picker dry-run output = %q", stdout.String())
 	}
 
@@ -128,7 +177,7 @@ func TestSwitchNumberedPickerReadsTheWorkspaceNumber(t *testing.T) {
 	badCommand.SetIn(strings.NewReader("9\n"))
 	badCommand.SetArgs(forceTextOutput([]string{"switch", "--dry-run"}))
 	err := badCommand.Execute()
-	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "between 1 and 3") {
+	if err == nil || clierr.CodeOf(err) != clierr.InvalidUsage || !strings.Contains(err.Error(), "between 1 and 2") {
 		t.Fatalf("numbered picker with an invalid number = %v", err)
 	}
 }

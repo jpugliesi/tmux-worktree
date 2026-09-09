@@ -41,7 +41,7 @@ func newWorkspacesRenameCommand(options Options, service *workspaceservice.Servi
 func resolveRenameArguments(command *cobra.Command, options Options, service *workspaceservice.Service, args []string) (domain.Workspace, string, error) {
 	switch len(args) {
 	case 0:
-		workspace, err := pickSwitchWorkspace(command, options, service)
+		workspace, err := pickSwitchWorkspace(command, options, service, true)
 		if err != nil {
 			return domain.Workspace{}, "", err
 		}

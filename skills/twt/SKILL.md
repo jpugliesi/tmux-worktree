@@ -149,6 +149,8 @@ Always pass `--no-open` for agent work. twt opens tmux only when standard
 output is a terminal, but `--no-open` states the intention.
 
 `twt next` and `twt switch` are interactive commands for a person in tmux.
+`twt switch` without a name shows the Workspace picker. The picker lists
+active Workspaces. `--all` includes archived Workspaces.
 `twt reset` restores every pane in the current tmux window. It kills the
 process in each pane and starts an interactive shell in that pane's
 directory. The other panes reset at the same time. The pane that runs the

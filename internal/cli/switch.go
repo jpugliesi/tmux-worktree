@@ -12,6 +12,7 @@ import (
 )
 
 func newSwitchCommand(options Options) *cobra.Command {
+	var all bool
 	service := options.workspaceService()
 	command := &cobra.Command{
 		Use:   "switch [WORKSPACE]",
@@ -29,7 +30,7 @@ func newSwitchCommand(options Options) *cobra.Command {
 			if len(args) == 1 {
 				workspace, err = resolveWorkspace(service, args[0])
 			} else {
-				workspace, err = pickSwitchWorkspace(command, options, service)
+				workspace, err = pickSwitchWorkspace(command, options, service, all)
 			}
 			if err != nil {
 				return err
@@ -44,6 +45,7 @@ func newSwitchCommand(options Options) *cobra.Command {
 			return openTmux(options, workspace.TmuxSession)
 		},
 	}
+	command.Flags().BoolVar(&all, "all", false, "Include archived Workspaces in the picker")
 	setArguments(command, optionalArgument("workspace", "the interactive picker asks for it when absent"))
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
@@ -60,14 +62,21 @@ func writeSwitchPlan(out io.Writer, workspace domain.Workspace) error {
 }
 
 // pickSwitchWorkspace shows the interactive Workspace picker and returns the
-// selected Workspace. Active Workspaces come first, most recent first.
-func pickSwitchWorkspace(command *cobra.Command, options Options, service *workspaceservice.Service) (domain.Workspace, error) {
+// selected Workspace. Active Workspaces come first, most recent first. The
+// default list hides archived Workspaces. all includes them.
+func pickSwitchWorkspace(command *cobra.Command, options Options, service *workspaceservice.Service, all bool) (domain.Workspace, error) {
 	workspaces, err := service.List()
 	if err != nil {
 		return domain.Workspace{}, err
 	}
+	if !all {
+		workspaces = switchPickerWorkspaces(workspaces)
+	}
 	if len(workspaces) == 0 {
-		return domain.Workspace{}, clierr.New(clierr.NotFound, "no Workspaces exist; run 'twt create NAME' first")
+		if all {
+			return domain.Workspace{}, clierr.New(clierr.NotFound, "no Workspaces exist; run 'twt create NAME' first")
+		}
+		return domain.Workspace{}, clierr.New(clierr.NotFound, "no active Workspaces exist; run 'twt switch --all' or 'twt create NAME'")
 	}
 	sortWorkspacesForDisplay(workspaces)
 	now := time.Now().UTC()
@@ -84,6 +93,16 @@ func pickSwitchWorkspace(command *cobra.Command, options Options, service *works
 		return domain.Workspace{}, fmt.Errorf("the Workspace picker returned an invalid selection")
 	}
 	return workspaces[index], nil
+}
+
+func switchPickerWorkspaces(workspaces []domain.Workspace) []domain.Workspace {
+	active := make([]domain.Workspace, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if workspace.Status != domain.WorkspaceArchived {
+			active = append(active, workspace)
+		}
+	}
+	return active
 }
 
 // realSwitchPick selects one picker line with fzf when it is installed, or
