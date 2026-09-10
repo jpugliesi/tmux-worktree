@@ -42,7 +42,7 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tickets, err := listStartableTickets(options, scope)
+			tickets, err := listStartableTickets(options, scope, allProjects)
 			if err != nil {
 				return err
 			}
@@ -62,7 +62,7 @@ func newTicketsStartCommand(options Options) *cobra.Command {
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name")
 	command.Flags().BoolVar(&withAgent, "with-agent", false, "Start one configured Ticket planning Agent Session")
 	command.Flags().BoolVarP(&detached, "detached", "d", false, "Create and start the Workspace without opening or switching tmux")
-	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "Offer Tickets from every Project in the picker")
+	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "Offer Tickets from every Project, including paused Projects")
 	setArguments(command, variadicArgument("ticket", false, "the picker asks for one Ticket when absent; many values must be Ticket slugs from one Project"))
 	command.ValidArgsFunction = ticketSlugsCompletion(options)
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
@@ -78,21 +78,22 @@ func startFromTicket(command *cobra.Command, options Options, ticket domain.Tick
 // listStartableTickets lists open Tickets that start can claim. A Ticket
 // without a Project cannot start a Workspace, so the picker omits it. A set
 // scope keeps only that Project, like the tickets list default.
-func listStartableTickets(options Options, scope ticketProjectScope) ([]domain.Ticket, error) {
+func listStartableTickets(options Options, scope ticketProjectScope, allProjects bool) ([]domain.Ticket, error) {
 	service, err := options.ticketService()
 	if err != nil {
 		return nil, err
 	}
-	tickets, err := service.List(ticketservice.ListFilter{})
+	tickets, err := service.List(ticketservice.ListFilter{
+		Project:       scope.Project,
+		ProjectSet:    scope.Set,
+		IncludePaused: allProjects,
+	})
 	if err != nil {
 		return nil, err
 	}
 	startable := make([]domain.Ticket, 0, len(tickets))
 	for _, ticket := range tickets {
 		if ticket.Project == "" {
-			continue
-		}
-		if scope.Set && ticket.Project != scope.Project {
 			continue
 		}
 		startable = append(startable, ticket)

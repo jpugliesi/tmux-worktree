@@ -73,6 +73,8 @@ func newProjectsCommand(options Options) *cobra.Command {
 	projects := groupCommand(&cobra.Command{Use: "projects", Short: "Manage Ticket Projects"})
 	projects.AddCommand(newProjectsCreateCommand(options))
 	projects.AddCommand(newProjectsCloseCommand(options))
+	projects.AddCommand(newProjectsPauseCommand(options))
+	projects.AddCommand(newProjectsResumeCommand(options))
 	projects.AddCommand(newProjectsRemoveCommand(options))
 	projects.AddCommand(newProjectsRenameCommand(options))
 	projects.AddCommand(newProjectsSetCommand(options))
@@ -193,11 +195,11 @@ func newProjectsListCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tickets, err := service.List(ticketservice.ListFilter{All: true})
+			tickets, err := service.List(ticketservice.ListFilter{All: true, IncludePaused: true})
 			if err != nil {
 				return err
 			}
-			ready, err := service.List(ticketservice.ListFilter{Ready: true})
+			ready, err := service.List(ticketservice.ListFilter{Ready: true, IncludePaused: true})
 			if err != nil {
 				return err
 			}
@@ -213,6 +215,16 @@ func newProjectsListCommand(options Options) *cobra.Command {
 				return writeReadJSON(command, projectsListOutput{SchemaVersion: jsonSchemaVersion, Projects: rows, TotalCount: total, Truncated: truncated}, "projects")
 			}
 			if total == 0 {
+				if !all {
+					hidden, hiddenErr := service.AllProjects()
+					if hiddenErr != nil {
+						return hiddenErr
+					}
+					if len(hidden) > 0 {
+						_, err = fmt.Fprintln(command.ErrOrStderr(), "No active Projects. Run 'twt projects list --all'.")
+						return err
+					}
+				}
 				_, err = fmt.Fprintln(command.ErrOrStderr(), "No Projects exist. Run 'twt projects create NAME'.")
 				return err
 			}
@@ -225,7 +237,7 @@ func newProjectsListCommand(options Options) *cobra.Command {
 			return writeTable(command.OutOrStdout(), []string{"NAME", "STATUS", "WORK"}, table)
 		},
 	}
-	command.Flags().BoolVar(&all, "all", false, "Include closed Projects")
+	command.Flags().BoolVar(&all, "all", false, "Include paused and closed Projects")
 	addListReadFlags(command, &limit, &offset, projectListRow{})
 	return command
 }
@@ -233,6 +245,9 @@ func newProjectsListCommand(options Options) *cobra.Command {
 func projectListStatus(project domain.Project) string {
 	if project.Closed {
 		return "closed"
+	}
+	if project.Paused {
+		return "paused"
 	}
 	return "active"
 }
@@ -325,7 +340,7 @@ func newProjectsShowCommand(options Options) *cobra.Command {
 	addFreshFlag(command, &fresh)
 	setArguments(command, optionalArgument("name", "the current Project when absent"))
 	addFieldsFlag(command, projectShowOutput{})
-	command.ValidArgsFunction = ticketProjectNameCompletion(options)
+	command.ValidArgsFunction = allProjectNameCompletion(options)
 	return command
 }
 

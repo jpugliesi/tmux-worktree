@@ -385,6 +385,17 @@ A person closes it with `twt projects close PROJECT`. A close with open Tickets
 needs confirmation or `--force`. Close sets those Tickets to `wontfix` and
 clears their claims and Workspace links. It does not stop Workspaces or agents.
 Agents must use `--force`.
+Pause a long-running Project to hide it from the default list. The Project
+stays writable. Resume returns it to the default list. Resume does not open
+a closed Project. Run `twt projects list --all` before `twt projects create`
+when a similar name might already be paused.
+
+```sh
+twt projects pause NAME --dry-run --output json
+twt projects pause NAME --output json
+twt projects resume NAME --dry-run --output json
+twt projects resume NAME --output json
+```
 
 Rename a Project to keep its Tickets and history:
 
@@ -393,8 +404,8 @@ twt projects rename OLD NEW --dry-run --output json
 twt projects rename OLD NEW --output json
 ```
 
-Attach an existing Workspace to one active Project when its Tickets already
-belong to that Project, or when it has no Tickets:
+Attach an existing Workspace to a Project that is not closed when its Tickets
+already belong to that Project, or when it has no Tickets:
 
 ```sh
 twt workspaces set WORKSPACE --project PROJECT --dry-run --output json
@@ -592,13 +603,15 @@ Follow these rules for every ticket command:
    the Ticket. A label change does not move the file.
 9. List pickable work with `twt tickets list --ready --output json`. The
    list uses `--project`, then `TWT_PROJECT`, then the current Workspace
-   Project. With no Project in scope, the list includes every Project.
-   `--all-projects` lists every Project even when a Workspace Project is
+   Project. With no Project in scope, the list includes every active Project
+   and omits Tickets from paused Projects. `--all-projects` lists every
+   Project, including paused Projects, even when a Workspace Project is
    set. A plain `twt tickets list` hides `done` and `wontfix` tickets. Pass
    `--all` to include them. `twt tickets list --label NAME -A` is the
    cross-Project label feed. `twt labels list` derives unique labels from
    Ticket files. `twt projects list` shows each Project status and WORK as
-   in-progress plus todo over open. `--all` includes closed Projects.
+   in-progress plus todo over open. The default list is active Projects.
+   `--all` includes paused and closed Projects.
    A coordinator reads one Project with `twt projects get PROJECT --output json`.
    That envelope includes `ready`, `inFlight`, and `workspaces`.
    `twt context --output json` includes the linked Tickets and the ready

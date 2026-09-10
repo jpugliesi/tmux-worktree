@@ -77,6 +77,7 @@ func (s *Service) closeProjectOnce(name string, force, dryRun bool) (ProjectClos
 
 	result := ProjectCloseResult{Project: project, WontfixTickets: open}
 	result.Project.Closed = true
+	result.Project.Paused = false
 	for _, slug := range open {
 		if _, err := s.mutateOnce(slug, true, true, closeProjectTicket); err != nil {
 			return ProjectCloseResult{}, err
@@ -95,7 +96,9 @@ func (s *Service) closeProjectOnce(name string, force, dryRun bool) (ProjectClos
 	if err != nil {
 		return ProjectCloseResult{}, err
 	}
-	setMapBool(file.ensureMapping(), "twt_closed", true)
+	mapping := file.ensureMapping()
+	setMapBool(mapping, "twt_closed", true)
+	setMapNull(mapping, "twt_paused")
 	content, err := file.Render()
 	if err != nil {
 		return ProjectCloseResult{}, err

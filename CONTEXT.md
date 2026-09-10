@@ -120,6 +120,8 @@ and selects one Workspace Template. A Project can have many Workspaces over
 time. Its Ticket count includes active and closed Tickets. `twt_closed: true`
 in `index.md` closes the Project. A closed Project keeps its directory and plan.
 Default Project lists and completion omit it. New work cannot use it.
+`twt_paused: true` hides the Project from default lists. A paused Project
+stays writable. `--all` includes paused and closed Projects.
 _Avoid_: Board, workspace, epic folder
 
 **Ticket Store**:

@@ -88,6 +88,12 @@ The Project keeps its directory, `index.md`, `plan.md`, and Ticket history.
 Default Project lists and completion omit a closed Project. New work cannot
 use a closed Project.
 
+`twt projects pause NAME` sets `twt_paused: true` in the Project `index.md`.
+The Project stays writable. Default Project lists, completion, and unscoped
+Ticket lists omit it. `twt projects list --all` and `twt tickets list
+--all-projects` include it. `twt projects resume NAME` returns it to the
+default list. Resume does not open a closed Project.
+
 `twt projects remove NAME` prints a removal plan. `--apply` deletes the
 Project directory, `plan.md`, and every Ticket file for that Project,
 including `closed/NAME/`. After apply, `twt projects create NAME` succeeds.
@@ -245,6 +251,8 @@ twt tickets doctor
 twt tickets repair
 twt projects create [NAME]
 twt projects close NAME [--force]
+twt projects pause NAME
+twt projects resume NAME
 twt projects remove NAME [--apply]
 twt projects rename NAME NEW_NAME
 twt projects set NAME --template TEMPLATE

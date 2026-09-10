@@ -30,6 +30,7 @@ func Run(t *testing.T, backend string, factory Factory) {
 		{"CloseUnblocksDependents", testCloseUnblocksDependents},
 		{"CloseForceOverridesClaim", testCloseForceOverridesClaim},
 		{"CloseProjectResolvesOpenTickets", testCloseProjectResolvesOpenTickets},
+		{"PauseProjectHidesFromDefaultList", testPauseProjectHidesFromDefaultList},
 		{"RemoveProjectFreesTheName", testRemoveProjectFreesTheName},
 		{"RenameProjectMovesTickets", testRenameProjectMovesTickets},
 		{"AddRemoveRenameLabels", testAddRemoveRenameLabels},
@@ -67,6 +68,55 @@ func testCloseProjectResolvesOpenTickets(t *testing.T, store ticketservice.Store
 	ticket, err := store.Resolve("open")
 	if err != nil || ticket.Status != domain.TicketWontfix {
 		t.Fatalf("closed Project Ticket = %+v, %v", ticket, err)
+	}
+}
+
+func testPauseProjectHidesFromDefaultList(t *testing.T, store ticketservice.Store) {
+	if _, err := store.CreateProject("learn", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "open", Slug: "open", Project: "learn", Status: domain.TicketReadyForAgent, Priority: 1,
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := store.PauseProject("learn", false)
+	if err != nil || !paused.Paused || paused.Closed {
+		t.Fatalf("PauseProject = %+v, %v", paused, err)
+	}
+	projects, err := store.Projects()
+	if err != nil || len(projects) != 0 {
+		t.Fatalf("Projects after pause = %+v, %v", projects, err)
+	}
+	all, err := store.AllProjects()
+	if err != nil || len(all) != 1 || !all[0].Paused {
+		t.Fatalf("AllProjects after pause = %+v, %v", all, err)
+	}
+	if _, err := store.Create(ticketservice.CreateRequest{
+		Title: "more", Slug: "more", Project: "learn", Status: domain.TicketNeedsTriage, Priority: 2,
+	}, false); err != nil {
+		t.Fatalf("Create in paused Project: %v", err)
+	}
+	hidden, err := store.List(ticketservice.ListFilter{})
+	if err != nil || len(hidden) != 0 {
+		t.Fatalf("unscoped List after pause = %+v, %v", hidden, err)
+	}
+	shown, err := store.List(ticketservice.ListFilter{Project: "learn", ProjectSet: true})
+	if err != nil || len(shown) != 2 {
+		t.Fatalf("scoped List after pause = %+v, %v", shown, err)
+	}
+	resumed, err := store.ResumeProject("learn", false)
+	if err != nil || resumed.Paused {
+		t.Fatalf("ResumeProject = %+v, %v", resumed, err)
+	}
+	if _, err := store.CloseProject("learn", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PauseProject("learn", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("pause closed = %v", err)
+	}
+	if _, err := store.ResumeProject("learn", false); clierr.CodeOf(err) != clierr.PreconditionFailed {
+		t.Fatalf("resume closed = %v", err)
 	}
 }
 

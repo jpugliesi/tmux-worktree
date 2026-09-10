@@ -348,14 +348,15 @@ func newTicketsListCommand(options Options) *cobra.Command {
 				storeStatus = ""
 			}
 			tickets, err := service.List(ticketservice.ListFilter{
-				Project:    scope.Project,
-				ProjectSet: scope.Set,
-				Status:     storeStatus,
-				Ready:      ready,
-				Claimed:    claimed,
-				NeedsInput: needsInput,
-				All:        all,
-				Labels:     labels,
+				Project:       scope.Project,
+				ProjectSet:    scope.Set,
+				Status:        storeStatus,
+				Ready:         ready,
+				Claimed:       claimed,
+				NeedsInput:    needsInput,
+				All:           all,
+				IncludePaused: allProjects,
+				Labels:        labels,
 			})
 			if err != nil {
 				return err
@@ -380,7 +381,7 @@ func newTicketsListCommand(options Options) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&project, "project", "", "List one Project; an empty value lists ungrouped Tickets")
-	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "List Tickets from every Project")
+	command.Flags().BoolVarP(&allProjects, "all-projects", "A", false, "List Tickets from every Project, including paused Projects")
 	command.Flags().StringVar(&status, "status", "", "List one stored status or the STATUS column value")
 	command.Flags().BoolVar(&ready, "ready", false, "List only unclaimed, unblocked, ready-for-agent Tickets")
 	command.Flags().BoolVar(&claimed, "claimed", false, "List only Tickets that have a claimant")
@@ -885,8 +886,8 @@ func ticketSlugsCompletion(options Options) completionFunc {
 	}
 }
 
-// ticketProjectNames lists every Project name. A missing or unset Tickets home
-// completes to nothing.
+// ticketProjectNames lists every active Project name. A missing or unset
+// Tickets home completes to nothing.
 func ticketProjectNames(options Options, toComplete string) []string {
 	service, err := options.ticketService()
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	ticketservice "github.com/jpugliesi/tmux-worktree/internal/ticket"
 	"github.com/spf13/cobra"
@@ -154,6 +155,20 @@ func projectRemovalBlocked(name string, blockers []ticketservice.ProjectRemovalB
 }
 
 func allProjectNameCompletion(options Options) completionFunc {
+	return projectNameCompletion(options, func(project domain.Project) bool { return true })
+}
+
+func openProjectNameCompletion(options Options) completionFunc {
+	return projectNameCompletion(options, func(project domain.Project) bool { return !project.Closed })
+}
+
+func pausedProjectNameCompletion(options Options) completionFunc {
+	return projectNameCompletion(options, func(project domain.Project) bool {
+		return project.Paused && !project.Closed
+	})
+}
+
+func projectNameCompletion(options Options, keep func(domain.Project) bool) completionFunc {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, noFileCompletion
@@ -168,6 +183,9 @@ func allProjectNameCompletion(options Options) completionFunc {
 		}
 		names := make([]string, 0, len(projects))
 		for _, project := range projects {
+			if keep != nil && !keep(project) {
+				continue
+			}
 			names = append(names, project.Name)
 		}
 		return matching(names, toComplete), noFileCompletion

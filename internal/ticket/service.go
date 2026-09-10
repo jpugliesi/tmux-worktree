@@ -203,7 +203,8 @@ func (s *Service) createProjectWithTemplateOnce(name, templateName string, dryRu
 	return s.projectInfo(home, name)
 }
 
-// AllProjects lists every Project directory, including closed Projects.
+// AllProjects lists every Project directory, including paused and closed
+// Projects.
 func (s *Service) AllProjects() ([]domain.Project, error) {
 	return s.listProjects(true)
 }
@@ -213,7 +214,7 @@ func (s *Service) Projects() ([]domain.Project, error) {
 	return s.listProjects(false)
 }
 
-func (s *Service) listProjects(includeClosed bool) ([]domain.Project, error) {
+func (s *Service) listProjects(includeHidden bool) ([]domain.Project, error) {
 	home, err := s.home()
 	if err != nil {
 		return nil, err
@@ -238,7 +239,7 @@ func (s *Service) listProjects(includeClosed bool) ([]domain.Project, error) {
 		if err != nil {
 			return nil, err
 		}
-		if project.Closed && !includeClosed {
+		if !includeHidden && (project.Closed || project.Paused) {
 			continue
 		}
 		projects = append(projects, project)
@@ -305,6 +306,14 @@ func (s *Service) projectInfo(home, name string) (domain.Project, error) {
 					return domain.Project{}, clierr.New(clierr.UnsafeState, "Project %q has an invalid twt_closed value", name)
 				}
 				if decodeErr := value.Decode(&project.Closed); decodeErr != nil {
+					return domain.Project{}, clierr.Wrap(clierr.UnsafeState, decodeErr)
+				}
+			}
+			if value := findMapValue(file.Mapping(), "twt_paused"); value != nil && value.Tag != "!!null" {
+				if value.Kind != yaml.ScalarNode || value.Tag != "!!bool" {
+					return domain.Project{}, clierr.New(clierr.UnsafeState, "Project %q has an invalid twt_paused value", name)
+				}
+				if decodeErr := value.Decode(&project.Paused); decodeErr != nil {
 					return domain.Project{}, clierr.Wrap(clierr.UnsafeState, decodeErr)
 				}
 			}
@@ -809,6 +818,9 @@ type ListFilter struct {
 	// claimed and parked on needs-info by an ask.
 	NeedsInput bool
 	All        bool
+	// IncludePaused includes Tickets from paused Projects when ProjectSet
+	// is false. An explicit Project always includes that Project.
+	IncludePaused bool
 	// Labels selects Tickets that carry every named label (AND).
 	Labels []string
 }
@@ -850,10 +862,21 @@ func (s *Service) List(filter ListFilter) ([]domain.Ticket, error) {
 	if err != nil {
 		return nil, err
 	}
+	paused := map[string]bool{}
+	if !filter.ProjectSet && !filter.IncludePaused {
+		names, pausedErr := s.pausedProjectNames()
+		if pausedErr != nil {
+			return nil, pausedErr
+		}
+		paused = names
+	}
 	hideClosed := !filter.All && filter.Status == ""
 	tickets := []domain.Ticket{}
 	for _, ticket := range idx.tickets {
 		if filter.ProjectSet && ticket.Project != filter.Project {
+			continue
+		}
+		if paused[ticket.Project] {
 			continue
 		}
 		if filter.Status != "" && string(ticket.Status) != filter.Status {

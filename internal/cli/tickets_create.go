@@ -88,7 +88,8 @@ func resolveWizardProject(command *cobra.Command, service ticketservice.Store, c
 	return choice, true, nil
 }
 
-// pickTicketProject shows the Project picker: (none), then every Project name.
+// pickTicketProject shows the Project picker: (none), then every active
+// Project name.
 func pickTicketProject(command *cobra.Command, options Options, service ticketservice.Store) (string, error) {
 	projects, err := service.Projects()
 	if err != nil {

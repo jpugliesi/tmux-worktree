@@ -25,7 +25,7 @@ func newProjectsCloseCommand(options Options) *cobra.Command {
 	}
 	command.Flags().BoolVar(&force, "force", false, "Set open Tickets to wontfix")
 	setArguments(command, requiredArgument("name"))
-	command.ValidArgsFunction = ticketProjectNameCompletion(options)
+	command.ValidArgsFunction = openProjectNameCompletion(options)
 	return command
 }
 

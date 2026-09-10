@@ -791,7 +791,7 @@ tmux session name. It writes the new name on the Prepared Environment
 claim so the old name is free. The Workspace ID, paths, branches, Ticket
 links, and Agent Sessions stay unchanged.
 
-Set the Ticket Project on one Workspace. The Project must be active. When
+Set the Ticket Project on one Workspace. The Project must not be closed. When
 the Workspace links Tickets, every Ticket must already belong to that
 Project. twt does not move Tickets, checkouts, or Environments.
 
@@ -981,6 +981,8 @@ twt tickets close TICKET [--as NAME] [--force]
 twt tickets comment TICKET -
 twt projects create [NAME] [--template TEMPLATE]
 twt projects close NAME [--force]
+twt projects pause NAME
+twt projects resume NAME
 twt projects remove NAME [--apply]
 twt projects rename NAME NEW_NAME
 twt projects set NAME --template TEMPLATE
@@ -993,7 +995,8 @@ The no-argument reads follow the current context, like a kubectl namespace.
 working directory. `twt projects get` shows the current Project: TWT_PROJECT,
 then the current Workspace Project. `twt tickets list` and the
 `twt tickets start` picker use the same Project scope; `--all-projects`
-(short `-A`) widens them to every Project.
+(short `-A`) widens them to every Project, including paused Projects.
+An unscoped list omits Tickets from paused Projects.
 
 `twt tickets init` creates Tickets home if it is missing, and writes
 `index.md` and `templates/ticket.md` only when those files are missing. It
@@ -1008,6 +1011,11 @@ asks whether to start a Workspace. A script must pass NAME.
 `twt projects close NAME` keeps the directory and marks the Project closed.
 When open Tickets remain, a terminal asks before it sets them to `wontfix`.
 A script must pass `--force` for the same change.
+`twt projects pause NAME` hides the Project from the default list. The
+Project stays writable. `twt projects resume NAME` returns it to the default
+list. Resume does not open a closed Project.
+`twt projects list` shows active Projects. `--all` includes paused and
+closed Projects.
 `twt projects remove NAME` prints a removal plan. `--apply` deletes the
 Project directory and its Ticket files so the name can be created again.
 A Workspace that still names the Project blocks apply.
@@ -1232,7 +1240,8 @@ repository set and the dispatch defaults for its Sessions.
 Close keeps the Project directory, `index.md`, and `plan.md`. It sets each
 open Ticket to `wontfix`. It also clears the Ticket claim and Workspace link.
 It does not stop Workspaces or agents. Default Project lists and completion
-omit the closed Project.
+omit the closed Project. Pause hides a Project from those lists and keeps
+it writable. `--all` includes paused and closed Projects.
 
 `projects get` is the coordinator board. JSON includes `ready` Tickets,
 `inFlight` (claimed) Tickets, and Workspaces linked to the Project.

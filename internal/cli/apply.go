@@ -321,7 +321,7 @@ func applyOperations() []applyOperation {
 		}}, applyWorkspacesRename},
 		{applyOperationSchema{Operation: "workspaces.set", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
-			{Path: "workspace.project", Type: "string", Required: true, Condition: "an active Project; linked Tickets must already belong to it"},
+			{Path: "workspace.project", Type: "string", Required: true, Condition: "a Project that is not closed; linked Tickets must already belong to it"},
 		}}, applyWorkspacesSet},
 		{applyOperationSchema{Operation: "workspaces.setup.retry", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
@@ -463,6 +463,12 @@ func applyOperations() []applyOperation {
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.force", Type: "boolean", Required: false, Condition: "required when the Project has open Tickets"},
 		}}, applyTicketsProjectsClose},
+		{applyOperationSchema{Operation: "projects.pause", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+		}}, applyTicketsProjectsPause},
+		{applyOperationSchema{Operation: "projects.resume", Payload: "project", Fields: []requestFieldSchema{
+			{Path: "project.name", Type: "string", Required: true},
+		}}, applyTicketsProjectsResume},
 		{applyOperationSchema{Operation: "projects.remove", Payload: "project", Fields: []requestFieldSchema{
 			{Path: "project.name", Type: "string", Required: true},
 			{Path: "project.apply", Type: "boolean", Required: false, Condition: "false or absent returns the removal plan only"},
@@ -1264,6 +1270,36 @@ func applyTicketsProjectsClose(command *cobra.Command, options Options, request 
 		return err
 	}
 	return closeProject(command, service, payload.Name, payload.Force, false)
+}
+
+func applyTicketsProjectsPause(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectCloseApplyRequest
+	if err := decodeApplyPayload("projects.pause", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("project.name is required for projects.pause")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return pauseProject(command, service, payload.Name)
+}
+
+func applyTicketsProjectsResume(command *cobra.Command, options Options, request applyRequest) error {
+	var payload projectCloseApplyRequest
+	if err := decodeApplyPayload("projects.resume", "project", request.Project, &payload); err != nil {
+		return err
+	}
+	if payload.Name == "" {
+		return fmt.Errorf("project.name is required for projects.resume")
+	}
+	service, err := options.ticketService()
+	if err != nil {
+		return err
+	}
+	return resumeProject(command, service, payload.Name)
 }
 
 func applyTicketsProjectsRemove(command *cobra.Command, options Options, request applyRequest) error {
