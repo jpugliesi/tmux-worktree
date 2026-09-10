@@ -1015,7 +1015,7 @@ A script must pass `--force` for the same change.
 Project stays writable. `twt projects resume NAME` returns it to the default
 list. Resume does not open a closed Project.
 `twt projects list` shows active Projects. `--all` includes paused and
-closed Projects.
+closed Projects. The `--all` list shows active, then paused, then closed.
 `twt projects remove NAME` prints a removal plan. `--apply` deletes the
 Project directory and its Ticket files so the name can be created again.
 A Workspace that still names the Project blocks apply.

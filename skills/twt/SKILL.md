@@ -611,7 +611,8 @@ Follow these rules for every ticket command:
    cross-Project label feed. `twt labels list` derives unique labels from
    Ticket files. `twt projects list` shows each Project status and WORK as
    in-progress plus todo over open. The default list is active Projects.
-   `--all` includes paused and closed Projects.
+   `--all` includes paused and closed Projects. The `--all` list shows
+   active, then paused, then closed.
    A coordinator reads one Project with `twt projects get PROJECT --output json`.
    That envelope includes `ready`, `inFlight`, and `workspaces`.
    `twt context --output json` includes the linked Tickets and the ready

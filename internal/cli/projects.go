@@ -288,7 +288,26 @@ func projectListRows(projects []domain.Project, tickets []domain.Ticket, ready [
 		row.Open = row.Waiting + row.Progress + row.Review + row.Ready + row.Blocked + row.Todo
 		rows = append(rows, row)
 	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		iRank := projectListStatusRank(rows[i].Status)
+		jRank := projectListStatusRank(rows[j].Status)
+		if iRank != jRank {
+			return iRank < jRank
+		}
+		return rows[i].Name < rows[j].Name
+	})
 	return rows
+}
+
+func projectListStatusRank(status string) int {
+	switch status {
+	case "active":
+		return 0
+	case "paused":
+		return 1
+	default:
+		return 2
+	}
 }
 
 func projectListWork(row projectListRow) string {
