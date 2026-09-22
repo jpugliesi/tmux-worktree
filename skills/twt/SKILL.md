@@ -137,6 +137,8 @@ Workspace creation claims a matching Prepared Environment. The normal warm
 path does not fetch, clone, add a worktree, or run repository initialization.
 Use `--fresh` only when the new Workspace needs the latest default branch.
 Repository initialization runs again when that refresh changes the base commit.
+A Prepared Environment never blocks a create: a claim adopts a moved detached
+checkout as its base, and it replaces an environment that it cannot use.
 
 Create reports the base commit and its fetch age (`Base: origin/main @ ...
 (fetched 12m ago)`). The age is the price of the instant claim. To move a

@@ -228,7 +228,14 @@ func (s *Service) Prepare(templateName string, template domain.Template) (domain
 			return domain.PreparedEnvironment{}, err
 		}
 		lock.Release()
-		return s.PrepareQueued(environment.ID, environment.QueueToken)
+		prepared, err := s.PrepareQueued(environment.ID, environment.QueueToken)
+		if err != nil && !errors.Is(err, ErrEnvironmentFailed) && prepared.Status == domain.EnvironmentFailed {
+			// The retry failed again. Report ErrEnvironmentFailed so Create
+			// removes this environment and prepares a replacement instead
+			// of stopping on a Prepared Environment from an earlier session.
+			return prepared, s.failedEnvironmentError(prepared)
+		}
+		return prepared, err
 	}
 	environment, err := s.saveNewQueuedEnvironment(templateName, digests, template)
 	if releaseErr := lock.Release(); err == nil && releaseErr != nil {

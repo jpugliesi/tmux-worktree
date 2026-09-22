@@ -296,7 +296,15 @@ func (s *Service) Retry(reference string) (domain.Workspace, error) {
 	if findErr == nil && reserved.EnvironmentID != "" {
 		environment, environmentErr := s.environments.Find(reserved.EnvironmentID)
 		if environmentErr == nil && environment.Status == domain.EnvironmentClaiming {
-			return s.completeEnvironmentClaim(environment.ID, reserved.ID, CreateOptions{})
+			workspace, err := s.completeEnvironmentClaim(environment.ID, reserved.ID, CreateOptions{})
+			if !errors.Is(err, ErrEnvironmentFailed) {
+				return workspace, err
+			}
+			// The claim gave up on its Prepared Environment and removed
+			// the reserved record. Create the Workspace again with the
+			// same name, links, and branch; Create prepares a replacement.
+			s.report("Prepared Environment %s failed. twt prepares a replacement.", environment.ID)
+			return s.CreateWithOptions(reserved.Name, reserved.TemplateName, reserved.TemplateSnapshot, createOptionsFor(reserved))
 		}
 	}
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
@@ -326,6 +334,21 @@ func (s *Service) Retry(reference string) (domain.Workspace, error) {
 		return p, err
 	}
 	return p, nil
+}
+
+// createOptionsFor rebuilds the Create options that a reserved Workspace
+// record carries, so a retry can create the same Workspace again after its
+// Prepared Environment failed.
+func createOptionsFor(workspace domain.Workspace) CreateOptions {
+	opts := CreateOptions{
+		Tickets: append([]string(nil), workspace.Tickets...),
+		Project: workspace.Project,
+		BaseRef: workspace.BaseRef,
+	}
+	if len(workspace.Repositories) > 0 {
+		opts.Branch = workspace.Repositories[0].Branch
+	}
+	return opts
 }
 
 // restoreReservedWorkspace repairs the durable boundary between an Environment

@@ -353,6 +353,12 @@ Two flags control the Git start point:
 - `--fresh` fetches the default branch and refreshes the Prepared Environment
   before the claim.
 
+A Prepared Environment only saves bootstrap time. It never blocks a create.
+When a background refresh moved the detached checkout and did not save the
+new base commit, the claim adopts the checkout commit as the base. When the
+claim cannot use the checkout at all, `twt` marks that Prepared Environment
+as failed, removes it, and prepares a replacement.
+
 ### Workspace branch names
 
 `twt` selects the Workspace branch name in this order:

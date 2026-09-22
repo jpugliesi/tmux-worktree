@@ -23,7 +23,11 @@ func TestValidateEnvironmentClaimMarkerAcceptsLegacyProjectID(t *testing.T) {
 	}
 }
 
-func TestRetryRestoresWorkspaceFromDurableEnvironmentClaim(t *testing.T) {
+// A claim whose Prepared Environment has no ownership marker cannot use that
+// environment. Retry restores the Workspace record from the durable claim,
+// gives the environment up as failed, and creates the Workspace again. The
+// fixture origin does not exist, so the replacement stops at the clone.
+func TestRetryAbandonsADurableClaimWithoutAnOwnershipMarker(t *testing.T) {
 	stateDir := t.TempDir()
 	dataDir := t.TempDir()
 	now := time.Now().UTC()
@@ -66,14 +70,16 @@ func TestRetryRestoresWorkspaceFromDurableEnvironmentClaim(t *testing.T) {
 	}
 
 	service := NewService(Options{StateDir: stateDir, DataDir: dataDir})
-	if _, err := service.Retry(workspace.Name); err == nil || !strings.Contains(err.Error(), "ownership marker") {
-		t.Fatalf("Retry() error = %v, want claim continuation after Workspace recovery", err)
+	_, err = service.Retry(workspace.Name)
+	if err == nil || strings.Contains(err.Error(), "ownership marker") || !strings.Contains(err.Error(), "clone repository") {
+		t.Fatalf("Retry() error = %v, want a replacement create that stops at the clone", err)
 	}
-	restored, err := store.NewWorkspaceStore(stateDir).Find(workspace.ID)
-	if err != nil {
-		t.Fatalf("Workspace was not restored from the claim journal: %v", err)
+	// The replacement create removes the failed environment. Its root does
+	// not exist, so only the record goes away.
+	if abandoned, err := store.NewEnvironmentStore(stateDir).Find(environment.ID); err == nil {
+		t.Fatalf("abandoned Prepared Environment remains: %+v", abandoned)
 	}
-	if restored.ID != workspace.ID || restored.Name != workspace.Name || restored.EnvironmentID != workspace.EnvironmentID || restored.Root != workspace.Root {
-		t.Fatalf("restored Workspace = %+v, want claim Workspace %+v", restored, workspace)
+	if _, err := store.NewWorkspaceStore(stateDir).Find(workspace.ID); err == nil {
+		t.Fatalf("the reserved Workspace record %s remains after the abandoned claim", workspace.ID)
 	}
 }

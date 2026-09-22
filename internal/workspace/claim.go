@@ -360,19 +360,40 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 	if err != nil {
 		return domain.Workspace{}, err
 	}
+	if environment.Status != domain.EnvironmentClaiming {
+		return workspace, fmt.Errorf("Prepared Environment %q has status %q; expected %q", environment.ID, environment.Status, domain.EnvironmentClaiming)
+	}
 	if err := s.validateEnvironmentForClaim(environment, workspace); err != nil {
-		return workspace, err
+		return s.abandonClaim(environment, workspace, err)
 	}
 	for index := range workspace.Repositories {
 		repository := &workspace.Repositories[index]
 		spec, prepared, preparedIndex, err := preparedRepositoryFor(environment, repository.Name)
 		if err != nil {
-			return workspace, err
+			return s.abandonClaim(environment, workspace, err)
 		}
+		var unusable error
 		err = s.withCacheLock(repository.CachePath, func() error {
-			branch, err := validatePreparedRepositoryForClaim(prepared, *repository)
+			branch, head, err := validatePreparedRepositoryForClaim(prepared, *repository)
 			if err != nil {
+				unusable = err
 				return err
+			}
+			if head != prepared.BaseCommit {
+				// A daemon refresh moved this detached checkout and then
+				// stopped before it saved the new base commit. The
+				// checkout is the truth: the new Workspace branch starts
+				// where the files are.
+				if branch == "" {
+					s.report("Repository %q checkout is at %s, not at the saved base %s. twt uses the checkout commit.", repository.Name, shortCommit(head), shortCommit(prepared.BaseCommit))
+				}
+				prepared.BaseCommit = head
+				repository.BaseCommit = head
+				environment.Repositories[preparedIndex].BaseCommit = head
+				environment.UpdatedAt = s.now()
+				if err := s.environments.Save(environment); err != nil {
+					return err
+				}
 			}
 			if branch == "" {
 				exists, err := refExists(repository.CachePath, "refs/heads/"+repository.Branch)
@@ -397,6 +418,9 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 			}
 			return nil
 		})
+		if unusable != nil {
+			return s.abandonClaim(environment, workspace, unusable)
+		}
 		if err != nil {
 			return workspace, err
 		}
@@ -426,10 +450,35 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 	return workspace, nil
 }
 
-func (s *Service) validateEnvironmentForClaim(environment domain.PreparedEnvironment, workspace domain.Workspace) error {
-	if environment.Status != domain.EnvironmentClaiming {
-		return fmt.Errorf("Prepared Environment %q has status %q; expected %q", environment.ID, environment.Status, domain.EnvironmentClaiming)
+// abandonClaim gives up on a Prepared Environment whose worktrees the claim
+// cannot use. A Prepared Environment only saves bootstrap time, so it must
+// never block a create. The environment fails with the cause, the reserved
+// Workspace record goes away, and the caller returns ErrEnvironmentFailed so
+// Create prepares a replacement.
+func (s *Service) abandonClaim(environment domain.PreparedEnvironment, workspace domain.Workspace, cause error) (domain.Workspace, error) {
+	s.report("Prepared Environment %s is not usable: %v", environment.ID, cause)
+	environment.Assignment = nil
+	for index := range environment.Steps {
+		// The next preparation must write the ownership marker and inspect
+		// the checkouts again. The finished initialization stays done.
+		switch environment.Steps[index].Kind {
+		case domain.StepWorkspaceRoot, domain.StepCheckout:
+			environment.Steps[index].Status = domain.StepPending
+			environment.Steps[index].Error = ""
+		}
 	}
+	if _, err := s.failEnvironment(&environment, cause); !errors.Is(err, cause) {
+		return workspace, err
+	}
+	if err := s.store.Delete(workspace.ID); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return workspace, err
+	}
+	return domain.Workspace{}, s.failedEnvironmentError(environment)
+}
+
+// validateEnvironmentForClaim checks the parts of a claiming Prepared
+// Environment that a claim cannot repair. The caller checks the status.
+func (s *Service) validateEnvironmentForClaim(environment domain.PreparedEnvironment, workspace domain.Workspace) error {
 	if err := validateEnvironmentClaimMarker(environment, workspace); err != nil {
 		return err
 	}
@@ -440,24 +489,22 @@ func (s *Service) validateEnvironmentForClaim(environment domain.PreparedEnviron
 }
 
 // validatePreparedRepositoryForClaim checks one prepared checkout and returns
-// the branch that the checkout already uses. An empty branch means that the
-// checkout is still detached at the saved base commit.
-func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, workspaceRepository domain.WorkspaceRepository) (string, error) {
-	if repository.BaseCommit == "" {
-		return "", fmt.Errorf("Prepared Environment repository %q has no base commit", repository.Name)
-	}
+// the branch that the checkout already uses with its HEAD commit. An empty
+// branch means that the checkout is still detached. The HEAD commit may
+// differ from the saved base commit; the caller adopts it.
+func validatePreparedRepositoryForClaim(repository domain.PreparedRepository, workspaceRepository domain.WorkspaceRepository) (string, string, error) {
 	if err := worktreeUsesCache(repository.Path, repository.CachePath); err != nil {
-		return "", fmt.Errorf("Prepared Environment repository %q does not use its Repository Cache", repository.Name)
+		return "", "", fmt.Errorf("Prepared Environment repository %q does not use its Repository Cache", repository.Name)
 	}
 	branch, err := output(repository.Path, "git", "branch", "--show-current")
 	if err != nil || (branch != "" && branch != workspaceRepository.Branch) {
-		return "", fmt.Errorf("Prepared Environment repository %q has an invalid claim branch", repository.Name)
+		return "", "", fmt.Errorf("Prepared Environment repository %q has an invalid claim branch", repository.Name)
 	}
-	commit, err := output(repository.Path, "git", "rev-parse", "HEAD")
-	if err != nil || commit != repository.BaseCommit {
-		return "", fmt.Errorf("Prepared Environment repository %q is not at its saved base commit", repository.Name)
+	head, err := output(repository.Path, "git", "rev-parse", "HEAD")
+	if err != nil || head == "" {
+		return "", "", fmt.Errorf("Prepared Environment repository %q has no readable HEAD commit", repository.Name)
 	}
-	return branch, nil
+	return branch, head, nil
 }
 
 // claimBaseCommit returns the base commit for the new Workspace branch of one

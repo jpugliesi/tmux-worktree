@@ -77,6 +77,13 @@ func (s *Service) RefreshPreparedEnvironment(environmentID string) (domain.Prepa
 				return fmt.Errorf("refresh prepared repository %q: %w", repository.Name, err)
 			}
 			environment.Repositories[index].BaseCommit = tip
+			environment.UpdatedAt = s.now()
+			// Save now, before the initialization below. When the
+			// initialization fails, the record must still describe the
+			// moved checkout, or the next claim finds a stale base.
+			if err := s.environments.Save(environment); err != nil {
+				return err
+			}
 			changed[repository.Name] = true
 			return nil
 		})
