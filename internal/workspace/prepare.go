@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -227,22 +228,27 @@ func (s *Service) runPreparedInitialize(environment domain.PreparedEnvironment, 
 	if err := runInitializationProcess(repository.Path, spec.Initialize.Command, env, activityLock.File()); err != nil {
 		return err
 	}
-	// Initialization may install ignored files and initialize submodules,
-	// so this check does not compare the release fingerprint. It requires a
-	// clean tree, no active Git operation, and an unmoved HEAD.
-	state, err := inspectRepositoryRelease(domain.WorkspaceRepository{Name: repository.Name, Path: repository.Path})
-	if err != nil {
-		return err
-	}
-	if state.gitOperation != "" || state.dirty {
-		return fmt.Errorf("repository initialization left prepared repository %q with tracked or nonignored changes", repository.Name)
-	}
 	commitAfter, err := output(repository.Path, "git", "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("read prepared repository commit: %w", err)
 	}
 	if commitAfter != commitBefore {
 		return fmt.Errorf("repository initialization moved prepared repository %q from commit %s to %s", repository.Name, shortCommit(commitBefore), shortCommit(commitAfter))
+	}
+	state, err := inspectRepositoryRelease(domain.WorkspaceRepository{Name: repository.Name, Path: repository.Path})
+	if err != nil {
+		return err
+	}
+	if state.gitOperation != "" {
+		return fmt.Errorf("repository initialization left prepared repository %q with an active %s", repository.Name, state.gitOperation)
+	}
+	// A dirty tree does not fail the environment. Nothing in a Prepared
+	// Environment is user work: the claim discards tracked changes when it
+	// creates the Workspace branch, and untracked files show in the new
+	// Workspace as they do in any clone after this initialization. The
+	// report tells the operator that the initialization is not clean.
+	if state.dirty {
+		s.report("Warning: repository initialization left prepared repository %q with changes: %s", repository.Name, strings.Join(state.paths, ", "))
 	}
 	return nil
 }

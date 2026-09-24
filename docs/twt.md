@@ -208,8 +208,21 @@ This command refreshes each matching ready Prepared Environment. It then
 creates enough environments to meet `pool_depth`. A refresh fetches the default
 branch. When the base commit changes, twt runs repository initialization again.
 
+Repository initialization must leave the checkout at the base commit with no
+Git operation active. It may leave the tree dirty. A lockfile rewrite or a
+generated tool configuration is common. Nothing in a Prepared Environment is
+user work, so the claim discards tracked changes when it creates the Workspace
+branch. Untracked files stay and show in the new Workspace, as they do in any
+clone after that initialization. The preparation log warns with the changed
+paths, so the repository owner can correct the initialization.
+
 When a create waits for a background preparation, it reports each setup step
 as the worker reaches it, with the step position and the log path.
+
+A preparing Prepared Environment without a live worker is abandoned, for
+example after a reboot or a stopped refresh. The next pool top-up requeues it
+and runs repository initialization again, because the checkout may have
+moved since the finished initialization.
 
 A failed Prepared Environment keeps its finished steps. The next create, and
 the pool top-up after a create or a release, requeue it and retry only the
@@ -796,6 +809,17 @@ Workspace and the new name. Rename changes the display name and the owned
 tmux session name. It writes the new name on the Prepared Environment
 claim so the old name is free. The Workspace ID, paths, branches, Ticket
 links, and Agent Sessions stay unchanged.
+
+When an archived Workspace holds the new name, an interactive terminal shows
+the removal plan of that Workspace and asks before `twt` removes it. The
+removal deletes its branches and state, and it stops on the normal removal
+blockers. Use `--remove-archived` to remove it without the question. A
+script, JSON output, or a dry run without the flag gets an error with the
+flag as a hint.
+
+```sh
+twt workspaces rename fix-auth auth-fix --remove-archived
+```
 
 Set the Ticket Project on one Workspace. The Project must not be closed. When
 the Workspace links Tickets, every Ticket must already belong to that

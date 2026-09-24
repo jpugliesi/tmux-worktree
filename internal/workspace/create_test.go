@@ -491,7 +491,73 @@ func TestPreparedInitializationAcceptsSubmoduleInitialization(t *testing.T) {
 	}
 }
 
-func TestPreparedInitializationRejectsTrackedChangesAndAMovedHead(t *testing.T) {
+// An initialization that dirties the tree does not fail the environment.
+// The claim discards the tracked changes when it creates the Workspace
+// branch. Untracked files stay, as they do in any clone after that
+// initialization.
+func TestClaimDiscardsChangesThatInitializationLeft(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	stateDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: source},
+			// A lockfile rewrite and a tool configuration file.
+			Initialize: &domain.InitializeSpec{Command: []string{"sh", "-c",
+				`echo changed > README.md && echo x > notes.txt`}},
+		}},
+	}
+	socket := fmt.Sprintf("twt-workspace-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	var mu sync.Mutex
+	var messages []string
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir(), TmuxSocket: socket, Progress: func(message string) {
+		mu.Lock()
+		messages = append(messages, message)
+		mu.Unlock()
+	}})
+	queued, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment, err := service.PrepareQueued(queued[0].ID, queued[0].QueueToken)
+	if err != nil {
+		t.Fatalf("PrepareQueued() with a dirtying initialization: %v", err)
+	}
+	if environment.Status != domain.EnvironmentReady {
+		t.Fatalf("Prepared Environment status = %q, want %q", environment.Status, domain.EnvironmentReady)
+	}
+	mu.Lock()
+	joined := strings.Join(messages, "\n")
+	mu.Unlock()
+	if !strings.Contains(joined, "Warning: repository initialization left prepared repository") || !strings.Contains(joined, "README.md") {
+		t.Fatalf("progress does not report the dirty initialization: %v", messages)
+	}
+
+	workspace, err := service.CreateWithOptions("clean-start", template.Name, template, CreateOptions{})
+	if err != nil {
+		t.Fatalf("CreateWithOptions() from the dirty environment: %v", err)
+	}
+	checkout := filepath.Join(workspace.Root, "app")
+	if status := testGitOutput(t, checkout, "status", "--porcelain"); status != "?? notes.txt" {
+		t.Fatalf("Workspace status = %q, want only the untracked notes.txt", status)
+	}
+	readme, err := os.ReadFile(filepath.Join(checkout, "README.md"))
+	if err != nil || strings.TrimSpace(string(readme)) == "changed" {
+		t.Fatalf("README.md still carries the initialization change: %q %v", readme, err)
+	}
+}
+
+func TestPreparedInitializationRejectsAMovedHead(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -500,7 +566,6 @@ func TestPreparedInitializationRejectsTrackedChangesAndAMovedHead(t *testing.T) 
 		command string
 		want    string
 	}{
-		{name: "tracked change", command: "echo changed > README.md", want: "tracked or nonignored changes"},
 		{name: "moved HEAD", command: "git reset -q --hard HEAD~1", want: "moved prepared repository"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -528,6 +593,71 @@ func TestPreparedInitializationRejectsTrackedChangesAndAMovedHead(t *testing.T) 
 				t.Fatalf("PrepareQueued() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+// A requeued abandoned preparation runs repository initialization again, so
+// a checkout that a stopped refresh moved gets a matching initialization and
+// a clean tree.
+func TestRequeuedAbandonedPreparationRunsInitializationAgain(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	stateDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	counter := filepath.Join(t.TempDir(), "runs")
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:       "app",
+			Clone:      domain.CloneSpec{URL: source},
+			Initialize: &domain.InitializeSpec{Command: []string{"sh", "-c", `echo run >> "` + counter + `" && echo changed > README.md`}},
+		}},
+	}
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir()})
+	queued, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := service.PrepareQueued(queued[0].ID, queued[0].QueueToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A stopped refresh leaves the environment preparing with a dirty tree.
+	if err := os.WriteFile(filepath.Join(prepared.Repositories[0].Path, "README.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	environmentStore := store.NewEnvironmentStore(stateDir)
+	abandoned, err := environmentStore.Find(prepared.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abandoned.Status = domain.EnvironmentPreparing
+	if err := environmentStore.Save(abandoned); err != nil {
+		t.Fatal(err)
+	}
+
+	relaunched, err := service.TopUpPool(template.Name, template, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment, err := service.PrepareQueued(relaunched[0].ID, relaunched[0].QueueToken)
+	if err != nil {
+		t.Fatalf("PrepareQueued() after the relaunch: %v", err)
+	}
+	if environment.Status != domain.EnvironmentReady {
+		t.Fatalf("Prepared Environment status = %q, want %q", environment.Status, domain.EnvironmentReady)
+	}
+	runs, err := os.ReadFile(counter)
+	if err != nil || strings.Count(string(runs), "run") != 2 {
+		t.Fatalf("initialization runs = %q, want 2", runs)
+	}
+	// The rerun overwrote the leftover of the stopped refresh.
+	readme, err := os.ReadFile(filepath.Join(environment.Repositories[0].Path, "README.md"))
+	if err != nil || strings.TrimSpace(string(readme)) != "changed" {
+		t.Fatalf("README.md after the rerun = %q %v, want the initialization output", readme, err)
 	}
 }
 

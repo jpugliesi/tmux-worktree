@@ -10,24 +10,69 @@ import (
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
+// RenameOptions changes how Rename treats a new name that an archived
+// Workspace still holds.
+type RenameOptions struct {
+	// RemoveArchived removes the archived Workspace that holds the new name
+	// before the rename. The removal follows the normal removal plan and
+	// stops on its blockers.
+	RemoveArchived bool
+	// CurrentPane is the tmux pane of the caller, for the removal plan.
+	CurrentPane string
+}
+
+// RenamePlan describes one rename before it runs.
+type RenamePlan struct {
+	Workspace domain.Workspace
+	// ArchivedHolder is the archived Workspace that holds the new name, when
+	// one exists.
+	ArchivedHolder *domain.Workspace
+	// Removal is the removal plan for ArchivedHolder when the options ask
+	// for the removal.
+	Removal *RemovalPlan
+}
+
 // ValidateRename checks a Workspace rename without changing state.
 func (s *Service) ValidateRename(reference, name string) error {
-	_, err := s.validateRename(reference, name)
+	_, err := s.validateRename(reference, name, RenameOptions{})
 	return err
+}
+
+// PlanRename checks a Workspace rename with options and returns the plan.
+func (s *Service) PlanRename(reference, name string, opts RenameOptions) (RenamePlan, error) {
+	return s.validateRename(reference, name, opts)
 }
 
 // Rename changes the display name of a Workspace and the owned tmux session
 // name. Its immutable resources keep their existing names and paths.
 func (s *Service) Rename(reference, name string) (domain.Workspace, error) {
+	return s.RenameWithOptions(reference, name, RenameOptions{})
+}
+
+// RenameWithOptions renames a Workspace. With RemoveArchived, it first
+// removes the archived Workspace that holds the new name. The removal is its
+// own mutation with its own lock, so it runs before the rename lock.
+func (s *Service) RenameWithOptions(reference, name string, opts RenameOptions) (domain.Workspace, error) {
+	plan, err := s.validateRename(reference, name, opts)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	if plan.Removal != nil {
+		s.report("Removing archived Workspace %q to free its name.", plan.ArchivedHolder.Name)
+		if _, err := s.Remove(plan.ArchivedHolder.ID, opts.CurrentPane, RemovalOptions{AllowUnpublished: true}); err != nil {
+			return domain.Workspace{}, err
+		}
+	}
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return domain.Workspace{}, err
 	}
 	defer lock.Release()
-	workspace, err := s.validateRename(reference, name)
+	plan, err = s.validateRename(reference, name, opts)
 	if err != nil {
 		return domain.Workspace{}, err
 	}
+	workspace := plan.Workspace
 	desiredSession := sessionName(workspace.TemplateName, name)
 	owned, hasSession, err := s.ownedSessionRow(workspace.ID)
 	if err != nil {
@@ -81,34 +126,56 @@ func (s *Service) syncEnvironmentAssignmentWorkspace(workspace domain.Workspace)
 	return s.environments.Save(environment)
 }
 
-func (s *Service) validateRename(reference, name string) (domain.Workspace, error) {
+func (s *Service) validateRename(reference, name string, opts RenameOptions) (RenamePlan, error) {
 	if err := store.ValidateResourceName(name); err != nil {
-		return domain.Workspace{}, fmt.Errorf("invalid Workspace name: %w", err)
+		return RenamePlan{}, fmt.Errorf("invalid Workspace name: %w", err)
 	}
 	workspace, err := s.store.Find(reference)
 	if err != nil {
-		return domain.Workspace{}, err
+		return RenamePlan{}, err
 	}
+	plan := RenamePlan{Workspace: workspace}
 	workspaces, err := s.store.List()
 	if err != nil {
-		return domain.Workspace{}, err
+		return plan, err
 	}
 	for _, existing := range workspaces {
-		if existing.ID != workspace.ID && (existing.Name == name || existing.ID == name) {
-			return domain.Workspace{}, clierr.New(clierr.AlreadyExists, "Workspace %q already exists", name)
+		if existing.ID == workspace.ID || (existing.Name != name && existing.ID != name) {
+			continue
 		}
+		if existing.Status == domain.WorkspaceArchived && existing.Name == name {
+			holder := existing
+			plan.ArchivedHolder = &holder
+			continue
+		}
+		return plan, clierr.New(clierr.AlreadyExists, "Workspace %q already exists", name)
+	}
+	if plan.ArchivedHolder != nil {
+		if !opts.RemoveArchived {
+			return plan, clierr.WithHint(
+				clierr.New(clierr.AlreadyExists, "archived Workspace %q already exists", name),
+				"Use --remove-archived to remove archived Workspace %q and reuse its name.", name)
+		}
+		removal, err := s.PlanRemoval(plan.ArchivedHolder.ID, opts.CurrentPane, RemovalOptions{AllowUnpublished: true})
+		if err != nil {
+			return plan, err
+		}
+		if len(removal.Blockers) > 0 {
+			return plan, removalRefusal(plan.ArchivedHolder.Name, removal.Blockers)
+		}
+		plan.Removal = &removal
 	}
 	switch workspace.Status {
 	case domain.WorkspaceActive, domain.WorkspaceArchived, domain.WorkspaceSetupFailed:
 	case domain.WorkspaceInitializing, domain.WorkspaceRemoving:
-		return domain.Workspace{}, clierr.New(clierr.PreconditionFailed, "Workspace %q has status %q and cannot be renamed", workspace.Name, workspace.Status)
+		return plan, clierr.New(clierr.PreconditionFailed, "Workspace %q has status %q and cannot be renamed", workspace.Name, workspace.Status)
 	default:
-		return domain.Workspace{}, clierr.New(clierr.PreconditionFailed, "Workspace %q has invalid status %q", workspace.Name, workspace.Status)
+		return plan, clierr.New(clierr.PreconditionFailed, "Workspace %q has invalid status %q", workspace.Name, workspace.Status)
 	}
 	if err := s.validateRenameSessionAvailable(workspace, sessionName(workspace.TemplateName, name)); err != nil {
-		return domain.Workspace{}, err
+		return plan, err
 	}
-	return workspace, nil
+	return plan, nil
 }
 
 func (s *Service) validateRenameSessionAvailable(workspace domain.Workspace, desired string) error {

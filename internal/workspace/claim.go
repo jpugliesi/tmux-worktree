@@ -409,7 +409,10 @@ func (s *Service) completeEnvironmentClaim(environmentID, workspaceID string, op
 					if err != nil {
 						return err
 					}
-					if err := run(repository.Path, "git", "switch", "-c", repository.Branch, base); err != nil {
+					// Nothing in a detached prepared checkout is user work.
+					// Discard changes that initialization left in tracked
+					// files, so the Workspace branch starts clean at base.
+					if err := run(repository.Path, "git", "switch", "--discard-changes", "-c", repository.Branch, base); err != nil {
 						return fmt.Errorf("create Workspace branch for repository %q: %w", repository.Name, err)
 					}
 				}

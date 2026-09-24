@@ -118,6 +118,18 @@ func (s *Service) saveNewQueuedEnvironment(templateName string, digests store.Di
 func (s *Service) requeueAbandoned(environment *domain.PreparedEnvironment) error {
 	s.report("Restarting abandoned preparation of Prepared Environment %s", environment.ID)
 	environment.Status = domain.EnvironmentQueued
+	// An abandoned preparation is often a refresh that moved the checkout
+	// and stopped in the initialization. The finished initialization of an
+	// earlier base does not describe this checkout, so it runs again. A
+	// running step stays as found: the step engine fails an interrupted
+	// initialization on purpose.
+	for index := range environment.Steps {
+		step := &environment.Steps[index]
+		if step.Kind == domain.StepRepositoryInit && step.Status == domain.StepSucceeded {
+			step.Status = domain.StepPending
+			step.Error = ""
+		}
+	}
 	return s.relaunchQueued(environment)
 }
 

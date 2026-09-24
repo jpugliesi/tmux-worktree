@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -198,5 +199,73 @@ func TestValidateRenameRejectsAnExistingName(t *testing.T) {
 	err := NewService(Options{StateDir: stateDir}).ValidateRename("one", "two")
 	if clierr.CodeOf(err) != clierr.AlreadyExists {
 		t.Fatalf("ValidateRename() = %v", err)
+	}
+}
+
+// archivedNameHolder saves an archived, released Workspace named name whose
+// logical state passes the removal checks without a Repository Cache.
+func archivedNameHolder(t *testing.T, service *Service, stateDir, name string) domain.Workspace {
+	t.Helper()
+	template := domain.Template{
+		Version: domain.TemplateVersion,
+		Name:    "example",
+		Repositories: []domain.RepositorySpec{{
+			Name:  "app",
+			Clone: domain.CloneSpec{URL: "https://example.com/app.git"},
+		}},
+	}
+	archivedAt := time.Now().UTC().Add(-time.Hour)
+	holder := domain.Workspace{
+		Version: domain.WorkspaceVersion, ID: "holder-id", Name: name,
+		TemplateName: template.Name, TemplateSnapshot: template,
+		Status: domain.WorkspaceArchived, ArchivedAt: &archivedAt,
+		Repositories: []domain.WorkspaceRepository{{
+			Name: "app", CachePath: service.cachePath("app", template.Repositories[0].Clone.URL), Branch: "twt/" + name,
+		}},
+	}
+	if err := store.NewWorkspaceStore(stateDir).Save(holder); err != nil {
+		t.Fatal(err)
+	}
+	return holder
+}
+
+func TestValidateRenameHintsAtAnArchivedHolder(t *testing.T) {
+	stateDir := t.TempDir()
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir(), TmuxSocket: "twt-rename-unit"})
+	if err := store.NewWorkspaceStore(stateDir).Save(domain.Workspace{Version: domain.WorkspaceVersion, ID: "one-id", Name: "one", Status: domain.WorkspaceActive}); err != nil {
+		t.Fatal(err)
+	}
+	archivedNameHolder(t, service, stateDir, "two")
+
+	err := service.ValidateRename("one", "two")
+	if clierr.CodeOf(err) != clierr.AlreadyExists || !strings.Contains(clierr.HintOf(err), "--remove-archived") {
+		t.Fatalf("ValidateRename() = %v, hint %q; want AlreadyExists with the --remove-archived hint", err, clierr.HintOf(err))
+	}
+	plan, err := service.PlanRename("one", "two", RenameOptions{RemoveArchived: true})
+	if err != nil {
+		t.Fatalf("PlanRename() with RemoveArchived: %v", err)
+	}
+	if plan.ArchivedHolder == nil || plan.ArchivedHolder.ID != "holder-id" || plan.Removal == nil || plan.Removal.WorkspaceID != "holder-id" {
+		t.Fatalf("PlanRename() = %+v, want the archived holder and its removal plan", plan)
+	}
+}
+
+func TestRenameRemovesTheArchivedHolderWhenAsked(t *testing.T) {
+	stateDir := t.TempDir()
+	service := NewService(Options{StateDir: stateDir, DataDir: t.TempDir(), TmuxSocket: "twt-rename-unit"})
+	if err := store.NewWorkspaceStore(stateDir).Save(domain.Workspace{Version: domain.WorkspaceVersion, ID: "one-id", Name: "one", Status: domain.WorkspaceActive}); err != nil {
+		t.Fatal(err)
+	}
+	holder := archivedNameHolder(t, service, stateDir, "two")
+
+	got, err := service.RenameWithOptions("one", "two", RenameOptions{RemoveArchived: true})
+	if err != nil {
+		t.Fatalf("RenameWithOptions() = %v", err)
+	}
+	if got.ID != "one-id" || got.Name != "two" {
+		t.Fatalf("renamed Workspace = %+v", got)
+	}
+	if _, err := service.Find(holder.ID); clierr.CodeOf(err) != clierr.NotFound {
+		t.Fatalf("archived holder remains: %v", err)
 	}
 }

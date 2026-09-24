@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
@@ -88,8 +89,9 @@ type workspaceArchiveRequest struct {
 }
 
 type workspaceRenameRequest struct {
-	Reference string `json:"reference"`
-	Name      string `json:"name"`
+	Reference      string `json:"reference"`
+	Name           string `json:"name"`
+	RemoveArchived bool   `json:"removeArchived"`
 }
 
 type workspaceSetRequest struct {
@@ -318,6 +320,7 @@ func applyOperations() []applyOperation {
 		{applyOperationSchema{Operation: "workspaces.rename", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
 			{Path: "workspace.name", Type: "string", Required: true},
+			{Path: "workspace.removeArchived", Type: "boolean", Required: false, Condition: "removes the archived Workspace that holds workspace.name before the rename"},
 		}}, applyWorkspacesRename},
 		{applyOperationSchema{Operation: "workspaces.set", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: true},
@@ -785,7 +788,8 @@ func applyWorkspacesRename(command *cobra.Command, options Options, request appl
 	if err != nil {
 		return err
 	}
-	return renameWorkspace(command, service, workspace.ID, workspace.Name, payload.Name)
+	opts := workspaceservice.RenameOptions{RemoveArchived: payload.RemoveArchived, CurrentPane: os.Getenv("TMUX_PANE")}
+	return renameWorkspace(command, service, workspace.ID, workspace.Name, payload.Name, opts)
 }
 
 func applyWorkspacesSet(command *cobra.Command, options Options, request applyRequest) error {

@@ -139,6 +139,9 @@ Use `--fresh` only when the new Workspace needs the latest default branch.
 Repository initialization runs again when that refresh changes the base commit.
 A Prepared Environment never blocks a create: a claim adopts a moved detached
 checkout as its base, and it replaces an environment that it cannot use.
+A repository initialization that leaves tracked changes does not fail the
+environment. The claim discards them when it creates the Workspace branch.
+The preparation log warns with the changed paths.
 
 Create reports the base commit and its fetch age (`Base: origin/main @ ...
 (fetched 12m ago)`). The age is the price of the instant claim. To move a
@@ -211,13 +214,18 @@ twt workspaces sync --output json
 Rename a Workspace. One NAME argument uses the current Workspace. Two
 arguments set the Workspace and the new name. twt also renames the owned
 tmux session. It writes the new name on the Prepared Environment claim so
-the old name is free.
+the old name is free. When an archived Workspace holds the new name, the
+rename fails with a hint. Add `--remove-archived` to remove that archived
+Workspace first. The removal deletes its branches and stops on the normal
+removal blockers. Apply uses `workspace.removeArchived`.
 
 ```sh
 twt workspaces rename NAME --dry-run --output json
 twt workspaces rename NAME --output json
 twt workspaces rename WORKSPACE NAME --dry-run --output json
 twt workspaces rename WORKSPACE NAME --output json
+twt workspaces rename WORKSPACE NAME --remove-archived --dry-run --output json
+twt workspaces rename WORKSPACE NAME --remove-archived --output json
 ```
 
 Set the Ticket Project on one Workspace. The Project must be active. Linked

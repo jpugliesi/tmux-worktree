@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/cli"
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 	"github.com/spf13/cobra"
@@ -1464,4 +1465,85 @@ func initGitRepository(t *testing.T, path string) {
 	}
 	runCommand(t, path, "git", "add", "README.md", "init.sh", ".gitignore")
 	runCommand(t, path, "git", "commit", "-qm", "initial commit")
+}
+
+func TestWorkspacesRenameAsksBeforeItRemovesAnArchivedHolder(t *testing.T) {
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+	root := t.TempDir()
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: "twt-rename-cli"}
+	archivedAt := time.Now().UTC().Add(-time.Hour)
+	target := domain.Workspace{Version: domain.WorkspaceVersion, ID: "target-id", Name: "old-name", Status: domain.WorkspaceActive}
+	holder := domain.Workspace{Version: domain.WorkspaceVersion, ID: "holder-id", Name: "taken", Status: domain.WorkspaceArchived, ArchivedAt: &archivedAt, Adopted: true}
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	for _, workspace := range []domain.Workspace{target, holder} {
+		if err := workspaceStore.Save(workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A script gets the error with the flag as a hint.
+	_, _, err := executeRaw(t, options, "workspaces", "rename", "old-name", "taken", "--output", "json")
+	if clierr.CodeOf(err) != clierr.AlreadyExists || !strings.Contains(clierr.HintOf(err), "--remove-archived") {
+		t.Fatalf("rename onto an archived name without confirmation: err=%v hint=%q", err, clierr.HintOf(err))
+	}
+	if got, err := workspaceStore.Find(holder.ID); err != nil || got.Name != "taken" {
+		t.Fatalf("archived holder changed without confirmation: %+v, %v", got, err)
+	}
+
+	// An interactive "n" cancels the rename and keeps both Workspaces.
+	var out, errOut bytes.Buffer
+	options.Stdout, options.Stderr = &out, &errOut
+	command := cli.New(options)
+	command.SetIn(strings.NewReader("n\n"))
+	command.SetArgs(forceTextOutput([]string{"workspaces", "rename", "old-name", "taken"}))
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "canceled") {
+		t.Fatalf("declined confirmation: err=%v stderr=%s", err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), `Workspace "taken" is archived.`) || !strings.Contains(errOut.String(), "reuse its name? [y/N]") {
+		t.Fatalf("confirmation prompt = %q", errOut.String())
+	}
+
+	// An interactive "y" removes the archived holder and renames.
+	output := executeWithOptions(t, options, strings.NewReader("y\n"), "workspaces", "rename", "old-name", "taken")
+	if output != "Removed archived Workspace \"taken\"\nRenamed Workspace \"old-name\" to \"taken\"\n" {
+		t.Fatalf("workspaces rename output = %q", output)
+	}
+	if got, err := workspaceStore.Find(target.ID); err != nil || got.Name != "taken" {
+		t.Fatalf("renamed Workspace = %+v, %v", got, err)
+	}
+	if _, err := workspaceStore.Find(holder.ID); err == nil {
+		t.Fatal("archived holder remains after the confirmed rename")
+	}
+}
+
+func TestWorkspacesRenameRemoveArchivedFlagSkipsTheQuestion(t *testing.T) {
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+	root := t.TempDir()
+	options := cli.Options{StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: "twt-rename-cli"}
+	archivedAt := time.Now().UTC().Add(-time.Hour)
+	target := domain.Workspace{Version: domain.WorkspaceVersion, ID: "target-id", Name: "old-name", Status: domain.WorkspaceActive}
+	holder := domain.Workspace{Version: domain.WorkspaceVersion, ID: "holder-id", Name: "taken", Status: domain.WorkspaceArchived, ArchivedAt: &archivedAt, Adopted: true}
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	for _, workspace := range []domain.Workspace{target, holder} {
+		if err := workspaceStore.Save(workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dryRun, _, err := executeRaw(t, options, "workspaces", "rename", "old-name", "taken", "--remove-archived", "--dry-run", "--output", "json")
+	if err != nil || !strings.Contains(dryRun, `"status":"valid"`) {
+		t.Fatalf("dry run with --remove-archived: %v %s", err, dryRun)
+	}
+	if _, err := workspaceStore.Find(holder.ID); err != nil {
+		t.Fatalf("dry run removed the archived holder: %v", err)
+	}
+	applied, _, err := executeRaw(t, options, "workspaces", "rename", "old-name", "taken", "--remove-archived", "--output", "json")
+	if err != nil || !strings.Contains(applied, `"status":"applied"`) || !strings.Contains(applied, `"name":"taken"`) {
+		t.Fatalf("rename with --remove-archived: %v %s", err, applied)
+	}
+	if _, err := workspaceStore.Find(holder.ID); err == nil {
+		t.Fatal("archived holder remains after --remove-archived")
+	}
 }
