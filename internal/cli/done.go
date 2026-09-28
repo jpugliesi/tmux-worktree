@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
@@ -250,8 +252,12 @@ func completeFromPane(command *cobra.Command, options Options, service *workspac
 
 // finishPreparedRelease stops the source session even when result reporting
 // fails. This rule prevents a prepared release from leaving a live shell.
+// The process runs inside the session that it stops, so it ignores the
+// SIGHUP from tmux. Reconcile then runs after the session is gone and
+// returns the Prepared Environment to the ready pool.
 func finishPreparedRelease(service *workspaceservice.Service, prepared workspaceservice.PreparedRelease, report func() error) error {
 	reportErr := report()
+	signal.Ignore(syscall.SIGHUP)
 	stopErr := service.StopPreparedRelease(prepared)
 	if stopErr != nil {
 		return errors.Join(reportErr, stopErr)

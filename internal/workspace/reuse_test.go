@@ -932,3 +932,75 @@ func TestReleaseRunsTheAfterReleaseFinalizedHook(t *testing.T) {
 		t.Fatalf("AfterReleaseFinalized calls = %v, want one call with \"example\"", refilled)
 	}
 }
+
+func TestReleaseDetachesAtTheMergeBaseWithOriginNotTheOldBase(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}, DefaultBranch: "main"}},
+	}
+	socket := fmt.Sprintf("twt-release-merge-base-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+
+	workspace, err := service.Create("merge-base", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBase := workspace.Repositories[0].BaseCommit
+
+	// Main moves on. The Workspace branch rebases onto the new main and adds
+	// one commit of its own.
+	if err := os.WriteFile(filepath.Join(source, "main.txt"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{{"add", "main.txt"}, {"commit", "-qm", "main moves"}} {
+		if err := run(source, "git", argv...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository := workspace.Repositories[0]
+	if err := fetchOrigin(repository.CachePath, "main"); err != nil {
+		t.Fatal(err)
+	}
+	newMain := testGitOutput(t, repository.CachePath, "rev-parse", "refs/remotes/origin/main")
+	if err := run(repository.Path, "git", "reset", "-q", "--hard", newMain); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository.Path, "branch.txt"), []byte("branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{{"add", "branch.txt"}, {"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "branch work"}} {
+		if err := run(repository.Path, "git", argv...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := service.Release(workspace.ID, "", ReleaseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	head := testGitOutput(t, repository.Path, "rev-parse", "HEAD")
+	if head != newMain || head == oldBase {
+		t.Fatalf("released HEAD = %q, want the merge-base %q (old base %q)", head, newMain, oldBase)
+	}
+	if _, err := os.Stat(filepath.Join(repository.Path, "branch.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("released checkout kept a branch-only file: %v", err)
+	}
+	environment, err := store.NewEnvironmentStore(stateDir).Find(workspace.EnvironmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment.Repositories[0].BaseCommit != newMain {
+		t.Fatalf("environment base = %q, want %q", environment.Repositories[0].BaseCommit, newMain)
+	}
+}

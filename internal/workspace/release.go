@@ -371,9 +371,15 @@ func (s *Service) stopWorkspaceSessions(workspace domain.Workspace) error {
 	return nil
 }
 
+// detachReleasedRepositories detaches each checkout at the merge-base of
+// HEAD and the cached origin default branch. That commit is on the default
+// branch and is usually close to HEAD, so the switch changes few files. The
+// old Workspace base commit can be weeks behind: a switch back to it
+// rewrites the tree, and the next claim or refresh rewrites it forward
+// again. The recorded base commit follows the checkout.
 func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environment *domain.PreparedEnvironment, force bool) error {
 	for _, repository := range workspace.Repositories {
-		_, prepared, _, err := preparedRepositoryFor(*environment, repository.Name)
+		spec, prepared, index, err := preparedRepositoryFor(*environment, repository.Name)
 		if err != nil {
 			return err
 		}
@@ -382,6 +388,9 @@ func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environ
 			base = prepared.BaseCommit
 		}
 		if err := s.withCacheLock(repository.CachePath, func() error {
+			if mergeBase := releaseMergeBase(repository, spec); mergeBase != "" {
+				base = mergeBase
+			}
 			args := []string{"switch", "--detach"}
 			if force {
 				args = append(args, "--discard-changes")
@@ -399,8 +408,24 @@ func (s *Service) detachReleasedRepositories(workspace domain.Workspace, environ
 		}); err != nil {
 			return err
 		}
+		environment.Repositories[index].BaseCommit = base
 	}
 	return nil
+}
+
+// releaseMergeBase returns the merge-base of the checkout HEAD and the
+// cached origin default branch. It does no network work. An empty result
+// means that the caller keeps the saved base commit.
+func releaseMergeBase(repository domain.WorkspaceRepository, spec domain.RepositorySpec) string {
+	branch, err := defaultBranch(repository.CachePath, spec)
+	if err != nil {
+		return ""
+	}
+	mergeBase, err := output(repository.Path, "git", "merge-base", "HEAD", "refs/remotes/origin/"+branch)
+	if err != nil {
+		return ""
+	}
+	return mergeBase
 }
 
 func (s *Service) openReleasedWorkspace(workspace domain.Workspace) (domain.Workspace, error) {
