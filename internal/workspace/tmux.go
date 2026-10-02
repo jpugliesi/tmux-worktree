@@ -426,8 +426,14 @@ func (s *Service) AdoptUnownedSession(workspaceID, sessionID string) (bool, erro
 		name = sessionName(workspace.TemplateName, workspace.Name)
 	}
 	foundID, ownerID, exists, err := s.findSession(workspace.ID, name)
-	if err != nil || !exists || foundID != sessionID {
+	if err != nil {
 		return false, err
+	}
+	if !exists || foundID != sessionID {
+		// A restore after a rename also loses the saved session name. The
+		// session still belongs to the Workspace when every pane works
+		// inside it, so a session stop ends no unrelated work.
+		return s.adoptSessionInsideWorkspace(workspace, sessionID)
 	}
 	if ownerID == workspace.ID {
 		return true, nil
@@ -472,4 +478,27 @@ func (s *Service) inspectPane(pane string) (paneIdentity, error) {
 func (s *Service) PaneSessionID(pane string) (string, error) {
 	identity, err := s.inspectPane(pane)
 	return identity.sessionID, err
+}
+
+// adoptSessionInsideWorkspace claims an unowned session when the current
+// directory of every pane in it is inside the Workspace.
+func (s *Service) adoptSessionInsideWorkspace(workspace domain.Workspace, sessionID string) (bool, error) {
+	ownerID, err := s.tmuxWorkspaceID(sessionID)
+	if err != nil || ownerID != "" {
+		return ownerID == workspace.ID, err
+	}
+	value, err := output("", "tmux", s.tmuxArgs("list-panes", "-s", "-t", sessionID, "-F", "#{pane_current_path}")...)
+	if err != nil {
+		return false, err
+	}
+	paths := strings.Split(value, "\n")
+	for _, path := range paths {
+		if path == "" || !workspaceContainsDirectory(workspace, path) {
+			return false, nil
+		}
+	}
+	if err := s.claimSession(sessionID, workspace.ID); err != nil {
+		return false, err
+	}
+	return true, nil
 }

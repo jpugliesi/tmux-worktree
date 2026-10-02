@@ -318,3 +318,56 @@ func TestDoneInsideARestoredUnownedSessionStopsIt(t *testing.T) {
 		t.Fatalf("done Workspace = %+v, error = %v", released, err)
 	}
 }
+
+// A restore after a rename can also lose the saved session name. Done adopts
+// an unowned session when every pane in it works inside the Workspace.
+func TestDoneInsideARestoredRenamedSessionStopsIt(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "restored", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "landing", "--template", "example", "--no-open")
+
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	restored, err := workspaceStore.Find("restored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "set-option", "-t", restored.TmuxSession, "@twt_workspace_id", "")
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "rename-session", "-t", "="+restored.TmuxSession, "example-old-name")
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "=example-old-name", "-F", "#{pane_id}")
+	attachControlClient(t, options.TmuxSocket, "example-old-name")
+	t.Setenv("TMUX_PANE", sourcePane)
+
+	output := executeWithOptions(t, options, nil, "done", restored.ID)
+	if !strings.Contains(output, "Cleanup runs before tmux stops this session") {
+		t.Fatalf("done did not run from the session: %q", output)
+	}
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-old-name").Run(); err == nil {
+		t.Fatal("done kept the restored renamed tmux session")
+	}
+}
+
+// Done never adopts an unowned session that has a pane outside the
+// Workspace: a session stop would end unrelated work.
+func TestDoneDoesNotAdoptAnUnownedSessionWithAForeignPane(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "restored", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "landing", "--template", "example", "--no-open")
+
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	restored, err := workspaceStore.Find("restored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "set-option", "-t", restored.TmuxSession, "@twt_workspace_id", "")
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "rename-session", "-t", "="+restored.TmuxSession, "example-old-name")
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "split-window", "-d", "-t", "=example-old-name:", "-c", t.TempDir())
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "display-message", "-p", "-t", "=example-old-name:", "#{pane_id}")
+	t.Setenv("TMUX_PANE", sourcePane)
+
+	executeWithOptions(t, options, nil, "done", restored.ID)
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-old-name").Run(); err != nil {
+		t.Fatal("done stopped an unowned session with a foreign pane")
+	}
+}
