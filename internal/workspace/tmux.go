@@ -395,24 +395,20 @@ func (s *Service) stopSessionPanesExcept(sessionID, keepPane string) error {
 	return nil
 }
 
-// stopPreparedSession lets tmux select another session when possible. The
-// caller restores the option only when tmux refuses the final kill.
+// stopPreparedSession lets tmux select another session when possible. One
+// tmux call sets the option and stops the session, because each tmux client
+// call costs about 100 ms. When tmux refuses the kill, twt unsets the session
+// option, so the session uses the global value again.
 func (s *Service) stopPreparedSession(sessionID string) error {
-	previous, err := output("", "tmux", s.tmuxArgs("show-options", "-v", "-t", sessionID, "detach-on-destroy")...)
-	if err != nil {
-		return fmt.Errorf("read tmux detach behavior: %w", err)
+	err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "detach-on-destroy", "off", ";", "kill-session", "-t", sessionID)...)
+	if err == nil {
+		return nil
 	}
-	if err := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "detach-on-destroy", "off")...); err != nil {
-		return fmt.Errorf("set tmux detach behavior: %w", err)
+	restoreErr := run("", "tmux", s.tmuxArgs("set-option", "-u", "-t", sessionID, "detach-on-destroy")...)
+	if restoreErr != nil {
+		return errors.Join(fmt.Errorf("stop Workspace tmux session: %w", err), fmt.Errorf("restore tmux detach behavior: %w", restoreErr))
 	}
-	if err := run("", "tmux", s.tmuxArgs("kill-session", "-t", sessionID)...); err != nil {
-		restoreErr := run("", "tmux", s.tmuxArgs("set-option", "-t", sessionID, "detach-on-destroy", previous)...)
-		if restoreErr != nil {
-			return errors.Join(fmt.Errorf("stop Workspace tmux session: %w", err), fmt.Errorf("restore tmux detach behavior: %w", restoreErr))
-		}
-		return fmt.Errorf("stop Workspace tmux session: %w", err)
-	}
-	return nil
+	return fmt.Errorf("stop Workspace tmux session: %w", err)
 }
 
 // AdoptUnownedSession claims one live tmux session for the Workspace when
@@ -443,4 +439,37 @@ func (s *Service) AdoptUnownedSession(workspaceID, sessionID string) (bool, erro
 		return false, err
 	}
 	return true, nil
+}
+
+type paneIdentity struct {
+	sessionID string
+	paneID    string
+}
+
+// inspectPane returns the session ID and the pane ID of one tmux pane. It
+// asks tmux once for each pane and then uses the cached answer.
+func (s *Service) inspectPane(pane string) (paneIdentity, error) {
+	if identity, ok := s.panes[pane]; ok {
+		return identity, nil
+	}
+	value, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", pane, "#{session_id}\t#{pane_id}")...)
+	if err != nil {
+		return paneIdentity{}, err
+	}
+	parts := strings.SplitN(value, "\t", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return paneIdentity{}, fmt.Errorf("tmux returned invalid identifiers for pane %q", pane)
+	}
+	identity := paneIdentity{sessionID: parts[0], paneID: parts[1]}
+	if s.panes == nil {
+		s.panes = map[string]paneIdentity{}
+	}
+	s.panes[pane] = identity
+	return identity, nil
+}
+
+// PaneSessionID returns the ID of the tmux session that contains the pane.
+func (s *Service) PaneSessionID(pane string) (string, error) {
+	identity, err := s.inspectPane(pane)
+	return identity.sessionID, err
 }

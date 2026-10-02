@@ -261,7 +261,8 @@ func launchdDomain() (string, error) {
 // StartInterval timers, for example on battery power, so the timer alone can
 // leave the pool a day behind origin. Launchd does nothing when the pass is
 // already running. A missing agent or a launchctl error is not an error: the
-// kick only makes the pool fresher.
+// kick only makes the pool fresher. launchctl kickstart can block for
+// seconds, so twt starts it and does not wait.
 func kickDaemon() {
 	if runtime.GOOS != "darwin" {
 		return
@@ -277,5 +278,8 @@ func kickDaemon() {
 	if err != nil {
 		return
 	}
-	_ = exec.Command("launchctl", "kickstart", domain+"/"+daemonLabel).Run()
+	command := exec.Command("launchctl", "kickstart", domain+"/"+daemonLabel)
+	if command.Start() == nil {
+		_ = command.Process.Release()
+	}
 }

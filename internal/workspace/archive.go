@@ -149,25 +149,21 @@ func (s *Service) validateArchiveFromPane(reference, currentPane string) (domain
 	if len(sessions) != 1 {
 		return p, "", "", clierr.New(clierr.PreconditionFailed, "Workspace %q has no owned tmux session", p.Name)
 	}
-	identity, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", currentPane, "#{session_id}\t#{pane_id}")...)
+	identity, err := s.inspectPane(currentPane)
 	if err != nil {
 		return p, "", "", fmt.Errorf("inspect the current tmux pane before release: %w", err)
 	}
-	parts := strings.SplitN(identity, "\t", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return p, "", "", fmt.Errorf("inspect the current tmux pane before release: tmux returned invalid identifiers")
-	}
-	if parts[0] != sessions[0] {
+	if identity.sessionID != sessions[0] {
 		return p, "", "", clierr.New(clierr.PreconditionFailed, "current pane is not in the owned tmux session for Workspace %q", p.Name)
 	}
-	return p, sessions[0], parts[1], nil
+	return p, sessions[0], identity.paneID, nil
 }
 
 func (s *Service) requireOutsideOwnedSessions(workspaceName, action, currentPane string, sessions []string) error {
 	if currentPane == "" || len(sessions) == 0 {
 		return nil
 	}
-	currentSession, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", currentPane, "#{session_id}")...)
+	currentSession, err := s.PaneSessionID(currentPane)
 	if err != nil {
 		return fmt.Errorf("inspect the current tmux pane before you %s Workspace %q: %w", action, workspaceName, err)
 	}

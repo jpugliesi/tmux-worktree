@@ -271,7 +271,7 @@ func insideOwnedSession(options Options, service *workspaceservice.Service, work
 	if currentPane == "" {
 		return false
 	}
-	sessionID, err := commandOutput("tmux", tmuxCommandArgs(options, "display-message", "-p", "-t", currentPane, "#{session_id}")...)
+	sessionID, err := service.PaneSessionID(currentPane)
 	if err != nil || sessionID == "" {
 		return false
 	}

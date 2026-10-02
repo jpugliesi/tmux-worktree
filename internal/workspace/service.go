@@ -42,6 +42,10 @@ type Service struct {
 	// The hook takes the mutation lock, so it cannot run inside the locked
 	// release and reconcile sections.
 	pendingReleaseRefills []string
+	// panes caches the tmux identity of each pane that this Service has
+	// inspected. A pane keeps its session for the life of one command, and
+	// each tmux client call costs about 100 ms.
+	panes map[string]paneIdentity
 }
 
 func NewService(options Options) *Service {
@@ -209,7 +213,7 @@ func (s *Service) Current(directory, workspaceID, tmuxPane string) (domain.Works
 		return s.store.Find(workspaceID)
 	}
 	if tmuxPane != "" {
-		sessionID, err := output("", "tmux", s.tmuxArgs("display-message", "-p", "-t", tmuxPane, "#{session_id}")...)
+		sessionID, err := s.PaneSessionID(tmuxPane)
 		if err == nil {
 			id, optionErr := s.tmuxWorkspaceID(sessionID)
 			if optionErr == nil && id != "" {
