@@ -256,3 +256,26 @@ func launchdDomain() (string, error) {
 	}
 	return "gui/" + current.Uid, nil
 }
+
+// kickDaemon asks launchd to start one pool refresh pass now. macOS defers
+// StartInterval timers, for example on battery power, so the timer alone can
+// leave the pool a day behind origin. Launchd does nothing when the pass is
+// already running. A missing agent or a launchctl error is not an error: the
+// kick only makes the pool fresher.
+func kickDaemon() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	plistPath, err := daemonPlistPath()
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(plistPath); err != nil {
+		return
+	}
+	domain, err := launchdDomain()
+	if err != nil {
+		return
+	}
+	_ = exec.Command("launchctl", "kickstart", domain+"/"+daemonLabel).Run()
+}

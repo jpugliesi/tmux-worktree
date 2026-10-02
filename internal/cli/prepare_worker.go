@@ -25,6 +25,7 @@ func startPreparationRefill(options Options, templateName string, template domai
 		if strings.HasSuffix(executable, ".test") {
 			return nil
 		}
+		kickDaemon()
 	}
 	service := options.workspaceService()
 	queued, err := service.TopUpPool(templateName, template, template.EffectivePoolDepth())
