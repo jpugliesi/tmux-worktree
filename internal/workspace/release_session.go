@@ -69,6 +69,10 @@ func (s *Service) PrepareReleaseFromPane(reference, currentPane string, opts Rel
 	if err != nil {
 		return PreparedRelease{ArchiveResult: result}, err
 	}
+	foreign, err := s.releaseForeignPanes(workspace, callerPaneID, opts)
+	if err != nil {
+		return PreparedRelease{ArchiveResult: result}, err
+	}
 	environmentLock, err := s.reserveRelease(&workspace, plan, opts, sourceSessionID)
 	if err != nil {
 		return PreparedRelease{ArchiveResult: result}, err
@@ -84,6 +88,9 @@ func (s *Service) PrepareReleaseFromPane(reference, currentPane string, opts Rel
 		}
 	}()
 	if err = s.stopSessionPanesExcept(sourceSessionID, callerPaneID); err != nil {
+		return PreparedRelease{ArchiveResult: result}, err
+	}
+	if err = s.stopPanes(foreign); err != nil {
 		return PreparedRelease{ArchiveResult: result}, err
 	}
 	if err = s.clearAgentPanesExcept(workspace.ID, callerPaneID); err != nil {

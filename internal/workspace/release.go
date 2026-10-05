@@ -28,6 +28,10 @@ type ReleaseOptions struct {
 	// session is gone. Reconcile sets it so an unused Environment returns
 	// to the ready pool.
 	Recover bool
+	// StopPanes authorizes the release to stop tmux panes outside the
+	// Workspace sessions that still work in the Workspace worktrees.
+	// Without it, such a pane stops the release.
+	StopPanes bool
 }
 
 // ReleasePlan describes the state that a release can discard.
@@ -64,6 +68,16 @@ func (s *Service) ValidateRelease(reference, currentPane string, opts ReleaseOpt
 		return clierr.WithHint(
 			clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", plan.Name),
 			"Save the changes or run the command with --force.")
+	}
+	if opts.StopPanes {
+		return nil
+	}
+	foreign, err := s.ForeignPanes(plan.WorkspaceID, currentPane)
+	if err != nil {
+		return err
+	}
+	if len(foreign) > 0 {
+		return foreignPanesError(plan.Name, foreign)
 	}
 	return nil
 }
@@ -128,6 +142,10 @@ func (s *Service) release(reference, currentPane string, opts ReleaseOptions) (A
 	if err != nil {
 		return ArchiveResult{Workspace: workspace}, err
 	}
+	foreign, err := s.releaseForeignPanes(workspace, currentPane, opts)
+	if err != nil {
+		return ArchiveResult{Workspace: workspace}, err
+	}
 
 	stopped, err := agent.NewService(s.options.StateDir, s.options.TmuxSocket).Live(workspace.ID)
 	if err != nil {
@@ -139,6 +157,9 @@ func (s *Service) release(reference, currentPane string, opts ReleaseOptions) (A
 	}
 	defer environmentLock.Release()
 	if err := s.stopWorkspaceSessions(workspace); err != nil {
+		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
+	}
+	if err := s.stopPanes(foreign); err != nil {
 		return ArchiveResult{Workspace: workspace, StoppedAgents: stopped}, err
 	}
 	if err := s.clearAgentPanes(workspace.ID); err != nil {
@@ -172,6 +193,19 @@ func (s *Service) releasePlan(workspace domain.Workspace, opts ReleaseOptions) (
 		return inspected, clierr.WithHint(clierr.New(clierr.UnsafeState, "Workspace %q has uncommitted changes", workspace.Name), "Save the changes or run the command with --force.")
 	}
 	return inspected, nil
+}
+
+// releaseForeignPanes returns the foreign panes that the release must stop.
+// It refuses the release when the caller did not authorize the stop.
+func (s *Service) releaseForeignPanes(workspace domain.Workspace, currentPane string, opts ReleaseOptions) ([]LivePane, error) {
+	foreign, err := s.foreignPanes(workspace, currentPane)
+	if err != nil {
+		return nil, err
+	}
+	if len(foreign) > 0 && !opts.StopPanes {
+		return nil, foreignPanesError(workspace.Name, foreign)
+	}
+	return foreign, nil
 }
 
 func (s *Service) cleanReleasedEnvironment(workspace domain.Workspace, plan ReleasePlan, opts ReleaseOptions) (domain.PreparedEnvironment, error) {

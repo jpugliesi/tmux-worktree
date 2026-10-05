@@ -280,6 +280,11 @@ twt done WORKSPACE --output json
 twt done WORKSPACE --force --output json
 ```
 
+A tmux pane outside the Workspace session that still works in its worktrees
+stops the release with `unsafe_state`. The error names each pane. Use
+`--force` only with user authority: it discards the changes and stops those
+panes. A claim skips a ready worktree that a live pane still uses.
+
 Inside the Workspace tmux session, `done` completes cleanup in the caller
 pane. It then stops the complete session. It does not create a worker window
 or a background process. Tmux selects another session or detaches the client.

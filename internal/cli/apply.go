@@ -816,7 +816,7 @@ func applyWorkspacesArchive(command *cobra.Command, options Options, request app
 	if err != nil {
 		return err
 	}
-	return archiveWorkspaceRecord(command, service, reference, workspaceservice.ReleaseOptions{Force: payload.Force})
+	return archiveWorkspaceRecord(command, service, reference, workspaceservice.ReleaseOptions{Force: payload.Force, StopPanes: payload.Force})
 }
 
 func applyWorkspacesRemove(command *cobra.Command, options Options, request applyRequest) error {

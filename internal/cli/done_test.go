@@ -366,8 +366,88 @@ func TestDoneDoesNotAdoptAnUnownedSessionWithAForeignPane(t *testing.T) {
 	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "display-message", "-p", "-t", "=example-old-name:", "#{pane_id}")
 	t.Setenv("TMUX_PANE", sourcePane)
 
-	executeWithOptions(t, options, nil, "done", restored.ID)
+	// The caller pane runs done, so it is never a foreign pane. Done releases
+	// the worktree and keeps the session; a claim skips the busy worktree.
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("n\n"), "done", restored.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-old-name").Run(); err != nil {
 		t.Fatal("done stopped an unowned session with a foreign pane")
+	}
+}
+
+// A pane outside the Workspace session that still works in its worktree
+// stops done. Done asks before it stops the pane, and No keeps everything.
+func TestDoneAsksBeforeItStopsAForeignPane(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "busy", "--template", "example", "--no-open")
+	busy, err := store.NewWorkspaceStore(options.StateDir).Find("busy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-session", "-d", "-s", "elsewhere", "-c", busy.Repositories[0].Path)
+	waitForPaneInside(t, options.TmuxSocket, "=elsewhere:", busy.Root)
+
+	_, stderr, err := executeCollectingInput(t, options, strings.NewReader("n\n"), "done", busy.ID)
+	if err == nil || !strings.Contains(stderr, "Stop these panes?") {
+		t.Fatalf("done with No: error = %v, stderr = %q", err, stderr)
+	}
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=elsewhere").Run(); err != nil {
+		t.Fatal("done stopped the foreign pane after No")
+	}
+
+	if _, _, err := executeCollectingInput(t, options, strings.NewReader("y\n"), "done", busy.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=elsewhere").Run(); err == nil {
+		t.Fatal("done kept the foreign pane after Yes")
+	}
+}
+
+// --force stops a foreign pane without a prompt, and JSON output without
+// --force refuses with unsafe_state.
+func TestDoneForceStopsAForeignPane(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "busy", "--template", "example", "--no-open")
+	busy, err := store.NewWorkspaceStore(options.StateDir).Find("busy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCommand(t, "", "tmux", "-L", options.TmuxSocket, "new-session", "-d", "-s", "elsewhere", "-c", busy.Repositories[0].Path)
+	waitForPaneInside(t, options.TmuxSocket, "=elsewhere:", busy.Root)
+
+	if _, _, err := executeRaw(t, options, "done", busy.ID, "--output", "json"); err == nil || !strings.Contains(err.Error(), "still work in Workspace") {
+		t.Fatalf("done --output json without --force: error = %v", err)
+	}
+	if _, _, err := executeRaw(t, options, "done", busy.ID, "--force", "--output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=elsewhere").Run(); err == nil {
+		t.Fatal("done --force kept the foreign pane")
+	}
+}
+
+// waitForPaneInside waits until tmux reports the pane directory inside root.
+// A new pane can report another directory until its shell starts.
+func waitForPaneInside(t *testing.T, socket, target, root string) {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		path := runCommand(t, "", "tmux", "-L", socket, "display-message", "-p", "-t", target, "#{pane_current_path}")
+		if strings.HasPrefix(path, resolved) || strings.HasPrefix(path, root) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane %s works in %q, want a directory inside %q", target, path, root)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

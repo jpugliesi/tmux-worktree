@@ -19,8 +19,13 @@ func (s *Service) RefreshReadyEnvironments(template domain.Template) ([]domain.P
 		return nil, err
 	}
 	refreshed := []domain.PreparedEnvironment{}
+	panes := s.panesForReadyCheck(environments)
 	for _, environment := range environments {
 		if environment.Status != domain.EnvironmentReady || !digests.Matches(environment.TemplateDigest) {
+			continue
+		}
+		if len(panesInside(panes, environment.Root)) > 0 {
+			s.report("Skipped busy Prepared Environment %q: a tmux pane still works in it.", environment.ID)
 			continue
 		}
 		updated, err := s.RefreshPreparedEnvironment(environment.ID)

@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/jpugliesi/tmux-worktree/internal/clierr"
 	"github.com/jpugliesi/tmux-worktree/internal/domain"
 )
 
@@ -501,4 +503,105 @@ func (s *Service) adoptSessionInsideWorkspace(workspace domain.Workspace, sessio
 		return false, err
 	}
 	return true, nil
+}
+
+// LivePane is one tmux pane and the directory that it works in.
+type LivePane struct {
+	SessionID   string `json:"sessionId"`
+	SessionName string `json:"sessionName"`
+	PaneID      string `json:"paneId"`
+	Command     string `json:"command"`
+	Path        string `json:"path"`
+}
+
+// livePanes lists every pane on the tmux server in one call. A server that
+// does not run has no panes.
+func (s *Service) livePanes() ([]LivePane, error) {
+	value, err := output("", "tmux", s.tmuxArgs("list-panes", "-a", "-F", "#{session_id}\t#{session_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_current_path}")...)
+	if err != nil {
+		if tmuxUnavailable(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list tmux panes: %w", err)
+	}
+	var panes []LivePane
+	for _, row := range strings.Split(value, "\n") {
+		parts := strings.SplitN(row, "\t", 5)
+		if len(parts) != 5 || parts[2] == "" {
+			continue
+		}
+		panes = append(panes, LivePane{SessionID: parts[0], SessionName: parts[1], PaneID: parts[2], Command: parts[3], Path: parts[4]})
+	}
+	return panes, nil
+}
+
+// panesInside returns the panes that work inside root. Tmux reports the
+// resolved path of a pane, so root is resolved too.
+func panesInside(panes []LivePane, root string) []LivePane {
+	if root == "" {
+		return nil
+	}
+	resolved := root
+	if path, err := filepath.EvalSymlinks(root); err == nil {
+		resolved = path
+	}
+	var inside []LivePane
+	for _, pane := range panes {
+		if directoryInside(root, pane.Path) || directoryInside(resolved, pane.Path) {
+			inside = append(inside, pane)
+		}
+	}
+	return inside
+}
+
+// ForeignPanes returns the tmux panes outside the Workspace sessions that
+// still work in the Workspace worktrees. A release must stop them first. The
+// caller pane is never foreign: a stop would end the release itself.
+func (s *Service) ForeignPanes(reference, currentPane string) ([]LivePane, error) {
+	workspace, err := s.store.Find(reference)
+	if err != nil {
+		return nil, err
+	}
+	return s.foreignPanes(workspace, currentPane)
+}
+
+func (s *Service) foreignPanes(workspace domain.Workspace, currentPane string) ([]LivePane, error) {
+	if workspace.Adopted || !workspace.Materialized || workspace.EnvironmentID == "" {
+		return nil, nil
+	}
+	owned, err := s.ownedSessions(workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	panes, err := s.livePanes()
+	if err != nil {
+		return nil, err
+	}
+	var foreign []LivePane
+	for _, pane := range panesInside(panes, workspace.Root) {
+		if pane.PaneID != currentPane && !slices.Contains(owned, pane.SessionID) {
+			foreign = append(foreign, pane)
+		}
+	}
+	return foreign, nil
+}
+
+func foreignPanesError(workspaceName string, panes []LivePane) error {
+	described := make([]string, 0, len(panes))
+	for _, pane := range panes {
+		described = append(described, fmt.Sprintf("%s (%s in session %q)", pane.PaneID, pane.Command, pane.SessionName))
+	}
+	return clierr.WithHint(
+		clierr.New(clierr.UnsafeState, "%d tmux panes outside the Workspace session still work in Workspace %q: %s", len(panes), workspaceName, strings.Join(described, ", ")),
+		"Stop those panes, or run the command with --force to stop them.")
+}
+
+// stopPanes stops each pane. A pane that is already gone is not an error.
+func (s *Service) stopPanes(panes []LivePane) error {
+	for _, pane := range panes {
+		if err := run("", "tmux", s.tmuxArgs("kill-pane", "-t", pane.PaneID)...); err != nil && !strings.Contains(err.Error(), "can't find pane") {
+			return fmt.Errorf("stop tmux pane %q: %w", pane.PaneID, err)
+		}
+	}
+	return nil
 }

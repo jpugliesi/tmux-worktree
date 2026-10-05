@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -28,7 +27,7 @@ func newWorkspacesArchiveCommand(options Options, service *workspaceservice.Serv
 		},
 	}
 	setArguments(command, requiredArgument("workspace"))
-	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes and preserve ignored files")
+	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes, stop tmux panes that still use the worktrees, and preserve ignored files")
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
 }
@@ -53,7 +52,7 @@ func newArchiveCommand(options Options) *cobra.Command {
 		},
 	}
 	setArguments(command, optionalArgument("workspace", "the current Workspace when absent"))
-	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes and preserve ignored files")
+	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes, stop tmux panes that still use the worktrees, and preserve ignored files")
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command
 }
@@ -61,19 +60,25 @@ func newArchiveCommand(options Options) *cobra.Command {
 // archiveWorkspace archives one Workspace. Inside the Workspace tmux session,
 // it cleans from the caller pane and then stops the complete session.
 func archiveWorkspace(command *cobra.Command, options Options, service *workspaceservice.Service, reference string, force bool) error {
-	releaseOptions, err := releaseOptions(command, service, reference, force)
-	if err != nil {
-		return err
-	}
 	if isDryRun(command) {
+		releaseOptions, err := releaseOptions(command, service, reference, force)
+		if err != nil {
+			return err
+		}
 		return archiveWorkspaceRecord(command, service, reference, releaseOptions)
 	}
 	workspace, err := service.Find(reference)
 	if err != nil {
 		return err
 	}
+	// Find the current session first: it can adopt a restored session, and
+	// the panes of an adopted session are not foreign.
 	currentPane := os.Getenv("TMUX_PANE")
 	fromCurrentSession, err := releaseFromCurrentSession(command, options, service, workspace.ID, currentPane)
+	if err != nil {
+		return err
+	}
+	releaseOptions, err := releaseOptions(command, service, workspace.ID, force)
 	if err != nil {
 		return err
 	}
@@ -110,29 +115,71 @@ func releaseOptions(command *cobra.Command, service *workspaceservice.Service, r
 	if err != nil {
 		return workspaceservice.ReleaseOptions{}, err
 	}
-	options := workspaceservice.ReleaseOptions{Force: force, ExpectedFingerprint: plan.Fingerprint, Prevalidated: true}
+	options := workspaceservice.ReleaseOptions{Force: force, StopPanes: force, ExpectedFingerprint: plan.Fingerprint, Prevalidated: true}
 	if plan.GitOperation != "" {
 		return options, service.ValidateRelease(reference, "", options)
 	}
-	if !plan.Dirty || force {
+	interactive := !isDryRun(command) && !WantsJSON(command) && interactiveTicketSession(command)
+	if plan.Dirty && !force {
+		if !interactive {
+			return options, service.ValidateRelease(reference, "", options)
+		}
+		if !confirm(command, fmt.Sprintf("Discard uncommitted changes in Workspace %q?", plan.Name)) {
+			return workspaceservice.ReleaseOptions{}, clierr.New(clierr.PreconditionFailed, "Workspace archive was canceled")
+		}
+		options.Force = true
+	}
+	if force {
 		return options, nil
 	}
-	if isDryRun(command) || WantsJSON(command) || !interactiveTicketSession(command) {
+	foreign, err := service.ForeignPanes(plan.WorkspaceID, os.Getenv("TMUX_PANE"))
+	if err != nil || len(foreign) == 0 {
+		return options, err
+	}
+	if !interactive {
 		return options, service.ValidateRelease(reference, "", options)
 	}
-	if _, err := fmt.Fprintf(command.ErrOrStderr(), "Discard uncommitted changes in Workspace %q? [y/N] ", plan.Name); err != nil {
+	if _, err := fmt.Fprintf(command.ErrOrStderr(), "These tmux panes outside the Workspace session still work in Workspace %q:\n", plan.Name); err != nil {
 		return workspaceservice.ReleaseOptions{}, err
 	}
-	line, err := bufio.NewReader(command.InOrStdin()).ReadString('\n')
-	if err != nil && err != io.EOF {
-		return workspaceservice.ReleaseOptions{}, err
+	for _, pane := range foreign {
+		if _, err := fmt.Fprintf(command.ErrOrStderr(), "  %s %s in session %q (%s)\n", pane.PaneID, pane.Command, pane.SessionName, pane.Path); err != nil {
+			return workspaceservice.ReleaseOptions{}, err
+		}
 	}
-	answer := strings.ToLower(strings.TrimSpace(line))
-	if answer != "y" && answer != "yes" {
+	if !confirm(command, "Stop these panes?") {
 		return workspaceservice.ReleaseOptions{}, clierr.New(clierr.PreconditionFailed, "Workspace archive was canceled")
 	}
-	options.Force = true
+	options.StopPanes = true
 	return options, nil
+}
+
+// confirm asks one yes or no question on stderr. The default answer is No.
+func confirm(command *cobra.Command, question string) bool {
+	if _, err := fmt.Fprintf(command.ErrOrStderr(), "%s [y/N] ", question); err != nil {
+		return false
+	}
+	// Read one byte at a time: a buffered reader can consume the answer to
+	// the next prompt when stdin is a pipe.
+	var line []byte
+	buffer := make([]byte, 1)
+	for {
+		n, err := command.InOrStdin().Read(buffer)
+		if n == 1 {
+			if buffer[0] == '\n' {
+				break
+			}
+			line = append(line, buffer[0])
+		}
+		if err != nil {
+			if err != io.EOF {
+				return false
+			}
+			break
+		}
+	}
+	answer := strings.ToLower(strings.TrimSpace(string(line)))
+	return answer == "y" || answer == "yes"
 }
 
 func printStoppedAgents(out io.Writer, agents []domain.AgentSession) error {

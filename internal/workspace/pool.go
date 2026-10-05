@@ -186,8 +186,10 @@ func (s *Service) Prepare(templateName string, template domain.Template) (domain
 		lock.Release()
 		return domain.PreparedEnvironment{}, err
 	}
+	panes := s.panesForReadyCheck(environments)
 	for _, environment := range environments {
-		if environment.FormatVersion == domain.PreparationFormatVersion && digests.Matches(environment.TemplateDigest) && environment.Status == domain.EnvironmentReady {
+		if environment.FormatVersion == domain.PreparationFormatVersion && digests.Matches(environment.TemplateDigest) && environment.Status == domain.EnvironmentReady &&
+			len(panesInside(panes, environment.Root)) == 0 {
 			lock.Release()
 			return environment, nil
 		}
@@ -311,4 +313,21 @@ func runningStepLine(steps []domain.SetupStep) string {
 		return fmt.Sprintf("%s (step %d of %d)", step.ID, index+1, len(steps))
 	}
 	return ""
+}
+
+// panesForReadyCheck lists the live tmux panes when a ready environment
+// exists. A ready environment that a pane still works in is busy: a claim
+// skips it, and a refresh leaves it alone. A tmux error never blocks a
+// claim, so it counts as no panes.
+func (s *Service) panesForReadyCheck(environments []domain.PreparedEnvironment) []LivePane {
+	for _, environment := range environments {
+		if environment.Status == domain.EnvironmentReady {
+			panes, err := s.livePanes()
+			if err != nil {
+				return nil
+			}
+			return panes
+		}
+	}
+	return nil
 }

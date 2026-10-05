@@ -31,26 +31,32 @@ func newDoneCommand(options Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			releaseOptions, err := releaseOptions(command, service, workspace.ID, force)
-			if err != nil {
-				return err
-			}
 			if isDryRun(command) {
+				releaseOptions, err := releaseOptions(command, service, workspace.ID, force)
+				if err != nil {
+					return err
+				}
 				return doneDryRun(command, service, workspace.ID, releaseOptions)
 			}
-			ticketPlan := resolveDoneTicket(command, options, workspace)
+			// Find the current session first: it can adopt a restored
+			// session, and the panes of an adopted session are not foreign.
 			currentPane := os.Getenv("TMUX_PANE")
 			fromCurrentSession, err := releaseFromCurrentSession(command, options, service, workspace.ID, currentPane)
 			if err != nil {
 				return err
 			}
+			releaseOptions, err := releaseOptions(command, service, workspace.ID, force)
+			if err != nil {
+				return err
+			}
+			ticketPlan := resolveDoneTicket(command, options, workspace)
 			if fromCurrentSession {
 				return completeFromPane(command, options, service, workspace, currentPane, false, releaseOptions, ticketPlan)
 			}
 			return doneSynchronously(command, options, service, workspace.ID, currentPane, releaseOptions, ticketPlan)
 		},
 	}
-	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes and preserve ignored files")
+	command.Flags().BoolVar(&force, "force", false, "Discard uncommitted changes, stop tmux panes that still use the worktrees, and preserve ignored files")
 	setArguments(command, optionalArgument("workspace", "the current Workspace when absent"))
 	command.ValidArgsFunction = workspaceNameCompletion(service)
 	return command

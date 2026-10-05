@@ -80,7 +80,7 @@ func newNextCommand(options Options) *cobra.Command {
 	}
 	command.Flags().StringVar(&templateName, "template", "", "Select the Workspace Template instead of the current Workspace's template")
 	command.Flags().BoolVar(&fresh, "fresh", false, "Fetch the default branch before the claim")
-	command.Flags().BoolVar(&force, "force", false, "Discard current Workspace changes and preserve ignored files")
+	command.Flags().BoolVar(&force, "force", false, "Discard current Workspace changes, stop tmux panes that still use its worktrees, and preserve ignored files")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringVar(&as, "as", "", "Set the claimant name when next claims a Ticket")
 	setArguments(command, variadicArgument("name_or_ticket", false, "one value can be a Workspace name or Ticket slug; many values must be Ticket slugs from one Project"))
