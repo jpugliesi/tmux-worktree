@@ -489,15 +489,12 @@ func (s *Service) adoptSessionInsideWorkspace(workspace domain.Workspace, sessio
 	if err != nil || ownerID != "" {
 		return ownerID == workspace.ID, err
 	}
-	value, err := output("", "tmux", s.tmuxArgs("list-panes", "-s", "-t", sessionID, "-F", "#{pane_current_path}")...)
+	panes, err := s.livePanes()
 	if err != nil {
 		return false, err
 	}
-	paths := strings.Split(value, "\n")
-	for _, path := range paths {
-		if path == "" || !workspaceContainsDirectory(workspace, path) {
-			return false, nil
-		}
+	if !sessionWorksInWorkspace(panes, sessionID, workspace) {
+		return false, nil
 	}
 	if err := s.claimSession(sessionID, workspace.ID); err != nil {
 		return false, err
@@ -604,4 +601,82 @@ func (s *Service) stopPanes(panes []LivePane) error {
 		}
 	}
 	return nil
+}
+
+// workspaceSessionRow finds the tmux session of the Workspace. A tmux
+// restore removes the owner option, so it also adopts an unowned session
+// with the saved session name, or an unowned session whose panes all work
+// in the Workspace.
+func (s *Service) workspaceSessionRow(workspace domain.Workspace) (tmuxSessionRow, bool, error) {
+	rows, err := s.workspaceSessionRows(true)
+	if err != nil {
+		if tmuxUnavailable(err) {
+			return tmuxSessionRow{}, false, nil
+		}
+		return tmuxSessionRow{}, false, err
+	}
+	for _, row := range rows {
+		if row.ownerID == workspace.ID {
+			return row, true, nil
+		}
+	}
+	saved := workspace.TmuxSession
+	if saved == "" {
+		saved = sessionName(workspace.TemplateName, workspace.Name)
+	}
+	adopt := func(row tmuxSessionRow) (tmuxSessionRow, bool, error) {
+		if err := s.claimSession(row.id, workspace.ID); err != nil {
+			return tmuxSessionRow{}, false, err
+		}
+		row.ownerID = workspace.ID
+		return row, true, nil
+	}
+	for _, row := range rows {
+		if row.ownerID == "" && row.name == saved {
+			return adopt(row)
+		}
+	}
+	var panes []LivePane
+	for _, row := range rows {
+		if row.ownerID != "" {
+			continue
+		}
+		if panes == nil {
+			if panes, err = s.livePanes(); err != nil {
+				return tmuxSessionRow{}, false, err
+			}
+		}
+		if sessionWorksInWorkspace(panes, row.id, workspace) {
+			return adopt(row)
+		}
+	}
+	return tmuxSessionRow{}, false, nil
+}
+
+// sessionWorksInWorkspace reports whether the session has panes and every
+// pane works inside the Workspace. Only then can twt adopt the session: a
+// session stop ends no unrelated work.
+func sessionWorksInWorkspace(panes []LivePane, sessionID string, workspace domain.Workspace) bool {
+	roots := []string{workspace.Root}
+	for _, repository := range workspace.Repositories {
+		roots = append(roots, repository.Path)
+	}
+	found := false
+	for _, pane := range panes {
+		if pane.SessionID != sessionID {
+			continue
+		}
+		found = true
+		inside := false
+		for _, root := range roots {
+			if len(panesInside([]LivePane{pane}, root)) > 0 {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return false
+		}
+	}
+	return found
 }

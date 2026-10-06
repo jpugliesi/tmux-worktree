@@ -74,7 +74,7 @@ func (s *Service) RenameWithOptions(reference, name string, opts RenameOptions) 
 	}
 	workspace := plan.Workspace
 	desiredSession := sessionName(workspace.TemplateName, name)
-	owned, hasSession, err := s.ownedSessionRow(workspace.ID)
+	owned, hasSession, err := s.workspaceSessionRow(workspace)
 	if err != nil {
 		return domain.Workspace{}, err
 	}
