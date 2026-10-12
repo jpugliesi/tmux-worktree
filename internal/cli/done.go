@@ -230,14 +230,19 @@ func completeFromPane(command *cobra.Command, options Options, service *workspac
 		verb = "Archiving"
 	}
 	out := command.OutOrStdout()
-	if _, err := fmt.Fprintf(out, "%s Workspace %q. Cleanup runs before tmux stops this session.\n", verb, workspace.Name); err != nil {
+	if _, err := fmt.Fprintf(out, "%s Workspace %q. twt moves this client to your last session and cleans up here.\n", verb, workspace.Name); err != nil {
 		return err
 	}
+	// Move the user off the session before the slow cleanup. On a failure,
+	// bring them back so they see the error in this pane.
+	sessionID, _ := service.PaneSessionID(currentPane)
+	clients := service.MoveClientsOff(sessionID)
 	prepared, err := service.PrepareReleaseFromPane(workspace.ID, currentPane, opts)
 	if err != nil {
+		service.ReturnClients(clients, sessionID)
 		return err
 	}
-	return finishPreparedRelease(service, prepared, func() error {
+	err = finishPreparedRelease(service, prepared, func() error {
 		if err := printStoppedAgents(out, prepared.ArchiveResult.StoppedAgents); err != nil {
 			return err
 		}
@@ -251,9 +256,15 @@ func completeFromPane(command *cobra.Command, options Options, service *workspac
 		if _, err := fmt.Fprintf(out, "%s Workspace %q. Cleanup is complete.\n", noun, workspace.Name); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintln(out, "Tmux will now stop this session. It can select another session or detach this client.")
+		_, err := fmt.Fprintln(out, "Tmux will now stop this session.")
 		return err
 	})
+	if err != nil {
+		// The session can still exist when its stop failed. A return to a
+		// stopped session fails without harm.
+		service.ReturnClients(clients, sessionID)
+	}
+	return err
 }
 
 // finishPreparedRelease stops the source session even when result reporting

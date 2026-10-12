@@ -339,7 +339,7 @@ func TestDoneInsideARestoredRenamedSessionStopsIt(t *testing.T) {
 	t.Setenv("TMUX_PANE", sourcePane)
 
 	output := executeWithOptions(t, options, nil, "done", restored.ID)
-	if !strings.Contains(output, "Cleanup runs before tmux stops this session") {
+	if !strings.Contains(output, "moves this client to your last session") {
 		t.Fatalf("done did not run from the session: %q", output)
 	}
 	if err := exec.Command("tmux", "-L", options.TmuxSocket, "has-session", "-t", "=example-old-name").Run(); err == nil {
@@ -449,5 +449,35 @@ func waitForPaneInside(t *testing.T, socket, target, root string) {
 			t.Fatalf("pane %s works in %q, want a directory inside %q", target, path, root)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Done moves the attached client to another session before the cleanup, so
+// the user never waits in the session that done stops.
+func TestDoneMovesTheClientToAnotherSession(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	executeWithOptions(t, options, nil, "workspaces", "create", "leaving", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "create", "landing", "--template", "example", "--no-open")
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	leaving, err := workspaceStore.Find("leaving")
+	if err != nil {
+		t.Fatal(err)
+	}
+	landing, err := workspaceStore.Find("landing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePane := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-panes", "-t", "="+leaving.TmuxSession, "-F", "#{pane_id}")
+	attachControlClient(t, options.TmuxSocket, leaving.TmuxSession)
+	t.Setenv("TMUX_PANE", sourcePane)
+
+	output := executeWithOptions(t, options, nil, "done", leaving.ID)
+	if !strings.Contains(output, "moves this client to your last session") {
+		t.Fatalf("done output = %q", output)
+	}
+	clientSession := runCommand(t, "", "tmux", "-L", options.TmuxSocket, "list-clients", "-F", "#{session_name}")
+	if clientSession != landing.TmuxSession {
+		t.Fatalf("client session = %q, want %q", clientSession, landing.TmuxSession)
 	}
 }

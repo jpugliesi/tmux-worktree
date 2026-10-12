@@ -285,9 +285,11 @@ stops the release with `unsafe_state`. The error names each pane. Use
 `--force` only with user authority: it discards the changes and stops those
 panes. A claim skips a ready worktree that a live pane still uses.
 
-Inside the Workspace tmux session, `done` completes cleanup in the caller
-pane. It then stops the complete session. It does not create a worker window
-or a background process. Tmux selects another session or detaches the client.
+Inside the Workspace tmux session, `done` first moves each attached client
+to its last session, or else to the next session. It then completes cleanup
+in the caller pane and stops the complete session. It does not create a
+worker window or a background process. When the cleanup fails, `done` moves
+the clients back to the session to show the error.
 `twt environments list` shows a pending release as releasing. The next claim
 completes the release after the source session is gone. If a worktree still
 has leftover files and that session is gone, twt cleans those files and

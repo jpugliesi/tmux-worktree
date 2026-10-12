@@ -680,3 +680,33 @@ func sessionWorksInWorkspace(panes []LivePane, sessionID string, workspace domai
 	}
 	return found
 }
+
+// MoveClientsOff switches each client attached to the session to the last
+// session that the client used, or else to the next session. The caller
+// then cleans up without a wait for the user. It returns the moved clients.
+// A client stays when no other session exists: the final session stop
+// detaches it.
+func (s *Service) MoveClientsOff(sessionID string) []string {
+	value, err := output("", "tmux", s.tmuxArgs("list-clients", "-t", sessionID, "-F", "#{client_name}")...)
+	if err != nil {
+		return nil
+	}
+	var moved []string
+	for _, client := range strings.Fields(value) {
+		if run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-l")...) != nil {
+			if run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-n")...) != nil {
+				continue
+			}
+		}
+		moved = append(moved, client)
+	}
+	return moved
+}
+
+// ReturnClients switches the moved clients back to the session, so the user
+// sees an error that stopped the cleanup.
+func (s *Service) ReturnClients(clients []string, sessionID string) {
+	for _, client := range clients {
+		_ = run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-t", sessionID)...)
+	}
+}
