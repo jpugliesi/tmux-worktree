@@ -1547,3 +1547,82 @@ func TestWorkspacesRenameRemoveArchivedFlagSkipsTheQuestion(t *testing.T) {
 		t.Fatal("archived holder remains after --remove-archived")
 	}
 }
+
+func TestWorkspacesCreateAsksBeforeItRemovesAnArchivedHolder(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	t.Setenv("TMUX_PANE", "")
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	initGitRepository(t, source)
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(filepath.Join(configDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := fmt.Sprintf("version: 1\nname: example\nrepositories:\n  - name: app\n    clone:\n      url: %s\n", source)
+	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	options := cli.Options{
+		ConfigDir:  configDir,
+		StateDir:   filepath.Join(root, "state"),
+		DataDir:    filepath.Join(root, "data"),
+		TmuxSocket: socket,
+	}
+	executeWithOptions(t, options, nil, "workspaces", "create", "reuse-me", "--template", "example", "--no-open")
+	executeWithOptions(t, options, nil, "workspaces", "archive", "reuse-me")
+	workspaceStore := store.NewWorkspaceStore(options.StateDir)
+	holder, err := workspaceStore.Find("reuse-me")
+	if err != nil || holder.Status != domain.WorkspaceArchived {
+		t.Fatalf("archived holder = %+v, %v", holder, err)
+	}
+
+	// A script gets an error that names the archived Workspace, with hints.
+	_, _, err = executeRaw(t, options, "workspaces", "create", "reuse-me", "--template", "example", "--no-open", "--output", "json")
+	if clierr.CodeOf(err) != clierr.AlreadyExists || !strings.Contains(err.Error(), "archived Workspace") ||
+		!strings.Contains(clierr.HintOf(err), "--remove-archived") || !strings.Contains(clierr.HintOf(err), "twt switch reuse-me") {
+		t.Fatalf("create onto an archived name: err=%v hint=%q", err, clierr.HintOf(err))
+	}
+
+	// An interactive "n" cancels the create and keeps the archived Workspace.
+	var out, errOut bytes.Buffer
+	options.Stdout, options.Stderr = &out, &errOut
+	command := cli.New(options)
+	command.SetIn(strings.NewReader("n\n"))
+	command.SetArgs(forceTextOutput([]string{"workspaces", "create", "reuse-me", "--template", "example", "--no-open"}))
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "canceled") {
+		t.Fatalf("declined confirmation: err=%v stderr=%s", err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), `Workspace "reuse-me" is archived.`) || !strings.Contains(errOut.String(), "Removal plan for Workspace") ||
+		!strings.Contains(errOut.String(), "reuse its name? [y/N]") {
+		t.Fatalf("confirmation prompt = %q", errOut.String())
+	}
+	if _, err := workspaceStore.Find(holder.ID); err != nil {
+		t.Fatalf("declined create removed the archived holder: %v", err)
+	}
+	options.Stdout, options.Stderr = nil, nil
+
+	// A dry run with --remove-archived is valid and changes nothing.
+	dryRun, _, err := executeRaw(t, options, "workspaces", "create", "reuse-me", "--template", "example", "--remove-archived", "--dry-run", "--output", "json")
+	if err != nil || !strings.Contains(dryRun, `"status":"valid"`) {
+		t.Fatalf("dry run with --remove-archived: %v %s", err, dryRun)
+	}
+	if _, err := workspaceStore.Find(holder.ID); err != nil {
+		t.Fatalf("dry run removed the archived holder: %v", err)
+	}
+
+	// An interactive "y" removes the archived holder and creates the Workspace.
+	executeWithOptions(t, options, strings.NewReader("y\n"), "workspaces", "create", "reuse-me", "--template", "example", "--no-open")
+	if _, err := workspaceStore.Find(holder.ID); err == nil {
+		t.Fatal("archived holder remains after the confirmed create")
+	}
+	created, err := workspaceStore.Find("reuse-me")
+	if err != nil || created.ID == holder.ID || created.Status != domain.WorkspaceActive {
+		t.Fatalf("created Workspace = %+v, %v", created, err)
+	}
+}

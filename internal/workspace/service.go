@@ -71,6 +71,10 @@ func (s *Service) Create(name, templateName string, template domain.Template) (d
 }
 
 func (s *Service) ValidateCreate(name, templateName string, template domain.Template) error {
+	return s.validateCreate(name, templateName, template, false)
+}
+
+func (s *Service) validateCreate(name, templateName string, template domain.Template, allowArchived bool) error {
 	if err := store.ValidateResourceName(name); err != nil {
 		return fmt.Errorf("invalid Workspace name: %w", err)
 	}
@@ -80,15 +84,27 @@ func (s *Service) ValidateCreate(name, templateName string, template domain.Temp
 	if len(template.Repositories) == 0 {
 		return fmt.Errorf("Workspace Template %q has no repositories", templateName)
 	}
-	return s.requireWorkspaceNameAvailable(name)
+	return s.requireWorkspaceNameAvailable(name, allowArchived)
+}
+
+// PlanArchivedNameRemoval returns the removal plan of the archived Workspace
+// that holds name, or nil when no archived Workspace holds it. It refuses a
+// plan with blockers.
+func (s *Service) PlanArchivedNameRemoval(name, currentPane string) (*RemovalPlan, error) {
+	return s.planArchivedNameRemoval(name, currentPane)
 }
 
 // ValidateCreateWithOptions also validates the branch selection, so a dry
 // run refuses exactly what the real create refuses. The placeholder ID only
 // feeds the {id8} token.
 func (s *Service) ValidateCreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) error {
-	if err := s.ValidateCreate(name, templateName, template); err != nil {
+	if err := s.validateCreate(name, templateName, template, opts.RemoveArchived); err != nil {
 		return err
+	}
+	if opts.RemoveArchived {
+		if _, err := s.planArchivedNameRemoval(name, opts.CurrentPane); err != nil {
+			return err
+		}
 	}
 	if err := s.validateTicketLinks(opts); err != nil {
 		return err

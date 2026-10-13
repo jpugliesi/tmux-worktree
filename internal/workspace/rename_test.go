@@ -93,7 +93,7 @@ func TestRenameUpdatesThePreparedEnvironmentAssignmentName(t *testing.T) {
 	if environment.Assignment.Workspace.TmuxSession != "example-agent-sdk-delete" {
 		t.Fatalf("assignment session = %q", environment.Assignment.Workspace.TmuxSession)
 	}
-	if err := service.requireWorkspaceNameAvailable("learn"); err != nil {
+	if err := service.requireWorkspaceNameAvailable("learn", false); err != nil {
 		t.Fatalf("old name still reserved: %v", err)
 	}
 }
@@ -128,10 +128,10 @@ func TestRequireWorkspaceNameAvailableUsesTheLiveWorkspaceName(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewService(Options{StateDir: stateDir, TmuxSocket: "twt-rename-unit"})
-	if err := service.requireWorkspaceNameAvailable("learn"); err != nil {
+	if err := service.requireWorkspaceNameAvailable("learn", false); err != nil {
 		t.Fatalf("stale assignment still reserves learn: %v", err)
 	}
-	if err := service.requireWorkspaceNameAvailable("agent-sdk-delete"); err == nil {
+	if err := service.requireWorkspaceNameAvailable("agent-sdk-delete", false); err == nil {
 		t.Fatal("live Workspace name is not reserved")
 	}
 }

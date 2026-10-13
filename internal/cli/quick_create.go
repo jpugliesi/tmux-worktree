@@ -298,7 +298,11 @@ func runQuickCreate(command *cobra.Command, options Options, request quickCreate
 			return err
 		}
 	}
-	createOptions := workspaceservice.CreateOptions{Branch: request.Branch, Fresh: request.Fresh, Tickets: request.Tickets, Project: request.Project}
+	createOptions := workspaceservice.CreateOptions{Branch: request.Branch, Fresh: request.Fresh, Tickets: request.Tickets, Project: request.Project, CurrentPane: currentPane}
+	createOptions.RemoveArchived, err = resolveRemoveArchived(command, service, name, currentPane, false)
+	if err != nil {
+		return err
+	}
 	if isDryRun(command) {
 		if err := validateCreate(options, service, name, selected, template, createOptions); err != nil {
 			return err

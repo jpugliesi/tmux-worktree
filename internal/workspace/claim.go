@@ -70,6 +70,12 @@ type CreateOptions struct {
 	// starts from instead of the default branch. A stacked dispatch passes
 	// the blocker's pull request branch here.
 	BaseRef string
+	// RemoveArchived removes the archived Workspace that holds the name
+	// before the claim, so the new Workspace can use the name.
+	RemoveArchived bool
+	// CurrentPane is the calling tmux pane. The removal of an archived
+	// Workspace uses it.
+	CurrentPane string
 }
 
 func (s *Service) CreateWithOptions(name, templateName string, template domain.Template, opts CreateOptions) (domain.Workspace, error) {
@@ -81,8 +87,13 @@ func (s *Service) CreateWithOptions(name, templateName string, template domain.T
 	} else if found {
 		return s.completeEnvironmentClaim(reserved.EnvironmentID, reserved.ID, opts)
 	}
-	if err := s.ValidateCreate(name, templateName, template); err != nil {
+	if err := s.validateCreate(name, templateName, template, opts.RemoveArchived); err != nil {
 		return domain.Workspace{}, err
+	}
+	if opts.RemoveArchived {
+		if err := s.removeArchivedNameHolder(name, opts.CurrentPane); err != nil {
+			return domain.Workspace{}, err
+		}
 	}
 	races, healed := 0, false
 	for {
@@ -165,7 +176,7 @@ func (s *Service) claimPreparedEnvironment(name, templateName string, template d
 		}
 	}
 	if err == nil {
-		err = s.requireWorkspaceNameAvailable(name)
+		err = s.requireWorkspaceNameAvailable(name, false)
 	}
 	if err == nil {
 		err = s.validateTicketLinks(opts)
@@ -280,7 +291,10 @@ func (s *Service) workspaceBranchCandidate(name, workspaceID string, template do
 	return candidate, nil
 }
 
-func (s *Service) requireWorkspaceNameAvailable(name string) error {
+// requireWorkspaceNameAvailable refuses a name that a Workspace record or a
+// claim reservation holds. With allowArchived, an archived Workspace that
+// holds the name does not refuse it, because the create removes it first.
+func (s *Service) requireWorkspaceNameAvailable(name string, allowArchived bool) error {
 	workspaces, err := s.store.List()
 	if err != nil {
 		return err
@@ -288,8 +302,16 @@ func (s *Service) requireWorkspaceNameAvailable(name string) error {
 	byID := make(map[string]domain.Workspace, len(workspaces))
 	for _, workspace := range workspaces {
 		byID[workspace.ID] = workspace
-		if workspace.Name == name {
+		if workspace.Name != name {
+			continue
+		}
+		if workspace.Status != domain.WorkspaceArchived {
 			return clierr.New(clierr.AlreadyExists, "Workspace %q already exists", name)
+		}
+		if !allowArchived {
+			return clierr.WithHint(
+				clierr.New(clierr.AlreadyExists, "archived Workspace %q already exists", name),
+				"Run 'twt switch %s' to open it again, or use --remove-archived to remove it and reuse its name.", name)
 		}
 	}
 	environments, err := s.environments.List()
@@ -309,6 +331,51 @@ func (s *Service) requireWorkspaceNameAvailable(name string) error {
 		}
 	}
 	return nil
+}
+
+// archivedNameHolder returns the archived Workspace that holds name.
+func (s *Service) archivedNameHolder(name string) (domain.Workspace, bool, error) {
+	workspaces, err := s.store.List()
+	if err != nil {
+		return domain.Workspace{}, false, err
+	}
+	for _, workspace := range workspaces {
+		if workspace.Name == name && workspace.Status == domain.WorkspaceArchived {
+			return workspace, true, nil
+		}
+	}
+	return domain.Workspace{}, false, nil
+}
+
+// planArchivedNameRemoval returns the removal plan of the archived Workspace
+// that holds name. It refuses a plan with blockers. It returns nil when no
+// archived Workspace holds name.
+func (s *Service) planArchivedNameRemoval(name, currentPane string) (*RemovalPlan, error) {
+	holder, found, err := s.archivedNameHolder(name)
+	if err != nil || !found {
+		return nil, err
+	}
+	removal, err := s.PlanRemoval(holder.ID, currentPane, RemovalOptions{AllowUnpublished: true})
+	if err != nil {
+		return nil, err
+	}
+	if len(removal.Blockers) > 0 {
+		return nil, removalRefusal(holder.Name, removal.Blockers)
+	}
+	return &removal, nil
+}
+
+// removeArchivedNameHolder removes the archived Workspace that holds name.
+// The removal is its own mutation with its own lock, so it runs before the
+// claim lock.
+func (s *Service) removeArchivedNameHolder(name, currentPane string) error {
+	removal, err := s.planArchivedNameRemoval(name, currentPane)
+	if err != nil || removal == nil {
+		return err
+	}
+	s.report("Removing archived Workspace %q to free its name.", name)
+	_, err = s.Remove(removal.WorkspaceID, currentPane, RemovalOptions{AllowUnpublished: true})
+	return err
 }
 
 func (s *Service) workspaceForEnvironment(name, templateName string, template domain.Template, environment domain.PreparedEnvironment, id, branch string, opts CreateOptions) domain.Workspace {

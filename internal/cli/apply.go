@@ -75,6 +75,9 @@ type workspaceCreateRequest struct {
 	Fresh    bool     `json:"fresh,omitempty"`
 	Branch   string   `json:"branch,omitempty"`
 	Tickets  []string `json:"tickets,omitempty"`
+	// RemoveArchived removes the archived Workspace that holds Name before
+	// the claim.
+	RemoveArchived bool `json:"removeArchived,omitempty"`
 }
 
 // workspaceReferenceRequest is the payload of each operation that only names a
@@ -311,6 +314,7 @@ func applyOperations() []applyOperation {
 			{Path: "workspace.fresh", Type: "boolean", Required: false, Condition: "fetches the default branch before the claim"},
 			{Path: "workspace.branch", Type: "string", Required: false, Condition: "sets a custom Workspace branch name"},
 			{Path: "workspace.tickets", Type: "array[string]", Required: false, Condition: "all Tickets must be open and belong to one Project"},
+			{Path: "workspace.removeArchived", Type: "boolean", Required: false, Condition: "removes the archived Workspace that holds workspace.name before the claim"},
 		}}, applyWorkspacesCreate},
 		{applyOperationSchema{Operation: "workspaces.open", Payload: "workspace", Fields: []requestFieldSchema{
 			{Path: "workspace.reference", Type: "string", Required: false, Condition: "required when workspace.allActive is not true"},
@@ -713,6 +717,7 @@ func applyWorkspacesCreate(command *cobra.Command, options Options, request appl
 	}
 	createOptions := workspaceservice.CreateOptions{
 		Branch: payload.Branch, Fresh: payload.Fresh, Project: project, Tickets: tickets,
+		RemoveArchived: payload.RemoveArchived, CurrentPane: os.Getenv("TMUX_PANE"),
 	}
 	if isDryRun(command) {
 		if err := validateCreate(options, options.workspaceService(), payload.Name, payload.Template, template, createOptions); err != nil {

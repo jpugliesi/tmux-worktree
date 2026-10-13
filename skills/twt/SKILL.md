@@ -219,6 +219,13 @@ rename fails with a hint. Add `--remove-archived` to remove that archived
 Workspace first. The removal deletes its branches and stops on the normal
 removal blockers. Apply uses `workspace.removeArchived`.
 
+Create has the same rule. `twt done` archives a Workspace, and the archived
+record keeps the name. `twt create NAME` fails with a hint when an archived
+Workspace holds NAME. An interactive terminal shows the removal plan and
+asks. Add `--remove-archived` to remove the archived Workspace first, or run
+`twt switch NAME` to open it again. Apply uses `workspace.removeArchived` on
+`workspaces.create` too.
+
 ```sh
 twt workspaces rename NAME --dry-run --output json
 twt workspaces rename NAME --output json

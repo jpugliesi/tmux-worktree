@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -18,6 +19,7 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	var fresh bool
 	var branch string
 	var ticketRefs []string
+	var removeArchived bool
 	command := &cobra.Command{
 		Use:   "create [NAME]",
 		Short: "Create a Workspace from a Workspace Template",
@@ -51,7 +53,11 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 					return err
 				}
 			}
-			createOptions := workspaceservice.CreateOptions{Branch: branch, Fresh: fresh, Project: project, Tickets: tickets}
+			createOptions := workspaceservice.CreateOptions{Branch: branch, Fresh: fresh, Project: project, Tickets: tickets, CurrentPane: os.Getenv("TMUX_PANE")}
+			createOptions.RemoveArchived, err = resolveRemoveArchived(command, service, name, createOptions.CurrentPane, removeArchived)
+			if err != nil {
+				return err
+			}
 			var workspace domain.Workspace
 			if err := runMutation(command, "workspaces.create",
 				func() (string, string, error) {
@@ -79,10 +85,42 @@ func newWorkspacesCreateCommand(options Options, service *workspaceservice.Servi
 	command.Flags().BoolVar(&fresh, "fresh", false, "Fetch the default branch before the claim")
 	command.Flags().StringVar(&branch, "branch", "", "Set a custom Workspace branch name")
 	command.Flags().StringArrayVar(&ticketRefs, "ticket", nil, "Link a Ticket; repeat for more Tickets")
+	command.Flags().BoolVar(&removeArchived, "remove-archived", false, "Remove the archived Workspace that holds NAME, then create")
 	setArguments(command, optionalArgument("name", "the prompt asks for it when stdin is a terminal and output is text"))
 	_ = command.RegisterFlagCompletionFunc("template", templateFlagCompletion(options.templateStore()))
 	_ = command.RegisterFlagCompletionFunc("ticket", ticketFlagCompletion(options))
 	return command
+}
+
+// resolveRemoveArchived tells create whether to remove the archived
+// Workspace that holds name. The --remove-archived flag says yes. An
+// interactive terminal shows the removal plan and asks. A dry run, JSON
+// output, or a script gets no question, and create refuses the name with a
+// hint.
+func resolveRemoveArchived(command *cobra.Command, service *workspaceservice.Service, name, currentPane string, flag bool) (bool, error) {
+	if flag {
+		return true, nil
+	}
+	if isDryRun(command) || WantsJSON(command) || !interactiveTicketSession(command) {
+		return false, nil
+	}
+	plan, err := service.PlanArchivedNameRemoval(name, currentPane)
+	if err != nil || plan == nil {
+		return false, err
+	}
+	errOut := command.ErrOrStderr()
+	if _, err := fmt.Fprintf(errOut, "Workspace %q is archived.\n", name); err != nil {
+		return false, err
+	}
+	if err := printRemovalPlanText(errOut, *plan, false); err != nil {
+		return false, err
+	}
+	if !confirm(command, fmt.Sprintf("Remove archived Workspace %q and reuse its name?", name)) {
+		return false, clierr.WithHint(
+			clierr.New(clierr.PreconditionFailed, "Workspace create was canceled"),
+			"Run 'twt switch %s' to open archived Workspace %q again.", name, name)
+	}
+	return true, nil
 }
 
 func resolveWorkspaceTicketLinks(options Options, refs []string) (string, []string, error) {
