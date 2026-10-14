@@ -236,10 +236,10 @@ func completeFromPane(command *cobra.Command, options Options, service *workspac
 	// Move the user off the session before the slow cleanup. On a failure,
 	// bring them back so they see the error in this pane.
 	sessionID, _ := service.PaneSessionID(currentPane)
-	clients := service.MoveClientsOff(sessionID)
+	closing := service.BeginSessionClose(sessionID)
 	prepared, err := service.PrepareReleaseFromPane(workspace.ID, currentPane, opts)
 	if err != nil {
-		service.ReturnClients(clients, sessionID)
+		service.CancelSessionClose(closing)
 		return err
 	}
 	err = finishPreparedRelease(service, prepared, func() error {
@@ -262,7 +262,7 @@ func completeFromPane(command *cobra.Command, options Options, service *workspac
 	if err != nil {
 		// The session can still exist when its stop failed. A return to a
 		// stopped session fails without harm.
-		service.ReturnClients(clients, sessionID)
+		service.CancelSessionClose(closing)
 	}
 	return err
 }

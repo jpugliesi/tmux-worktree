@@ -293,9 +293,12 @@ stops the release with `unsafe_state`. The error names each pane. Use
 panes. A claim skips a ready worktree that a live pane still uses.
 
 Inside the Workspace tmux session, `done` first moves each attached client
-to its last session, or else to the next session. It then completes cleanup
-in the caller pane and stops the complete session. It does not create a
-worker window or a background process. When the cleanup fails, `done` moves
+to its last session. When that session is closing too, the client goes to
+the most recently used session that is not closing. `done` marks the old
+session with `@twt_closing` and renames it to `twt-closing-NAME`, so the
+name is free at once. It then completes cleanup in the caller pane and stops
+the complete session. It does not create a worker window or a background
+process. When the cleanup fails, `done` restores the session name and moves
 the clients back to the session to show the error.
 `twt environments list` shows a pending release as releasing. The next claim
 completes the release after the source session is gone. If a worktree still

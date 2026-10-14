@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
@@ -681,32 +682,119 @@ func sessionWorksInWorkspace(panes []LivePane, sessionID string, workspace domai
 	return found
 }
 
-// MoveClientsOff switches each client attached to the session to the last
-// session that the client used, or else to the next session. The caller
-// then cleans up without a wait for the user. It returns the moved clients.
-// A client stays when no other session exists: the final session stop
-// detaches it.
-func (s *Service) MoveClientsOff(sessionID string) []string {
-	value, err := output("", "tmux", s.tmuxArgs("list-clients", "-t", sessionID, "-F", "#{client_name}")...)
-	if err != nil {
-		return nil
-	}
-	var moved []string
-	for _, client := range strings.Fields(value) {
-		if run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-l")...) != nil {
-			if run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-n")...) != nil {
-				continue
-			}
-		}
-		moved = append(moved, client)
-	}
-	return moved
+// closingSessionPrefix starts the name of a tmux session that twt stops
+// after a release. The user sees it in the session list, and the old name
+// is free at once.
+const closingSessionPrefix = "twt-closing-"
+
+// closingTmuxOption marks a tmux session that twt stops after a release. A
+// client move never selects a session with this mark.
+const closingTmuxOption = "@twt_closing"
+
+// ClosingSession records how BeginSessionClose changed a tmux session, so
+// CancelSessionClose can undo the change.
+type ClosingSession struct {
+	ID      string
+	Name    string
+	Renamed bool
+	Clients []string
 }
 
-// ReturnClients switches the moved clients back to the session, so the user
-// sees an error that stopped the cleanup.
-func (s *Service) ReturnClients(clients []string, sessionID string) {
-	for _, client := range clients {
-		_ = run("", "tmux", s.tmuxArgs("switch-client", "-c", client, "-t", sessionID)...)
+// BeginSessionClose marks the session as closing, moves each attached
+// client to another session, and renames the session with the
+// closingSessionPrefix. The caller then cleans up without a wait for the
+// user. Each client goes to its last session. When that session is closing
+// too, the client goes to the most recently attached session that is not
+// closing. A client stays when no such session exists: the final session
+// stop detaches it. All tmux failures are ignored, because the release does
+// not need the move or the rename.
+func (s *Service) BeginSessionClose(sessionID string) ClosingSession {
+	closing := ClosingSession{ID: sessionID}
+	if sessionID == "" {
+		// An empty target makes tmux act on its current session.
+		return closing
+	}
+	value, err := output("", "tmux", s.tmuxArgs(
+		"list-clients", "-t", sessionID, "-F", "client\t#{client_name}\t#{client_last_session}", ";",
+		"list-sessions", "-F", "session\t#{session_id}\t#{session_name}\t#{session_last_attached}\t#{"+closingTmuxOption+"}")...)
+	if err != nil {
+		return closing
+	}
+	type client struct{ name, last string }
+	var clients []client
+	names := map[string]bool{}
+	open := map[string]bool{}
+	fallback, fallbackAttached := "", int64(-1)
+	for _, line := range strings.Split(value, "\n") {
+		fields := strings.Split(line, "\t")
+		switch {
+		case len(fields) == 3 && fields[0] == "client":
+			clients = append(clients, client{name: fields[1], last: fields[2]})
+		case len(fields) == 5 && fields[0] == "session":
+			names[fields[2]] = true
+			if fields[1] == sessionID {
+				closing.Name = fields[2]
+				continue
+			}
+			if fields[4] != "" {
+				continue
+			}
+			open[fields[2]] = true
+			attached, _ := strconv.ParseInt(fields[3], 10, 64)
+			if attached > fallbackAttached {
+				fallback, fallbackAttached = fields[2], attached
+			}
+		}
+	}
+	args := []string{"set-option", "-t", sessionID, closingTmuxOption, "1"}
+	for _, c := range clients {
+		target := c.last
+		if !open[target] {
+			target = fallback
+		}
+		if target == "" {
+			continue
+		}
+		args = append(args, ";", "switch-client", "-c", c.name, "-t", "="+target)
+		closing.Clients = append(closing.Clients, c.name)
+	}
+	// The rename comes last: tmux stops a command sequence at the first
+	// error, and a failed rename must not keep a client in the session.
+	if closing.Name != "" && !strings.HasPrefix(closing.Name, closingSessionPrefix) {
+		args = append(args, ";", "rename-session", "-t", sessionID, uniqueSessionName(closingSessionPrefix+closing.Name, names))
+		closing.Renamed = true
+	}
+	_ = run("", "tmux", s.tmuxArgs(args...)...)
+	return closing
+}
+
+// CancelSessionClose undoes BeginSessionClose, so the user sees an error
+// that stopped the cleanup. A stopped session makes each step fail without
+// harm.
+func (s *Service) CancelSessionClose(closing ClosingSession) {
+	if closing.ID == "" {
+		return
+	}
+	args := []string{"set-option", "-u", "-t", closing.ID, closingTmuxOption}
+	for _, client := range closing.Clients {
+		args = append(args, ";", "switch-client", "-c", client, "-t", closing.ID)
+	}
+	if closing.Renamed {
+		args = append(args, ";", "rename-session", "-t", closing.ID, closing.Name)
+	}
+	_ = run("", "tmux", s.tmuxArgs(args...)...)
+}
+
+// uniqueSessionName returns name, or name with the first free numeric
+// suffix when a session already uses name.
+func uniqueSessionName(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	for index := 2; ; index++ {
+		candidate := fmt.Sprintf("%s-%d", name, index)
+		if !taken[candidate] {
+			return candidate
+		}
 	}
 }
