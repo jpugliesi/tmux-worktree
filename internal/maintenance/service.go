@@ -444,8 +444,8 @@ func (s *Service) checkPreparedPools(report *DoctorReport, templates store.Templ
 }
 
 // doctorCachePackLimit is the pack count that makes doctor warn about one
-// Repository Cache. Cache refresh repacks above half this count, so a cache
-// past the limit means that maintenance does not keep up.
+// Repository Cache. The daemon repacks above half this count, so a cache
+// past the limit means that the daemon does not run or does not keep up.
 const doctorCachePackLimit = 64
 
 // doctorCacheLooseRefLimit is the loose-ref count that makes doctor warn
@@ -520,13 +520,9 @@ func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 			problems = append(problems, fmt.Sprintf("%d MB of temporary pack garbage", garbageBytes/1_000_000))
 		}
 		hint := "The next cache refresh repairs it."
-		if len(packs) > workspaceservice.RepackCeiling {
-			// Above the ceiling twt writes a multi-pack-index instead of
-			// repacking, so a refresh keeps lookup fast but never lowers the
-			// count. Only a full repack does, and it costs tens of minutes.
-			hint = fmt.Sprintf(
-				"Cache refresh keeps object lookup fast with a multi-pack-index, but it cannot lower this count. Run 'git -C %s repack -adk --write-midx' while the machine is idle.",
-				filepath.Join(cacheRoot, entry.Name()))
+		if len(packs) > doctorCachePackLimit {
+			// Only the daemon repacks, outside the create path.
+			hint = "The next 'twt daemon run' repacks it in the background. If the daemon is not installed, run 'twt daemon install'."
 		}
 		report.addWarning("cache:"+entry.Name(), fmt.Sprintf(
 			"Repository Cache %s holds %s. %s",

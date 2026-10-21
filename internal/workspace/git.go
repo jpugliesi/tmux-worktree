@@ -196,8 +196,7 @@ func defaultBranch(cachePath string, spec domain.RepositorySpec) (string, error)
 
 // refreshCache resolves the default branch of the cache, applies the
 // large-repository settings, and refreshes the branch from origin. It then
-// runs cache maintenance, because a partial clone gains one lazy-fetch pack
-// per checkout, and hundreds of packs make every later Git command slow.
+// runs the cheap cache maintenance tasks.
 func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 	branch, err := defaultBranch(cachePath, spec)
 	if err != nil {
@@ -207,48 +206,37 @@ func refreshCache(cachePath string, spec domain.RepositorySpec) error {
 	if err := fetchOrigin(cachePath, branch); err != nil {
 		return err
 	}
-	// Maintenance is best effort: a failed repack must not block Workspace
+	// Maintenance is best effort: a failed task must not block Workspace
 	// preparation, and the next refresh retries it.
 	maintainCache(cachePath)
 	return nil
 }
 
-// maintainCachePackLimit is the pack count that triggers an incremental
-// repack of one Repository Cache.
+// maintainCachePackLimit is the pack count above which the daemon repacks
+// one Repository Cache. Below it object lookup stays fast without a repack.
 const maintainCachePackLimit = 32
-
-// RepackCeiling is the pack count above which an incremental repack stops
-// making progress, because one large base pack never enters the
-// batch. Measured on a 20 GiB monorepo cache: 219 packs stayed at 219 after a
-// 95-second incremental run, and the run added one more pack. A multi-pack
-// index keeps object lookup fast at that pack count, so twt writes one and
-// leaves the packs alone. A full repack costs tens of minutes and belongs to
-// a deliberate repair, not to Workspace preparation.
-const RepackCeiling = 128
 
 // staleTemporaryPackAge is the age at which an interrupted fetch pack
 // (objects/pack/tmp_pack_*) counts as garbage.
 const staleTemporaryPackAge = time.Hour
 
-// maintainCache keeps one shared Repository Cache fast. It removes stale
-// temporary packs from interrupted fetches, packs the ref store, folds loose
-// objects into a pack, keeps the commit-graph current, and consolidates
-// lazy-fetch packs when the pack count passes the limit.
+// maintainCache keeps one shared Repository Cache fast between daemon
+// passes. It removes stale temporary packs from interrupted fetches, packs
+// the ref store, folds loose objects into a pack, and keeps the
+// commit-graph current. These tasks are cheap, so they run under the cache
+// lock on the create path. The repack is not cheap, so only the daemon
+// runs it; see MaintainRepositoryCaches.
 //
 // pack-refs is the task that matters most. A cache that tracks a monorepo
 // gains one loose file for each remote branch and tag, and then every Git
 // command that enumerates refs opens all of them. Measured on a cache with
 // 135,857 loose refs: "git for-each-ref --count=1" took 15.3 seconds before
 // pack-refs and 0.02 seconds after, and a single-branch fetch fell from 27
-// seconds to 4 seconds. Neither commit-graph nor incremental-repack touches
-// the ref store, so a cache without this task degrades without limit.
+// seconds to 4 seconds. Neither commit-graph nor a repack touches the ref
+// store, so a cache without this task degrades without limit.
 func maintainCache(cachePath string) {
 	sweepStaleTemporaryPacks(cachePath, time.Now())
-	packs, err := filepath.Glob(filepath.Join(cachePath, "objects", "pack", "*.pack"))
-	if err != nil {
-		packs = nil
-	}
-	for _, command := range maintainCacheCommands(len(packs)) {
+	for _, command := range maintainCacheCommands() {
 		// Maintenance is best effort: a failed task must not block Workspace
 		// preparation, and the next refresh retries it. 'twt doctor' reports
 		// a cache that maintenance no longer keeps compact.
@@ -256,23 +244,15 @@ func maintainCache(cachePath string) {
 	}
 }
 
-// maintainCacheCommands returns the Git commands that keep one Repository
-// Cache with packs pack files fast. The first three always run: they are
-// cheap and they hold the ref store, the loose objects, and the commit-graph
-// in shape. The pack strategy then depends on the count.
-func maintainCacheCommands(packs int) [][]string {
-	commands := [][]string{
+// maintainCacheCommands returns the cheap Git commands that keep one
+// Repository Cache fast: they hold the ref store, the loose objects, and the
+// commit-graph in shape.
+func maintainCacheCommands() [][]string {
+	return [][]string{
 		{"maintenance", "run", "--quiet", "--task=pack-refs"},
 		{"maintenance", "run", "--quiet", "--task=loose-objects"},
 		{"maintenance", "run", "--quiet", "--task=commit-graph"},
 	}
-	switch {
-	case packs > RepackCeiling:
-		commands = append(commands, []string{"multi-pack-index", "write"})
-	case packs > maintainCachePackLimit:
-		commands = append(commands, []string{"maintenance", "run", "--quiet", "--task=incremental-repack"})
-	}
-	return commands
 }
 
 // largeCheckoutFileCount is the tracked-file count above which twt turns on

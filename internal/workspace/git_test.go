@@ -235,46 +235,22 @@ func TestMaintainCachePacksTheRefStore(t *testing.T) {
 	}
 }
 
-// Above RepackCeiling an incremental repack cannot make progress,
-// so twt writes the multi-pack lookup index instead.
-func TestMaintainCacheCommandsChooseThePackStrategy(t *testing.T) {
-	tests := []struct {
-		name  string
-		packs int
-		want  string
-	}{
-		{name: "compact", packs: maintainCachePackLimit, want: ""},
-		{name: "many packs", packs: maintainCachePackLimit + 1, want: "maintenance run --quiet --task=incremental-repack"},
-		{name: "at the repack limit", packs: RepackCeiling, want: "maintenance run --quiet --task=incremental-repack"},
-		{name: "past the repack limit", packs: RepackCeiling + 1, want: "multi-pack-index write"},
+// The create path runs only the cheap tasks. A repack can take hours on a
+// bloated cache, so only the daemon runs it, outside the cache lock.
+func TestMaintainCacheCommandsNeverRepack(t *testing.T) {
+	want := []string{
+		"maintenance run --quiet --task=pack-refs",
+		"maintenance run --quiet --task=loose-objects",
+		"maintenance run --quiet --task=commit-graph",
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			commands := maintainCacheCommands(test.packs)
-			always := []string{
-				"maintenance run --quiet --task=pack-refs",
-				"maintenance run --quiet --task=loose-objects",
-				"maintenance run --quiet --task=commit-graph",
-			}
-			if len(commands) < len(always) {
-				t.Fatalf("maintainCacheCommands(%d) = %v", test.packs, commands)
-			}
-			for index, want := range always {
-				if got := strings.Join(commands[index], " "); got != want {
-					t.Fatalf("command %d = %q, want %q", index, got, want)
-				}
-			}
-			extra := commands[len(always):]
-			if test.want == "" {
-				if len(extra) != 0 {
-					t.Fatalf("maintainCacheCommands(%d) added %v, want nothing", test.packs, extra)
-				}
-				return
-			}
-			if len(extra) != 1 || strings.Join(extra[0], " ") != test.want {
-				t.Fatalf("maintainCacheCommands(%d) added %v, want %q", test.packs, extra, test.want)
-			}
-		})
+	commands := maintainCacheCommands()
+	if len(commands) != len(want) {
+		t.Fatalf("maintainCacheCommands() = %v, want %v", commands, want)
+	}
+	for index := range want {
+		if got := strings.Join(commands[index], " "); got != want[index] {
+			t.Fatalf("command %d = %q, want %q", index, got, want[index])
+		}
 	}
 }
 

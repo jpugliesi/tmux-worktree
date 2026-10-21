@@ -149,9 +149,10 @@ repositories:
       filter: blob:none
 ```
 
-twt maintains each Repository Cache when it refreshes it: it removes stale
-temporary packs from interrupted fetches, updates the commit-graph, and
-consolidates packs when the cache holds more than 32 pack files.
+twt is the only maintainer of its Repository Caches. When twt refreshes a
+cache, it removes stale temporary packs from interrupted fetches, packs the
+refs and the loose objects, and updates the commit-graph. Only the pool
+refresh daemon repacks a cache, so a create never waits for a repack.
 
 `branch_pattern` sets the default Workspace branch name of the Workspace
 Template, for example `branch_pattern: "{prefix}dev/{name}"`. See
@@ -248,6 +249,21 @@ interval (default 10 minutes). One pass refreshes each ready Prepared
 Environment of every Workspace Template and tops each pool up to
 `pool_depth`. The agent logs to `daemon.log` in the twt state directory.
 The daemon supports only macOS launchd.
+
+After the pool refresh, the same pass maintains every Repository Cache:
+
+- It removes each `maintenance.repo` entry in the global Git config that
+  points into the twt data directory. Git's scheduled maintenance treats
+  each checkout as its own repository, so it runs the same prefetch and
+  repack once for each checkout against one shared cache.
+- It deletes the `refs/prefetch` refs that Git's scheduled maintenance
+  wrote. twt fetches only the default branch.
+- It runs `git repack --geometric=2 -d --write-midx` at low priority when a
+  cache holds more than 32 pack files. The repack does not hold the cache
+  lock, so creates continue while it runs. The first repack of a bloated
+  cache can take hours. Later repacks merge only the small new packs.
+- It skips a repack when the free disk space is less than the size of the
+  packs, and when another pass already repacks the same cache.
 
 Repository initialization runs before a Workspace name exists. It receives
 `TWT_ENVIRONMENT_ID`, `TWT_ENVIRONMENT_ROOT`, `TWT_TEMPLATE_NAME`,
@@ -953,7 +969,8 @@ Doctor also checks readiness and speed. It warns when a Workspace Template
 has no ready Prepared Environment, because the next create then waits for a
 full preparation. It warns when a Repository Cache holds too many pack files
 or temporary pack garbage, because such a cache slows every Git command. The
-next cache refresh repairs a bloated cache.
+next daemon pass repacks a cache with too many pack files, and the next cache
+refresh removes the garbage.
 
 ## Track work with tickets
 

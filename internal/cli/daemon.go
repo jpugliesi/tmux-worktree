@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/clierr"
+	workspaceservice "github.com/jpugliesi/tmux-worktree/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -123,8 +124,10 @@ func newDaemonRunCommand(options Options) *cobra.Command {
 }
 
 // runDaemonPass refreshes the Prepared Environment pool of every Workspace
-// Template. One failed Workspace Template does not stop the others: the
-// daemon logs the failure and the pool self-heals on a later pass.
+// Template and then maintains every Repository Cache. One failed Workspace
+// Template does not stop the others: the daemon logs the failure and the
+// pool self-heals on a later pass. The cache maintenance runs last, because
+// its first repack of a bloated cache can take hours.
 func runDaemonPass(command *cobra.Command, options Options) error {
 	templateStore := options.templateStore()
 	names, err := templateStore.List()
@@ -147,8 +150,26 @@ func runDaemonPass(command *cobra.Command, options Options) error {
 			}
 		}
 	}
+	if _, err := fmt.Fprintf(command.ErrOrStderr(), "%s maintain Repository Caches\n", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	serviceOptions := options.workspaceServiceOptions()
+	if !WantsJSON(command) {
+		serviceOptions.Progress = func(message string) {
+			_, _ = fmt.Fprintln(command.ErrOrStderr(), message)
+		}
+	}
+	maintenanceErr := workspaceservice.NewService(serviceOptions).MaintainRepositoryCaches()
+	if maintenanceErr != nil {
+		if _, err := fmt.Fprintf(command.ErrOrStderr(), "Warning: the Repository Cache maintenance failed: %v\n", maintenanceErr); err != nil {
+			return err
+		}
+	}
 	if failures > 0 {
 		return clierr.New(clierr.Internal, "the pool refresh failed for %d Workspace Templates", failures)
+	}
+	if maintenanceErr != nil {
+		return clierr.New(clierr.Internal, "the Repository Cache maintenance failed")
 	}
 	return nil
 }
