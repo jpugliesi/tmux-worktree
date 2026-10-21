@@ -63,6 +63,7 @@ func (s *Service) RefreshPreparedEnvironment(environmentID string) (domain.Prepa
 		if err != nil {
 			return environment, err
 		}
+		var tip string
 		err = s.withCacheLock(repository.CachePath, func() error {
 			branch, err := defaultBranch(repository.CachePath, spec)
 			if err != nil {
@@ -71,30 +72,33 @@ func (s *Service) RefreshPreparedEnvironment(environmentID string) (domain.Prepa
 			if err := fetchOrigin(repository.CachePath, branch); err != nil {
 				return err
 			}
-			tip, err := output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+branch)
-			if err != nil {
-				return err
-			}
-			if tip == repository.BaseCommit {
-				return nil
-			}
-			if err := run(repository.Path, "git", "reset", "--hard", tip); err != nil {
-				return fmt.Errorf("refresh prepared repository %q: %w", repository.Name, err)
-			}
-			environment.Repositories[index].BaseCommit = tip
-			environment.UpdatedAt = s.now()
-			// Save now, before the initialization below. When the
-			// initialization fails, the record must still describe the
-			// moved checkout, or the next claim finds a stale base.
-			if err := s.environments.Save(environment); err != nil {
-				return err
-			}
-			changed[repository.Name] = true
-			return nil
+			tip, err = output(repository.CachePath, "git", "rev-parse", "refs/remotes/origin/"+branch)
+			return err
 		})
 		if err != nil {
 			return environment, err
 		}
+		if tip == repository.BaseCommit {
+			continue
+		}
+		// The reset runs outside the cache lock, because every create waits
+		// on that lock. The reset changes only this detached checkout, and
+		// the environment lock and the preparing status protect it. In a
+		// partial clone the reset lazy-fetches trees, and one failed lazy
+		// fetch made Git scan every promisor pack for 14 hours.
+		s.report("Moving Prepared Environment %q repository %q to %s.", environment.ID, repository.Name, shortCommit(tip))
+		if err := run(repository.Path, "git", "reset", "--hard", tip); err != nil {
+			return environment, fmt.Errorf("refresh prepared repository %q: %w", repository.Name, err)
+		}
+		environment.Repositories[index].BaseCommit = tip
+		environment.UpdatedAt = s.now()
+		// Save now, before the initialization below. When the
+		// initialization fails, the record must still describe the
+		// moved checkout, or the next claim finds a stale base.
+		if err := s.environments.Save(environment); err != nil {
+			return environment, err
+		}
+		changed[repository.Name] = true
 	}
 	for repositoryName := range changed {
 		if repositorySpecHasInitialize(environment.TemplateSnapshot, repositoryName) {

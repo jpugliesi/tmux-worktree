@@ -160,6 +160,38 @@ func TestRefreshSavesTheMovedBaseBeforeInitializationFails(t *testing.T) {
 	}
 }
 
+func TestRefreshMovesTheCheckoutWithoutTheCacheLock(t *testing.T) {
+	setup := newDriftTestSetup(t, nil)
+	commitCreateTestFile(t, setup.source, "TIP.md")
+	tip := testGitOutput(t, setup.source, "rev-parse", "HEAD")
+	cachePath := setup.environment.Repositories[0].CachePath
+	moved := false
+	setup.service.options.Progress = func(message string) {
+		if !strings.Contains(message, "Moving Prepared Environment") {
+			return
+		}
+		moved = true
+		// A create waits on the cache lock, so the reset must not hold it.
+		lock, err := store.AcquireCacheLock(setup.service.options.StateDir, cachePath)
+		if err != nil {
+			t.Errorf("the refresh moves the checkout with the cache lock held: %v", err)
+			return
+		}
+		_ = lock.Release()
+	}
+
+	if _, err := setup.service.RefreshPreparedEnvironment(setup.environment.ID); err != nil {
+		t.Fatalf("RefreshPreparedEnvironment(): %v", err)
+	}
+	if !moved {
+		t.Fatal("the refresh did not report the checkout move")
+	}
+	head := testGitOutput(t, setup.environment.Repositories[0].Path, "rev-parse", "HEAD")
+	if head != tip {
+		t.Fatalf("checkout HEAD = %s, want %s", head, tip)
+	}
+}
+
 func TestCreateReplacesAPreparedEnvironmentWithAnUnusableCheckout(t *testing.T) {
 	setup := newDriftTestSetup(t, nil)
 	// A checkout on a foreign branch is not something a claim can repair.
