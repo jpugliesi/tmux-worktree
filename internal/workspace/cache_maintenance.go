@@ -51,8 +51,8 @@ func (s *Service) MaintainRepositoryCaches() error {
 	return nil
 }
 
-// maintainRepositoryCache removes the foreign worktrees of one cache,
-// deletes its prefetch refs, and repacks it.
+// maintainRepositoryCache removes the growth settings and the foreign
+// worktrees of one cache, deletes its prefetch refs, and repacks it.
 //
 // The repack runs outside the cache lock, because every create waits on
 // that lock and the first repack of a bloated cache takes hours. Git lets
@@ -70,6 +70,7 @@ func (s *Service) maintainRepositoryCache(cachePath string) error {
 		return err
 	}
 	defer lock.Release()
+	removeGrowthSettings(cachePath)
 	if err := s.removeForeignWorktrees(cachePath); err != nil {
 		return fmt.Errorf("remove the foreign worktrees of Repository Cache %s: %w", name, err)
 	}

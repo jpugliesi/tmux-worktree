@@ -25,6 +25,7 @@ func cacheMaintenanceSetup(t *testing.T) (*Service, string, *[]string) {
 		testGit(t, repository, "repack", "-q")
 	}
 	testGit(t, repository, "update-ref", "refs/prefetch/remotes/origin/feature", "HEAD")
+	testGit(t, repository, "config", "remote.origin.partialclonefilter", "blob:none")
 	dataDir := t.TempDir()
 	cachePath := filepath.Join(dataDir, "caches", "app.git")
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
@@ -74,6 +75,9 @@ func TestMaintainRepositoryCachesRepacksWithoutTheCacheLock(t *testing.T) {
 	}
 	if refs := testGit(t, cachePath, "for-each-ref", "refs/prefetch/"); refs != "" {
 		t.Fatalf("the prefetch refs remain: %s", refs)
+	}
+	if filter, err := exec.Command("git", "-C", cachePath, "config", "--get", "remote.origin.partialclonefilter").Output(); err == nil {
+		t.Fatalf("the cache keeps the partial clone filter %s", filter)
 	}
 	testGit(t, cachePath, "fsck", "--connectivity-only", "--no-progress")
 }

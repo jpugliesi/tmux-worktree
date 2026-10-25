@@ -256,6 +256,9 @@ After the pool refresh, the same pass maintains every Repository Cache:
   points into the twt data directory. Git's scheduled maintenance treats
   each checkout as its own repository, so it runs the same prefetch and
   repack once for each checkout against one shared cache.
+- It removes `remote.origin.partialclonefilter`, `http.lowSpeedLimit`, and
+  `http.lowSpeedTime` from the cache config. Tools in a checkout can write
+  them into the shared config, and they make the cache grow.
 - It removes each worktree of the cache that no Workspace or Prepared
   Environment owns, and the branch of that worktree. Coding agents make such
   worktrees. For example, Claude Code puts subagent worktrees under

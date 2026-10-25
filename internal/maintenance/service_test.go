@@ -147,6 +147,35 @@ func TestDoctorWarnsAboutABloatedRepositoryCache(t *testing.T) {
 	}
 }
 
+// A partial-clone cache grows without limit, and only a new full clone
+// repairs it.
+func TestDoctorWarnsAboutAPartialCloneRepositoryCache(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	cachePath := filepath.Join(dataDir, "caches", "app-abc.git")
+	packDirectory := filepath.Join(cachePath, "objects", "pack")
+	if err := os.MkdirAll(packDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	markTwtCache(t, cachePath)
+	for _, name := range []string{"pack-a.pack", "pack-a.promisor"} {
+		if err := os.WriteFile(filepath.Join(packDirectory, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := maintenance.NewService(filepath.Join(root, "config"), filepath.Join(root, "state"), dataDir, "")
+
+	report := service.Doctor()
+
+	check := findCheck(report, "cache:app-abc.git")
+	if check == nil {
+		t.Fatalf("doctor has no cache check: %+v", report.Checks)
+	}
+	if check.Status != "warn" || !strings.Contains(check.Message, "partial clone") || !strings.Contains(check.Message, cachePath) {
+		t.Fatalf("cache check = %+v, want a partial-clone warning with the cache path", *check)
+	}
+}
+
 // A Repository Cache with an unpacked ref store slows every Git command that
 // enumerates refs, long before the cache looks large.
 func TestDoctorWarnsAboutAnUnpackedRefStore(t *testing.T) {

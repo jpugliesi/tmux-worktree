@@ -286,6 +286,13 @@ func tuneCachePerformance(cachePath string) {
 		// Workspace preparation.
 		_ = run(cachePath, "git", "config", setting[0], setting[1])
 	}
+	removeGrowthSettings(cachePath)
+}
+
+// removeGrowthSettings removes the cache settings that made caches grow
+// without limit. See tuneCachePerformance. Each daemon pass also runs it,
+// because tools in a checkout write these settings into the shared config.
+func removeGrowthSettings(cachePath string) {
 	for _, key := range []string{"remote.origin.partialclonefilter", "http.lowSpeedLimit", "http.lowSpeedTime"} {
 		// A missing key makes Git exit with status 5, which is fine.
 		_ = run(cachePath, "git", "config", "--unset-all", key)

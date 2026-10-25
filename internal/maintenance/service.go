@@ -395,6 +395,7 @@ func (s *Service) Doctor() DoctorReport {
 		s.checkPreparedPools(&report, templates, environments)
 	}
 	s.checkRepositoryCaches(&report)
+	s.checkFreeDisk(&report)
 	s.checkTicketsHome(&report)
 	s.checkSkill(&report)
 	return report
@@ -473,9 +474,10 @@ func looseRefCount(gitDirectory string, limit int) int {
 	return count
 }
 
-// checkRepositoryCaches warns about Repository Caches that slow every Git
-// command: too many pack files, an unpacked ref store, or leftover temporary
-// packs from interrupted fetches.
+// checkRepositoryCaches warns about Repository Caches that grow without
+// limit, because they are partial clones, and about caches that slow every
+// Git command: too many pack files, an unpacked ref store, or leftover
+// temporary packs from interrupted fetches.
 func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 	cacheRoot := filepath.Join(s.dataDir, "caches")
 	entries, err := os.ReadDir(cacheRoot)
@@ -504,6 +506,15 @@ func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 				garbageBytes += info.Size()
 			}
 		}
+		// A partial clone fetches each missing object on demand and writes one
+		// new pack for each fetch, so it grows without limit. Only a new full
+		// clone repairs it.
+		if promisor, _ := filepath.Glob(filepath.Join(packDirectory, "*.promisor")); len(promisor) > 0 {
+			report.addWarning("cache:"+entry.Name(), fmt.Sprintf(
+				"Repository Cache %s is a partial clone, so it grows without limit. Run 'twt done' for each Workspace that uses it, then delete %s. The next create clones it again in full.",
+				entry.Name(), filepath.Join(cacheRoot, entry.Name())))
+			continue
+		}
 		loose := looseRefCount(filepath.Join(cacheRoot, entry.Name()), doctorCacheLooseRefLimit)
 		if len(packs) <= doctorCachePackLimit && garbageBytes == 0 && loose < doctorCacheLooseRefLimit {
 			healthy++
@@ -531,6 +542,28 @@ func (s *Service) checkRepositoryCaches(report *DoctorReport) {
 	if healthy > 0 {
 		report.addPass("repository-caches", fmt.Sprintf("%d Repository Caches are compact", healthy))
 	}
+}
+
+// doctorFreeDiskFloor is the free disk space below which doctor warns. It
+// matches the floor below which twt starts no new Prepared Environment.
+const doctorFreeDiskFloor = 50_000_000_000
+
+// checkFreeDisk warns when the disk of the data directory is almost full.
+// The pool refill stops below the floor, so the next create waits for a full
+// preparation.
+func (s *Service) checkFreeDisk(report *DoctorReport) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(s.dataDir, &stat); err != nil {
+		return
+	}
+	free := uint64(stat.Bavail) * uint64(stat.Bsize)
+	if free >= doctorFreeDiskFloor {
+		report.addPass("free-disk", fmt.Sprintf("%d GB of disk is free", free/1_000_000_000))
+		return
+	}
+	report.addWarning("free-disk", fmt.Sprintf(
+		"Only %d GB of disk is free. twt starts no new Prepared Environment below %d GB. Run 'twt storage get' to see what twt uses.",
+		free/1_000_000_000, doctorFreeDiskFloor/1_000_000_000))
 }
 
 // addSessionGapChecks reports tmux sessions that drifted from Workspace
