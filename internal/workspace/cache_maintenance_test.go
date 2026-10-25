@@ -1,11 +1,15 @@
 package workspace
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jpugliesi/tmux-worktree/internal/domain"
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
 
@@ -110,5 +114,90 @@ func TestMaintainRepositoryCachesRemovesOnlyTwtMaintenanceRegistrations(t *testi
 	}
 	if got := testGit(t, "", "config", "--global", "--get-all", "maintenance.repo"); got != other {
 		t.Fatalf("maintenance.repo = %q, want only %q", got, other)
+	}
+}
+
+// The daemon removes an idle worktree that no twt record owns, with its
+// branch, and keeps owned, recent, and busy worktrees.
+func TestMaintainRepositoryCachesRemovesIdleForeignWorktrees(t *testing.T) {
+	service, cachePath, _ := cacheMaintenanceSetup(t)
+	// Git lists the resolved path, for example /private/var on macOS.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(name string) string {
+		path := filepath.Join(root, name)
+		testGit(t, cachePath, "worktree", "add", "-q", "-b", name, path, "HEAD")
+		return path
+	}
+	age := func(path string) {
+		old := time.Now().Add(-2 * foreignWorktreeIdleAge)
+		admin := filepath.Join(cachePath, "worktrees", filepath.Base(path))
+		for _, target := range []string{path, filepath.Join(admin, "HEAD"), filepath.Join(admin, "index"), filepath.Join(admin, "logs", "HEAD")} {
+			if err := os.Chtimes(target, old, old); err != nil && !errors.Is(err, os.ErrNotExist) {
+				t.Fatal(err)
+			}
+		}
+	}
+	owned := add("owned")
+	idle := add("idle")
+	locked := add("locked")
+	recent := add("recent")
+	busy := add("busy")
+	gone := add("gone")
+	for _, path := range []string{owned, idle, locked, busy} {
+		age(path)
+	}
+	testGit(t, cachePath, "worktree", "lock", locked)
+	testGit(t, cachePath, "worktree", "lock", gone)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "app",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: "https://example.com/app.git"}}},
+	}
+	digest, err := store.EnvironmentDigest(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := service.environments.Save(domain.PreparedEnvironment{
+		Version: domain.PreparedEnvironmentVersion, FormatVersion: domain.PreparationFormatVersion,
+		ID: "owner", TemplateName: template.Name, TemplateDigest: digest, TemplateSnapshot: template,
+		Status: domain.EnvironmentReady, Root: root, QueueToken: "queue-token", QueuedAt: now, ReadyAt: &now,
+		Repositories: []domain.PreparedRepository{{Name: "app", CachePath: cachePath, Path: owned, BaseCommit: "base-commit"}},
+		Steps:        []domain.SetupStep{{ID: "environment_root", Kind: domain.StepWorkspaceRoot, Status: domain.StepSucceeded}},
+		CreatedAt:    now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	process := exec.Command("sleep", "60")
+	process.Dir = busy
+	if err := process.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = process.Process.Kill(); _ = process.Wait() })
+
+	if err := service.MaintainRepositoryCaches(); err != nil {
+		t.Fatalf("MaintainRepositoryCaches(): %v", err)
+	}
+	listing := testGit(t, cachePath, "worktree", "list", "--porcelain")
+	for _, path := range []string{owned, recent, busy} {
+		if !strings.Contains(listing, "worktree "+path+"\n") {
+			t.Errorf("the daemon removed worktree %s", path)
+		}
+	}
+	for _, path := range []string{idle, locked, gone} {
+		if strings.Contains(listing, "worktree "+path+"\n") {
+			t.Errorf("the daemon kept worktree %s", path)
+		}
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the directory of worktree %s remains: %v", path, err)
+		}
+		if branches := testGit(t, cachePath, "branch", "--list", filepath.Base(path)); branches != "" {
+			t.Errorf("the branch of worktree %s remains", path)
+		}
 	}
 }

@@ -253,6 +253,13 @@ After the pool refresh, the same pass maintains every Repository Cache:
   points into the twt data directory. Git's scheduled maintenance treats
   each checkout as its own repository, so it runs the same prefetch and
   repack once for each checkout against one shared cache.
+- It removes each worktree of the cache that no Workspace or Prepared
+  Environment owns, and the branch of that worktree. Coding agents make such
+  worktrees. For example, Claude Code puts subagent worktrees under
+  `<cache>/.claude/worktrees`. The daemon discards their changes and
+  commits, because Workspaces and their branches are disposable. It keeps a
+  worktree with Git activity in the last 3 days, and a worktree that a
+  process uses as its working directory.
 - It deletes the `refs/prefetch` refs that Git's scheduled maintenance
   wrote. twt fetches only the default branch.
 - It runs `git repack --geometric=2 -d --write-midx` at low priority when a

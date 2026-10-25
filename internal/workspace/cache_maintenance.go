@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jpugliesi/tmux-worktree/internal/store"
 )
@@ -50,8 +51,8 @@ func (s *Service) MaintainRepositoryCaches() error {
 	return nil
 }
 
-// maintainRepositoryCache deletes the prefetch refs of one cache and
-// repacks it.
+// maintainRepositoryCache removes the foreign worktrees of one cache,
+// deletes its prefetch refs, and repacks it.
 //
 // The repack runs outside the cache lock, because every create waits on
 // that lock and the first repack of a bloated cache takes hours. Git lets
@@ -69,6 +70,9 @@ func (s *Service) maintainRepositoryCache(cachePath string) error {
 		return err
 	}
 	defer lock.Release()
+	if err := s.removeForeignWorktrees(cachePath); err != nil {
+		return fmt.Errorf("remove the foreign worktrees of Repository Cache %s: %w", name, err)
+	}
 	if err := s.withCacheLock(cachePath, func() error { return deletePrefetchRefs(cachePath) }); err != nil {
 		return fmt.Errorf("delete the prefetch refs of Repository Cache %s: %w", name, err)
 	}
@@ -87,6 +91,180 @@ func (s *Service) maintainRepositoryCache(cachePath string) error {
 		return fmt.Errorf("repack Repository Cache %s: %w", name, err)
 	}
 	return nil
+}
+
+// foreignWorktreeIdleAge is the time without Git activity after which the
+// daemon removes a worktree that twt does not own.
+const foreignWorktreeIdleAge = 72 * time.Hour
+
+// cacheWorktree is one entry of "git worktree list --porcelain".
+type cacheWorktree struct {
+	path   string
+	branch string
+	bare   bool
+}
+
+// removeForeignWorktrees removes the worktrees of one cache that no twt
+// Workspace or Prepared Environment owns, and their branches.
+//
+// Coding agents make such worktrees. Claude Code puts its subagent
+// worktrees under <cache>/.claude/worktrees, because it takes the common
+// Git directory for the repository root. Nothing removes a worktree with
+// changes, and each one holds a full checkout with its build output.
+// Measured on the everysphere cache: 27 such worktrees used 498 GB.
+//
+// Workspaces and their branches are disposable, so the removal discards
+// changes and commits. It keeps a worktree with Git activity in the last
+// foreignWorktreeIdleAge, and a worktree that a process uses as its working
+// directory.
+func (s *Service) removeForeignWorktrees(cachePath string) error {
+	owned, err := s.ownedCheckouts()
+	if err != nil {
+		return err
+	}
+	listing, err := output(cachePath, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return err
+	}
+	busy, err := processDirectories()
+	if err != nil {
+		return err
+	}
+	var branches []string
+	for _, worktree := range parseWorktrees(listing) {
+		if worktree.bare || owned[filepath.Clean(worktree.path)] {
+			continue
+		}
+		if _, err := os.Stat(worktree.path); err == nil {
+			if s.now().Sub(lastGitActivity(worktree.path)) < foreignWorktreeIdleAge || usesDirectory(busy, worktree.path) {
+				continue
+			}
+			// The second --force removes a locked worktree. Claude Code locks
+			// the worktrees of its subagents.
+			if err := run(cachePath, "git", "worktree", "remove", "--force", "--force", worktree.path); err != nil {
+				s.report("Could not remove worktree %s: %v", worktree.path, err)
+				continue
+			}
+		} else if errors.Is(err, os.ErrNotExist) {
+			// prune keeps the record of a locked worktree, even when its
+			// directory is gone.
+			_ = run(cachePath, "git", "worktree", "unlock", worktree.path)
+		} else {
+			continue
+		}
+		s.report("Removed worktree %s: no twt Workspace owns it, and it had no Git activity for %s.", worktree.path, foreignWorktreeIdleAge)
+		if worktree.branch != "" {
+			branches = append(branches, worktree.branch)
+		}
+	}
+	if err := run(cachePath, "git", "worktree", "prune"); err != nil {
+		return err
+	}
+	for _, branch := range branches {
+		// Best effort: another worktree can hold the same branch.
+		_ = run(cachePath, "git", "branch", "-D", branch)
+	}
+	return nil
+}
+
+// ownedCheckouts returns the checkout path of each repository of every
+// Prepared Environment and every Workspace record.
+func (s *Service) ownedCheckouts() (map[string]bool, error) {
+	owned := map[string]bool{}
+	add := func(path string) {
+		owned[filepath.Clean(path)] = true
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			owned[resolved] = true
+		}
+	}
+	environments, err := s.environments.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, environment := range environments {
+		for _, repository := range environment.Repositories {
+			add(repository.Path)
+		}
+	}
+	workspaces, err := s.store.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, workspace := range workspaces {
+		for _, repository := range workspace.Repositories {
+			add(repository.Path)
+		}
+	}
+	return owned, nil
+}
+
+// parseWorktrees reads the output of "git worktree list --porcelain".
+func parseWorktrees(listing string) []cacheWorktree {
+	var worktrees []cacheWorktree
+	for _, line := range strings.Split(listing, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			worktrees = append(worktrees, cacheWorktree{path: strings.TrimPrefix(line, "worktree ")})
+		case len(worktrees) == 0:
+		case line == "bare":
+			worktrees[len(worktrees)-1].bare = true
+		case strings.HasPrefix(line, "branch refs/heads/"):
+			worktrees[len(worktrees)-1].branch = strings.TrimPrefix(line, "branch refs/heads/")
+		}
+	}
+	return worktrees
+}
+
+// lastGitActivity returns the newest change time of the worktree directory
+// and of the files in its Git administrative directory: HEAD, the index, and
+// the HEAD reflog. A commit, a checkout, or a status refresh changes them.
+func lastGitActivity(worktreePath string) time.Time {
+	var newest time.Time
+	consider := func(path string) {
+		if info, err := os.Stat(path); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	consider(worktreePath)
+	data, err := os.ReadFile(filepath.Join(worktreePath, ".git"))
+	if err != nil {
+		return newest
+	}
+	admin := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
+	for _, name := range []string{"HEAD", "index", filepath.Join("logs", "HEAD")} {
+		consider(filepath.Join(admin, name))
+	}
+	return newest
+}
+
+// processDirectories returns the working directory of every process of the
+// current user.
+func processDirectories() ([]string, error) {
+	data, err := exec.Command("lsof", "-w", "-d", "cwd", "-Fn").Output()
+	if err != nil && len(data) == 0 {
+		return nil, fmt.Errorf("list process working directories: %w", err)
+	}
+	var directories []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "n") {
+			directories = append(directories, strings.TrimPrefix(line, "n"))
+		}
+	}
+	return directories, nil
+}
+
+// usesDirectory reports whether a process works in path or below it.
+func usesDirectory(directories []string, path string) bool {
+	prefixes := []string{filepath.Clean(path) + string(filepath.Separator)}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		prefixes = append(prefixes, resolved+string(filepath.Separator))
+	}
+	for _, directory := range directories {
+		if hasAnyPrefix(filepath.Clean(directory)+string(filepath.Separator), prefixes) {
+			return true
+		}
+	}
+	return false
 }
 
 // removeGitMaintenanceRegistrations removes the entries of the global
