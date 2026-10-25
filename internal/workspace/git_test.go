@@ -139,38 +139,56 @@ func TestBranchPublishedReportsUnknownWhenTheRemoteIsUnreachable(t *testing.T) {
 	}
 }
 
-// The clone filter of the Template controls the shared Repository Cache. An
-// empty filter clones the full object set, so checkouts never lazy-fetch.
-func TestEnsureCacheHonorsTheTemplateCloneFilter(t *testing.T) {
+// A new cache starts with one commit and deepens to the full history in
+// bounded rounds, because the servers drop one long full-history transfer.
+func TestEnsureCacheDeepensANewCacheToTheFullHistory(t *testing.T) {
 	source := gitTestRepository(t)
-	for _, test := range []struct {
-		name   string
-		filter string
-	}{
-		{name: "full clone without a filter", filter: ""},
-		{name: "partial clone with a filter", filter: "blob:none"},
+	for _, name := range []string{"second.txt", "third.txt", "fourth.txt"} {
+		commitCreateTestFile(t, source, name)
+	}
+	previous := historyDeepenStep
+	historyDeepenStep = 1
+	t.Cleanup(func() { historyDeepenStep = previous })
+	service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir()})
+	spec := domain.RepositorySpec{Name: "app", Clone: domain.CloneSpec{URL: "file://" + source}, DefaultBranch: "main"}
+	cachePath := service.cachePath(spec.Name, spec.Clone.URL)
+	if err := service.ensureCache(spec, cachePath); err != nil {
+		t.Fatalf("ensureCache() error = %v", err)
+	}
+	if shallow := testGitOutput(t, cachePath, "rev-parse", "--is-shallow-repository"); shallow != "false" {
+		t.Fatalf("the new cache is still shallow: %s", shallow)
+	}
+	if count := testGitOutput(t, cachePath, "rev-list", "--count", "refs/remotes/origin/main"); count != testGitOutput(t, source, "rev-list", "--count", "main") {
+		t.Fatalf("the new cache has %s commits on origin/main", count)
+	}
+}
+
+// A cache that an older twt or another tool made partial, or that aborts
+// slow fetches, loses those settings on the next ensure.
+func TestEnsureCacheRemovesTheSettingsThatGrowTheCache(t *testing.T) {
+	source := gitTestRepository(t)
+	service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir()})
+	spec := domain.RepositorySpec{Name: "app", Clone: domain.CloneSpec{URL: source}}
+	cachePath := service.cachePath(spec.Name, spec.Clone.URL)
+	if err := service.ensureCache(spec, cachePath); err != nil {
+		t.Fatalf("ensureCache() error = %v", err)
+	}
+	for _, setting := range [][2]string{
+		{"remote.origin.partialclonefilter", "tree:0"},
+		{"http.lowSpeedLimit", "1000"},
+		{"http.lowSpeedTime", "120"},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir()})
-			spec := domain.RepositorySpec{Name: "app", Clone: domain.CloneSpec{URL: source, Filter: test.filter}}
-			cachePath := service.cachePath(spec.Name, spec.Clone.URL)
-			if err := service.ensureCache(spec, cachePath); err != nil {
-				t.Fatalf("ensureCache() error = %v", err)
-			}
-			command := exec.Command("git", "config", "--get", "remote.origin.partialclonefilter")
-			command.Dir = cachePath
-			data, err := command.CombinedOutput()
-			got := strings.TrimSpace(string(data))
-			if test.filter == "" {
-				if err == nil {
-					t.Fatalf("full clone has partial clone filter %q", got)
-				}
-				return
-			}
-			if err != nil || got != test.filter {
-				t.Fatalf("partial clone filter = %q, %v; want %q", got, err, test.filter)
-			}
-		})
+		testGitOutput(t, cachePath, "config", setting[0], setting[1])
+	}
+	if err := service.ensureCache(spec, cachePath); err != nil {
+		t.Fatalf("ensureCache() error = %v", err)
+	}
+	for _, key := range []string{"remote.origin.partialclonefilter", "http.lowSpeedLimit", "http.lowSpeedTime"} {
+		command := exec.Command("git", "config", "--get", key)
+		command.Dir = cachePath
+		if data, err := command.CombinedOutput(); err == nil {
+			t.Fatalf("the cache keeps %s = %s", key, strings.TrimSpace(string(data)))
+		}
 	}
 }
 

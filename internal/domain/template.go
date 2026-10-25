@@ -170,10 +170,10 @@ type RecycleSpec struct {
 type CloneSpec struct {
 	URL   string `yaml:"url" json:"url"`
 	Depth int    `yaml:"depth,omitempty" json:"depth,omitempty"`
-	// Filter is the partial-clone filter of the shared Repository Cache, for
-	// example "blob:none". An empty value clones the full object set. A full
-	// clone avoids lazy blob fetches during checkouts, so it is the right
-	// choice when Workspaces check out most of the repository.
+	// Filter is no longer supported, and Validate rejects a value. A
+	// partial-clone cache fetches missing objects on demand, one new pack for
+	// each fetch, and grew to hundreds of gigabytes that way. The field stays
+	// so that an old Workspace Template gets a clear error.
 	Filter string `yaml:"filter,omitempty" json:"filter,omitempty"`
 }
 
@@ -233,8 +233,8 @@ func (t Template) Validate() error {
 		if repository.Clone.Depth < 0 {
 			return fmt.Errorf("repository %q has a negative clone depth", repository.Name)
 		}
-		if err := validateCloneFilter(repository.Clone.Filter); err != nil {
-			return fmt.Errorf("repository %q clone filter: %w", repository.Name, err)
+		if repository.Clone.Filter != "" {
+			return fmt.Errorf("repository %q sets clone filter %q, but a Repository Cache is always a full clone: remove the filter", repository.Name, repository.Clone.Filter)
 		}
 		if _, exists := repository.Remotes["origin"]; exists {
 			return fmt.Errorf("repository %q cannot declare origin as an extra remote", repository.Name)
@@ -353,18 +353,6 @@ func validateBranchPattern(pattern string) error {
 	sample := RenderBranchPattern(pattern, "", "sample", "0123abcd")
 	if err := ValidateBranchName(sample); err != nil {
 		return fmt.Errorf("branch_pattern %q renders the invalid branch name %q: %w", pattern, sample, err)
-	}
-	return nil
-}
-
-// validateCloneFilter checks one declared clone filter. The value goes to
-// 'git clone --filter=' verbatim, so it must be one token without spaces.
-func validateCloneFilter(filter string) error {
-	if filter == "" {
-		return nil
-	}
-	if strings.ContainsAny(filter, " \t\n") || strings.HasPrefix(filter, "-") {
-		return fmt.Errorf("filter %q is not a valid Git object filter", filter)
 	}
 	return nil
 }

@@ -175,20 +175,17 @@ func TestTemplatePoolDepth(t *testing.T) {
 	}
 }
 
-func TestTemplateValidatesTheCloneFilter(t *testing.T) {
+func TestTemplateRejectsACloneFilter(t *testing.T) {
 	template := Template{
 		Version: TemplateVersion, Name: "example",
 		Repositories: []RepositorySpec{{Name: "app", Clone: CloneSpec{URL: "https://example.com/app.git"}}},
 	}
-	for _, filter := range []string{"", "blob:none", "tree:0", "blob:limit=1m"} {
-		template.Repositories[0].Clone.Filter = filter
-		if err := template.Validate(); err != nil {
-			t.Fatalf("Validate() with clone filter %q error = %v", filter, err)
-		}
+	if err := template.Validate(); err != nil {
+		t.Fatalf("Validate() without a clone filter error = %v", err)
 	}
-	for _, filter := range []string{"blob none", "--upload-pack=evil", "a\nb"} {
+	for _, filter := range []string{"blob:none", "tree:0"} {
 		template.Repositories[0].Clone.Filter = filter
-		if err := template.Validate(); err == nil || !strings.Contains(err.Error(), "clone filter") {
+		if err := template.Validate(); err == nil || !strings.Contains(err.Error(), "full clone") {
 			t.Fatalf("Validate() with clone filter %q error = %v", filter, err)
 		}
 	}

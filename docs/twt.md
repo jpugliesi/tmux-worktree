@@ -135,19 +135,16 @@ Repository Caches keep full commit history. This rule lets every Workspace
 branch retain a merge base when the default branch advances. twt accepts the
 old repository `depth` field for compatibility, but ignores it.
 
-The clone `filter` field sets a partial-clone filter for the shared
-Repository Cache, for example `filter: blob:none`. The default is no filter:
-the cache clones the full object set. Prefer the default when Workspaces
-check out most of the repository. A partial clone downloads less at clone
-time, but every checkout lazy-fetches the blobs that it needs.
+A Repository Cache is always a full clone. twt rejects the old clone
+`filter` field. A partial-clone cache fetches missing objects on demand and
+writes one new pack for each fetch, so it grows without limit.
 
-```yaml
-repositories:
-  - name: everysphere
-    clone:
-      url: https://origin.cursor.com/anysphere/everysphere.git
-      filter: blob:none
-```
+twt clones a new cache with only the newest commit. It then fetches the
+rest of the history in rounds of 50,000 commits. Large servers drop one
+long full-history transfer, and a failed round continues from the point
+that the last round reached. On each refresh, twt also removes
+`remote.origin.partialclonefilter`, `http.lowSpeedLimit`, and
+`http.lowSpeedTime` from the cache config.
 
 twt is the only maintainer of its Repository Caches. When twt refreshes a
 cache, it removes stale temporary packs from interrupted fetches, packs the

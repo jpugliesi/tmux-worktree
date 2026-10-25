@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,9 +55,12 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 		return fmt.Errorf("prepare temporary cache path: %w", err)
 	}
 	defer os.RemoveAll(temporary)
-	args := []string{"clone", "--bare"}
-	if spec.Clone.Filter != "" {
-		args = append(args, "--filter="+spec.Clone.Filter)
+	// The clone takes only the newest commit, and refreshCache then deepens
+	// the history in bounded rounds (see ensureFullHistory). One full clone
+	// of a large repository is one long transfer, and the servers drop it.
+	args := []string{"clone", "--bare", "--depth", "1"}
+	if spec.DefaultBranch != "" {
+		args = append(args, "--branch", spec.DefaultBranch)
 	}
 	args = append(args, spec.Clone.URL, temporary)
 	if err := run("", "git", args...); err != nil {
@@ -266,6 +270,12 @@ var largeCheckoutFileCount = 10000
 // index, and the untracked cache removes a full directory scan from
 // "git status". It runs on every cache ensure, so it also migrates a cache
 // that an older twt created.
+//
+// It also removes the settings that made caches grow without limit:
+//   - remote.origin.partialclonefilter makes each fetch partial again, so
+//     the cache lazy-fetches objects on demand, one new pack for each fetch.
+//   - http.lowSpeedLimit aborts a long fetch while the server counts and
+//     compresses, and an aborted fetch leaves a temporary pack behind.
 func tuneCachePerformance(cachePath string) {
 	settings := [][2]string{
 		{"core.untrackedCache", "true"},
@@ -275,6 +285,10 @@ func tuneCachePerformance(cachePath string) {
 		// Best effort: an old Git that rejects one setting must not block
 		// Workspace preparation.
 		_ = run(cachePath, "git", "config", setting[0], setting[1])
+	}
+	for _, key := range []string{"remote.origin.partialclonefilter", "http.lowSpeedLimit", "http.lowSpeedTime"} {
+		// A missing key makes Git exit with status 5, which is fine.
+		_ = run(cachePath, "git", "config", "--unset-all", key)
 	}
 }
 
@@ -325,22 +339,86 @@ func fetchOrigin(cachePath, branch string) error {
 	return nil
 }
 
-// ensureFullHistory repairs a cache made by a version of twt that honored a
-// Template clone depth. A shallow shared cache can disconnect active Workspace
-// branches when its remote-tracking branch moves.
+// historyDeepenStep is the number of commits that one deepen round of
+// ensureFullHistory fetches. Tests lower it.
+var historyDeepenStep = 50000
+
+// historyDeepenAttempts is the number of failed deepen rounds in a row after
+// which ensureFullHistory stops. The next refresh resumes from the boundary
+// that the last good round reached.
+const historyDeepenAttempts = 3
+
+// ensureFullHistory gives a shallow Repository Cache its full commit history.
+// A new cache starts shallow, and a shallow shared cache can disconnect
+// active Workspace branches when its remote-tracking branch moves.
+//
+// One --unshallow asks for the whole history in one response. On a large
+// repository the server then sends nothing for many minutes while it counts
+// and compresses, and origin.cursor.com and GitHub both drop such a
+// transfer. Bounded --deepen rounds keep each transfer short. The rounds
+// turn off http.lowSpeedLimit, because that setting treats the silent
+// server-side work as a stalled transfer.
+//
+// The fetch never takes a filter. A partial-clone cache fetches missing
+// objects on demand, one new pack for each fetch, and grew to hundreds of
+// gigabytes that way.
 func ensureFullHistory(cachePath, branch string) error {
+	refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch
+	failures := 0
+	for {
+		boundary, shallow, err := shallowBoundary(cachePath)
+		if err != nil {
+			return err
+		}
+		if !shallow {
+			return nil
+		}
+		err = run(cachePath, "git", "-c", "http.lowSpeedLimit=0", "-c", "http.lowSpeedTime=0",
+			"fetch", "--deepen="+strconv.Itoa(historyDeepenStep), "--no-tags", "origin", refspec)
+		if err != nil {
+			failures++
+			if failures == historyDeepenAttempts {
+				return fmt.Errorf("repair shallow Repository Cache history: %w", err)
+			}
+			continue
+		}
+		failures = 0
+		next, shallow, err := shallowBoundary(cachePath)
+		if err != nil {
+			return err
+		}
+		if shallow && next == boundary {
+			// A boundary that a deepen round cannot move belongs to a ref
+			// outside the refspec. One unshallow fetch of all of it is then
+			// the only way forward.
+			if err := run(cachePath, "git", "-c", "http.lowSpeedLimit=0", "-c", "http.lowSpeedTime=0",
+				"fetch", "--unshallow", "--no-tags", "origin", refspec); err != nil {
+				return fmt.Errorf("repair shallow Repository Cache history: %w", err)
+			}
+			return nil
+		}
+	}
+}
+
+// shallowBoundary returns the shallow commit list of one Repository Cache and
+// whether the cache is shallow.
+func shallowBoundary(cachePath string) (string, bool, error) {
 	value, err := output(cachePath, "git", "rev-parse", "--is-shallow-repository")
 	if err != nil {
-		return fmt.Errorf("inspect Repository Cache history: %w", err)
+		return "", false, fmt.Errorf("inspect Repository Cache history: %w", err)
 	}
 	if value != "true" {
-		return nil
+		return "", false, nil
 	}
-	refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch
-	if err := run(cachePath, "git", "fetch", "--unshallow", "--filter=tree:0", "--prune", "--no-tags", "origin", refspec); err != nil {
-		return fmt.Errorf("repair shallow Repository Cache history: %w", err)
+	path, err := output(cachePath, "git", "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return "", false, fmt.Errorf("inspect Repository Cache history: %w", err)
 	}
-	return nil
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, fmt.Errorf("read the shallow commit list: %w", err)
+	}
+	return string(data), true, nil
 }
 
 // worktreeUsesCache checks that the checkout at worktreePath is a Git
