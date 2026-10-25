@@ -92,6 +92,13 @@ func (s *Service) cleanPreparedEnvironment(environmentID string, templates Templ
 	if err != nil {
 		return err
 	}
+	return s.removeReservedEnvironment(environment)
+}
+
+// removeReservedEnvironment removes the checkouts, the root, and the record
+// of one failed Prepared Environment. The caller sets the failed status
+// under the mutation lock first, so no claim takes the environment.
+func (s *Service) removeReservedEnvironment(environment domain.PreparedEnvironment) error {
 	environmentLock, err := store.AcquireEnvironmentLock(s.options.StateDir, environment.ID)
 	if err != nil {
 		return err

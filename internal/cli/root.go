@@ -82,9 +82,14 @@ func (o Options) workspaceService() *workspaceservice.Service {
 func (o Options) workspaceServiceOptions() workspaceservice.Options {
 	return workspaceservice.Options{
 		StateDir: o.StateDir, DataDir: o.DataDir, TmuxSocket: o.TmuxSocket,
-		AfterReleaseFinalized: o.startReleaseRefill,
+		AfterReleaseFinalized:   o.startReleaseRefill,
+		PoolRefillFreeDiskFloor: poolRefillFreeDiskFloor,
 	}
 }
+
+// poolRefillFreeDiskFloor is the free disk space below which twt starts no
+// new Prepared Environment. One everysphere checkout uses 20 to 30 GB.
+const poolRefillFreeDiskFloor = 50_000_000_000
 
 // startReleaseRefill tops up the Prepared Environment pool after a release.
 // The released environment returns to the pool by itself, so the refill only

@@ -29,6 +29,10 @@ type Options struct {
 	// replaces environments that failed or no longer match the Workspace
 	// Template.
 	AfterReleaseFinalized func(templateName string)
+	// PoolRefillFreeDiskFloor is the free disk space, in bytes, below which
+	// TopUpPool creates no new Prepared Environment. Each one holds a full
+	// checkout. Zero turns the floor off.
+	PoolRefillFreeDiskFloor uint64
 }
 
 type Service struct {

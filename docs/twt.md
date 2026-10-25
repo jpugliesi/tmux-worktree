@@ -127,9 +127,12 @@ agents:
     prefer_provider_resume: true
 ```
 
-`pool_depth` is the minimum number of ready Prepared Environments that `twt`
-keeps for this Workspace Template. The default depth is 1. A release keeps
-every returned Prepared Environment, even when the ready count exceeds this value.
+`pool_depth` is the number of ready Prepared Environments that `twt` keeps
+for this Workspace Template. The default depth is 1. A release returns its
+Prepared Environment to the pool, so the ready count can exceed this value
+for a short time. The next pool refresh removes the extra environments and
+keeps the most recently updated ones. twt starts no new Prepared Environment
+when less than 50 GB of disk is free, because each one holds a full checkout.
 
 Repository Caches keep full commit history. This rule lets every Workspace
 branch retain a merge base when the default branch advances. twt accepts the
@@ -243,8 +246,8 @@ twt daemon uninstall
 
 `daemon install` writes a launchd agent that runs `twt daemon run` on the
 interval (default 10 minutes). One pass refreshes each ready Prepared
-Environment of every Workspace Template and tops each pool up to
-`pool_depth`. The agent logs to `daemon.log` in the twt state directory.
+Environment of every Workspace Template, tops each pool up to `pool_depth`,
+and removes the ready environments above `pool_depth`. The agent logs to `daemon.log` in the twt state directory.
 The daemon supports only macOS launchd.
 
 After the pool refresh, the same pass maintains every Repository Cache:

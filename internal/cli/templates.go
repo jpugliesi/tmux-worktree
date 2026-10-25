@@ -202,6 +202,9 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 	if err != nil {
 		return err
 	}
+	if err := service.TrimPool(template, template.EffectivePoolDepth()); err != nil {
+		return err
+	}
 	prepared := make([]string, 0, len(refreshed)+len(queued))
 	for _, environment := range refreshed {
 		prepared = append(prepared, environment.ID)

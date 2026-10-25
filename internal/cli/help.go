@@ -50,7 +50,7 @@ var commandHelp = map[string]helpContent{
 		long: "Unload and remove the launchd agent that refreshes the Prepared Environment pools.", example: "  twt daemon uninstall",
 	},
 	"twt daemon run": {
-		long: "Run one pool refresh pass: for every Workspace Template with repositories, refresh each ready Prepared Environment and top the pool up to pool_depth. Then maintain every Repository Cache: remove the Git maintenance registrations of twt checkouts, remove each worktree and branch that no Workspace owns after 3 days without Git activity, delete prefetch refs, and repack a cache that holds more than 32 pack files. The repack runs at low priority and does not block a create. One failed Workspace Template does not stop the others. The launchd agent runs this command; run it yourself for an immediate refresh.", example: "  twt daemon run\n  twt daemon run --output json",
+		long: "Run one pool refresh pass: for every Workspace Template with repositories, refresh each ready Prepared Environment, top the pool up to pool_depth, and remove the ready environments above pool_depth. Then maintain every Repository Cache: remove the Git maintenance registrations of twt checkouts, remove each worktree and branch that no Workspace owns after 3 days without Git activity, delete prefetch refs, and repack a cache that holds more than 32 pack files. The repack runs at low priority and does not block a create. One failed Workspace Template does not stop the others. The launchd agent runs this command; run it yourself for an immediate refresh.", example: "  twt daemon run\n  twt daemon run --output json",
 	},
 	"twt storage": {
 		long: "Inspect the disk space used by twt Workspaces, worktrees, and shared repository caches.", example: "  twt storage get",
@@ -74,7 +74,7 @@ var commandHelp = map[string]helpContent{
 		long: "Validate the YAML and all fields in one Workspace Template.", example: "  twt templates validate everysphere",
 	},
 	"twt templates prepare": {
-		long: "Refresh each matching ready Prepared Environment. Then create enough Prepared Environments to meet pool_depth. Repository initialization runs again only when a refresh changes the saved base commit.", example: "  twt templates prepare everysphere",
+		long: "Refresh each matching ready Prepared Environment. Then create enough Prepared Environments to meet pool_depth, and remove the ready environments above it. Repository initialization runs again only when a refresh changes the saved base commit.", example: "  twt templates prepare everysphere",
 	},
 	"twt templates repos": {
 		long: "Manage the repository specifications inside one Workspace Template.", example: "  twt templates repos add everysphere app https://example.com/app.git\n  twt templates repos remove everysphere app",

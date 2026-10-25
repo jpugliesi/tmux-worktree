@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -88,6 +89,11 @@ func (s *Service) TopUpPool(templateName string, template domain.Template, depth
 			start = append(start, environment)
 		}
 	}
+	if pooled < depth && s.belowFreeDiskFloor() {
+		s.report("Skipped the pool refill of Workspace Template %q: less than %d GB of disk is free.",
+			templateName, s.options.PoolRefillFreeDiskFloor/1_000_000_000)
+		return start, nil
+	}
 	for pooled < depth {
 		environment, err := s.saveNewQueuedEnvironment(templateName, digests, template)
 		if err != nil {
@@ -97,6 +103,70 @@ func (s *Service) TopUpPool(templateName string, template domain.Template, depth
 		pooled++
 	}
 	return start, nil
+}
+
+// belowFreeDiskFloor reports whether the disk of the data directory has less
+// free space than PoolRefillFreeDiskFloor. A failed check does not stop the
+// refill.
+func (s *Service) belowFreeDiskFloor() bool {
+	if s.options.PoolRefillFreeDiskFloor == 0 {
+		return false
+	}
+	free, err := freeDiskBytes(s.options.DataDir)
+	return err == nil && free < s.options.PoolRefillFreeDiskFloor
+}
+
+// TrimPool removes the ready Prepared Environments of this Workspace Template
+// revision above depth, and keeps the most recently updated ones. A release
+// returns its Prepared Environment to the pool, so the pool grows past
+// pool_depth, and each extra environment holds a full checkout.
+func (s *Service) TrimPool(template domain.Template, depth int) error {
+	digests, err := store.Digests(template)
+	if err != nil {
+		return err
+	}
+	lock, err := store.AcquireMutationLockWithTimeout(s.options.StateDir, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	environments, err := s.environments.List()
+	if err != nil {
+		_ = lock.Release()
+		return err
+	}
+	var ready []domain.PreparedEnvironment
+	for _, environment := range environments {
+		if environment.Status == domain.EnvironmentReady &&
+			environment.FormatVersion == domain.PreparationFormatVersion &&
+			digests.Matches(environment.TemplateDigest) {
+			ready = append(ready, environment)
+		}
+	}
+	sort.Slice(ready, func(i, j int) bool { return ready[i].UpdatedAt.After(ready[j].UpdatedAt) })
+	var surplus []domain.PreparedEnvironment
+	for index := depth; index < len(ready); index++ {
+		environment := ready[index]
+		// The failed status reserves the environment, so no claim takes it
+		// while its checkout goes away.
+		environment.Status = domain.EnvironmentFailed
+		environment.Failure = "cleanup reserved for a surplus Prepared Environment"
+		environment.UpdatedAt = s.now()
+		if err := s.environments.Save(environment); err != nil {
+			_ = lock.Release()
+			return err
+		}
+		surplus = append(surplus, environment)
+	}
+	if err := lock.Release(); err != nil {
+		return err
+	}
+	for _, environment := range surplus {
+		s.report("Removing Prepared Environment %s: the pool of Workspace Template %q holds more than %d.", environment.ID, environment.TemplateName, depth)
+		if err := s.removeReservedEnvironment(environment); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // saveNewQueuedEnvironment creates one queued Prepared Environment record.
