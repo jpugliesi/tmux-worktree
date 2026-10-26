@@ -149,6 +149,11 @@ that the last round reached. On each refresh, twt also removes
 `remote.origin.partialclonefilter`, `http.lowSpeedLimit`, and
 `http.lowSpeedTime` from the cache config.
 
+Each cache clone and fetch fails after 10 minutes without data, and the
+next refresh tries again. Without this limit, a fetch on a dead connection
+waits forever, for example after the Mac sleeps. On macOS, twt also stops
+idle sleep while it clones a cache or fetches its history.
+
 twt is the only maintainer of its Repository Caches. When twt refreshes a
 cache, it removes stale temporary packs from interrupted fetches, packs the
 refs and the loose objects, and updates the commit-graph. Only the pool
@@ -205,8 +210,9 @@ Prepare the next environment before you need it:
 twt templates prepare everysphere
 ```
 
-This command refreshes each matching ready Prepared Environment. It then
-creates enough environments to meet `pool_depth`. A refresh fetches the default
+This command removes the ready Prepared Environments above `pool_depth`. It
+then refreshes each remaining one, and creates enough environments to meet
+`pool_depth`. A refresh fetches the default
 branch. When the base commit changes, twt runs repository initialization again.
 
 Repository initialization must leave the checkout at the base commit with no
@@ -245,9 +251,9 @@ twt daemon uninstall
 ```
 
 `daemon install` writes a launchd agent that runs `twt daemon run` on the
-interval (default 10 minutes). One pass refreshes each ready Prepared
-Environment of every Workspace Template, tops each pool up to `pool_depth`,
-and removes the ready environments above `pool_depth`. The agent logs to `daemon.log` in the twt state directory.
+interval (default 10 minutes). For every Workspace Template, one pass
+removes the ready Prepared Environments above `pool_depth`, refreshes each
+remaining one, and tops the pool up to `pool_depth`. The agent logs to `daemon.log` in the twt state directory.
 The daemon supports only macOS launchd.
 
 After the pool refresh, the same pass maintains every Repository Cache:
@@ -274,6 +280,10 @@ After the pool refresh, the same pass maintains every Repository Cache:
   cache can take hours. Later repacks merge only the small new packs.
 - It skips a repack when the free disk space is less than the size of the
   packs, and when another pass already repacks the same cache.
+- It deletes each file in the caches directory that is not part of a
+  Repository Cache and has had no change for 7 days. Tools in a checkout
+  write there. For example, Turborepo puts its shared local cache in
+  `caches/.turbo`, next to the common Git directory.
 
 Repository initialization runs before a Workspace name exists. It receives
 `TWT_ENVIRONMENT_ID`, `TWT_ENVIRONMENT_ROOT`, `TWT_TEMPLATE_NAME`,

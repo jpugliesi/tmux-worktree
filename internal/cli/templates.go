@@ -194,15 +194,17 @@ func prepareTemplateEnvironments(command *cobra.Command, options Options, templa
 		}
 	}
 	service := workspaceservice.NewService(serviceOptions)
+	// The trim runs first, so that no refresh works on an environment that
+	// the trim then removes.
+	if err := service.TrimPool(template, template.EffectivePoolDepth()); err != nil {
+		return err
+	}
 	refreshed, err := service.RefreshReadyEnvironments(template)
 	if err != nil {
 		return err
 	}
 	queued, err := service.TopUpPool(name, template, template.EffectivePoolDepth())
 	if err != nil {
-		return err
-	}
-	if err := service.TrimPool(template, template.EffectivePoolDepth()); err != nil {
 		return err
 	}
 	prepared := make([]string, 0, len(refreshed)+len(queued))

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,7 +59,8 @@ func (s *Service) ensureCacheLocked(spec domain.RepositorySpec, cachePath string
 	// The clone takes only the newest commit, and refreshCache then deepens
 	// the history in bounded rounds (see ensureFullHistory). One full clone
 	// of a large repository is one long transfer, and the servers drop it.
-	args := []string{"clone", "--bare", "--depth", "1"}
+	defer keepAwake()()
+	args := append(append([]string{}, stallGuard...), "clone", "--bare", "--depth", "1")
 	if spec.DefaultBranch != "" {
 		args = append(args, "--branch", spec.DefaultBranch)
 	}
@@ -274,8 +276,9 @@ var largeCheckoutFileCount = 10000
 // It also removes the settings that made caches grow without limit:
 //   - remote.origin.partialclonefilter makes each fetch partial again, so
 //     the cache lazy-fetches objects on demand, one new pack for each fetch.
-//   - http.lowSpeedLimit aborts a long fetch while the server counts and
-//     compresses, and an aborted fetch leaves a temporary pack behind.
+//   - http.lowSpeedLimit with a high limit aborts a healthy fetch, and an
+//     aborted fetch leaves a temporary pack behind. Each cache fetch passes
+//     its own limit instead (see stallGuard).
 func tuneCachePerformance(cachePath string) {
 	settings := [][2]string{
 		{"core.untrackedCache", "true"},
@@ -338,12 +341,38 @@ func fetchOrigin(cachePath, branch string) error {
 	if err := ensureFullHistory(cachePath, branch); err != nil {
 		return err
 	}
-	args := []string{"fetch", "--prune", "--no-tags"}
+	args := append(append([]string{}, stallGuard...), "fetch", "--prune", "--no-tags")
 	args = append(args, "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch)
 	if err := run(cachePath, "git", args...); err != nil {
 		return fmt.Errorf("refresh repository cache from origin: %w", err)
 	}
 	return nil
+}
+
+// stallGuard makes a Repository Cache clone or fetch fail after ten minutes
+// without data. A Mac that sleeps during a fetch keeps a dead connection, and
+// Git then waits on it without limit: one clone waited four hours. A healthy
+// fetch never trips it, because Git servers send keepalive packets while they
+// count objects. Measured on everysphere: a 50,000-commit deepen round sent
+// its first data within two minutes. The next refresh retries a failed fetch.
+var stallGuard = []string{"-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=600"}
+
+// keepAwake stops idle sleep on macOS until the returned function runs, so
+// that a long clone or deepen finishes in one pass. caffeinate also exits
+// with twt. On other systems, and when caffeinate is missing, it does
+// nothing.
+func keepAwake() func() {
+	if runtime.GOOS != "darwin" {
+		return func() {}
+	}
+	command := exec.Command("caffeinate", "-i", "-w", strconv.Itoa(os.Getpid()))
+	if err := command.Start(); err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	}
 }
 
 // historyDeepenStep is the number of commits that one deepen round of
@@ -362,9 +391,7 @@ const historyDeepenAttempts = 3
 // One --unshallow asks for the whole history in one response. On a large
 // repository the server then sends nothing for many minutes while it counts
 // and compresses, and origin.cursor.com and GitHub both drop such a
-// transfer. Bounded --deepen rounds keep each transfer short. The rounds
-// turn off http.lowSpeedLimit, because that setting treats the silent
-// server-side work as a stalled transfer.
+// transfer. Bounded --deepen rounds keep each transfer short.
 //
 // The fetch never takes a filter. A partial-clone cache fetches missing
 // objects on demand, one new pack for each fetch, and grew to hundreds of
@@ -372,6 +399,7 @@ const historyDeepenAttempts = 3
 func ensureFullHistory(cachePath, branch string) error {
 	refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch
 	failures := 0
+	awake := false
 	for {
 		boundary, shallow, err := shallowBoundary(cachePath)
 		if err != nil {
@@ -380,8 +408,12 @@ func ensureFullHistory(cachePath, branch string) error {
 		if !shallow {
 			return nil
 		}
-		err = run(cachePath, "git", "-c", "http.lowSpeedLimit=0", "-c", "http.lowSpeedTime=0",
-			"fetch", "--deepen="+strconv.Itoa(historyDeepenStep), "--no-tags", "origin", refspec)
+		if !awake {
+			defer keepAwake()()
+			awake = true
+		}
+		err = run(cachePath, "git", append(append([]string{}, stallGuard...),
+			"fetch", "--deepen="+strconv.Itoa(historyDeepenStep), "--no-tags", "origin", refspec)...)
 		if err != nil {
 			failures++
 			if failures == historyDeepenAttempts {
@@ -398,8 +430,8 @@ func ensureFullHistory(cachePath, branch string) error {
 			// A boundary that a deepen round cannot move belongs to a ref
 			// outside the refspec. One unshallow fetch of all of it is then
 			// the only way forward.
-			if err := run(cachePath, "git", "-c", "http.lowSpeedLimit=0", "-c", "http.lowSpeedTime=0",
-				"fetch", "--unshallow", "--no-tags", "origin", refspec); err != nil {
+			if err := run(cachePath, "git", append(append([]string{}, stallGuard...),
+				"fetch", "--unshallow", "--no-tags", "origin", refspec)...); err != nil {
 				return fmt.Errorf("repair shallow Repository Cache history: %w", err)
 			}
 			return nil

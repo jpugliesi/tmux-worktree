@@ -35,10 +35,8 @@ func (s *Service) MaintainRepositoryCaches() error {
 	var failures []string
 	for _, entry := range entries {
 		cachePath := filepath.Join(root, entry.Name())
-		if !entry.IsDir() {
-			continue
-		}
 		if _, err := os.Stat(filepath.Join(cachePath, "twt-ownership.json")); err != nil {
+			removeStrayFiles(cachePath, time.Now())
 			continue
 		}
 		if err := s.maintainRepositoryCache(cachePath); err != nil {
@@ -49,6 +47,44 @@ func (s *Service) MaintainRepositoryCaches() error {
 		return errors.New(strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+// strayFileAge is the age at which the daemon deletes a file in the caches
+// directory that is not part of a Repository Cache.
+const strayFileAge = 7 * 24 * time.Hour
+
+// removeStrayFiles deletes the files under path that are older than
+// strayFileAge, and then the directories that it emptied. path is an entry of
+// the caches directory that is not a Repository Cache.
+//
+// Tools in a Checkout Lease write there. Turborepo shares its local cache
+// between the worktrees of a repository in the parent of the common Git
+// directory, and for a Checkout Lease that is the caches directory. Nothing
+// deletes old entries. Measured: the everysphere checkouts left 9.8 GB in
+// caches/.turbo in two months. An in-progress clone (.twt-cache-*) holds
+// only new files, so the age rule keeps it.
+func removeStrayFiles(path string, now time.Time) {
+	var directories []string
+	_ = filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			directories = append(directories, entryPath)
+			return nil
+		}
+		info, err := entry.Info()
+		if err == nil && now.Sub(info.ModTime()) >= strayFileAge {
+			_ = os.Remove(entryPath)
+		}
+		return nil
+	})
+	// WalkDir lists a directory before its contents, so the reverse order
+	// removes the deepest directories first. A directory that still holds
+	// files stays, because os.Remove fails on it.
+	for index := len(directories) - 1; index >= 0; index-- {
+		_ = os.Remove(directories[index])
+	}
 }
 
 // maintainRepositoryCache removes the growth settings and the foreign

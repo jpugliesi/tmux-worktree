@@ -102,6 +102,45 @@ func TestMaintainRepositoryCachesSkipsACacheThatAnotherRepackHolds(t *testing.T)
 	}
 }
 
+// Tools in a Checkout Lease write into the caches directory: Turborepo puts
+// its shared local cache next to the common Git directory. The daemon keeps
+// the recent files and deletes the old ones.
+func TestMaintainRepositoryCachesRemovesOldStrayFiles(t *testing.T) {
+	service, cachePath, _ := cacheMaintenanceSetup(t)
+	caches := filepath.Dir(cachePath)
+	old := filepath.Join(caches, ".turbo", "cache", "old.tar.zst")
+	recent := filepath.Join(caches, ".turbo", "cache", "recent.tar.zst")
+	emptied := filepath.Join(caches, ".stale", "only.txt")
+	for _, path := range []string{old, recent, emptied} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("build output"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Now().Add(-strayFileAge - time.Hour)
+	for _, path := range []string{old, emptied} {
+		if err := os.Chtimes(path, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := service.MaintainRepositoryCaches(); err != nil {
+		t.Fatalf("MaintainRepositoryCaches(): %v", err)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the old stray file remains: %v", err)
+	}
+	if _, err := os.Stat(recent); err != nil {
+		t.Fatalf("the recent stray file is gone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(emptied)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the emptied stray directory remains: %v", err)
+	}
+	testGit(t, cachePath, "fsck", "--connectivity-only", "--no-progress")
+}
+
 // Git's scheduled maintenance must not run on a Checkout Lease, but the
 // registrations of other repositories stay.
 func TestMaintainRepositoryCachesRemovesOnlyTwtMaintenanceRegistrations(t *testing.T) {
