@@ -93,6 +93,58 @@ func TestDoneOutsideSessionReleasesTheWorkspace(t *testing.T) {
 	}
 }
 
+func TestDoneFinishesAWorkspaceWhoseCreateStopped(t *testing.T) {
+	options := doneFixture(t)
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("TWT_WORKSPACE_ID", "")
+	workspaces := store.NewWorkspaceStore(options.StateDir)
+	environments := store.NewEnvironmentStore(options.StateDir)
+
+	// The claim completed, and then the create stopped during setup.
+	executeWithOptions(t, options, nil, "workspaces", "create", "setup-stopped", "--template", "example", "--no-open")
+	workspace, err := workspaces.Find("setup-stopped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Status = domain.WorkspaceInitializing
+	if err := workspaces.Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	output := executeWithOptions(t, options, nil, "done", "setup-stopped")
+	if !strings.Contains(output, "Finished Workspace \"setup-stopped\"") {
+		t.Fatalf("done output for a stopped setup = %q", output)
+	}
+
+	// The create stopped before it completed the claim.
+	executeWithOptions(t, options, nil, "workspaces", "create", "claim-stopped", "--template", "example", "--no-open")
+	workspace, err = workspaces.Find("claim-stopped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment, err := environments.Find(workspace.EnvironmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Status = domain.WorkspaceInitializing
+	environment.Status = domain.EnvironmentClaiming
+	environment.Assignment.Phase = domain.EnvironmentAssignmentReserved
+	environment.Assignment.ReservedAt = time.Now().UTC().Add(-time.Hour)
+	environment.Assignment.Workspace = workspace
+	if err := environments.Save(environment); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspaces.Save(workspace); err != nil {
+		t.Fatal(err)
+	}
+	output = executeWithOptions(t, options, nil, "done", "claim-stopped")
+	if !strings.Contains(output, "Removed Workspace \"claim-stopped\". Its create stopped before it finished.") {
+		t.Fatalf("done output for a stopped claim = %q", output)
+	}
+	if _, err := workspaces.Find(workspace.ID); err == nil {
+		t.Fatal("the Workspace record of the stopped claim remains after done")
+	}
+}
+
 func TestDoneDoesNotChangeADirtyWorkspaceWithoutForce(t *testing.T) {
 	options := doneFixture(t)
 	t.Setenv("TMUX_PANE", "")

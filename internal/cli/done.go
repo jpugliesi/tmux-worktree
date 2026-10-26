@@ -38,6 +38,18 @@ func newDoneCommand(options Options) *cobra.Command {
 				}
 				return doneDryRun(command, service, workspace.ID, releaseOptions)
 			}
+			// A create that stopped before it finished leaves the Workspace
+			// in "initializing". Settle it first, so done always finishes.
+			if workspace.Status == domain.WorkspaceInitializing {
+				settled, removed, err := service.SettleAbandonedCreate(workspace.ID)
+				if err != nil {
+					return err
+				}
+				if removed {
+					return doneRemovedAbandonedCreate(command, settled)
+				}
+				workspace = settled
+			}
 			// Find the current session first: it can adopt a restored
 			// session, and the panes of an adopted session are not foreign.
 			currentPane := os.Getenv("TMUX_PANE")
@@ -192,6 +204,16 @@ func closeDoneTicket(options Options, plan doneTicketPlan) error {
 
 func printTicketCloseWarning(out io.Writer, slug string, cause error) {
 	_, _ = fmt.Fprintf(out, "Warning: twt could not close Ticket %q: %v. Run 'twt tickets close %s'.\n", slug, cause, slug)
+}
+
+// doneRemovedAbandonedCreate reports a Workspace whose create stopped before
+// it claimed its Prepared Environment. Nothing of it remains to finish.
+func doneRemovedAbandonedCreate(command *cobra.Command, workspace domain.Workspace) error {
+	if WantsJSON(command) {
+		return writeMutation(command, "workspaces.done", statusApplied, workspace.ID, workspace.Name)
+	}
+	_, err := fmt.Fprintf(command.OutOrStdout(), "Removed Workspace %q. Its create stopped before it finished.\n", workspace.Name)
+	return err
 }
 
 // doneSynchronously releases the Workspace from the current process. The
