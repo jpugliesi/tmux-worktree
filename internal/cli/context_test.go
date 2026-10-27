@@ -57,7 +57,7 @@ func TestContextShowsTheTmuxSessionName(t *testing.T) {
 	now := time.Now().UTC()
 	workspace := domain.Workspace{
 		Version: domain.WorkspaceVersion, ID: "workspace-session", Name: "cm-comment",
-		Status: domain.WorkspaceActive, Root: root, TmuxSession: "everysphere-cm-comment",
+		Status: domain.WorkspaceActive, Root: root, TmuxSession: "monorepo-cm-comment",
 		CreatedAt: now, UpdatedAt: now,
 	}
 	stateDir := filepath.Join(root, "state")
@@ -69,12 +69,12 @@ func TestContextShowsTheTmuxSessionName(t *testing.T) {
 	options := cli.Options{StateDir: stateDir, DataDir: filepath.Join(root, "data")}
 
 	text := executeWithOptions(t, options, nil, "context")
-	if !strings.Contains(text, "Tmux session") || !strings.Contains(text, "everysphere-cm-comment") {
+	if !strings.Contains(text, "Tmux session") || !strings.Contains(text, "monorepo-cm-comment") {
 		t.Fatalf("context text missing tmux session: %s", text)
 	}
 
 	jsonOutput := executeWithOptions(t, options, nil, "context", "--output", "json")
-	if !strings.Contains(jsonOutput, `"tmuxSession":"everysphere-cm-comment"`) {
+	if !strings.Contains(jsonOutput, `"tmuxSession":"monorepo-cm-comment"`) {
 		t.Fatalf("context JSON missing tmux session: %s", jsonOutput)
 	}
 }

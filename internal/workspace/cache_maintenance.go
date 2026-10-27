@@ -19,7 +19,7 @@ import (
 // twt is the only maintainer of its caches. Git's scheduled maintenance
 // treats each registered Checkout Lease as its own repository, so it runs
 // the same prefetch and repack once for each Checkout Lease against one
-// shared object store. Measured on the everysphere cache: five registered
+// shared object store. Measured on a large monorepo cache: five registered
 // Checkout Leases added 6,204 packs in three days and 109,987 prefetch refs.
 // A failed cache does not stop the others.
 func (s *Service) MaintainRepositoryCaches() error {
@@ -60,7 +60,7 @@ const strayFileAge = 7 * 24 * time.Hour
 // Tools in a Checkout Lease write there. Turborepo shares its local cache
 // between the worktrees of a repository in the parent of the common Git
 // directory, and for a Checkout Lease that is the caches directory. Nothing
-// deletes old entries. Measured: the everysphere checkouts left 9.8 GB in
+// deletes old entries. Measured: the checkouts of a large monorepo left 9.8 GB in
 // caches/.turbo in two months. An in-progress clone (.twt-cache-*) holds
 // only new files, so the age rule keeps it.
 func removeStrayFiles(path string, now time.Time) {
@@ -148,7 +148,7 @@ type cacheWorktree struct {
 // worktrees under <cache>/.claude/worktrees, because it takes the common
 // Git directory for the repository root. Nothing removes a worktree with
 // changes, and each one holds a full checkout with its build output.
-// Measured on the everysphere cache: 27 such worktrees used 498 GB.
+// Measured on a large monorepo cache: 27 such worktrees used 498 GB.
 //
 // Workspaces and their branches are disposable, so the removal discards
 // changes and commits. It keeps a worktree with Git activity in the last

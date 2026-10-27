@@ -682,7 +682,7 @@ Work in this repository. Follow existing packages, tests, and
    three-path user install.
 10. Tests listed below.
 
-Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
+Do not edit other repositories. Do not rename `workspaces` commands. Do not add MCP.
 
 ### Tests
 
@@ -724,4 +724,4 @@ Do not edit everysphere. Do not rename `workspaces` commands. Do not add MCP.
 - `twt schema` includes the new commands and apply operations.
 - A second `claim` by a different claimant returns `locked`.
 - Obsidian can open the new note and resolve `[[slug]]`.
-- `git status` in everysphere is unchanged.
+- `git status` in other repositories is unchanged.

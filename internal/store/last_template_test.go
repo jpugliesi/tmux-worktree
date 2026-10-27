@@ -17,15 +17,15 @@ func TestLastTemplateRoundTrip(t *testing.T) {
 		t.Fatalf("LoadLastTemplate() before save = %q", name)
 	}
 
-	if err := SaveLastTemplate(stateDir, "everysphere"); err != nil {
+	if err := SaveLastTemplate(stateDir, "monorepo"); err != nil {
 		t.Fatal(err)
 	}
 	name, err = LoadLastTemplate(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "everysphere" {
-		t.Fatalf("LoadLastTemplate() = %q, want %q", name, "everysphere")
+	if name != "monorepo" {
+		t.Fatalf("LoadLastTemplate() = %q, want %q", name, "monorepo")
 	}
 
 	if err := SaveLastTemplate(stateDir, "other"); err != nil {

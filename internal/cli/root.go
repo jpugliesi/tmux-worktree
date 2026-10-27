@@ -88,7 +88,7 @@ func (o Options) workspaceServiceOptions() workspaceservice.Options {
 }
 
 // poolRefillFreeDiskFloor is the free disk space below which twt starts no
-// new Prepared Environment. One everysphere checkout uses 20 to 30 GB.
+// new Prepared Environment. One large monorepo checkout uses 20 to 30 GB.
 const poolRefillFreeDiskFloor = 50_000_000_000
 
 // startReleaseRefill tops up the Prepared Environment pool after a release.

@@ -34,7 +34,7 @@ func TestFormatTableLinesAlignsColumns(t *testing.T) {
 	lines, err := formatTableLines([][]string{
 		{"dev-env", "", "active", "19d"},
 		{"core", "firetiger", "active", "9d"},
-		{"agent-sdk-delete", "everysphere", "active", "5d"},
+		{"agent-sdk-delete", "monorepo", "active", "5d"},
 	})
 	if err != nil {
 		t.Fatal(err)

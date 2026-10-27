@@ -25,8 +25,8 @@ func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
 	workspace := domain.Workspace{
 		Version:      domain.WorkspaceVersion,
 		ID:           "514a26ed287e429b888000aaa288333a",
-		Name:         "everysphere-0",
-		TemplateName: "everysphere",
+		Name:         "monorepo-0",
+		TemplateName: "monorepo",
 		Status:       domain.WorkspaceActive,
 		CreatedAt:    time.Now().UTC().Add(-3 * 24 * time.Hour),
 	}
@@ -40,8 +40,8 @@ func TestWorkspacesListShowsHumanFieldsFirst(t *testing.T) {
 		DataDir:   filepath.Join(root, "data"),
 	}, nil, "workspaces", "list")
 
-	want := "NAME           TEMPLATE     STATUS  AGE\n" +
-		"everysphere-0  everysphere  active  3d\n"
+	want := "NAME        TEMPLATE  STATUS  AGE\n" +
+		"monorepo-0  monorepo  active  3d\n"
 	if output != want {
 		t.Fatalf("workspaces list output = %q, want %q", output, want)
 	}
@@ -161,17 +161,17 @@ func TestWorkspacesListFiltersByProjectTicketAndStatus(t *testing.T) {
 	now := time.Now().UTC()
 	active := domain.Workspace{
 		Version: domain.WorkspaceVersion, ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "auth-work",
-		TemplateName: "everysphere", Status: domain.WorkspaceActive, Project: "core",
+		TemplateName: "monorepo", Status: domain.WorkspaceActive, Project: "core",
 		Tickets: []string{"fix-auth"}, CreatedAt: now, UpdatedAt: now,
 	}
 	other := domain.Workspace{
 		Version: domain.WorkspaceVersion, ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Name: "docs-work",
-		TemplateName: "everysphere", Status: domain.WorkspaceActive, Project: "docs",
+		TemplateName: "monorepo", Status: domain.WorkspaceActive, Project: "docs",
 		Tickets: []string{"write-guide"}, CreatedAt: now, UpdatedAt: now,
 	}
 	archived := domain.Workspace{
 		Version: domain.WorkspaceVersion, ID: "cccccccccccccccccccccccccccccccc", Name: "old-auth",
-		TemplateName: "everysphere", Status: domain.WorkspaceArchived, Project: "core",
+		TemplateName: "monorepo", Status: domain.WorkspaceArchived, Project: "core",
 		Tickets: []string{"fix-auth"}, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
 	}
 	workspaceStore := store.NewWorkspaceStore(filepath.Join(root, "state"))

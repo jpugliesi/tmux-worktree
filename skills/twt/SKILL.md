@@ -94,7 +94,7 @@ authority.
 
 ```sh
 twt create fix-auth \
-  --template everysphere \
+  --template monorepo \
   --no-open \
   --dry-run \
   --output json
@@ -122,7 +122,7 @@ A Workspace can work on one or more open Tickets from one Project. Link them
 with repeated `--ticket` flags for a non-interactive create:
 
 ```sh
-twt create auth-work --template everysphere --no-open \
+twt create auth-work --template monorepo --no-open \
   --ticket fix-auth --ticket add-auth-tests --dry-run --output json
 ```
 

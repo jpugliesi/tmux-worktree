@@ -11,13 +11,13 @@ type helpContent struct {
 // checks that every key matches a command and that every command has a key.
 var commandHelp = map[string]helpContent{
 	"twt templates": {
-		long: "Create and maintain reusable YAML Workspace Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create everysphere\n  twt templates get everysphere",
+		long: "Create and maintain reusable YAML Workspace Templates. A template declares repositories, clone policy, tmux window names, and first-use initialization.", example: "  twt templates create monorepo\n  twt templates get monorepo",
 	},
 	"twt workspaces": {
-		long: "Create and manage change-focused Workspaces. An active Workspace owns prepared worktrees and a tmux session. An archived Workspace keeps its branches and logical state.", example: "  twt create fix-auth --template everysphere\n  twt workspaces open fix-auth",
+		long: "Create and manage change-focused Workspaces. An active Workspace owns prepared worktrees and a tmux session. An archived Workspace keeps its branches and logical state.", example: "  twt create fix-auth --template monorepo\n  twt workspaces open fix-auth",
 	},
 	"twt create": {
-		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. The warm path claims prepared worktrees without a fetch. Use --fresh to fetch and refresh a ready Prepared Environment before the claim. A leftover Prepared Environment is cleaned and returned to the ready pool when its source session is gone. An Environment that is still in use is not a create target. Without NAME at a text terminal, twt asks for a Workspace name. Without --template at a text terminal, twt shows a Workspace Template picker when more than one Template exists. A script uses the last-used Template, or it passes --template. A pipe and --output json still require NAME. When an archived Workspace holds NAME, a text terminal shows its removal plan and asks before it removes it. A script uses --remove-archived, or it runs 'twt switch NAME' to open the archived Workspace again.", example: "  twt create\n  twt create fix-auth --template everysphere\n  twt create fix-auth --template everysphere --fresh",
+		long: "Create a Workspace from a saved Workspace Template. This command is the short form of 'twt workspaces create'. The warm path claims prepared worktrees without a fetch. Use --fresh to fetch and refresh a ready Prepared Environment before the claim. A leftover Prepared Environment is cleaned and returned to the ready pool when its source session is gone. An Environment that is still in use is not a create target. Without NAME at a text terminal, twt asks for a Workspace name. Without --template at a text terminal, twt shows a Workspace Template picker when more than one Template exists. A script uses the last-used Template, or it passes --template. A pipe and --output json still require NAME. When an archived Workspace holds NAME, a text terminal shows its removal plan and asks before it removes it. A script uses --remove-archived, or it runs 'twt switch NAME' to open the archived Workspace again.", example: "  twt create\n  twt create fix-auth --template monorepo\n  twt create fix-auth --template monorepo --fresh",
 	},
 	"twt next": {
 		long: "Create the next Workspace from the latest saved version of the current Workspace Template. Run this command inside the current Workspace tmux session. twt checks the current Workspace, creates the new Workspace, and cleans the old Workspace. It then stops the old tmux session. Tmux can select another session or detach the client. Without a name, twt shows an interactive Ticket picker. A tmux pane outside the Workspace session that still works in its worktrees stops the release: twt asks before it stops the pane. Use --force to discard tracked and nonignored changes and to stop those panes. Use --fresh to fetch before the new claim. Use twt create outside a current Workspace.", example: "  twt next\n  twt next fix-auth\n  twt next fix-auth --force",
@@ -62,22 +62,22 @@ var commandHelp = map[string]helpContent{
 		long: "Create an empty Workspace Template.\n\nNAME is the reusable template name. After creation, add one or more " +
 			"repository specifications.\n\nWith --from-file, twt reads one strict Workspace Template " +
 			"YAML document. Pass - as the --from-file value to read standard input. NAME stays required: it sets the template name, and a different name in the document is an error.",
-		example: "  twt templates create everysphere\n  twt templates repos add everysphere app git@github.com:acme/app.git\n  twt templates create everysphere --from-file ./everysphere.yaml\n  cat ./everysphere.yaml | twt templates create everysphere --from-file -",
+		example: "  twt templates create monorepo\n  twt templates repos add monorepo app git@github.com:acme/app.git\n  twt templates create monorepo --from-file ./monorepo.yaml\n  cat ./monorepo.yaml | twt templates create monorepo --from-file -",
 	},
 	"twt templates list": {
 		long: "List all saved Workspace Templates.", example: "  twt templates list\n  twt templates list --output json",
 	},
 	"twt templates get": {
-		long: "Get one Workspace Template and its repository specifications.", example: "  twt templates get everysphere\n  twt templates get everysphere --output json",
+		long: "Get one Workspace Template and its repository specifications.", example: "  twt templates get monorepo\n  twt templates get monorepo --output json",
 	},
 	"twt templates validate": {
-		long: "Validate the YAML and all fields in one Workspace Template.", example: "  twt templates validate everysphere",
+		long: "Validate the YAML and all fields in one Workspace Template.", example: "  twt templates validate monorepo",
 	},
 	"twt templates prepare": {
-		long: "Remove the ready Prepared Environments above pool_depth. Then refresh each remaining one, and create enough Prepared Environments to meet pool_depth. Repository initialization runs again only when a refresh changes the saved base commit.", example: "  twt templates prepare everysphere",
+		long: "Remove the ready Prepared Environments above pool_depth. Then refresh each remaining one, and create enough Prepared Environments to meet pool_depth. Repository initialization runs again only when a refresh changes the saved base commit.", example: "  twt templates prepare monorepo",
 	},
 	"twt templates repos": {
-		long: "Manage the repository specifications inside one Workspace Template.", example: "  twt templates repos add everysphere app https://example.com/app.git\n  twt templates repos remove everysphere app",
+		long: "Manage the repository specifications inside one Workspace Template.", example: "  twt templates repos add monorepo app https://example.com/app.git\n  twt templates repos remove monorepo app",
 	},
 	"twt templates init": {
 		long: "Manage the initialization commands of a Workspace Template. One command runs for the Workspace, and one command runs for each repository.", example: "  twt templates init set product --cwd web -- ./scripts/init-workspace.sh\n  twt templates init set product --repo web -- ./init.sh",
@@ -92,16 +92,16 @@ var commandHelp = map[string]helpContent{
 		long: "Remove one repository recycle command.", example: "  twt templates recycle unset product --repo app",
 	},
 	"twt templates path": {
-		long: "Print the YAML file path of one Workspace Template. The output is one bare path for command substitution.", example: "  twt templates path everysphere\n  $EDITOR $(twt templates path everysphere)",
+		long: "Print the YAML file path of one Workspace Template. The output is one bare path for command substitution.", example: "  twt templates path monorepo\n  $EDITOR $(twt templates path monorepo)",
 	},
 	"twt templates edit": {
-		long: "Open the Workspace Template YAML file in VISUAL or EDITOR, then validate the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  twt templates edit everysphere",
+		long: "Open the Workspace Template YAML file in VISUAL or EDITOR, then validate the result. An invalid file stays on disk and twt reports the unsafe_state error.", example: "  twt templates edit monorepo",
 	},
 	"twt templates remove": {
-		long: "Delete the YAML file of a Workspace Template. twt refuses removal while a Workspace record still uses the Workspace Template.", example: "  twt templates remove everysphere\n  twt templates remove everysphere --dry-run --output json",
+		long: "Delete the YAML file of a Workspace Template. twt refuses removal while a Workspace record still uses the Workspace Template.", example: "  twt templates remove monorepo\n  twt templates remove monorepo --dry-run --output json",
 	},
 	"twt templates repos remove": {
-		long: "Remove one repository specification from a Workspace Template. Existing Workspaces keep their saved Workspace Template snapshot.", example: "  twt templates repos remove everysphere app",
+		long: "Remove one repository specification from a Workspace Template. Existing Workspaces keep their saved Workspace Template snapshot.", example: "  twt templates repos remove monorepo app",
 	},
 	"twt workspaces setup": {
 		long: "Manage Workspace setup steps.", example: "  twt workspaces setup retry fix-auth",
@@ -111,7 +111,7 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt templates repos add": {
 		long:    "Add one repository specification to a Workspace Template. Flags define remotes, the default branch, and the tmux window name. Repository Caches always keep full commit history so Workspace branches keep valid ancestry.",
-		example: "  twt templates repos add everysphere everysphere \\\n    https://origin.cursor.com/anysphere/everysphere.git \\\n    --remote github=https://github.com/anysphere/everysphere.git",
+		example: "  twt templates repos add monorepo monorepo \\\n    https://origin.cursor.com/acme/monorepo.git \\\n    --remote github=https://github.com/acme/monorepo.git",
 	},
 	"twt templates init set": {
 		long: "Set one initialization command. Put the command and its arguments after --.\n\n" +
@@ -121,7 +121,7 @@ var commandHelp = map[string]helpContent{
 	},
 	"twt workspaces create": {
 		long:    "Create a Workspace from a saved Workspace Template. The warm path claims a ready Prepared Environment without a fetch. Use --fresh to fetch and refresh it first. Repeat --ticket to link open Tickets from one Project. The branch name comes from --branch, the template branch_pattern, or the default pattern {prefix}{name}. A leftover Prepared Environment is cleaned and returned to the ready pool when its source session is gone. An Environment that is still in use is not a create target. Without NAME at a text terminal, twt asks for a Workspace name. Without --template at a text terminal, twt shows a Workspace Template picker when more than one Template exists. A script uses the last-used Template, or it passes --template. A pipe and --output json still require NAME. When an archived Workspace holds NAME, a text terminal shows its removal plan and asks before it removes it. A script uses --remove-archived, or it runs 'twt switch NAME' to open the archived Workspace again.",
-		example: "  twt workspaces create\n  twt workspaces create fix-auth --template everysphere\n  twt workspaces create fix-auth --template everysphere --fresh",
+		example: "  twt workspaces create\n  twt workspaces create fix-auth --template monorepo\n  twt workspaces create fix-auth --template monorepo --fresh",
 	},
 	"twt workspaces list": {
 		long: "List Workspaces and their setup state. --project, --ticket, and --status filter the list. JSON includes the linked Project and Ticket slugs.", example: "  twt workspaces list\n  twt workspaces list --project change-monitor --status active --output json\n  twt workspaces list --ticket fix-auth --output json",
@@ -307,7 +307,7 @@ var commandHelp = map[string]helpContent{
 		long: "Manage Projects. A Project is one directory under the Tickets home that groups Tickets and outlives any Workspace.", example: "  twt projects create change-monitor\n  twt projects list --output json",
 	},
 	"twt projects create": {
-		long: "Create one Project directory and write its index.md only when that file is missing. With no NAME in an interactive terminal, twt asks for a Project name, then opens VISUAL or EDITOR on an empty file for the plan. After you save the plan, twt shows a Workspace Template picker when --template is absent and more than one Template exists. It then asks whether to start a Workspace. A script must pass NAME.", example: "  twt projects create\n  twt projects create change-monitor\n  twt projects create change-monitor --template everysphere --output json",
+		long: "Create one Project directory and write its index.md only when that file is missing. With no NAME in an interactive terminal, twt asks for a Project name, then opens VISUAL or EDITOR on an empty file for the plan. After you save the plan, twt shows a Workspace Template picker when --template is absent and more than one Template exists. It then asks whether to start a Workspace. A script must pass NAME.", example: "  twt projects create\n  twt projects create change-monitor\n  twt projects create change-monitor --template monorepo --output json",
 	},
 	"twt projects remove": {
 		long: "Show a removal plan for one Project. Add --apply to delete the Project directory, its plan, and its Ticket files, including closed Tickets under closed/NAME. After apply, the name can be created again. A Workspace that still names the Project is a blocker. Archive that Workspace, then run 'twt workspaces remove WORKSPACE --apply'. Close keeps history. Remove deletes the Project. Do not use --dry-run with --apply.", example: "  twt projects remove change-monitor\n  twt projects remove change-monitor --apply --output json",

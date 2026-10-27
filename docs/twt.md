@@ -70,52 +70,52 @@ twt completion zsh > ~/.local/share/zsh/site-functions/_twt
 Use `twt completion bash`, `twt completion fish`, or
 `twt completion powershell` for the other shells.
 
-## Create the Everysphere Workspace Template
+## Create a Monorepo Workspace Template
 
 Create an empty YAML file:
 
 ```sh
-twt templates create everysphere
+twt templates create monorepo
 ```
 
 Add the repository clone policy:
 
 ```sh
-twt templates repos add everysphere everysphere \
-  https://origin.cursor.com/anysphere/everysphere.git \
-  --remote github=https://github.com/anysphere/everysphere.git \
+twt templates repos add monorepo monorepo \
+  https://origin.cursor.com/acme/monorepo.git \
+  --remote github=https://github.com/acme/monorepo.git \
   --default-branch main \
-  --window-name everysphere
+  --window-name monorepo
 ```
 
 Set the repository initialization command. `twt` runs this command in the
 new worktree:
 
 ```sh
-twt templates init set everysphere --repo everysphere -- ./init.sh
+twt templates init set monorepo --repo monorepo -- ./init.sh
 ```
 
 To remove one repository specification, run:
 
 ```sh
-twt templates repos remove everysphere everysphere
+twt templates repos remove monorepo monorepo
 ```
 
 You can also edit
-`~/.config/twt/templates/everysphere.yaml` directly:
+`~/.config/twt/templates/monorepo.yaml` directly:
 
 ```yaml
 version: 1
-name: everysphere
+name: monorepo
 pool_depth: 1
 repositories:
-  - name: everysphere
+  - name: monorepo
     clone:
-      url: https://origin.cursor.com/anysphere/everysphere.git
+      url: https://origin.cursor.com/acme/monorepo.git
     remotes:
-      github: https://github.com/anysphere/everysphere.git
+      github: https://github.com/acme/monorepo.git
     default_branch: main
-    window_name: everysphere
+    window_name: monorepo
     initialize:
       command:
         - ./init.sh
@@ -171,11 +171,11 @@ linked provider session take precedence over the fallback command.
 Work with the YAML file through these commands:
 
 ```sh
-twt templates path everysphere
-twt templates edit everysphere
-twt templates validate everysphere
+twt templates path monorepo
+twt templates edit monorepo
+twt templates validate monorepo
 twt templates list
-twt templates get everysphere --output json
+twt templates get monorepo --output json
 ```
 
 `templates path` prints one bare path. `templates edit` starts `$VISUAL` or
@@ -191,14 +191,14 @@ it sets the template name, and a different `name` field in the document is
 an error.
 
 ```sh
-twt templates create everysphere --from-file ./everysphere.yaml
-cat ./everysphere.yaml | twt templates create everysphere --from-file -
+twt templates create monorepo --from-file ./monorepo.yaml
+cat ./monorepo.yaml | twt templates create monorepo --from-file -
 ```
 
 Delete a Workspace Template with:
 
 ```sh
-twt templates remove everysphere
+twt templates remove monorepo
 ```
 
 Removal deletes only the YAML file. `twt` refuses the removal while a
@@ -207,7 +207,7 @@ Workspace record still uses the Workspace Template. Remove those Workspaces firs
 Prepare the next environment before you need it:
 
 ```sh
-twt templates prepare everysphere
+twt templates prepare monorepo
 ```
 
 This command removes the ready Prepared Environments above `pool_depth`. It
@@ -295,8 +295,8 @@ initialization command. You must set its working directory relative to the
 Workspace root:
 
 ```sh
-twt templates init set everysphere \
-  --cwd everysphere \
+twt templates init set monorepo \
+  --cwd monorepo \
   -- ./scripts/init-workspace.sh
 ```
 
@@ -307,8 +307,8 @@ sets Workspace initialization, and `--cwd PATH` is required.
 Set a repository recycle command when ignored files need cleanup before reuse:
 
 ```sh
-twt templates recycle set everysphere --repo everysphere -- ./scripts/recycle.sh
-twt templates recycle unset everysphere --repo everysphere
+twt templates recycle set monorepo --repo monorepo -- ./scripts/recycle.sh
+twt templates recycle unset monorepo --repo monorepo
 ```
 
 The recycle command runs while the old Workspace branch is still checked out.
@@ -338,7 +338,7 @@ arranged.
 session:
   command:
     - ./scripts/layout.sh
-  cwd: everysphere
+  cwd: monorepo
 ```
 
 `command` is an argv list, like an initialization command. `cwd` is optional
@@ -359,15 +359,15 @@ The session command receives the Workspace initialization variables
 Use the IDs to make your own tmux targets. A pane target is
 `<window id>.<pane index>`, and the pane index follows your
 `pane-base-index` option. This script makes a three-pane layout in the
-`everysphere` window: one pane beside the first pane that takes 34% of the
+`monorepo` window: one pane beside the first pane that takes 34% of the
 width, then one pane under the first pane that takes 25% of its height.
 
 ```sh
 #!/bin/sh
 set -e
-window="$TWT_TMUX_WINDOW_EVERYSPHERE"
-tmux split-window -d -h -l 34% -t "$window" -c "$TWT_REPOSITORY_EVERYSPHERE"
-tmux split-window -d -v -l 25% -t "$window.1" -c "$TWT_REPOSITORY_EVERYSPHERE"
+window="$TWT_TMUX_WINDOW_MONOREPO"
+tmux split-window -d -h -l 34% -t "$window" -c "$TWT_REPOSITORY_MONOREPO"
+tmux split-window -d -v -l 25% -t "$window.1" -c "$TWT_REPOSITORY_MONOREPO"
 ```
 
 The example uses `-l 34%`, the modern size flag. The old `-p 34` flag is
@@ -382,7 +382,7 @@ its record, and `twt workspaces setup retry WORKSPACE` runs the step again.
 Create and open a Workspace:
 
 ```sh
-twt create fix-auth --template everysphere
+twt create fix-auth --template monorepo
 ```
 
 `twt create` is the short form of `twt workspaces create`.
@@ -444,7 +444,7 @@ terminal. Use `--no-open` to never open it. `--output json` no longer implies
 no-open: a program that pipes the output gets no tmux change.
 
 `twt` names the new tmux session `<template name>-<workspace name>`, for
-example `everysphere-fix-auth`. The Workspace Template name comes first, thus
+example `monorepo-fix-auth`. The Workspace Template name comes first, thus
 the tmux session picker groups the sessions of one codebase together. If a
 session with that name already exists and belongs to
 something else, `twt` adds the first 8 characters of the Workspace ID to the
@@ -522,7 +522,7 @@ the explicit JSON commands:
 
 ```sh
 twt create fix-logout \
-  --template everysphere \
+  --template monorepo \
   --no-open \
   --dry-run \
   --output json
@@ -534,7 +534,7 @@ twt workspaces list --project change-monitor --status active
 twt workspaces get
 twt workspaces get fix-auth
 twt workspaces current
-twt workspaces path fix-auth everysphere
+twt workspaces path fix-auth monorepo
 twt workspaces open fix-auth
 twt workspaces sync
 twt workspaces set current --project change-monitor
@@ -555,7 +555,7 @@ fast; use `twt storage get` for disk space:
 
 ```text
 NAME      TEMPLATE     STATUS  AGE
-fix-auth  everysphere  active  2h
+fix-auth  monorepo  active  2h
 ```
 
 Use `--output json` when a program needs the immutable Workspace ID.
@@ -1270,7 +1270,7 @@ twt tickets start
 twt tickets start -A
 twt tickets start fix-auth-tokens
 twt tickets start fix-auth-tokens add-auth-tests
-twt tickets start fix-auth-tokens --name auth-fix --template everysphere
+twt tickets start fix-auth-tokens --name auth-fix --template monorepo
 twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --dry-run --output json
 twt tickets start fix-auth-tokens --with-agent --detached --as coordinator --output json
 ```
@@ -1289,8 +1289,8 @@ groups tickets and outlives any single Workspace checkout. Use `project:` in
 ticket frontmatter, not `workspace:`.
 
 ```sh
-twt projects create change-monitor --template everysphere --output json
-twt projects set change-monitor --template everysphere --output json
+twt projects create change-monitor --template monorepo --output json
+twt projects set change-monitor --template monorepo --output json
 twt projects rename change-monitor monitor --output json
 twt workspaces set current --project monitor --output json
 twt projects list --output json
@@ -1457,7 +1457,7 @@ A list uses the plural name, the total before the limit, and a truncation
 flag. The elements do not repeat the schema version:
 
 ```json
-{"schemaVersion":2,"templates":[{"name":"everysphere"}],"totalCount":3,"truncated":true}
+{"schemaVersion":2,"templates":[{"name":"monorepo"}],"totalCount":3,"truncated":true}
 ```
 
 Use `--limit` on `templates list`, `workspaces list`, `agents list`,
@@ -1509,7 +1509,7 @@ accepts `--dry-run`:
 
 ```sh
 twt create fix-auth \
-  --template everysphere \
+  --template monorepo \
   --no-open \
   --dry-run \
   --output json
@@ -1519,7 +1519,7 @@ Some common mutations also accept one strict JSON request. Unknown fields and
 more than one JSON value cause an error.
 
 ```sh
-printf '%s' '{"operation":"workspaces.create","workspace":{"name":"fix-auth","template":"everysphere"}}' | \
+printf '%s' '{"operation":"workspaces.create","workspace":{"name":"fix-auth","template":"monorepo"}}' | \
   twt apply - --dry-run --output json
 ```
 

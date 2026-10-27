@@ -353,7 +353,7 @@ func fetchOrigin(cachePath, branch string) error {
 // without data. A Mac that sleeps during a fetch keeps a dead connection, and
 // Git then waits on it without limit: one clone waited four hours. A healthy
 // fetch never trips it, because Git servers send keepalive packets while they
-// count objects. Measured on everysphere: a 50,000-commit deepen round sent
+// count objects. Measured on a large monorepo: a 50,000-commit deepen round sent
 // its first data within two minutes. The next refresh retries a failed fetch.
 var stallGuard = []string{"-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=600"}
 

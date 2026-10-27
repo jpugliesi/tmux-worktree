@@ -59,14 +59,14 @@ func TestTemplatesCreateWritesEditableYAML(t *testing.T) {
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
-	command.SetArgs(forceTextOutput([]string{"templates", "create", "everysphere"}))
+	command.SetArgs(forceTextOutput([]string{"templates", "create", "monorepo"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("templates create returned an error: %v\nstderr: %s", err, stderr.String())
 	}
 
-	want := "version: 1\nname: everysphere\nrepositories: []\n"
-	path := filepath.Join(root, "config", "templates", "everysphere.yaml")
+	want := "version: 1\nname: monorepo\nrepositories: []\n"
+	path := filepath.Join(root, "config", "templates", "monorepo.yaml")
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -108,30 +108,30 @@ func TestTemplatesReposAddSupportsInterspersedFlags(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	if _, err := execute(t, root, "templates", "create", "everysphere"); err != nil {
+	if _, err := execute(t, root, "templates", "create", "monorepo"); err != nil {
 		t.Fatalf("create template: %v", err)
 	}
 
 	_, err := execute(t, root,
-		"templates", "repos", "add", "everysphere",
-		"--depth", "1", "everysphere",
-		"--remote", "github=https://github.com/anysphere/everysphere.git",
-		"https://origin.cursor.com/anysphere/everysphere.git",
+		"templates", "repos", "add", "monorepo",
+		"--depth", "1", "monorepo",
+		"--remote", "github=https://github.com/acme/monorepo.git",
+		"https://origin.cursor.com/acme/monorepo.git",
 		"--default-branch", "main", "--window-name", "app",
 	)
 	if err != nil {
 		t.Fatalf("templates repos add returned an error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, "config", "templates", "everysphere.yaml"))
+	data, err := os.ReadFile(filepath.Join(root, "config", "templates", "monorepo.yaml"))
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
 	wantParts := []string{
-		"name: everysphere",
-		"url: https://origin.cursor.com/anysphere/everysphere.git",
+		"name: monorepo",
+		"url: https://origin.cursor.com/acme/monorepo.git",
 		"depth: 1",
-		"github: https://github.com/anysphere/everysphere.git",
+		"github: https://github.com/acme/monorepo.git",
 		"default_branch: main",
 		"window_name: app",
 	}
@@ -146,20 +146,20 @@ func TestTemplatesInitializationCommands(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	if _, err := execute(t, root, "templates", "create", "everysphere"); err != nil {
+	if _, err := execute(t, root, "templates", "create", "monorepo"); err != nil {
 		t.Fatalf("create template: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "repos", "add", "everysphere", "app", "https://example.com/app.git"); err != nil {
+	if _, err := execute(t, root, "templates", "repos", "add", "monorepo", "app", "https://example.com/app.git"); err != nil {
 		t.Fatalf("add repository: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--repo", "app", "--", "./init.sh", "--quick"); err != nil {
+	if _, err := execute(t, root, "templates", "init", "set", "monorepo", "--repo", "app", "--", "./init.sh", "--quick"); err != nil {
 		t.Fatalf("set repository initialization: %v", err)
 	}
-	if _, err := execute(t, root, "templates", "init", "set", "everysphere", "--cwd", "app", "--", "./scripts/init-workspace.sh"); err != nil {
+	if _, err := execute(t, root, "templates", "init", "set", "monorepo", "--cwd", "app", "--", "./scripts/init-workspace.sh"); err != nil {
 		t.Fatalf("set template initialization: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, "config", "templates", "everysphere.yaml"))
+	data, err := os.ReadFile(filepath.Join(root, "config", "templates", "monorepo.yaml"))
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}

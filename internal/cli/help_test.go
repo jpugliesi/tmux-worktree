@@ -194,8 +194,8 @@ func TestTemplateCreateHelpExplainsTheNameAndShowsNextStep(t *testing.T) {
 	}
 	for _, want := range []string{
 		"NAME is the reusable template name",
-		"twt templates create everysphere",
-		"twt templates repos add everysphere",
+		"twt templates create monorepo",
+		"twt templates repos add monorepo",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("templates create help does not contain %q:\n%s", want, output)

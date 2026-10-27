@@ -1440,32 +1440,32 @@ func TestProjectTemplateRoundTripPreservesIndexBody(t *testing.T) {
 	indexPath := filepath.Join(home, "change-monitor", "index.md")
 	before := readFile(t, indexPath)
 
-	dryRun, err := service.SetProjectTemplate("change-monitor", "everysphere", true)
+	dryRun, err := service.SetProjectTemplate("change-monitor", "monorepo", true)
 	if err != nil {
 		t.Fatalf("SetProjectTemplate(dry run) error = %v", err)
 	}
-	if dryRun.TemplateName != "everysphere" {
+	if dryRun.TemplateName != "monorepo" {
 		t.Fatalf("dry-run TemplateName = %q", dryRun.TemplateName)
 	}
 	if got := readFile(t, indexPath); got != before {
 		t.Fatal("dry-run changed index.md")
 	}
 
-	project, err := service.SetProjectTemplate("change-monitor", "everysphere", false)
+	project, err := service.SetProjectTemplate("change-monitor", "monorepo", false)
 	if err != nil {
 		t.Fatalf("SetProjectTemplate() error = %v", err)
 	}
-	if project.TemplateName != "everysphere" {
+	if project.TemplateName != "monorepo" {
 		t.Fatalf("TemplateName = %q", project.TemplateName)
 	}
-	if got := readFile(t, indexPath); !strings.Contains(got, "twt_template: everysphere") || !strings.Contains(got, "# change-monitor") {
+	if got := readFile(t, indexPath); !strings.Contains(got, "twt_template: monorepo") || !strings.Contains(got, "# change-monitor") {
 		t.Fatalf("index.md did not preserve its body and add the Template:\n%s", got)
 	}
 	shown, err := service.Project("change-monitor")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shown.TemplateName != "everysphere" {
+	if shown.TemplateName != "monorepo" {
 		t.Fatalf("Project().TemplateName = %q", shown.TemplateName)
 	}
 }
