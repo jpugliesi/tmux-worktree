@@ -36,6 +36,10 @@ func doneFixture(t *testing.T) cli.Options {
 	if err := os.WriteFile(filepath.Join(configDir, "templates", "example.yaml"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A tmux pane runs SHELL. The startup files of a login shell can run
+	// git in another directory, and tmux then reports that directory for
+	// the pane, so the tests use a plain shell.
+	t.Setenv("SHELL", "/bin/sh")
 	socket := fmt.Sprintf("twt-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	return cli.Options{ConfigDir: configDir, StateDir: filepath.Join(root, "state"), DataDir: filepath.Join(root, "data"), TmuxSocket: socket}

@@ -24,6 +24,10 @@ func busyTestService(t *testing.T) (*Service, domain.Template, string) {
 		Version: domain.TemplateVersion, Name: "example",
 		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
 	}
+	// A tmux pane runs SHELL. The startup files of a login shell can run
+	// git in another directory, and tmux then reports that directory for
+	// the pane, so the tests use a plain shell.
+	t.Setenv("SHELL", "/bin/sh")
 	socket := fmt.Sprintf("twt-busy-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
 	service := NewService(Options{StateDir: t.TempDir(), DataDir: t.TempDir(), TmuxSocket: socket})
@@ -43,7 +47,7 @@ func TestPrepareSkipsAReadyEnvironmentThatALivePaneUses(t *testing.T) {
 	if err := run("", "tmux", "-L", socket, "-f", "/dev/null", "new-session", "-d", "-s", "leftover", "-c", workspace.Repositories[0].Path); err != nil {
 		t.Fatal(err)
 	}
-	waitForPane(t, service, workspace.Root)
+	waitForPane(t, service, "leftover", workspace.Root)
 
 	environment, err := service.Prepare(template.Name, template)
 	if err != nil {
@@ -63,7 +67,7 @@ func TestReleaseRefusesAForeignPaneUnlessItMayStopIt(t *testing.T) {
 	if err := run("", "tmux", "-L", socket, "-f", "/dev/null", "new-session", "-d", "-s", "other", "-c", workspace.Repositories[0].Path); err != nil {
 		t.Fatal(err)
 	}
-	waitForPane(t, service, workspace.Root)
+	waitForPane(t, service, "other", workspace.Root)
 
 	_, err = service.Release(workspace.ID, "", ReleaseOptions{})
 	if clierr.CodeOf(err) != clierr.UnsafeState {
@@ -84,7 +88,9 @@ func TestReleaseRefusesAForeignPaneUnlessItMayStopIt(t *testing.T) {
 
 // waitForPane waits until tmux reports a pane inside root. A new pane can
 // report another directory until its shell starts.
-func waitForPane(t *testing.T, service *Service, root string) {
+// waitForPane waits until a pane of the named tmux session works inside
+// root. A new pane reports another directory until its shell starts.
+func waitForPane(t *testing.T, service *Service, sessionName, root string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -92,11 +98,13 @@ func waitForPane(t *testing.T, service *Service, root string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(panesInside(panes, root)) > 0 {
-			return
+		for _, pane := range panesInside(panes, root) {
+			if pane.SessionName == sessionName {
+				return
+			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no tmux pane works inside %q", root)
+			t.Fatalf("no pane of tmux session %q works inside %q", sessionName, root)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

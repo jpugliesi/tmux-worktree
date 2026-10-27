@@ -39,7 +39,7 @@ func TestRenameRenamesAnUnownedSessionThatWorksInTheWorkspace(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitForPane(t, service, workspace.Root)
+	waitForPane(t, service, "example-older", workspace.Root)
 
 	renamed, err := service.Rename(workspace.ID, "otel")
 	if err != nil {
