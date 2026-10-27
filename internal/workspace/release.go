@@ -346,13 +346,32 @@ func (s *Service) runRecycleHooks(workspace domain.Workspace, force bool) error 
 	return nil
 }
 
+// environmentLockPatience is how long a command that holds the mutation lock
+// waits for the lock of one Prepared Environment. A refresh, a preparation,
+// and a claim hold the environment lock for minutes, and some of them wait
+// for the mutation lock while they hold it. So a holder of the mutation lock
+// never waits without a limit: that wait stops every other twt command and
+// can deadlock. The patience is shorter than the mutation lock patience, so
+// in such a cycle the release gives up first. Tests lower it.
+var environmentLockPatience = 5 * time.Second
+
+// acquireEnvironmentLockUnderMutation gets the lock of one Prepared
+// Environment for a caller that holds the mutation lock.
+func (s *Service) acquireEnvironmentLockUnderMutation(environmentID string) (*store.NamedLock, error) {
+	lock, err := store.AcquireEnvironmentLockWithTimeout(s.options.StateDir, environmentID, environmentLockPatience)
+	if errors.Is(err, store.ErrLockHeld) {
+		return nil, clierr.Wrap(clierr.Locked, fmt.Errorf("Prepared Environment %q is busy: another twt command uses it. Run the command again: %w", environmentID, err))
+	}
+	return lock, err
+}
+
 func (s *Service) reserveRelease(workspace *domain.Workspace, plan ReleasePlan, opts ReleaseOptions, sourceSessionID string) (*store.NamedLock, error) {
 	lock, err := store.AcquireMutationLock(s.options.StateDir)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
-	environmentLock, err := store.AcquireEnvironmentLockBlocking(s.options.StateDir, workspace.EnvironmentID)
+	environmentLock, err := s.acquireEnvironmentLockUnderMutation(workspace.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}

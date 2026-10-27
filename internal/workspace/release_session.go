@@ -137,7 +137,7 @@ func (s *Service) StopPreparedRelease(prepared PreparedRelease) error {
 		return err
 	}
 	if latest.EnvironmentID != "" {
-		environmentLock, err := store.AcquireEnvironmentLockBlocking(s.options.StateDir, latest.EnvironmentID)
+		environmentLock, err := s.acquireEnvironmentLockUnderMutation(latest.EnvironmentID)
 		if err != nil {
 			return err
 		}

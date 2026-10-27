@@ -880,6 +880,64 @@ func TestOpenDoesNotRaceAnActiveRelease(t *testing.T) {
 	}
 }
 
+// A release holds the mutation lock while it reserves the Prepared
+// Environment. When another command holds the environment lock, the release
+// gives up after environmentLockPatience instead of a wait without limit, so
+// every other twt command can continue.
+func TestReleaseGivesUpWhenAnotherCommandHoldsTheEnvironmentLock(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
+	source := filepath.Join(t.TempDir(), "source")
+	initCreateTestRepository(t, source)
+	template := domain.Template{
+		Version: domain.TemplateVersion, Name: "example",
+		Repositories: []domain.RepositorySpec{{Name: "app", Clone: domain.CloneSpec{URL: source}}},
+	}
+	socket := fmt.Sprintf("twt-release-busy-test-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	service := NewService(Options{StateDir: stateDir, DataDir: dataDir, TmuxSocket: socket})
+	workspace, err := service.Create("busy", template.Name, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := environmentLockPatience
+	environmentLockPatience = 200 * time.Millisecond
+	t.Cleanup(func() { environmentLockPatience = previous })
+	held, err := store.AcquireEnvironmentLock(stateDir, workspace.EnvironmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+
+	released := make(chan error, 1)
+	go func() {
+		_, err := service.Release(workspace.ID, "", ReleaseOptions{})
+		released <- err
+	}()
+	select {
+	case err := <-released:
+		if clierr.CodeOf(err) != clierr.Locked {
+			t.Fatalf("Release() error = %v, want a locked error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Release() waits for the environment lock without a limit")
+	}
+	mutationLock, err := store.AcquireMutationLockWithTimeout(stateDir, time.Second)
+	if err != nil {
+		t.Fatalf("the release keeps the mutation lock: %v", err)
+	}
+	_ = mutationLock.Release()
+	if latest, err := store.NewWorkspaceStore(stateDir).Find(workspace.ID); err != nil || latest.Status != domain.WorkspaceActive {
+		t.Fatalf("Workspace after the refused release = %+v, %v; want it active", latest, err)
+	}
+}
+
 // A finished release reports its Workspace Template, so the CLI can top up
 // the Prepared Environment pool.
 func TestReleaseRunsTheAfterReleaseFinalizedHook(t *testing.T) {

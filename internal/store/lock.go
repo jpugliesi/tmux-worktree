@@ -174,12 +174,12 @@ func (l *MutationLock) Release() error {
 // AcquireNamedLock gets an exclusive lock without waiting. The lock path uses
 // digests, so namespace and name values cannot select a path outside stateDir.
 func AcquireNamedLock(stateDir, namespace, name string) (*NamedLock, error) {
-	return acquireNamedLock(stateDir, namespace, name, false)
+	return acquireNamedLock(stateDir, namespace, name, false, 0)
 }
 
 // AcquireNamedLockBlocking waits until it can get an exclusive lock.
 func AcquireNamedLockBlocking(stateDir, namespace, name string) (*NamedLock, error) {
-	return acquireNamedLock(stateDir, namespace, name, true)
+	return acquireNamedLock(stateDir, namespace, name, true, 0)
 }
 
 func AcquireEnvironmentLock(stateDir, environmentID string) (*NamedLock, error) {
@@ -190,6 +190,15 @@ func AcquireEnvironmentLock(stateDir, environmentID string) (*NamedLock, error) 
 // Environment.
 func AcquireEnvironmentLockBlocking(stateDir, environmentID string) (*NamedLock, error) {
 	return AcquireNamedLockBlocking(stateDir, "environment", environmentID)
+}
+
+// AcquireEnvironmentLockWithTimeout retries the lock of one Prepared
+// Environment until the timeout and then reports ErrLockHeld. A caller that
+// holds the mutation lock uses it: a wait without a limit there stops every
+// other twt command, and it deadlocks against a holder of the environment
+// lock that waits for the mutation lock.
+func AcquireEnvironmentLockWithTimeout(stateDir, environmentID string, timeout time.Duration) (*NamedLock, error) {
+	return acquireNamedLock(stateDir, "environment", environmentID, false, timeout)
 }
 
 func AcquireCacheLock(stateDir, cacheKey string) (*NamedLock, error) {
@@ -255,13 +264,13 @@ func (l *NamedLock) Release() error {
 	return nil
 }
 
-func acquireNamedLock(stateDir, namespace, name string, blocking bool) (*NamedLock, error) {
+func acquireNamedLock(stateDir, namespace, name string, blocking bool, timeout time.Duration) (*NamedLock, error) {
 	directory := filepath.Join(stateDir, "locks", lockDigest(namespace))
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return nil, fmt.Errorf("create named lock directory: %w", err)
 	}
 	path := filepath.Join(directory, lockDigest(name)+".lock")
-	file, err := acquireLockFile(path, blocking, 0)
+	file, err := acquireLockFile(path, blocking, timeout)
 	if errors.Is(err, ErrLockHeld) {
 		if holder := lockHolderDescription(path); holder != "" {
 			return nil, clierr.Wrap(clierr.Locked, fmt.Errorf("%w: %s %q (%s)", ErrLockHeld, namespace, name, holder))
